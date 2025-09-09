@@ -74,10 +74,12 @@ class DEMGrid:
             self.dem = np.where(self.valid, filtered_dem, self.dem)
 
         self.quality = np.zeros(self.dem.shape, dtype=np.int16)
-        self._flat = None
+        self._flat: None | npt.NDArray[np.bool] = None
+        self._flat_gradient: None | npt.NDArray[np.integer] = None
         self._flowdir: None | npt.NDArray[np.integer] = None
-        self._indegree = None
+        self._indegree: None | npt.NDArray[np.integer] = None
         self._accumulation: None | npt.NDArray[np.integer] = None
+        self._strahler_order: None | npt.NDArray[np.integer] = None
         self._graphx = None
         self._graphy = None
 
@@ -94,8 +96,8 @@ class DEMGrid:
 
     @property
     def flowdir(self) -> npt.NDArray[np.integer]:
-        if self._flowdir is None:
-            self._flowdir = flowdir.compute_flowdir(
+        if self._flowdir is None or self._flat is None:
+            self._flowdir, self._flat, self._flat_gradient = flowdir.compute_flowdir(
                 self.dem,
                 directions=self.directions,
                 resolve_flat=True,
@@ -130,6 +132,15 @@ class DEMGrid:
                 directions=self.directions,
             )
         return self._accumulation
+
+    @property
+    def strahler_order(self) -> npt.NDArray[np.integer]:
+        if self._strahler_order is None:
+            self._strahler_order = flowdir.compute_strahler_order(
+                self.flowdir,
+                directions=self.directions,
+            )
+        return self._strahler_order
 
     def fill_depressions(self):
         self.dem = fill_depressions(fill_pits(self.dem)[0], valid=self.valid)

@@ -15,7 +15,7 @@ import numpy.typing as npt
 def _compute_flowdir_simple(
     dem: npt.NDArray[np.number],
     directions: D8Directions = D8Directions(),
-) -> npt.NDArray[np.integer]:
+) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.bool]]:
     is_low_flat = find_flat(dem, directions=directions)
     flat_neighbours, _, _ = get_neighbour_values(
         is_low_flat, directions=D8Directions(window=3), include_self=False
@@ -25,14 +25,14 @@ def _compute_flowdir_simple(
     neighbours, codes, offsets = get_neighbour_values(
         dem, directions=directions, include_self=True, pad_value=np.max(dem) + 1
     )
-    # neighbours[0][is_1px_flat] = np.max(neighbours) + 1
     flowdir = np.nanargmin(neighbours, axis=0)
 
     is_ambiguous = find_ambiguous(dem, directions=directions)
     is_ambiguous = is_ambiguous & ~is_1px_flat
 
     flowdir = codes[flowdir].astype(np.integer)
-    return flowdir
+    is_flat = flowdir == 0
+    return flowdir, is_flat
 
 
 def find_flat_edges(
@@ -383,8 +383,8 @@ def _compute_flowdir_total(
     dem: npt.NDArray[np.number],
     directions: D8Directions = D8Directions(),
     step_size: int = 2,
-) -> npt.NDArray[np.integer]:
-    flowdir = _compute_flowdir_simple(dem, directions=directions)
+) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.bool], npt.NDArray[np.integer]]:
+    flowdir, is_flat = _compute_flowdir_simple(dem, directions=directions)
 
     is_low_edge, is_high_edge = find_flat_edges(dem, flowdir, directions=directions)
 
@@ -411,19 +411,25 @@ def _compute_flowdir_total(
     )
 
     flowdir[flowdir == 0] = flat_flowdir[flowdir == 0]
-    return flowdir
+    return flowdir, is_flat, flat_gradient
 
 
 def compute_flowdir(
     dem: npt.NDArray[np.number],
     directions: D8Directions = D8Directions(),
     resolve_flat: bool = True,
-    step_size: int = 2,
-) -> npt.NDArray[np.integer]:
+    step_size: int = 4,
+) -> tuple[
+    npt.NDArray[np.integer], npt.NDArray[np.bool], npt.NDArray[np.integer] | None
+]:
     if resolve_flat:
-        return _compute_flowdir_total(dem, directions=directions, step_size=step_size)
+        flowdir, is_flat, flat_gradient = _compute_flowdir_total(
+            dem, directions=directions, step_size=step_size
+        )
     else:
-        return _compute_flowdir_simple(dem, directions=directions)
+        flowdir, is_flat = _compute_flowdir_simple(dem, directions=directions)
+        flat_gradient = None
+    return flowdir, is_flat, flat_gradient
 
 
 def compute_indegree(
@@ -551,3 +557,45 @@ def compute_accumulation(
     accumulation = accumulation.reshape(I, J, order="F")
 
     return accumulation
+
+
+def compute_strahler_order(
+    flowdir: npt.NDArray[np.integer] | None = None,
+    directions: D8Directions = D8Directions(),
+    indegrees: npt.NDArray[np.integer] | None = None,
+    downstream_ij: npt.NDArray[np.integer] | None = None,
+) -> npt.NDArray[np.integer]:
+    if flowdir is None and (indegrees is None or downstream_ij is None):
+        raise ValueError(
+            "[FORMOSA] Either FLOWDIR or (INDEGREES and DOWNSTREAM_IJ) must be provided"
+        )
+    elif (indegrees is None or downstream_ij is None) and flowdir is not None:
+        downstream_i, downstreamj, _ = compute_downstream_indices(
+            flowdir, directions=directions
+        )
+        indegrees = compute_indegree(flowdir, directions=directions)
+    else:
+        raise NotImplementedError("Unknown case for FLOWDIR and INDEGREES")
+
+    strahler_order = np.zeros(indegrees.shape, dtype=np.integer)
+    strahler_order[indegrees == 0] = 1
+
+    ii, jj = np.indices(indegrees.shape, dtype=np.integer)
+    seeds = deque(zip(ii[indegrees == 0], jj[indegrees == 0]))
+
+    while seeds:
+        ci, cj = seeds.popleft()
+        dsi, dsj = (
+            downstream_i[ci, cj],
+            downstreamj[ci, cj],
+        )
+        if (ci, cj) == (dsi, dsj):
+            continue
+        if strahler_order[dsi, dsj] < strahler_order[ci, cj]:
+            strahler_order[dsi, dsj] = strahler_order[ci, cj]
+        else:
+            strahler_order[dsi, dsj] += 1
+        indegrees[dsi, dsj] -= 1
+        if indegrees[dsi, dsj] == 0:
+            seeds.append((dsi, dsj))
+    return strahler_order
