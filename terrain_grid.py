@@ -82,6 +82,7 @@ class DEMGrid:
         self._strahler_order: None | npt.NDArray[np.integer] = None
         self._graphx = None
         self._graphy = None
+        self._flowdist: None | npt.NDArray[np.integer] = None
 
     @property
     def sea_mask(self) -> npt.NDArray[np.bool]:
@@ -142,9 +143,20 @@ class DEMGrid:
             )
         return self._strahler_order
 
-    def fill_depressions(self):
-        self.dem = fill_depressions(fill_pits(self.dem)[0], valid=self.valid)
+    def fill_depressions(self, method: str = "erosion") -> "DEMGrid":
+        self.dem = fill_depressions(
+            fill_pits(self.dem)[0], valid=self.valid, method=method
+        )
         return self
+
+    @property
+    def flow_distance(self) -> npt.NDArray[np.integer]:
+        if self._flowdist is None:
+            self._flowdist = flowdir.compute_flow_distance(
+                self.flowdir,
+                directions=self.directions,
+            )
+        return self._flowdist
 
 
 def detect_ocean_mask(dem, ocean_threshold: int | float = 0):
@@ -170,13 +182,26 @@ def fill_pits(
 def fill_depressions(
     dem: npt.NDArray[np.number],
     valid: npt.NDArray[np.bool] | None = None,
+    method: str = "erosion",
 ) -> npt.NDArray[np.number]:
+    assert method in [
+        "erosion",
+        "dilation",
+    ], f"METHOD must be either 'erosion' or 'dilation', got {method} instead"
+
     dem_seed = dem.copy()
     if valid is not None:
-        dem[~valid] = np.nanmin(dem[valid])
-        seed_value = np.nanmax(dem[valid]) + 1
+        if method == "erosion":
+            dem[~valid] = np.nanmin(dem[valid])
+            seed_value = np.nanmax(dem[valid]) + 1
+        else:
+            dem[~valid] = np.nanmax(dem[valid])
+            seed_value = np.nanmin(dem[valid]) - 1
     else:
-        seed_value = np.nanmax(dem) + 1
+        if method == "erosion":
+            seed_value = np.nanmax(dem) + 1
+        else:
+            seed_value = np.nanmin(dem) - 1
 
     dem_mask = np.full(dem.shape, True, dtype=np.bool)
     dem_mask[0, :] = False
@@ -184,4 +209,4 @@ def fill_depressions(
     dem_mask[:, 0] = False
     dem_mask[:, -1] = False
     dem_seed[dem_mask] = seed_value
-    return morphology.reconstruction(dem_seed, dem, method="erosion").astype(dem.dtype)
+    return morphology.reconstruction(dem_seed, dem, method=method).astype(dem.dtype)

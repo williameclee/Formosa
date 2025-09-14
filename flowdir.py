@@ -5,10 +5,9 @@ from collections import deque
 from d8directions import D8Directions
 
 # Misc
-import matplotlib.pyplot as plt
+from tqdm import tqdm
 
 # type check
-from typing import Union
 import numpy.typing as npt
 
 
@@ -599,3 +598,37 @@ def compute_strahler_order(
         if indegrees[dsi, dsj] == 0:
             seeds.append((dsi, dsj))
     return strahler_order
+
+
+def compute_flow_distance(
+    flowdir: npt.NDArray[np.integer], directions: D8Directions = D8Directions()
+) -> npt.NDArray[np.integer]:
+    downstream_i, downstreamj, _ = compute_downstream_indices(
+        flowdir, directions=directions
+    )
+
+    distance = np.zeros(flowdir.shape, dtype=np.integer)
+
+    ii, jj = np.indices(flowdir.shape, dtype=np.integer)
+    seeds = deque(zip(ii[flowdir == 0], jj[flowdir == 0]))
+    distance[flowdir == 0] = 1
+
+    with tqdm(total=np.sum(distance == 0), desc="Computing flow distance") as pbar:
+        while seeds:
+            ci, cj = seeds.popleft()
+            for di, dj in directions.offsets:
+                ni, nj = ci + di, cj + dj
+
+                if ni < 0 or ni >= flowdir.shape[0] or nj < 0 or nj >= flowdir.shape[1]:
+                    continue
+
+                if distance[ni, nj] > 0:
+                    continue
+
+                if (downstream_i[ni, nj], downstreamj[ni, nj]) != (ci, cj):
+                    continue
+
+                distance[ni, nj] = distance[ci, cj] + 1
+                seeds.append((ni, nj))
+                pbar.update(1)
+    return distance
