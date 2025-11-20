@@ -21,6 +21,7 @@ class DEMGrid:
         stride: int | None = None,
         detect_ocean: bool | float | int = False,
         directions: d8directions.D8Directions = d8directions.D8Directions(),
+        astype: type | np.dtype | None = None,
     ):
         if isinstance(dem, str):
             dem, x, y, transform = demio.read_dem(dem)
@@ -50,6 +51,9 @@ class DEMGrid:
                 self.y = self.y[::stride]
         else:
             self.num_slice = 1
+
+        if astype is not None:
+            self.dem = self.dem.astype(astype)
 
         self.i, self.j = np.meshgrid(
             np.arange(self.dem.shape[0]).astype(np.uint32),

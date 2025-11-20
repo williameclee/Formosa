@@ -21,7 +21,7 @@ def _compute_flowdir_simple(
     )
     is_1px_flat = is_low_flat & ~np.any(flat_neighbours, axis=0)
 
-    neighbours, codes, offsets = get_neighbour_values(
+    neighbours, codes, _ = get_neighbour_values(
         dem, directions=directions, include_self=True, pad_value=np.max(dem) + 1
     )
     flowdir = np.nanargmin(neighbours, axis=0)
@@ -171,6 +171,10 @@ def compute_downstream_indices(
     dsi = (ii.astype(np.int16) + (di).astype(np.int16)).astype(np.integer)
     dsj = (jj.astype(np.int16) + (dj).astype(np.int16)).astype(np.integer)
     dsij = dsj.astype(np.integer) * I + dsi.astype(np.integer)
+    
+    if np.any((dsi < 0) | (dsi >= I) | (dsj < 0) | (dsj >= J)):
+        raise ValueError("Some downstream indices out of bounds")
+    
     return dsi, dsj, dsij
 
 
