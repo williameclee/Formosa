@@ -6,9 +6,9 @@ import rasterio.transform as rt
 import scipy.ndimage as ndi
 from skimage import morphology
 
-from .demio import read_dem
-from .geomorphology.d8directions import D8Directions
-from .geomorphology.flowdir import (
+from formosa.dem import read_dem
+from formosa.geomorphology.d8directions import D8Directions
+from formosa.geomorphology.flowdir import (
     compute_flowdir,
     compute_flowdir_graph,
     compute_indegree,
@@ -220,7 +220,7 @@ class DEMGrid:
         if self._slope is not None:
             return self._slope
 
-        from .geomorphology.terrain import compute_slope
+        from formosa.geomorphology.terrain import compute_slope
 
         self._slope = compute_slope(self.dem, x=self.x, y=self.y)
         self._slope[~self.valid] = np.nan
@@ -306,7 +306,7 @@ class DEMGrid:
         if self._watershed is not None:
             return self._watershed
 
-        from .geomorphology.flowdir import label_watersheds
+        from formosa.geomorphology.flowdir import label_watersheds
 
         self._watershed = label_watersheds(
             self.flowdir,
@@ -320,7 +320,7 @@ class DEMGrid:
         if self._backdist is not None:
             return self._backdist
 
-        from .geomorphology.flowdir import compute_back_distance
+        from formosa.geomorphology.flowdir import compute_back_distance
 
         self._backdist = compute_back_distance(
             self.flowdir,

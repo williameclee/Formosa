@@ -2,6 +2,7 @@
 *_test.py
 
 build
-*.c
+src/formosa/geomorphology/*.c
+src/formosa/geomorphology/*.html
 *.egg-info
 assets/*.tiff
