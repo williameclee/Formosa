@@ -458,7 +458,7 @@ def _opentopo_default_save_path(
 
 def main():
     import matplotlib.pyplot as plt
-    from formosa.cartography.colour import light_terrain
+    from formosa.graphics.colour import light_terrain
 
     # Example usage of gmrt
     z, x, y, _ = gmrt(
