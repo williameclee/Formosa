@@ -3,6 +3,5 @@
 
 build
 src/formosa/geomorphology/*.c
-src/formosa/geomorphology/*.html
 *.egg-info
 assets/*.tiff
