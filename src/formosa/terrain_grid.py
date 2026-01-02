@@ -2,12 +2,13 @@ from pathlib import Path
 import warnings
 import numpy as np
 import rasterio
+import rasterio.transform as rt
 import scipy.ndimage as ndi
 from skimage import morphology
 
 from .demio import read_dem
-from .d8directions import D8Directions
-from .flowdir import (
+from .geomorphology.d8directions import D8Directions
+from .geomorphology.flowdir import (
     compute_flowdir,
     compute_flowdir_graph,
     compute_indegree,
@@ -23,8 +24,8 @@ import numpy.typing as npt
 class DEMGrid:
     _original_dem: npt.NDArray[np.number]
     dem: npt.NDArray[np.number]
-    x: npt.NDArray[np.floating | np.integer] | None
-    y: npt.NDArray[np.floating | np.integer] | None
+    x: npt.NDArray[np.floating | np.integer]
+    y: npt.NDArray[np.floating | np.integer]
     transform: rasterio.Affine
     i: npt.NDArray[np.uint32]
     j: npt.NDArray[np.uint32]
@@ -55,40 +56,29 @@ class DEMGrid:
         elif isinstance(dem, np.ndarray):
             self._original_dem = dem
             self.dem = dem
-            self.x = x
-            self.y = y
 
             self.transform = (
                 transform if transform is not None else rasterio.Affine.identity()
             )
+
+            # Generate x and y coordinates if not provided
+            if x is None or y is None:
+                ii, jj = np.meshgrid(
+                    np.arange(self.dem.shape[1]), np.arange(self.dem.shape[0])
+                )  # x and y indices
+                self.x, self.y = rt.xy(transform, jj, ii)  # x and y coordinates
+                self.x = np.reshape(self.x, (-1,)).reshape(self.dem.shape)
+                self.y = np.reshape(self.y, (-1,)).reshape(self.dem.shape)
+            else:
+                assert (
+                    x.shape == dem.shape and y.shape == dem.shape
+                ), f"Provided x and y coordinates must match the shape of the DEM array (got DEM: {dem.shape}, x: {x.shape}, y: {y.shape})"
+                self.x = x
+                self.y = y
         else:
             raise TypeError(
                 f"DEM must be either a file path or a numpy ndarray, got {type(dem)} instead."
             )
-
-        if self.x is None or self.y is None:
-            self.x, self.y = np.meshgrid(
-                np.arange(self.dem.shape[1]) * self.transform.a + self.transform.c,
-                np.arange(self.dem.shape[0]) * self.transform.e + self.transform.f,
-            )
-        else:
-            if self.x.ndim == 1 and self.y.ndim == 1:
-                if self.dem.shape == (self.y.size, self.x.size):
-                    self.x, self.y = np.meshgrid(self.x, self.y)
-                elif self.dem.shape == (self.x.size, self.y.size):
-                    self.y, self.x = np.meshgrid(self.y, self.x)
-                else:
-                    raise ValueError(
-                        f"DEM shape {self.dem.shape} does not match with provided 1D x and y coordinates of sizes {self.x.size} and {self.y.size}."
-                    )
-            elif self.x.ndim == 2 and self.y.ndim == 2:
-                assert (
-                    self.dem.shape == self.x.shape == self.y.shape
-                ), f"DEM shape {self.dem.shape} does not match with provided 2D x and y coordinates of shapes {self.x.shape} and {self.y.shape}."
-            else:
-                raise ValueError(
-                    f"X and Y coordinates must be either both 1D or both 2D arrays, got {self.x.ndim}D and {self.y.ndim}D instead."
-                )
 
         if stride is not None:
             assert (
@@ -112,9 +102,6 @@ class DEMGrid:
             self.stride = 1
 
         if xlim is not None:
-            assert (
-                self.x is not None
-            ), "X coordinates must be provided to apply xlim cropping."
             if xlim[0] > xlim[1]:
                 warnings.warn(
                     f"X limits are inverted: {xlim}. Swapping the limits.",
@@ -150,9 +137,6 @@ class DEMGrid:
             )
 
         if ylim is not None:
-            assert (
-                self.y is not None
-            ), "Y coordinates must be provided to apply ylim cropping."
             if ylim[0] > ylim[1]:
                 warnings.warn(
                     f"Y limits are inverted: {ylim}. Swapping the limits.",
@@ -236,7 +220,7 @@ class DEMGrid:
         if self._slope is not None:
             return self._slope
 
-        from .terrain import compute_slope
+        from .geomorphology.terrain import compute_slope
 
         self._slope = compute_slope(self.dem, x=self.x, y=self.y)
         self._slope[~self.valid] = np.nan
@@ -322,7 +306,7 @@ class DEMGrid:
         if self._watershed is not None:
             return self._watershed
 
-        from .flowdir import label_watersheds
+        from .geomorphology.flowdir import label_watersheds
 
         self._watershed = label_watersheds(
             self.flowdir,
@@ -336,7 +320,7 @@ class DEMGrid:
         if self._backdist is not None:
             return self._backdist
 
-        from .flowdir import compute_back_distance
+        from .geomorphology.flowdir import compute_back_distance
 
         self._backdist = compute_back_distance(
             self.flowdir,
