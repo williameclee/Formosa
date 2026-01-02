@@ -1,0 +1,5 @@
+.venv
+*_test.py
+
+build
+*.egg-info
