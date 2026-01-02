@@ -1,1 +1,1 @@
-from .fetch_dem import gmrt
+from .fetch_dem import gmrt, opentopo

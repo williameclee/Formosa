@@ -9,10 +9,10 @@ from rasterio.profiles import Profile
 import os
 
 from formosa.core import DATA_DIR
+from formosa.api.utils import _validate_latlon_limits, _dem_post_processing
 
 import numpy as np
 
-import warnings
 from typing import Literal, TypeVar, Iterable
 import numpy.typing as npt
 
@@ -41,6 +41,7 @@ def gmrt(
 ]:
     """
     Fetch DEM data from the GMRT server.
+    For documentation of the API itself, see: https://www.gmrt.org/services/gridserverinfo.php#!/services/getGMRTGridURLs
 
     Parameters
     ----------
@@ -88,15 +89,15 @@ def gmrt(
     """
     # Input validation
     latlim, lonlim = _validate_latlon_limits(latlim, lonlim)
-    resolution = _validate_resolution(resolution)
-    format = _validate_format(format)
+    resolution = _validate_gmrt_resolution(resolution)
+    format = _validate_gmrt_format(format)
 
     # Load data
     default_path = _gmrt_default_save_path(latlim, lonlim, resolution)
 
     # If the file exists and forcenew is False, load from file
     if not forcenew and os.path.exists(default_path):
-        print(f"[FORMOSA] File '{default_path}' already exists, skipping download")
+        print(f"DEM file '{default_path}' already exists, skipping download")
         with rasterio.open(default_path) as src:
             Z = src.read(1)
             profile = src.profile
@@ -119,47 +120,13 @@ def gmrt(
                 dst.write(Z, 1)
             print(f"DEM saved to '{saveas}'")
 
-    # Generate X, Y coordinate arrays
-    transform = profile.get("transform", Affine.identity())
-    ii, jj = np.meshgrid(
-        np.arange(Z.shape[1]), np.arange(Z.shape[0])
-    )  # x and y indices
-    X, Y = rt.xy(transform, jj, ii)  # x and y coordinates
-    X, Y = np.reshape(X, (-1,)).reshape(Z.shape), np.reshape(Y, (-1,)).reshape(Z.shape)
+    # Post-processing
+    Z, X, Y, transform = _dem_post_processing(Z, profile)
 
     return Z, X, Y, transform
 
 
-def _validate_latlon_limits(
-    latlim: tuple[number, number], lonlim: tuple[number, number]
-) -> tuple[tuple[number, number], tuple[number, number]]:
-    """
-    Validate latitude and longitude limits.
-    """
-    # Latitude limits
-    if latlim[0] > latlim[1]:
-        latlim = (latlim[1], latlim[0])
-        warnings.warn(
-            f"Lower bound of latitude band ({latlim[0]}) was greater than upper bound ({latlim[1]}), swapping values."
-        )
-    elif latlim[0] == latlim[1]:
-        raise ValueError(
-            f"Lattidue band cannot have equal lower and upper bounds ({latlim[0]})."
-        )
-    # Longitude limits
-    if lonlim[0] > lonlim[1]:
-        lonlim = (lonlim[1], lonlim[0])
-        warnings.warn(
-            f"Lower bound of longitude band ({lonlim[0]}) was greater than upper bound ({lonlim[1]}), swapping values."
-        )
-    elif lonlim[0] == lonlim[1]:
-        raise ValueError(
-            f"Longitude band cannot have equal lower and upper bounds ({lonlim[0]})."
-        )
-    return latlim, lonlim
-
-
-def _validate_resolution(
+def _validate_gmrt_resolution(
     resolution: number | Literal["default", "med", "high", "max"],
     accepted_resolutions: Iterable[str] = gmrt_ress,
 ) -> number | Literal["default", "med", "high", "max"]:
@@ -177,7 +144,7 @@ def _validate_resolution(
     return resolution
 
 
-def _validate_format(
+def _validate_gmrt_format(
     format: str,
     accepted_formats: Iterable[str] = gmrt_fmts,
     format_replacements: dict[str, str] = gmrt_fmt_replacements,
@@ -206,10 +173,10 @@ def _construct_gmrt_request(
     params: dict[str, str | number] = {}
     params.update(
         {
-            "north": latlim[1],
-            "south": latlim[0],
-            "east": lonlim[1],
-            "west": lonlim[0],
+            "maxlatitude": latlim[1],
+            "minlatitude": latlim[0],
+            "maxlongitude": lonlim[1],
+            "minlongitude": lonlim[0],
             "format": format,
             "resolution": resolution,
             "layer": layer,
@@ -282,59 +249,131 @@ def _gmrt_default_save_path(
     return dir / save_file
 
 
-def dem_opentopo(
-    latlim: tuple[float | int, float | int] = (20, 30),
-    lonlim: tuple[float | int, float | int] = (120, 130),
-    product: str = "SRTMGL1",
-    format: str = "geotiff",
-    saveas: str | None = "default path",
-    api_key: str | None = None,
-    forcenew: bool = False,
-):
-    ## Input validation
-    if api_key is None:
-        raise ValueError("[FORMOSA] API_KEY must be provided for OpenTopography")
-    # Latitude/longitude limits
-    if latlim[0] > latlim[1]:
-        latlim = (latlim[1], latlim[0])
-        print("[FORMOSA] Warning: LATLIM min is greater than max, swapping values")
-    elif latlim[0] == latlim[1]:
-        raise ValueError("[FORMOSA] LATLIM min and max cannot be the same value")
-    if lonlim[0] > lonlim[1]:
-        lonlim = (lonlim[1], lonlim[0])
-        print("[FORMOSA] Warning: LONLIM min is greater than max, swapping values")
-    elif lonlim[0] == lonlim[1]:
-        raise ValueError("[FORMOSA] LONLIM min and max cannot be the same value")
-    lon_offset = lonlim[0] // 360 * 360
-    lonlim = (lonlim[0] - lon_offset, lonlim[1] - lon_offset)
+OPENTOPO_URL = "https://portal.opentopography.org/API/globaldem?"
+OPENTOPO_LOCAL_DIR = DATA_DIR / "DEM" / "opentopo"
+opentopo_products = (
+    "SRTMGL3",
+    "SRTMGL1",
+    "SRTMGL1_E",
+    "SRTM15Plus",
+    "AW3D30",
+    "AW3D30_E",
+)
 
-    ## Main
+
+def opentopo(
+    latlim: tuple[number, number],
+    lonlim: tuple[number, number],
+    api_key: str,
+    product: Literal[
+        "SRTMGL3",
+        "SRTMGL1",
+        "SRTMGL1_E",
+        "SRTM15Plus",
+        "AW3D30",
+        "AW3D30_E",
+        "COP30",
+        "COP90",
+        "GEBCOIceTopo",
+        "GEBCOSubIceTopo",
+    ] = "SRTMGL3",
+    format: str = "geotiff",
+    saveas: str | Path | None = "default path",
+    forcenew: bool = False,
+    base_url: str = OPENTOPO_URL,
+) -> tuple[
+    npt.NDArray[np.floating | np.integer],
+    npt.NDArray[np.floating],
+    npt.NDArray[np.floating],
+    Affine,
+]:
+    """
+    Fetch DEM data from the OpenTopography server.
+    For documentation of the API itself, see: https://portal.opentopography.org/apidocs/#/Public/getGlobalDem
+
+    Parameters
+    ----------
+    latlim : tuple[number, number]
+        Latitude limits (min, max) in degrees.
+    lonlim : tuple[number, number]
+        Longitude limits (min, max) in degrees.
+    api_key : str
+        API key for accessing OpenTopography services.
+    product : str, optional
+        DEM product to fetch. Must be one of the supported products
+        (default is "SRTMGL3").
+    format : str, optional
+        Format of the DEM data. Must be one of "netcdf", "coards",
+        "esriascii", or "geotiff"
+        (default is "geotiff").
+    saveas : str | Path | None, optional
+        Path to save the downloaded DEM file. If "default path", saves to the default path.
+        If None, does not save the file
+        (default is "default path").
+    forcenew : bool, optional
+        If True, forces a new download even if the file already exists
+        (default is False).
+    base_url : str, optional
+        Base URL of the OpenTopography server
+        (default is OPENTOPO_URL).
+
+    Returns
+    -------
+    Z : ndarray[floating | integer]
+        2D array of elevation values.
+    X : ndarray[floating]
+        2D array of x-coordinates corresponding to Z.
+    Y : ndarray[floating]
+        2D array of y-coordinates corresponding to Z.
+    transform : rasterio.Affine
+        Affine transformation mapping pixel coordinates to spatial coordinates.
+
+    Raises
+    ------
+    ValueError
+        If input parameters are invalid or if no data is available for the specified bounds.
+    ConnectionError
+        If there is a failure in connecting to the OpenTopography server.
+    FileNotFoundError
+        If the requested data is not found on the OpenTopography server.
+    """
+    # Input validation
+    if api_key is None:
+        raise ValueError("API key must be provided for OpenTopography")
+    latlim, lonlim = _validate_latlon_limits(latlim, lonlim)
+
     # Load data
     default_path = _opentopo_default_save_path(latlim, lonlim, product)
     if not forcenew and os.path.exists(default_path):
-        print(f"[FORMOSA] File '{default_path}' already exists, skipping download")
+        print(f"DEM file '{default_path}' already exists, skipping download")
         with rasterio.open(default_path) as src:
-            data = src.read(1)
+            Z = src.read(1)
             profile = src.profile
     else:
-        data, profile = _fetch_opentopo_data(
-            latlim, lonlim, product, format, api_key, saveas
+        Z, profile = _fetch_opentopo_data(
+            latlim, lonlim, product, format, api_key, opentopo_url=base_url
         )
+        # Save data
+        if saveas is not None:
+            if saveas == "default path":
+                saveas = default_path
+            elif isinstance(saveas, str):
+                saveas = Path(saveas)
 
-    # Save data
-    if saveas is not None:
-        if saveas == "default path":
-            saveas = default_path
+            # Warn if the file already exists
+            if os.path.exists(saveas):
+                print(f"DEM file '{saveas}' already exists and will be overwritten.")
+            elif not saveas.parent.exists():
+                saveas.parent.mkdir(parents=True, exist_ok=True)
 
-        # Warn if the file already exists
-        if os.path.exists(saveas):
-            print(f"[FORMOSA] File '{saveas}' already exists and will be overwritten")
+            with rasterio.open(saveas, "w", **profile) as dst:
+                dst.write(Z, 1)
+            print(f"DEM saved to '{saveas}'")
 
-        with rasterio.open(saveas, "w", **profile) as dst:
-            dst.write(data, 1)
-        print(f"[FORMOSA] DEM saved to '{saveas}'")
+    # Post-processing
+    Z, X, Y, transform = _dem_post_processing(Z, profile)
 
-    return data, profile
+    return Z, X, Y, transform
 
 
 def _construct_opentopo_url(
@@ -343,21 +382,27 @@ def _construct_opentopo_url(
     product: str,
     format: str,
     api_key: str,
-) -> str:
+) -> dict[str, str | number]:
+    """
+    Convert input parameters to OpenTopography request parameters.
+    """
     match format.lower():
         case "tiff" | "geotiff":
             format = "GToff"
 
-    base_url = "https://portal.opentopography.org/API/globaldem?"
-    product_param = f"demtype={product}"
-    aoi_param = f"north={latlim[1]}&south={latlim[0]}&east={lonlim[1]}&west={lonlim[0]}"
-    format_param = f"outputFormat={format}"
-    apikey_param = f"API_Key={api_key}"
-    request_url = base_url + "&".join(
-        [product_param, aoi_param, format_param, apikey_param]
+    params: dict[str, str | number] = {}
+    params.update(
+        {
+            "demtype": product,
+            "north": latlim[1],
+            "south": latlim[0],
+            "east": lonlim[1],
+            "west": lonlim[0],
+            "outputFormat": format,
+            "API_Key": api_key,
+        }
     )
-    print(request_url)
-    return request_url
+    return params
 
 
 def _fetch_opentopo_data(
@@ -366,44 +411,32 @@ def _fetch_opentopo_data(
     product: str,
     format: str,
     api_key: str,
-    saveas: str | None = None,
+    opentopo_url: str = OPENTOPO_URL,
 ):
     # Construct the URL
-    request_url = _construct_opentopo_url(latlim, lonlim, product, format, api_key)
+    params = _construct_opentopo_url(latlim, lonlim, product, format, api_key)
 
     # Retrieve the data
-    response = requests.get(request_url)
+    response = requests.get(opentopo_url, params=params)
     if response.status_code != 200:
         match response.status_code:
             case 204:
                 raise ValueError(
-                    f"[FORMOSA] No data in specified bounds on the OpenTopography server (204): {response.text}"
+                    f"No data in specified bounds on the OpenTopography server (204): {response.text}"
                 )
             case 400:
                 raise ValueError(
-                    f"[FORMOSA] Bad request to OpenTopography server ({response.status_code}): {response.text}"
+                    f"Bad request to OpenTopography server (400): {response.text}"
                 )
             case _:
                 raise ConnectionError(
-                    f"[FORMOSA] Failed to fetch data from OpenTopography server ({response.status_code}): {response.text}"
+                    f"Failed to fetch data from OpenTopography server ({response.status_code}): {response.text}"
                 )
 
     with MemoryFile(response.content) as memfile:
         with memfile.open() as src:
             data = src.read(1)
             profile = src.profile
-
-    if saveas is not None:
-        if saveas == "default path":
-            saveas = _opentopo_default_save_path(latlim, lonlim, product)
-
-        # Warn if the file already exists
-        if os.path.exists(saveas):
-            print(f"[FORMOSA] File '{saveas}' already exists and will be overwritten")
-
-        with rasterio.open(saveas, "w", **profile) as dst:
-            dst.write(data, 1)
-        print(f"[FORMOSA] DEM saved to '{saveas}'")
     return data, profile
 
 
@@ -411,12 +444,16 @@ def _opentopo_default_save_path(
     latlim: tuple[float | int, float | int],
     lonlim: tuple[float | int, float | int],
     product: str,
-) -> str:
+    dir: Path = OPENTOPO_LOCAL_DIR,
+) -> Path:
+    """
+    Generate the default local save path for OpenTopography DEM files.
+    """
     product_param = "opentopo_" + product.lower()
     aoi_param = f"{latlim[0]}_{latlim[1]}_{lonlim[0]}_{lonlim[1]}"
     aoi_param = aoi_param.replace("-", "m").replace(".", "p")
-    save_path = f"{product_param}-{aoi_param}.tiff"
-    return save_path
+    save_file = f"{product_param}-{aoi_param}.tiff"
+    return dir / save_file
 
 
 def main():
