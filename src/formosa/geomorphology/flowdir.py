@@ -81,7 +81,7 @@ def label_flats(
         ), f"DEM and LOW_EDGES must have the same shape, got {dem.shape} and {low_edges.shape} instead"
 
         ii, jj = np.indices(dem.shape, dtype=np.uint16)
-        low_edges = deque(zip(ii[low_edges], jj[low_edges]))
+        low_edges = deque(zip(ii[low_edges], jj[low_edges]))  # type: ignore TODO: figure out what the type error actually is
 
     ## Initialisation
     I, J = dem.shape
@@ -247,7 +247,7 @@ def compute_away_from_high(
         ), f"FLOWDIRS and HIGH_EDGES must have the same shape, got {flowdirs.shape} and {high_edges.shape} instead"
 
         ii, jj = np.indices(flowdirs.shape, dtype=np.int32)
-        high_edges = list(zip(ii[high_edges], jj[high_edges]))
+        high_edges = list(zip(ii[high_edges], jj[high_edges]))  # type: ignore TODO: figure out what the type error actually is
     elif isinstance(high_edges, deque):
         high_edges = list(high_edges)
 
@@ -301,7 +301,7 @@ def compute_towards_low(
         ), f"FLOWDIRS and HIGH_EDGES must have the same shape, got {flowdirs.shape} and {low_edges.shape} instead"
 
         ii, jj = np.indices(flowdirs.shape, dtype=np.int32)
-        low_edges = list(zip(ii[low_edges], jj[low_edges]))
+        low_edges = list(zip(ii[low_edges], jj[low_edges]))  # type: ignore TODO: figure out what the type error actually is
     elif isinstance(low_edges, deque):
         low_edges = list(low_edges)
 
@@ -571,7 +571,7 @@ def compute_strahler_order(
     strahler_order[indegrees == 0] = 1
 
     ii, jj = np.indices(indegrees.shape, dtype=np.int32)
-    seeds = deque(zip(ii[indegrees == 0], jj[indegrees == 0]))
+    seeds = deque(zip(ii[indegrees == 0], jj[indegrees == 0]))  # type: ignore TODO: figure out what the type error actually is
 
     while seeds:
         ci, cj = seeds.popleft()
@@ -601,7 +601,7 @@ def compute_flow_distance(
     distance: npt.NDArray[np.int32] = np.zeros(flowdir.shape, dtype=np.int32)
 
     ii, jj = np.indices(flowdir.shape, dtype=np.int32)
-    seeds: list[tuple[int, int]] = list(zip(ii[flowdir == 0], jj[flowdir == 0]))
+    seeds: list[tuple[int, int]] = list(zip(ii[flowdir == 0], jj[flowdir == 0]))  # type: ignore TODO: figure out what the type error actually is
     distance[flowdir == 0] = 1
 
     shape_ij: tuple[int, int] = flowdir.shape
