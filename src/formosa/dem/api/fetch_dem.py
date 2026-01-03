@@ -1,15 +1,12 @@
 from pathlib import Path
 import requests
-import affine
 import rasterio
 from rasterio import Affine
-import rasterio.transform as rt
 from rasterio.io import MemoryFile
-from rasterio.profiles import Profile
 import os
 
 from formosa.core import DATA_DIR
-from formosa.api.utils import _validate_latlon_limits, _dem_post_processing
+from formosa.dem.api.utils import _validate_latlon_limits, _dem_post_processing
 
 import numpy as np
 
@@ -194,7 +191,7 @@ def _fetch_gmrt_data(
     base_url: str = GMRT_URL,
 ) -> tuple[
     npt.NDArray[np.floating | np.integer],
-    Profile,
+    dict,
 ]:
     """
     Fetch DEM data from the GMRT server.

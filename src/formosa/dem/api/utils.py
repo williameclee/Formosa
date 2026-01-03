@@ -55,6 +55,8 @@ def _dem_post_processing(
     """
     Common DEM post-processing steps.
     """
+    from formosa.dem.utils import transform2xy
+
     # Replace no data values with NaN
     no_data_value = profile.get("nodata", None)
     if no_data_value is not None:
@@ -62,10 +64,6 @@ def _dem_post_processing(
 
     # Generate X, Y coordinate arrays
     transform = profile.get("transform", Affine.identity())
-    ii, jj = np.meshgrid(
-        np.arange(Z.shape[1]), np.arange(Z.shape[0])
-    )  # x and y indices
-    X, Y = rt.xy(transform, jj, ii)  # x and y coordinates
-    X, Y = np.reshape(X, (-1,)).reshape(Z.shape), np.reshape(Y, (-1,)).reshape(Z.shape)
+    X, Y = transform2xy(transform, Z.shape)
 
     return Z, X, Y, transform

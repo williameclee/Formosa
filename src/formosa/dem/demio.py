@@ -1,7 +1,7 @@
 from pathlib import Path
 import numpy as np
 import rasterio
-import rasterio.transform as rtransform
+from formosa.dem.utils import transform2xy
 
 import numpy.typing as npt
 
@@ -27,7 +27,7 @@ def read_dem(
         The band number to read from the GeoTIFF file (default is 1).
     nan_value : float, optional
         Value to use for no-data pixels (default is np.nan).
-    
+
     Returns
     -------
     Z : ndarray[floating | integer]
@@ -70,8 +70,6 @@ def read_dem(
         transform = (
             src.transform if src.transform is not None else rasterio.Affine.identity()
         )
-        nrows, ncols = Z.shape
-        ii, jj = np.meshgrid(np.arange(ncols), np.arange(nrows))
-        X, Y = rtransform.xy(transform, jj, ii)
+        X, Y = transform2xy(transform, Z.shape)
 
     return Z, X, Y, transform
