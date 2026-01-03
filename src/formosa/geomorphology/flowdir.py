@@ -3,8 +3,9 @@ import numpy as np
 
 from .d8directions import D8Directions
 from formosa.flow_distance_loop import _flow_distance_loop
-from formosa.away_from_high_loop import _away_From_high_loop
 from formosa.towards_low_loop import _towards_low_loop
+# C-extension
+from formosa.geomorphology.away_from_high_loop import away_from_high_loop
 
 # from tqdm import tqdm
 import numpy.typing as npt
@@ -255,14 +256,13 @@ def compute_away_from_high(
     flat_mask = np.zeros(shape_ij, dtype=np.int32)
     flat_height = np.zeros((np.nanmax(labels) + 1,), dtype=np.int32)
 
-    flat_mask, flat_height = _away_From_high_loop(
+    flat_mask, flat_height = away_from_high_loop(
         flowdirs.astype(np.int32, copy=False),
         flat_mask.astype(np.int32, copy=False),
         flat_height.astype(np.int32, copy=False),
         labels.astype(np.int32, copy=False),
         high_edges,
         directions.offsets.astype(np.int32),
-        shape_ij,
     )
     return flat_mask, flat_height
 

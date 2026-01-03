@@ -1,7 +1,7 @@
 .venv
+.vscode
 *_test.py
 
 build
-src/formosa/geomorphology/*.c
 *.egg-info
 assets/*.tiff

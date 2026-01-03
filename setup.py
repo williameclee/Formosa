@@ -13,8 +13,10 @@ extensions = [
         extra_link_args=[],
     ),
     Extension(
-        "formosa.away_from_high_loop",  # Python module name
-        ["src/formosa/geomorphology/away_from_high_loop.pyx"],
+        "formosa.geomorphology.away_from_high_loop",  # Python module name
+        [
+            "src/formosa/geomorphology/away_from_high_loop.c",
+        ],
         include_dirs=[np.get_include()],  # required for numpy headers
         extra_compile_args=[],
         extra_link_args=[],
