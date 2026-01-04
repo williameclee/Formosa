@@ -17,6 +17,8 @@ offsets = np.array(
         (-1, 0),  # N
         (-1, 1),  # NE
     ],
+    dtype=np.int32,
+    order="F",
 )
 
 

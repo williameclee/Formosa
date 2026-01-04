@@ -6,7 +6,7 @@ import rasterio.transform as rt
 import scipy.ndimage as ndi
 from skimage import morphology
 
-from formosa.dem import read_dem
+from formosa.dem.demio import read_dem
 from formosa.geomorphology.d8directions import D8Directions
 from formosa.geomorphology.flowdir import (
     compute_flowdir,

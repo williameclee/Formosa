@@ -1,14 +1,18 @@
 from collections import deque
 import numpy as np
 
-from .d8directions import D8Directions
-from formosa.flow_distance_loop import _flow_distance_loop
-from formosa.towards_low_loop import _towards_low_loop
-# C-extension
-from formosa.geomorphology.away_from_high_loop import away_from_high_loop
+from formosa.geomorphology.d8directions import D8Directions
+from formosa.geomorphology.flow_distance_loop import _flow_distance_loop
+
+# Extensions
+from formosa.geomorphology.flowdir_f import (
+    away_from_high_loop_f,
+    towards_low_loop_f,
+)
 
 # from tqdm import tqdm
 import numpy.typing as npt
+from typing import Iterable
 
 
 def _compute_flowdir_simple(
@@ -229,96 +233,108 @@ def find_flat(
 
 
 def compute_away_from_high(
-    flowdirs: npt.NDArray[np.number],
     labels: npt.NDArray[np.number],
-    high_edges: npt.NDArray[np.bool] | deque[tuple[int, int]] | list[tuple[int, int]],
+    high_edges: (
+        npt.NDArray[np.bool] | npt.NDArray[np.integer] | Iterable[Iterable[int]]
+    ),
     directions: D8Directions = D8Directions(),
-) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.integer]]:
+) -> npt.NDArray[np.integer]:
     """
     From R. Barnes et al., 2014, Algorithm 5 (p. 133–134)
     """
-    ## Input validation and initialisation
-    assert (
-        flowdirs.shape == labels.shape
-    ), f"FLOWDIRS and LABELS must have the same shape, got {flowdirs.shape} and {labels.shape} instead"
+    # Input validation and initialisation
+    high_edges_list = _format_edges_f(high_edges, labels.shape)
 
-    if isinstance(high_edges, np.ndarray):
-        assert (
-            flowdirs.shape == high_edges.shape
-        ), f"FLOWDIRS and HIGH_EDGES must have the same shape, got {flowdirs.shape} and {high_edges.shape} instead"
-
-        ii, jj = np.indices(flowdirs.shape, dtype=np.int32)
-        high_edges = list(zip(ii[high_edges], jj[high_edges]))  # type: ignore TODO: figure out what the type error actually is
-    elif isinstance(high_edges, deque):
-        high_edges = list(high_edges)
-
-    shape_ij: tuple[int, int] = flowdirs.shape
-    flat_mask = np.zeros(shape_ij, dtype=np.int32)
-    flat_height = np.zeros((np.nanmax(labels) + 1,), dtype=np.int32)
-
-    flat_mask, flat_height = away_from_high_loop(
-        flowdirs.astype(np.int32, copy=False),
-        flat_mask.astype(np.int32, copy=False),
-        flat_height.astype(np.int32, copy=False),
-        labels.astype(np.int32, copy=False),
-        high_edges,
-        directions.offsets.astype(np.int32),
+    offsets = np.array(directions.offsets, dtype=np.int32, order="F")
+    z_syn = away_from_high_loop_f(
+        np.asarray(labels, dtype=np.int32, order="F"),
+        high_edges_list,
+        offsets,
     )
-    return flat_mask, flat_height
+    return z_syn
 
 
 def compute_towards_low(
-    flowdirs: npt.NDArray[np.number],
     labels: npt.NDArray[np.number],
-    flat_mask: npt.NDArray[np.integer],
-    low_edges: npt.NDArray[np.bool] | deque[tuple[int, int]] | list[tuple[int, int]],
-    flat_height: npt.NDArray[np.number],
+    low_edges: npt.NDArray[np.bool] | npt.NDArray[np.integer] | Iterable[Iterable[int]],
     directions: D8Directions = D8Directions(),
-    step_size: int = 2,
+    step_size: int = 1,
 ) -> npt.NDArray[np.integer]:
     """
-    From R. Barnes et al., 2014, Algorithm 6 (p. 134)
+    Modified from R. Barnes et al., 2014, Algorithm 6 (p. 134)
     """
-    ## Input validation and initialisation
-    assert (
-        flowdirs.shape == labels.shape
-    ), f"FLOWDIRS and LABELS must have the same shape, got {flowdirs.shape} and {labels.shape} instead"
-    assert (
-        flowdirs.shape == flat_mask.shape
-    ), f"FLOWDIRS and FLAT_MASK must have the same shape, got {flowdirs.shape} and {flat_mask.shape} instead"
-
-    assert flat_height.shape == (
-        np.nanmax(labels) + 1,
-    ), f"FLATHEIGHT must have shape ({np.nanmax(labels) + 1},), got {flat_height.shape} instead"
-
+    # Input validation and initialisation
     assert (
         step_size > 0
     ), f"STEPSIZE must be a positive integer, got {step_size} instead"
 
-    if isinstance(low_edges, np.ndarray):
-        assert (
-            flowdirs.shape == low_edges.shape
-        ), f"FLOWDIRS and HIGH_EDGES must have the same shape, got {flowdirs.shape} and {low_edges.shape} instead"
+    low_edges_list = _format_edges_f(low_edges, labels.shape)
 
-        ii, jj = np.indices(flowdirs.shape, dtype=np.int32)
-        low_edges = list(zip(ii[low_edges], jj[low_edges]))  # type: ignore TODO: figure out what the type error actually is
-    elif isinstance(low_edges, deque):
-        low_edges = list(low_edges)
+    offsets = np.array(directions.offsets, dtype=np.int32, order="F")
 
-    flat_mask = -flat_mask
-    flat_height = np.zeros((np.nanmax(labels) + 1,), dtype=labels.dtype)
-
-    flat_mask = _towards_low_loop(
-        flowdirs.astype(np.int32, copy=False),
-        flat_mask.astype(np.int32, copy=False),
-        flat_height.astype(np.int32, copy=False),
-        labels.astype(np.int32, copy=False),
-        low_edges,
-        directions.offsets.astype(np.int32),
-        flowdirs.shape,
-        step_size,
+    z_syn = towards_low_loop_f(
+        np.asarray(labels, dtype=np.int32, order="F"),
+        low_edges_list,
+        offsets,
     )
-    return flat_mask
+    z_syn *= step_size
+    return z_syn
+
+
+def _format_edges_f(
+    edges: npt.NDArray[np.bool] | npt.NDArray[np.integer] | Iterable[Iterable[int]],
+    exp_shape: tuple[int, int],
+) -> npt.NDArray[np.integer]:
+    """
+    Convert possible edge inputs to Fortran-compatible 2D integer array of coordinates.
+
+    Parameters
+    ----------
+    edges : np.ndarray or Iterable
+        Either a boolean mask array indicating edge locations, or a 2D integer array of coordinates, or an iterable of coordinate pairs.
+    exp_shape : tuple[int, int]
+        Expected shape of the boolean mask if edges is provided as a mask.
+
+    Returns
+    -------
+    NDArray[integer]
+        A 2D integer array of shape (N, 2) containing the coordinates of edge cells, formatted for Fortran compatibility.
+
+    Raises
+    ------
+    TypeError
+        If the input edges is not of the expected type or format.
+    ValueError
+        If the shapes of the input arrays do not match the expected dimensions.
+    """
+    if isinstance(edges, np.ndarray):
+        if edges.dtype == np.bool:
+            assert (
+                edges.shape == exp_shape
+            ), f"FLOWDIRS and HIGH_EDGES must have the same shape, got {exp_shape} and {edges.shape} instead"
+
+            ii, jj = np.indices(exp_shape, dtype=np.int32)
+            edges_list = np.column_stack((ii[edges], jj[edges]))  # type: ignore
+            edges_list = np.array(edges_list, dtype=np.int32, order="F")
+        elif np.issubdtype(edges.dtype, np.integer):
+            assert (
+                edges.ndim == 2 and edges.shape[1] == 2
+            ), f"LOW_EDGES must be a 2D array of coordinates with shape (N, 2), got shape {edges.shape} instead"
+            edges_list = np.array(edges, dtype=np.int32, order="F")
+        else:
+            raise TypeError(
+                f"Low edges NumPy array must be of boolean or integer type, got {edges.dtype} instead"
+            )
+    elif isinstance(edges, Iterable):
+        edges_list = np.array(
+            [coord for pair in edges for coord in pair], dtype=np.int32, order="F"
+        )
+    else:
+        raise TypeError(
+            f"Expected low_edges to be np.ndarray or Iterable, got {type(edges)} instead."
+        )
+    edges_list += 1  # Fortran indexing
+    return edges_list
 
 
 def compute_masked_flowdir(
@@ -374,26 +390,22 @@ def _compute_flowdir_total(
 
     is_high_edge = is_high_edge & (flat_labels != nanfill)
 
-    flat_gradient_away, flat_height = compute_away_from_high(
-        flowdir, flat_labels, is_high_edge, directions=directions
+    z_syn_away = compute_away_from_high(
+        flat_labels, is_high_edge, directions=directions
     )
 
-    flat_gradient = compute_towards_low(
-        flowdir,
+    z_syn_towards = compute_towards_low(
         flat_labels,
-        flat_gradient_away,
         is_low_edge,
-        flat_height,
         directions=directions,
         step_size=step_size,
     )
+    z_syn = z_syn_away + z_syn_towards
 
-    flat_flowdir = compute_masked_flowdir(
-        flat_gradient, flat_labels, directions=directions
-    )
+    flat_flowdir = compute_masked_flowdir(z_syn, flat_labels, directions=directions)
 
     flowdir[flowdir == 0] = flat_flowdir[flowdir == 0]
-    return flowdir, is_flat, flat_gradient
+    return flowdir, is_flat, z_syn_towards
 
 
 def compute_flowdir(
