@@ -1,7 +1,7 @@
 from collections import deque
 import numpy as np
 
-from .d8directions import D8Directions
+from formosa.geomorphology.d8directions import D8Directions
 from formosa.flow_distance_loop import _flow_distance_loop
 from formosa.away_from_high_loop import _away_From_high_loop
 from formosa.towards_low_loop import _towards_low_loop

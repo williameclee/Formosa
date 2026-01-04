@@ -1,1 +1,1 @@
-from .fetch_dem import gmrt, opentopo
+from formosa.dem.api.fetch_dem import gmrt, opentopo
