@@ -49,7 +49,25 @@ def find_flat_edges(
     directions=D8Directions(),
 ) -> tuple[npt.NDArray[np.bool], npt.NDArray[np.bool]]:
     """
-    From R. Barnes et al., 2014, Algorithm 3 (p. 133)
+    Finds the cells on the edges of flat areas that drain to lower terrain (low edges) and those that are adjacent to higher terrain (high edges).
+    From [R. Barnes et al. (2014)](https://doi.org/10.1016/j.cageo.2013.01.009), Algorithm 3 (p. 133).
+
+    Parameters
+    ----------
+    dem : NDArray[number]
+        A 2D array representing the digital elevation model (DEM).
+    flowdir : NDArray[integer]
+        A 2D array representing the flow direction for each cell in the DEM.
+    directions : D8Directions, optional
+        An instance of D8Directions defining the flow direction scheme that `flowdir` uses.
+        Default is D8Directions().
+
+    Returns
+    -------
+    low_edges : NDArray[bool]
+        A boolean mask array where True indicates cells that are low edges of flat areas.
+    high_edges : NDArray[bool]
+        A boolean mask array where True indicates cells that are high edges of flat areas.
     """
     neighbours, _, _ = get_neighbour_values(
         dem,
@@ -77,7 +95,7 @@ def label_flats(
     directions: D8Directions = D8Directions(),
 ) -> tuple[npt.NDArray[np.int32], int, int]:
     """
-    From R. Barnes et al., 2014, Algorithm 4 (p. 133)
+    From [R. Barnes et al. (2014)](https://doi.org/10.1016/j.cageo.2013.01.009), Algorithm 4 (p. 133).
     """
     ## Input validation and initialisation
     if isinstance(low_edges, np.ndarray):
@@ -91,7 +109,7 @@ def label_flats(
     ## Initialisation
     I, J = dem.shape
     nanfill = 0
-    labels: npt.NDArray[np.int32] = np.full(dem.shape, nanfill)
+    labels = np.full(dem.shape, nanfill)
     label = 1
 
     ## Main
@@ -240,7 +258,31 @@ def compute_away_from_high(
     directions: D8Directions = D8Directions(),
 ) -> npt.NDArray[np.integer]:
     """
-    From R. Barnes et al., 2014, Algorithm 5 (p. 133–134)
+    Produces a synthetic elevation that decreases away from 'high edges' of flats.
+    Modified from [R. Barnes et al. (2014)](https://doi.org/10.1016/j.cageo.2013.01.009), Algorithm 5 (p. 133–134).
+
+    Parameters
+    ----------
+    labels : NDArray[number]
+        A 2D array where each flat region is labeled with a unique integer.
+        It is assumed that non-flat areas are labeled with 0, and flat areas have positive integer labels starting from 1 (the Fortran extension relies on this).
+    high_edges : NDArray[bool] | NDArray[int] | Iterable[Iterable[int]]
+        Either a boolean mask array indicating high edge locations, or a 2D integer array of coordinates, or an iterable of coordinate pairs.
+    directions : D8Directions, optional
+        An instance of D8Directions defining the flow direction scheme, here it is used to determine the offsets for neighbor cells.
+        Default is D8Directions().
+
+    Returns
+    -------
+    NDArray[integer]
+        A 2D integer array representing the synthetic elevation that increases away from high edges within each flat region.
+
+    Raises
+    ------
+    TypeError
+        If the input high_edges is not of the expected type or format.
+    ValueError
+        If the shapes of the input arrays do not match the expected dimensions.
     """
     # Input validation and initialisation
     high_edges_list = _format_edges_f(high_edges, labels.shape)
@@ -261,7 +303,34 @@ def compute_towards_low(
     step_size: int = 1,
 ) -> npt.NDArray[np.integer]:
     """
-    Modified from R. Barnes et al., 2014, Algorithm 6 (p. 134)
+    Produces a synthetic elevation that drains towards 'low edges' of flats.
+    Modified from [R. Barnes et al. (2014)](https://doi.org/10.1016/j.cageo.2013.01.009), Algorithm 6 (p. 134).
+
+    Parameters
+    ----------
+    labels : NDArray[number]
+        A 2D array where each flat region is labeled with a unique integer.
+        It is assumed that non-flat areas are labeled with 0, and flat areas have positive integer labels starting from 1 (the Fortran extension relies on this).
+    low_edges : NDArray[bool] | NDArray[int] | Iterable[Iterable[int]]
+        Either a boolean mask array indicating low edge locations, or a 2D integer array of coordinates, or an iterable of coordinate pairs.
+    directions : D8Directions, optional
+        An instance of D8Directions defining the flow direction scheme, here it is used to determine the offsets for neighbor cells.
+        Default is D8Directions().
+    step_size : int, optional
+        The increment in synthetic elevation per step away from low edges to avoid ties when combined with the result of `compute_away_from_high`.
+        Default is 1, although R. Barnes et al. (2014) uses 2.
+
+    Returns
+    -------
+    NDArray[integer]
+        A 2D integer array representing the synthetic elevation that increases towards low edges within each flat region.
+
+    Raises
+    ------
+    TypeError
+        If the input low_edges is not of the expected type or format.
+    ValueError
+        If the shapes of the input arrays do not match the expected dimensions.
     """
     # Input validation and initialisation
     assert (
@@ -341,7 +410,7 @@ def compute_masked_flowdir(
     flat_mask, labels, directions: D8Directions = D8Directions()
 ):
     """
-    From R. Barnes et al., 2014, Algorithm 7 (p. 134)
+    From [R. Barnes et al. (2014)](https://doi.org/10.1016/j.cageo.2013.01.009), Algorithm 7 (p. 134).
     """
 
     flowdir = np.zeros(flat_mask.shape, dtype=np.int32)
