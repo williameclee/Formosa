@@ -1,4 +1,4 @@
-from .terrain_grid import DEMGrid
-from .demio import read_dem
-from .api import gmrt, opentopo
-from .utils import transform2xy
+from formosa.dem.terrain_grid import DEMGrid
+from formosa.dem.demio import read_dem
+from formosa.dem.api import gmrt, opentopo
+from formosa.dem.utils import transform2xy

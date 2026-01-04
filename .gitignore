@@ -1,5 +1,7 @@
 .venv
 .vscode
+uv.lock
+__pycache__/
 *_test.py
 
 build

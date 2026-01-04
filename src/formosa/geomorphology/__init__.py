@@ -1,5 +1,5 @@
-from .terrain import compute_slope
-from .flowdir import (
+from formosa.geomorphology.terrain import compute_slope
+from formosa.geomorphology.flowdir import (
     compute_flowdir,
     compute_accumulation,
     compute_strahler_order,
