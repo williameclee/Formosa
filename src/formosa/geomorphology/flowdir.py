@@ -6,6 +6,7 @@ from formosa.geomorphology.flow_distance_loop import _flow_distance_loop
 
 # Extensions
 from formosa.geomorphology.flowdir_f import (
+    label_flats_f,
     away_from_high_loop_f,
     towards_low_loop_f,
 )
@@ -82,8 +83,8 @@ def find_flat_edges(
     is_high_edge: npt.NDArray[np.bool] = (flowdir == 0) & np.any(
         dem < neighbours, axis=0
     )
-    is_low_edge: npt.NDArray[np.bool] = (flowdir != 0) & np.any(
-        (neighbour_flowdirs == 0) & (dem == neighbours), axis=0
+    is_low_edge: npt.NDArray[np.bool] = (flowdir != 0) & (
+        np.any((neighbour_flowdirs == 0) & (dem == neighbours), axis=0)
     )
 
     return is_low_edge, is_high_edge
@@ -91,55 +92,25 @@ def find_flat_edges(
 
 def label_flats(
     dem: npt.NDArray[np.number],
-    low_edges: npt.NDArray[np.bool] | deque[tuple[int, int]],
+    seeds: npt.NDArray[np.bool] | npt.NDArray[np.integer] | Iterable[Iterable[int]],
     directions: D8Directions = D8Directions(),
-) -> tuple[npt.NDArray[np.int32], int, int]:
+) -> npt.NDArray[np.int32]:
     """
+    Separates and labels inidividual flat areas in a DEM.
     From [R. Barnes et al. (2014)](https://doi.org/10.1016/j.cageo.2013.01.009), Algorithm 4 (p. 133).
+
+    Parameters
     """
-    ## Input validation and initialisation
-    if isinstance(low_edges, np.ndarray):
-        assert (
-            dem.shape == low_edges.shape
-        ), f"DEM and LOW_EDGES must have the same shape, got {dem.shape} and {low_edges.shape} instead"
+    # Input validation
+    seeds_list = _format_edges_f(seeds, dem.shape)
 
-        ii, jj = np.indices(dem.shape, dtype=np.uint16)
-        low_edges = deque(zip(ii[low_edges], jj[low_edges]))  # type: ignore TODO: figure out what the type error actually is
+    # Main
+    dem = np.asarray(dem, dtype=np.float32, order="F")
+    labels = label_flats_f(
+        dem, seeds_list, np.array(directions.offsets, dtype=np.int32, order="F")
+    )
 
-    ## Initialisation
-    I, J = dem.shape
-    nanfill = 0
-    labels = np.full(dem.shape, nanfill)
-    label = 1
-
-    ## Main
-    while low_edges:
-        si, sj = low_edges.popleft()
-
-        if labels[si, sj] != nanfill:
-            continue
-
-        height = dem[si, sj]
-        to_fill: deque[tuple[int, int]] = deque()
-        to_fill.append((si, sj))
-
-        while to_fill:
-            i, j = to_fill.popleft()
-
-            if i < 0 or i >= I or j < 0 or j >= J:
-                continue
-            if labels[i, j] != nanfill:
-                continue
-            if dem[i, j] != height:
-                continue
-            labels[i, j] = label
-
-            for di, dj in directions.offsets:
-                to_fill.append((i + di, j + dj))
-        label += 1
-
-    num_labels = label - 1
-    return labels, num_labels, nanfill
+    return labels
 
 
 def get_neighbour_values(
@@ -455,9 +426,9 @@ def _compute_flowdir_total(
 
     is_low_edge, is_high_edge = find_flat_edges(dem, flowdir, directions=directions)
 
-    flat_labels, _, nanfill = label_flats(dem, is_low_edge, directions=directions)
+    flat_labels = label_flats(dem, is_low_edge | is_flat, directions=directions)
 
-    is_high_edge = is_high_edge & (flat_labels != nanfill)
+    is_high_edge = is_high_edge & (flat_labels != 0)
 
     z_syn_away = compute_away_from_high(
         flat_labels, is_high_edge, directions=directions

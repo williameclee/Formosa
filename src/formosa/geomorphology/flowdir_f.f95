@@ -1,3 +1,77 @@
+subroutine label_flats_f( &
+    z, labels, nrows, ncols, &
+    seeds, nseeds, offsets, noffsets)
+    implicit none
+    integer, intent(in) :: nrows, ncols ! Size of the grid
+    real, dimension(nrows, ncols), intent(in) :: z
+    integer, dimension(nrows, ncols), intent(out) :: labels
+    integer, intent(inout) :: nseeds
+    integer, dimension(nseeds, 2), intent(inout) :: seeds ! Should have 1 added to match Fortran indexing
+    integer, intent(in) :: noffsets
+    integer, dimension(noffsets, 2), intent(in) :: offsets
+
+    integer :: ilabel = 1
+    integer, dimension(nrows*ncols, 2) :: tofill_buf
+    integer :: ifill, nfills
+    integer :: iseed = 1
+    integer :: si, sj ! Seed indices
+    integer :: ci, cj ! Current indices
+    real :: sz ! Seed elevation
+    integer :: iofs ! Offset index
+    integer :: ni, nj ! Neighbour indices
+
+    do while (iseed <= nseeds)
+        si = seeds(iseed, 1)
+        sj = seeds(iseed, 2)
+        iseed = iseed + 1
+
+        ! Skip if out of bounds
+        if (si < 1 .or. si > nrows .or. sj < 1 .or. sj > ncols) then
+            print *, "Warning: Skipping out of bound seed index (", si, ",", sj, ")"
+            cycle
+        end if
+        ! Skip if already labeled
+        if (labels(si, sj) /= 0) cycle
+
+        sz = z(si, sj)
+
+        ! Reset buffer
+        ifill = 1
+        nfills = 1
+        tofill_buf(ifill, :) = [si, sj]
+        labels(si, sj) = ilabel
+
+        do while (ifill <= nfills)
+            ci = tofill_buf(ifill, 1)
+            cj = tofill_buf(ifill, 2)
+            ifill = ifill + 1
+
+            ! Loop over offsets to find connected flat cells
+            do iofs = 1, noffsets
+                ni = ci + offsets(iofs, 1)
+                nj = cj + offsets(iofs, 2)
+                ! Check bounds
+                if (ni < 1 .or. ni > nrows .or. nj < 1 .or. nj > ncols) cycle
+                ! Check if already labeled
+                if (labels(ni, nj) /= 0) cycle
+                ! Check if same elevation
+                if (z(ni, nj) /= sz) cycle
+                ! Add to tofill buffer
+                nfills = nfills + 1
+                if (nfills > size(tofill_buf, 1)) then
+                    print *, "Error: tofill buffer overflow (size:", nfills, ", allocated:", size(tofill_buf, 1), ")"
+                    stop
+                end if
+                tofill_buf(nfills, :) = [ni, nj]
+                labels(ni, nj) = ilabel
+            end do
+
+        end do
+
+        ilabel = ilabel + 1
+    end do
+end subroutine label_flats_f
+
 subroutine away_from_high_loop_f( &
     z, labels, nrows, ncols, &
     high_edges, nedges, offsets, noffsets)

@@ -66,6 +66,7 @@ def read_dem(
         if src.nodata is not None:
             Z = np.where(Z == src.nodata, nan_value, Z)
 
+        Z = np.asarray(Z, order="F")
         # Make coordinate arrays
         transform = (
             src.transform if src.transform is not None else rasterio.Affine.identity()

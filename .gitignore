@@ -6,4 +6,6 @@ __pycache__/
 
 build
 *.egg-info
+*.prof
+*.so
 assets/*.tiff
