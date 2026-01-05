@@ -20,6 +20,24 @@ def _compute_flowdir_simple(
     dem: npt.NDArray[np.number],
     directions: D8Directions = D8Directions(),
 ) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.bool]]:
+    """
+    Computes flow directions for a DEM using a simple D8 algorithm.
+
+    Parameters
+    ----------
+    dem : NDArray[number]
+        A 2D array representing the digital elevation model (DEM).
+    directions : D8Directions, optional
+        An instance of D8Directions defining the flow direction scheme.
+        Default is D8Directions().
+
+    Returns
+    -------
+    flowdir : NDArray[int]
+        A 2D integer array representing the flow directions for each cell in the DEM.
+    is_flat : NDArray[bool]
+        A boolean mask array where True indicates cells that are part of flat areas.
+    """
     is_low_flat = find_flat(dem, directions=directions)
     flat_neighbours, _, _ = get_neighbour_values(
         is_low_flat, directions=D8Directions(window=3), include_self=False
@@ -51,7 +69,7 @@ def find_flat_edges(
 ) -> tuple[npt.NDArray[np.bool], npt.NDArray[np.bool]]:
     """
     Finds the cells on the edges of flat areas that drain to lower terrain (low edges) and those that are adjacent to higher terrain (high edges).
-    From [R. Barnes et al. (2014)](https://doi.org/10.1016/j.cageo.2013.01.009), Algorithm 3 (p. 133).
+    From [R. Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009), Algorithm 3 (p. 133).
 
     Parameters
     ----------
@@ -97,9 +115,29 @@ def label_flats(
 ) -> npt.NDArray[np.int32]:
     """
     Separates and labels inidividual flat areas in a DEM.
-    From [R. Barnes et al. (2014)](https://doi.org/10.1016/j.cageo.2013.01.009), Algorithm 4 (p. 133).
+    From [R. Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009), Algorithm 4 (p. 133).
 
     Parameters
+    ----------
+    dem : NDArray[number]
+        A 2D array representing the digital elevation model (DEM).
+    seeds : NDArray[bool] | NDArray[int] | Iterable[Iterable[int]]
+        Either a boolean mask array indicating flat area locations, or a 2D integer array of coordinates, or an iterable of coordinate pairs.
+    directions : D8Directions, optional
+        An instance of D8Directions defining the flow direction scheme.
+        Default is D8Directions().
+
+    Returns
+    -------
+    labels : NDArray[int]
+        A 2D integer array where each flat region is labeled with a unique integer.
+
+    Raises
+    ------
+    TypeError
+        If the input seeds is not of the expected type or format.
+    ValueError
+        If the shapes of the input arrays do not match the expected dimensions.
     """
     # Input validation
     seeds_list = _format_edges_f(seeds, dem.shape)
@@ -120,12 +158,38 @@ def get_neighbour_values(
     include_self: bool = False,
     self_at_last: bool = False,
 ) -> tuple[np.ndarray, npt.NDArray[np.integer], npt.NDArray[np.integer]]:
-    ## Input validation and initialisation
+    """
+    Gets the values of neighbouring cells in an array based on specified directions.
+
+    Parameters
+    ----------
+    array : NDArray
+        A 2D array from which to extract neighbour values.
+    directions : D8Directions, optional
+        An instance of D8Directions defining the neighbour offsets.
+        Default is D8Directions().
+    pad_value : number | float | int, optional
+        Value to use for padding the array edges (default is np.nan).
+    include_self : bool, optional
+        Whether to include the value of the cell itself as a neighbour (default is False).
+    self_at_last : bool, optional
+        If include_self is True, whether to place the self value at the end of the neighbour list (default is False).
+
+    Returns
+    -------
+    neighbours : NDArray
+        A 3D array where the first dimension corresponds to neighbour indices and the other two dimensions match the input array.
+    codes : NDArray[int]
+        A 1D array of direction codes corresponding to the neighbours.
+    offsets : NDArray[int]
+        A 2D array of offsets (di, dj) corresponding to the neighbours.
+    """
+    # Input validation and initialisation
     if np.issubdtype(array.dtype, np.integer) and pad_value is np.nan:
         Warning("Integer array does not support NaN padding, using max int instead")
         pad_value = np.iinfo(array.dtype).max
 
-    ## Main
+    # Main
     # get padding width from offset
     pad_width = np.max(abs(directions.offsets))
     array_padded = np.pad(
@@ -230,7 +294,7 @@ def compute_away_from_high(
 ) -> npt.NDArray[np.integer]:
     """
     Produces a synthetic elevation that decreases away from 'high edges' of flats.
-    Modified from [R. Barnes et al. (2014)](https://doi.org/10.1016/j.cageo.2013.01.009), Algorithm 5 (p. 133–134).
+    Modified from [R. Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009), Algorithm 5 (p. 133–134).
 
     Parameters
     ----------
@@ -275,7 +339,7 @@ def compute_towards_low(
 ) -> npt.NDArray[np.integer]:
     """
     Produces a synthetic elevation that drains towards 'low edges' of flats.
-    Modified from [R. Barnes et al. (2014)](https://doi.org/10.1016/j.cageo.2013.01.009), Algorithm 6 (p. 134).
+    Modified from [R. Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009), Algorithm 6 (p. 134).
 
     Parameters
     ----------
@@ -289,7 +353,7 @@ def compute_towards_low(
         Default is D8Directions().
     step_size : int, optional
         The increment in synthetic elevation per step away from low edges to avoid ties when combined with the result of `compute_away_from_high`.
-        Default is 1, although R. Barnes et al. (2014) uses 2.
+        Default is 1, although R. Barnes *et al.* (2014) uses 2.
 
     Returns
     -------
@@ -378,41 +442,45 @@ def _format_edges_f(
 
 
 def compute_masked_flowdir(
-    flat_mask, labels, directions: D8Directions = D8Directions()
-):
+    z: npt.NDArray[np.integer | np.floating],
+    labels: npt.NDArray[np.integer],
+    directions: D8Directions = D8Directions(),
+) -> npt.NDArray[np.integer]:
     """
-    From [R. Barnes et al. (2014)](https://doi.org/10.1016/j.cageo.2013.01.009), Algorithm 7 (p. 134).
+    Computes flow directions within flat areas using synthetic elevation.
+    Very similar to the naive flow direction computation, but only search within the same flat area.
+
+    Parameters
+    ----------
+    z : NDArray[int | float]
+        A 2D array representing the synthetic elevation within flat areas.
+    labels : NDArray[int]
+        A 2D array where each flat region is labeled with a unique integer.
+    directions : D8Directions, optional
+        An instance of D8Directions defining the flow direction scheme.
+        Default is D8Directions().
+
+    Returns
+    -------
+    flowdir : NDArray[int]
+        A 2D integer array representing the flow directions within flat areas.
     """
-
-    flowdir = np.zeros(flat_mask.shape, dtype=np.int32)
-
-    for ci in range(flat_mask.shape[0]):
-        for cj in range(flat_mask.shape[1]):
-            if labels[ci, cj] == 0:
-                continue
-
-            dir = 0
-            fmin = flat_mask[ci, cj]
-
-            for di, dj, code in zip(
-                directions.offsets[:, 0], directions.offsets[:, 1], directions.codes
-            ):
-                ni, nj = ci + di, cj + dj
-                if (
-                    ni < 0
-                    or ni >= flat_mask.shape[0]
-                    or nj < 0
-                    or nj >= flat_mask.shape[1]
-                ):
-                    continue
-                if labels[ni, nj] != labels[ci, cj]:
-                    continue
-                if flat_mask[ni, nj] >= fmin:
-                    continue
-                fmin = flat_mask[ni, nj]
-                dir = code
-
-            flowdir[ci, cj] = dir
+    neighbours, codes, _ = get_neighbour_values(
+        z,
+        directions=directions,
+        include_self=True,
+        pad_value=z.max() + 1,
+    )
+    neighbour_labels, _, _ = get_neighbour_values(
+        labels, directions=directions, include_self=True, pad_value=-1
+    )
+    # Mask neighbours that are not in the same flat
+    neighbours = np.where(
+        neighbour_labels != labels[np.newaxis, :, :], np.inf, neighbours
+    )
+    min_indices = np.argmin(neighbours, axis=0)
+    flowdir = codes[min_indices]
+    flowdir[labels == 0] = 0
 
     return flowdir
 
@@ -420,8 +488,32 @@ def compute_masked_flowdir(
 def _compute_flowdir_total(
     dem: npt.NDArray[np.number],
     directions: D8Directions = D8Directions(),
-    step_size: int = 2,
+    step_size: int = 4,
 ) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.bool], npt.NDArray[np.integer]]:
+    """
+    Computes flow directions for a DEM, resolving flat areas using synthetic elevations.
+    Combines simple flow direction computation with flat area resolution from [R. Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009).
+
+    Parameters
+    ----------
+    dem : NDArray[number]
+        A 2D array representing the digital elevation model (DEM).
+    directions : D8Directions, optional
+        An instance of D8Directions defining the flow direction scheme.
+        Default is D8Directions().
+    step_size : int, optional
+        The increment in synthetic elevation per step away from low edges to avoid ties when combined with the result of `compute_away_from_high`.
+        Default is 4.
+
+    Returns
+    -------
+    flowdir : NDArray[int]
+        A 2D integer array representing the flow directions for each cell in the DEM.
+    is_flat : NDArray[bool]
+        A boolean mask array where True indicates cells that are part of flat areas.
+    z_syn : NDArray[int]
+        A 2D integer array representing the synthetic elevation that resolves flat areas.
+    """
     flowdir, is_flat = _compute_flowdir_simple(dem, directions=directions)
 
     is_low_edge, is_high_edge = find_flat_edges(dem, flowdir, directions=directions)
@@ -445,7 +537,7 @@ def _compute_flowdir_total(
     flat_flowdir = compute_masked_flowdir(z_syn, flat_labels, directions=directions)
 
     flowdir[flowdir == 0] = flat_flowdir[flowdir == 0]
-    return flowdir, is_flat, z_syn_towards
+    return flowdir, is_flat, z_syn
 
 
 def compute_flowdir(
@@ -456,6 +548,32 @@ def compute_flowdir(
 ) -> tuple[
     npt.NDArray[np.integer], npt.NDArray[np.bool], npt.NDArray[np.integer] | None
 ]:
+    """
+    Computes flow directions for a DEM, optionally resolving flat areas.
+
+    Parameters
+    ----------
+    dem : NDArray[number]
+        A 2D array representing the digital elevation model (DEM).
+    directions : D8Directions, optional
+        An instance of D8Directions defining the flow direction scheme.
+        Default is D8Directions().
+    resolve_flat : bool, optional
+        Whether to resolve flat areas using synthetic elevations.
+        Default is True.
+    step_size : int, optional
+        The increment in synthetic elevation per step away from low edges to avoid ties when combining synthetic elevations.
+        Default is 4.
+
+    Returns
+    -------
+    flowdir : NDArray[int]
+        A 2D integer array representing the flow directions for each cell in the DEM.
+    is_flat : NDArray[bool]
+        A boolean mask array where True indicates cells that are part of flat areas.
+    flat_gradient : NDArray[int] | None
+        A 2D integer array representing the synthetic elevation that resolves flat areas, or None if resolve_flat is False.
+    """
     if resolve_flat:
         flowdir, is_flat, flat_gradient = _compute_flowdir_total(
             dem, directions=directions, step_size=step_size
