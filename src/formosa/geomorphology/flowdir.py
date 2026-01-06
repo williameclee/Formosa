@@ -9,6 +9,7 @@ from formosa.geomorphology.flowdir_f import (
     label_flats_f,
     away_from_high_loop_f,
     towards_low_loop_f,
+    compute_back_distance_f,
 )
 
 # from tqdm import tqdm
@@ -52,7 +53,6 @@ def _compute_flowdir_simple(
     # find where not all neighbours are nan
     valid_mask = ~np.all(np.isnan(neighbours), axis=0)
     flowdir[valid_mask] = np.nanargmin(neighbours[:, valid_mask], axis=0)
-    # flowdir = np.nanargmin(neighbours, axis=0)
 
     is_ambiguous = find_ambiguous(dem, directions=directions)
     is_ambiguous = is_ambiguous & ~is_1px_flat
@@ -847,6 +847,8 @@ def label_watersheds(
 def compute_back_distance(
     flowdir: npt.NDArray[np.integer],
     directions: D8Directions = D8Directions(),
+    x: npt.NDArray[np.integer | np.floating] | None = None,
+    y: npt.NDArray[np.integer | np.floating] | None = None,
     valids: npt.NDArray[np.bool] | None = None,
 ) -> npt.NDArray[np.float32]:
     if valids is None:
@@ -859,45 +861,23 @@ def compute_back_distance(
         flowdir = np.where(valids, flowdir, np.nan)
     else:
         raise TypeError(
-            f"[FORMOSA] VALIDS must be either None or a numpy array, got {type(valids)} instead."
+            f"Validity mask must be either None or a numpy array, (got {type(valids)})."
         )
+    if x is not None and y is not None:
+        assert (
+            x.shape == flowdir.shape and y.shape == flowdir.shape
+        ), f"Shapes for flow direction ({flowdir.shape}) and x ({x.shape}) and y ({y.shape}) must match."
+    else:
+        x = np.arange(flowdir.shape[1], dtype=np.float32)
+        y = np.arange(flowdir.shape[0], dtype=np.float32)
+        x, y = np.meshgrid(x, y, indexing="xy")
 
-    I, J = flowdir.shape
-    ii, jj = np.meshgrid(
-        np.arange(I, dtype=np.int32), np.arange(J, dtype=np.int32), indexing="ij"
+    distance: npt.NDArray[np.float32] = compute_back_distance_f(
+        flowdir.astype(np.int32, order="F"),
+        x.astype(np.float32, order="F"),
+        y.astype(np.float32, order="F"),
+        valids.astype(np.bool, order="F"),
+        directions.offsets.astype(np.int32, order="F"),
+        directions.codes.astype(np.int32, order="F"),
     )
-    codes: list[int] = directions.codes.tolist()
-    offsets: list[tuple[int, int]] = [
-        (int(di), int(dj)) for di, dj in directions.offsets.astype(np.int32, copy=False)
-    ]
-    lengths: list[float] = [float(np.hypot(di, dj)) for di, dj in offsets]
-
-    seeds: list[tuple[int, int]] = list(
-        zip(ii[valids & (flowdir == 0)], jj[valids & (flowdir == 0)])
-    )
-
-    distance = -np.ones(flowdir.shape, dtype=np.int32)
-
-    for si, sj in seeds:
-        distance[si, sj] = 0
-
-    for seed in seeds:
-        to_fill: list[tuple[int, int]] = [seed]
-
-        while to_fill:
-            ci, cj = to_fill.pop(0)
-
-            for code, (di, dj) in zip(codes, offsets):
-                ni, nj = ci - di, cj - dj
-                if (ni < 0 or ni >= I) or (nj < 0 or nj >= J):
-                    continue
-                elif not valids[ni, nj]:
-                    continue
-                elif distance[ni, nj] != -1:
-                    continue
-                elif flowdir[ni, nj] != code:
-                    continue
-
-                distance[ni, nj] = distance[ci, cj] + lengths[codes.index(code)]
-                to_fill.append((ni, nj))
     return distance.astype(np.float32, copy=False)

@@ -255,7 +255,7 @@ class DEMGrid:
             self.flowdir,
             directions=self.directions,
             valid=valid if valid is not None else self.valid,
-            x=self.x,
+            x=self.x.astype(np.float64),
             y=self.y,
         )
         return graphx, graphy
@@ -325,6 +325,8 @@ class DEMGrid:
         self._backdist = compute_back_distance(
             self.flowdir,
             directions=self.directions,
+            x=self.x,
+            y=self.y,
             valids=self.valid,
         )
         return self._backdist

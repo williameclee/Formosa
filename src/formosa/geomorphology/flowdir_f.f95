@@ -293,3 +293,102 @@ subroutine towards_low_loop_f( &
 
     end do
 end subroutine towards_low_loop_f
+
+subroutine compute_back_distance_f( &
+    dist, flowdir, x, y, valid, nrows, ncols, offsets, codes, noffsets)
+    use omp_lib
+
+    implicit none
+    integer, intent(in) :: nrows, ncols
+    integer, dimension(nrows, ncols), intent(in) :: flowdir
+    real, dimension(nrows, ncols), intent(in) :: x, y
+    logical, dimension(nrows, ncols), intent(in) :: valid
+    real, dimension(nrows, ncols), intent(out) :: dist
+    integer, intent(in) :: noffsets
+    integer, dimension(noffsets, 2), intent(in) :: offsets
+    integer, dimension(noffsets), intent(in) :: codes
+
+    integer, dimension(nrows*ncols, 2) :: seed_buf
+    integer :: iseed, nseeds
+    integer, dimension(:, :), allocatable :: tofill_buf
+    integer :: ifill, nfills
+    integer :: si, sj ! Seed indices
+    integer :: ci, cj ! Current indices
+    integer :: ui, uj ! Upstream indices
+    integer :: iofs ! Offset index
+    integer :: noflow_code = 0 ! Assume 0 is noflow unless found otherwise
+
+    ! Find noflow code
+    do iofs = 1, noffsets
+        if (offsets(iofs, 1) == 0 .and. offsets(iofs, 2) == 0) then
+            noflow_code = codes(iofs)
+            exit
+        end if
+    end do
+
+    dist = -1
+
+    ! Append all cells with noflow direction to buffer
+    nseeds = 0
+    do ci = 1, nrows
+        do cj = 1, ncols
+            if (.not. valid(ci, cj)) cycle
+            if (flowdir(ci, cj) /= noflow_code) cycle
+            nseeds = nseeds + 1
+            seed_buf(nseeds, :) = [ci, cj]
+            dist(ci, cj) = 0.0
+        end do
+    end do
+
+    ! Loop through seeds
+    !$omp PARALLEL DEFAULT(SHARED) PRIVATE(iseed, si, sj, ci, cj, ifill, nfills, tofill_buf)
+    allocate (tofill_buf(nrows*ncols, 2))
+    !$omp DO SCHEDULE(DYNAMIC)
+    do iseed = 1, nseeds
+        si = seed_buf(iseed, 1)
+        sj = seed_buf(iseed, 2)
+
+        ! Loop through buffer
+        nfills = 1
+        ifill = 1
+        tofill_buf(1, :) = [si, sj]
+
+        do while (ifill <= nfills)
+            ci = tofill_buf(ifill, 1)
+            cj = tofill_buf(ifill, 2)
+            ifill = ifill + 1
+
+            ! Loop over offsets to find contributing cells
+            do iofs = 1, noffsets
+                ! Skip self
+                if (offsets(iofs, 1) == 0 .and. offsets(iofs, 2) == 0) cycle
+                ui = ci - offsets(iofs, 1)
+                uj = cj - offsets(iofs, 2)
+
+                ! Check bounds
+                if (ui < 1 .or. ui > nrows .or. uj < 1 .or. uj > ncols) cycle
+                ! Check mask
+                if (.not. valid(ui, uj)) cycle
+                ! Check if already assigned
+                if (dist(ui, uj) >= 0) cycle
+                ! Check if flows into current cell
+                if (flowdir(ui, uj) /= codes(iofs)) cycle
+
+                ! Add to buffer
+                nfills = nfills + 1
+                if (nfills > size(tofill_buf, 1)) then
+                    print *, "Error: tofill buffer overflow (size:", nfills, ", allocated:", size(tofill_buf, 1), ")"
+                    stop
+                end if
+                tofill_buf(nfills, :) = [ui, uj]
+                ! Compute distance
+                dist(ui, uj) = dist(ci, cj) + sqrt( &
+                               (x(ui, uj) - x(ci, cj))**2 + &
+                               (y(ui, uj) - y(ci, cj))**2)
+            end do
+        end do
+    end do
+    !$omp END DO
+    deallocate (tofill_buf)
+    !$omp END PARALLEL
+end subroutine compute_back_distance_f
