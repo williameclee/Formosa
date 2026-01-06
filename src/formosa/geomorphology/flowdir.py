@@ -6,7 +6,6 @@ from formosa.geomorphology.flow_distance_loop import _flow_distance_loop
 
 # Extensions
 from formosa.geomorphology.flowdir_f import (
-    label_flats_f,
     away_from_high_loop_f,
     towards_low_loop_f,
     compute_back_distance_f,
@@ -50,6 +49,13 @@ def compute_flowdir_simple(
     directions : D8Directions, optional
         An instance of D8Directions defining the flow direction scheme.
         Default is D8Directions().
+    valids : NDArray[bool], optional
+        A boolean mask array indicating valid cells in the DEM.
+        If None, all cells are considered valid.
+        Default is None.
+    backend : {'fortran', 'python'}, optional
+        The backend to use for computation. 'fortran' uses the Fortran extension for performance, while 'python' uses a pure Python implementation.
+        Default is 'fortran'.
 
     Returns
     -------
@@ -75,32 +81,11 @@ def compute_flowdir_simple(
     return flowdir.astype(np.uint8, order="F"), is_flat.astype(np.bool, order="F")
 
 
-def find_flat_edges(
+def _find_flat_edges_py(
     dem: npt.NDArray[np.number],
     flowdir: npt.NDArray[np.integer],
     directions=D8Directions(),
 ) -> tuple[npt.NDArray[np.bool], npt.NDArray[np.bool]]:
-    """
-    Finds the cells on the edges of flat areas that drain to lower terrain (low edges) and those that are adjacent to higher terrain (high edges).
-    From [R. Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009), Algorithm 3 (p. 133).
-
-    Parameters
-    ----------
-    dem : NDArray[number]
-        A 2D array representing the digital elevation model (DEM).
-    flowdir : NDArray[integer]
-        A 2D array representing the flow direction for each cell in the DEM.
-    directions : D8Directions, optional
-        An instance of D8Directions defining the flow direction scheme that `flowdir` uses.
-        Default is D8Directions().
-
-    Returns
-    -------
-    low_edges : NDArray[bool]
-        A boolean mask array where True indicates cells that are low edges of flat areas.
-    high_edges : NDArray[bool]
-        A boolean mask array where True indicates cells that are high edges of flat areas.
-    """
     neighbours, _, _ = get_neighbour_values(
         dem,
         directions=directions,
@@ -121,9 +106,68 @@ def find_flat_edges(
     return is_low_edge, is_high_edge
 
 
+def find_flat_edges(
+    dem: npt.NDArray[np.number],
+    flowdir: npt.NDArray[np.integer],
+    directions=D8Directions(),
+    valids: npt.NDArray[np.bool] | None = None,
+    backend: Literal["fortran", "python"] = "fortran",
+) -> tuple[npt.NDArray[np.bool], npt.NDArray[np.bool]]:
+    """
+    Finds the cells on the edges of flat areas that drain to lower terrain (low edges) and those that are adjacent to higher terrain (high edges).
+    From [R. Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009), Algorithm 3 (p. 133).
+
+    Parameters
+    ----------
+    dem : NDArray[number]
+        A 2D array representing the digital elevation model (DEM).
+    flowdir : NDArray[integer]
+        A 2D array representing the flow direction for each cell in the DEM.
+    directions : D8Directions, optional
+        An instance of D8Directions defining the flow direction scheme that `flowdir` uses.
+        Default is D8Directions().
+    valids : NDArray[bool], optional
+        A boolean mask array indicating valid cells in the DEM.
+        If None, all cells are considered valid.
+        Default is None.
+    backend : {'fortran', 'python'}, optional
+        The backend to use for computation. 'fortran' uses the Fortran extension for performance, while 'python' uses a pure Python implementation.
+        Default is 'fortran'.
+
+    Returns
+    -------
+    low_edges : NDArray[bool]
+        A boolean mask array where True indicates cells that are low edges of flat areas.
+    high_edges : NDArray[bool]
+        A boolean mask array where True indicates cells that are high edges of flat areas.
+    """
+    match backend:
+        case "python":
+            is_low_edge, is_high_edge = _find_flat_edges_py(
+                dem, flowdir, directions=directions
+            )
+        case "fortran":
+            from formosa.geomorphology.flowdir_f import find_flat_edges_f
+
+            if valids is None:
+                valids = np.ones(dem.shape, dtype=bool, order="F")
+
+            is_low_edge, is_high_edge = find_flat_edges_f(
+                dem.astype(np.float32, order="F"),
+                flowdir.astype(np.int32, order="F"),
+                valids.astype(np.bool, order="F"),
+                directions.offsets.astype(np.int32, order="F"),
+                directions.codes.astype(np.int32, order="F"),
+            )
+
+    return is_low_edge.astype(np.bool, order="F"), is_high_edge.astype(
+        np.bool, order="F"
+    )
+
+
 def label_flats(
     dem: npt.NDArray[np.number],
-    seeds: npt.NDArray[np.bool] | npt.NDArray[np.integer] | Iterable[Iterable[int]],
+    seeds: npt.NDArray[np.bool],
     directions: D8Directions = D8Directions(),
 ) -> npt.NDArray[np.int32]:
     """
@@ -152,16 +196,16 @@ def label_flats(
     ValueError
         If the shapes of the input arrays do not match the expected dimensions.
     """
-    # Input validation
-    seeds_list = _format_edges_f(seeds, dem.shape)
+    from formosa.geomorphology.flowdir_f import label_flats_f
 
     # Main
-    dem = np.asarray(dem, dtype=np.float32, order="F")
     labels = label_flats_f(
-        dem, seeds_list, np.array(directions.offsets, dtype=np.int32, order="F")
+        dem.astype(np.float32, order="F"),
+        seeds.astype(np.bool, order="F"),
+        directions.offsets.astype(np.int32, order="F"),
     )
 
-    return labels
+    return labels.astype(np.int32, order="F")
 
 
 def get_neighbour_values(
@@ -300,9 +344,7 @@ def find_flat(
 
 def compute_away_from_high(
     labels: npt.NDArray[np.number],
-    high_edges: (
-        npt.NDArray[np.bool] | npt.NDArray[np.integer] | Iterable[Iterable[int]]
-    ),
+    high_edges: npt.NDArray[np.bool],
     directions: D8Directions = D8Directions(),
 ) -> npt.NDArray[np.integer]:
     """
@@ -314,8 +356,8 @@ def compute_away_from_high(
     labels : NDArray[number]
         A 2D array where each flat region is labeled with a unique integer.
         It is assumed that non-flat areas are labeled with 0, and flat areas have positive integer labels starting from 1 (the Fortran extension relies on this).
-    high_edges : NDArray[bool] | NDArray[int] | Iterable[Iterable[int]]
-        Either a boolean mask array indicating high edge locations, or a 2D integer array of coordinates, or an iterable of coordinate pairs.
+    high_edges : NDArray[bool]
+        A boolean mask array indicating high edge locations.
     directions : D8Directions, optional
         An instance of D8Directions defining the flow direction scheme, here it is used to determine the offsets for neighbor cells.
         Default is D8Directions().
@@ -332,21 +374,17 @@ def compute_away_from_high(
     ValueError
         If the shapes of the input arrays do not match the expected dimensions.
     """
-    # Input validation and initialisation
-    high_edges_list = _format_edges_f(high_edges, labels.shape)
-
-    offsets = np.array(directions.offsets, dtype=np.int32, order="F")
     z_syn = away_from_high_loop_f(
-        np.asarray(labels, dtype=np.int32, order="F"),
-        high_edges_list,
-        offsets,
+        labels.astype(np.int32, order="F"),
+        high_edges.astype(np.bool, order="F"),
+        directions.offsets.astype(np.int32, order="F"),
     )
     return z_syn
 
 
 def compute_towards_low(
     labels: npt.NDArray[np.number],
-    low_edges: npt.NDArray[np.bool] | npt.NDArray[np.integer] | Iterable[Iterable[int]],
+    low_edges: npt.NDArray[np.bool],
     directions: D8Directions = D8Directions(),
     step_size: int = 1,
 ) -> npt.NDArray[np.integer]:
@@ -359,8 +397,8 @@ def compute_towards_low(
     labels : NDArray[number]
         A 2D array where each flat region is labeled with a unique integer.
         It is assumed that non-flat areas are labeled with 0, and flat areas have positive integer labels starting from 1 (the Fortran extension relies on this).
-    low_edges : NDArray[bool] | NDArray[int] | Iterable[Iterable[int]]
-        Either a boolean mask array indicating low edge locations, or a 2D integer array of coordinates, or an iterable of coordinate pairs.
+    low_edges : NDArray[bool]
+        A boolean mask array indicating low edge locations.
     directions : D8Directions, optional
         An instance of D8Directions defining the flow direction scheme, here it is used to determine the offsets for neighbor cells.
         Default is D8Directions().
@@ -385,73 +423,15 @@ def compute_towards_low(
         step_size > 0
     ), f"STEPSIZE must be a positive integer, got {step_size} instead"
 
-    low_edges_list = _format_edges_f(low_edges, labels.shape)
-
-    offsets = np.array(directions.offsets, dtype=np.int32, order="F")
+    # low_edges_list = _format_edges_f(low_edges, labels.shape)
 
     z_syn = towards_low_loop_f(
-        np.asarray(labels, dtype=np.int32, order="F"),
-        low_edges_list,
-        offsets,
+        labels.astype(np.int32, order="F"),
+        low_edges.astype(np.bool, order="F"),
+        directions.offsets.astype(np.int32, order="F"),
     )
     z_syn *= step_size
     return z_syn
-
-
-def _format_edges_f(
-    edges: npt.NDArray[np.bool] | npt.NDArray[np.integer] | Iterable[Iterable[int]],
-    exp_shape: tuple[int, int],
-) -> npt.NDArray[np.integer]:
-    """
-    Convert possible edge inputs to Fortran-compatible 2D integer array of coordinates.
-
-    Parameters
-    ----------
-    edges : np.ndarray or Iterable
-        Either a boolean mask array indicating edge locations, or a 2D integer array of coordinates, or an iterable of coordinate pairs.
-    exp_shape : tuple[int, int]
-        Expected shape of the boolean mask if edges is provided as a mask.
-
-    Returns
-    -------
-    NDArray[integer]
-        A 2D integer array of shape (N, 2) containing the coordinates of edge cells, formatted for Fortran compatibility.
-
-    Raises
-    ------
-    TypeError
-        If the input edges is not of the expected type or format.
-    ValueError
-        If the shapes of the input arrays do not match the expected dimensions.
-    """
-    if isinstance(edges, np.ndarray):
-        if edges.dtype == np.bool:
-            assert (
-                edges.shape == exp_shape
-            ), f"FLOWDIRS and HIGH_EDGES must have the same shape, got {exp_shape} and {edges.shape} instead"
-
-            ii, jj = np.indices(exp_shape, dtype=np.int32)
-            edges_list = np.column_stack((ii[edges], jj[edges]))  # type: ignore
-            edges_list = np.array(edges_list, dtype=np.int32, order="F")
-        elif np.issubdtype(edges.dtype, np.integer):
-            assert (
-                edges.ndim == 2 and edges.shape[1] == 2
-            ), f"LOW_EDGES must be a 2D array of coordinates with shape (N, 2), got shape {edges.shape} instead"
-            edges_list = np.array(edges, dtype=np.int32, order="F")
-        else:
-            raise TypeError(
-                f"Low edges NumPy array must be of boolean or integer type, got {edges.dtype} instead"
-            )
-    elif isinstance(edges, Iterable):
-        edges_list = np.array(
-            [coord for pair in edges for coord in pair], dtype=np.int32, order="F"
-        )
-    else:
-        raise TypeError(
-            f"Expected low_edges to be np.ndarray or Iterable, got {type(edges)} instead."
-        )
-    edges_list += 1  # Fortran indexing
-    return edges_list
 
 
 def _compute_masked_flowdir_py(
@@ -559,7 +539,9 @@ def _compute_flowdir_total(
     """
     flowdir, is_flat = compute_flowdir_simple(dem, directions=directions, valids=valids)
 
-    is_low_edge, is_high_edge = find_flat_edges(dem, flowdir, directions=directions)
+    is_low_edge, is_high_edge = find_flat_edges(
+        dem, flowdir, directions=directions, valids=valids
+    )
 
     flat_labels = label_flats(dem, is_low_edge | is_flat, directions=directions)
 

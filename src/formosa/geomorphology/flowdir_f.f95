@@ -20,12 +20,7 @@ subroutine compute_flowdir_simple_f( &
     integer :: noflow_code = 0 ! Assume 0 is noflow unless found otherwise
 
     ! Find noflow code
-    do iofs = 1, noffsets
-        if (offsets(iofs, 1) == 0 .and. offsets(iofs, 2) == 0) then
-            noflow_code = codes(iofs)
-            exit
-        end if
-    end do
+    call find_noflow_code(offsets, codes, noffsets, noflow_code)
 
     !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(ci, cj, iofs, ni, nj, zmin) &
     !$omp COLLAPSE(2) &
@@ -93,12 +88,7 @@ subroutine compute_masked_flowdir_f( &
     integer :: noflow_code = 0 ! Assume 0 is noflow unless found otherwise
 
     ! Find noflow code
-    do iofs = 1, noffsets
-        if (offsets(iofs, 1) == 0 .and. offsets(iofs, 2) == 0) then
-            noflow_code = codes(iofs)
-            exit
-        end if
-    end do
+    call find_noflow_code(offsets, codes, noffsets, noflow_code)
 
     !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(ci, cj, iofs, ni, nj, zmin) &
     !$omp COLLAPSE(2) &
@@ -130,17 +120,82 @@ subroutine compute_masked_flowdir_f( &
     !$omp END PARALLEL DO
 end subroutine compute_masked_flowdir_f
 
-subroutine label_flats_f( &
-    z, labels, nrows, ncols, &
-    seeds, nseeds, offsets, noffsets)
+subroutine find_flat_edges_f( &
+    z, flowdir, valids, is_low_edge, is_high_edge, nrows, ncols, &
+    offsets, codes, noffsets)
     implicit none
+    ! Inputs
     integer, intent(in) :: nrows, ncols ! Size of the grid
     real, dimension(nrows, ncols), intent(in) :: z
-    integer, dimension(nrows, ncols), intent(out) :: labels
-    integer, intent(inout) :: nseeds
-    integer, dimension(nseeds, 2), intent(inout) :: seeds ! Should have 1 added to match Fortran indexing
+    integer, dimension(nrows, ncols), intent(in) :: flowdir
+    logical, dimension(nrows, ncols), intent(in) :: valids
     integer, intent(in) :: noffsets
     integer, dimension(noffsets, 2), intent(in) :: offsets
+    integer, dimension(noffsets), intent(in) :: codes
+    ! Outputs
+    logical, dimension(nrows, ncols), intent(out) :: is_low_edge, is_high_edge
+
+    integer :: ci, cj ! Current indices
+    integer :: ni, nj ! Neighbour indices
+    integer :: iofs ! Offset index
+    integer :: noflow_code = 0 ! Assume 0 is noflow unless found otherwise
+
+    ! Find noflow code
+    call find_noflow_code(offsets, codes, noffsets, noflow_code)
+
+    !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(ci, cj, iofs, ni, nj) &
+    !$omp COLLAPSE(2) &
+    !$omp SCHEDULE(STATIC)
+    do ci = 1, nrows
+        do cj = 1, ncols
+            if (.not. valids(ci, cj)) then
+                is_high_edge(ci, cj) = .false.
+                is_low_edge(ci, cj) = .false.
+                cycle
+            end if
+
+            do iofs = 1, noffsets
+                ni = ci + offsets(iofs, 1)
+                nj = cj + offsets(iofs, 2)
+                ! Check bounds
+                if (ni < 1 .or. ni > nrows .or. nj < 1 .or. nj > ncols) cycle
+                ! Check if neighbour is part of the same flat
+                if (.not. valids(ni, nj)) cycle
+                ! Check for low edge
+                if (flowdir(ci, cj) /= noflow_code .and. flowdir(ni, nj) == noflow_code .and. z(ci, cj) == z(ni, nj)) then
+                    is_low_edge(ci, cj) = .true.
+                    is_high_edge(ci, cj) = .false.
+                    exit
+                end if
+                ! Check for high edge
+                if (flowdir(ci, cj) == noflow_code .and. z(ci, cj) < z(ni, nj)) then
+                    is_high_edge(ci, cj) = .true.
+                    is_low_edge(ci, cj) = .false.
+                    exit
+                end if
+            end do
+            ! If neither edge type found
+            if (.not. is_high_edge(ci, cj) .and. .not. is_low_edge(ci, cj)) then
+                is_high_edge(ci, cj) = .false.
+                is_low_edge(ci, cj) = .false.
+            end if
+        end do
+    end do
+    !$omp END PARALLEL DO
+end subroutine find_flat_edges_f
+
+subroutine label_flats_f( &
+    z, labels, is_seed, nrows, ncols, &
+    offsets, noffsets)
+    implicit none
+    ! Inputs
+    integer, intent(in) :: nrows, ncols ! Size of the grid
+    real, dimension(nrows, ncols), intent(in) :: z
+    logical, dimension(nrows, ncols), intent(in) :: is_seed
+    integer, intent(in) :: noffsets
+    integer, dimension(noffsets, 2), intent(in) :: offsets
+    ! Outputs
+    integer, dimension(nrows, ncols), intent(out) :: labels
 
     integer :: ilabel = 1
     integer, dimension(nrows*ncols, 2) :: tofill_buf
@@ -151,6 +206,13 @@ subroutine label_flats_f( &
     real :: sz ! Seed elevation
     integer :: iofs ! Offset index
     integer :: ni, nj ! Neighbour indices
+
+    ! Convert is_seed mask to list of seed indices
+    integer, dimension(nrows*ncols, 2) :: seeds
+    integer :: nseeds
+    call mask2ij( &
+        is_seed, nrows, ncols, &
+        seeds, size(seeds, dim=1), nseeds)
 
     do while (iseed <= nseeds)
         si = seeds(iseed, 1)
@@ -206,13 +268,12 @@ end subroutine label_flats_f
 
 subroutine away_from_high_loop_f( &
     z, labels, nrows, ncols, &
-    high_edges, nedges, offsets, noffsets)
+    is_high_edge, offsets, noffsets)
     implicit none
     integer, intent(in) :: nrows, ncols ! Size of the grid
     integer, dimension(nrows, ncols), intent(out) :: z
     integer, dimension(nrows, ncols), intent(in) :: labels ! Assume labels are 1 ... nlabels for flats, 0 for non-flats
-    integer, intent(inout) :: nedges
-    integer, dimension(nedges, 2), intent(inout) :: high_edges ! Should have 1 added to match Fortran indexing
+    logical, dimension(nrows, ncols), intent(in) :: is_high_edge
     integer, intent(in) :: noffsets
     integer, dimension(noffsets, 2), intent(in) :: offsets
 
@@ -229,8 +290,11 @@ subroutine away_from_high_loop_f( &
     integer :: ni, nj ! Neighbor indices
 
     ! Initialise high_edges buffer as a queue
+    integer :: nedges
     integer, dimension(count(labels /= 0) + max(nrows, ncols)*(maxval(labels) - minval(labels) + 1), 2) :: high_edges_buf
-    high_edges_buf(1:nedges, :) = high_edges
+    call mask2ij( &
+        is_high_edge, nrows, ncols, &
+        high_edges_buf, size(high_edges_buf, dim=1), nedges)
     nedges = nedges + 1
     high_edges_buf(nedges, :) = marker
 
@@ -325,15 +389,16 @@ end subroutine away_from_high_loop_f
 
 subroutine towards_low_loop_f( &
     z, labels, nrows, ncols, &
-    low_edges, nedges, offsets, noffsets)
+    is_low_edge, offsets, noffsets)
     implicit none
+    ! Inputs
     integer, intent(in) :: nrows, ncols ! Size of the grid
-    integer, dimension(nrows, ncols), intent(out) :: z
     integer, dimension(nrows, ncols), intent(in) :: labels
-    integer, intent(inout) :: nedges
-    integer, dimension(nedges, 2), intent(inout) :: low_edges ! Should have 1 added to match Fortran indexing
+    logical, dimension(nrows, ncols), intent(in) :: is_low_edge
     integer, intent(in) :: noffsets
     integer, dimension(noffsets, 2), intent(in) :: offsets
+    ! Outputs
+    integer, dimension(nrows, ncols), intent(out) :: z
 
     integer, parameter, dimension(2) :: marker = [-1, -1]
     logical, dimension(nrows, ncols) :: queued
@@ -346,8 +411,11 @@ subroutine towards_low_loop_f( &
     integer :: ni, nj ! Neighbor indices
 
     ! Initialise low_edges buffer as a queue
+    integer :: nedges
     integer, dimension(count(labels /= 0) + max(nrows, ncols)*maxval(labels), 2) :: low_edges_buf
-    low_edges_buf(1:nedges, :) = low_edges
+    call mask2ij( &
+        is_low_edge, nrows, ncols, &
+        low_edges_buf, size(low_edges_buf, dim=1), nedges)
     nedges = nedges + 1
     low_edges_buf(nedges, :) = marker
 
@@ -451,12 +519,7 @@ subroutine compute_back_distance_f( &
     integer :: noflow_code = 0 ! Assume 0 is noflow unless found otherwise
 
     ! Find noflow code
-    do iofs = 1, noffsets
-        if (offsets(iofs, 1) == 0 .and. offsets(iofs, 2) == 0) then
-            noflow_code = codes(iofs)
-            exit
-        end if
-    end do
+    call find_noflow_code(offsets, codes, noffsets, noflow_code)
 
     dist = -1
 
@@ -519,6 +582,23 @@ subroutine compute_back_distance_f( &
     deallocate (tofill_buf)
     !$omp END PARALLEL
 end subroutine compute_back_distance_f
+
+subroutine find_noflow_code( &
+    offsets, codes, noffsets, noflow_code)
+    implicit none
+    integer, intent(in) :: noffsets
+    integer, dimension(noffsets, 2), intent(in) :: offsets
+    integer, dimension(noffsets), intent(in) :: codes
+    integer, intent(out) :: noflow_code
+
+    integer :: iofs ! Offset index
+    do iofs = 1, noffsets
+        if (offsets(iofs, 1) == 0 .and. offsets(iofs, 2) == 0) then
+            noflow_code = codes(iofs)
+            exit
+        end if
+    end do
+end subroutine find_noflow_code
 
 subroutine mask2ij( &
     mask, nrows, ncols, ij, nij, cnt)
