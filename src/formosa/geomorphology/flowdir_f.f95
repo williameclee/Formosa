@@ -1,3 +1,51 @@
+subroutine compute_masked_flowdir_f( &
+    z, labels, flowdir, nrows, ncols, &
+    offsets, codes, noffsets)
+    implicit none
+    ! Inputs
+    integer, intent(in) :: nrows, ncols ! Size of the grid
+    integer, dimension(nrows, ncols), intent(in) :: z, labels
+    integer, intent(in) :: noffsets
+    integer, dimension(noffsets, 2), intent(in) :: offsets
+    integer, dimension(noffsets), intent(in) :: codes
+    ! Outputs
+    integer, dimension(nrows, ncols), intent(out) :: flowdir
+
+    integer :: ci, cj ! Current indices
+    integer :: ni, nj ! Neighbour indices
+    integer :: iofs ! Offset index
+    integer :: zmin
+
+    !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(ci, cj, iofs, ni, nj, zmin) &
+    !$omp COLLAPSE(2) &
+    !$omp SCHEDULE(STATIC)
+    do ci = 1, nrows
+        do cj = 1, ncols
+            if (labels(ci, cj) == 0) then
+                flowdir(ci, cj) = 0 ! No flow direction for non-flats
+                cycle
+            end if
+
+            zmin = z(ci, cj)
+
+            do iofs = 1, noffsets
+                ni = ci + offsets(iofs, 1)
+                nj = cj + offsets(iofs, 2)
+                ! Check bounds
+                if (ni < 1 .or. ni > nrows .or. nj < 1 .or. nj > ncols) cycle
+                ! Check if neighbour is part of the same flat
+                if (labels(ni, nj) /= labels(ci, cj)) cycle
+                ! Check if neighbour has lower elevation
+                if (z(ni, nj) < zmin) then
+                    zmin = z(ni, nj)
+                    flowdir(ci, cj) = codes(iofs)
+                end if
+            end do
+        end do
+    end do
+    !$omp END PARALLEL DO
+end subroutine compute_masked_flowdir_f
+
 subroutine label_flats_f( &
     z, labels, nrows, ncols, &
     seeds, nseeds, offsets, noffsets)
@@ -329,16 +377,10 @@ subroutine compute_back_distance_f( &
     dist = -1
 
     ! Append all cells with noflow direction to buffer
-    nseeds = 0
-    do ci = 1, nrows
-        do cj = 1, ncols
-            if (.not. valid(ci, cj)) cycle
-            if (flowdir(ci, cj) /= noflow_code) cycle
-            nseeds = nseeds + 1
-            seed_buf(nseeds, :) = [ci, cj]
-            dist(ci, cj) = 0.0
-        end do
-    end do
+    call mask2ij( &
+        valid .and. (flowdir == noflow_code), &
+        nrows, ncols, &
+        seed_buf, nrows*ncols, nseeds)
 
     ! Loop through seeds
     !$omp PARALLEL DEFAULT(SHARED) PRIVATE(iseed, si, sj, ci, cj, ifill, nfills, tofill_buf)
@@ -351,6 +393,7 @@ subroutine compute_back_distance_f( &
         ! Loop through buffer
         nfills = 1
         ifill = 1
+        dist(si, sj) = 0.0
         tofill_buf(1, :) = [si, sj]
 
         do while (ifill <= nfills)
@@ -392,3 +435,29 @@ subroutine compute_back_distance_f( &
     deallocate (tofill_buf)
     !$omp END PARALLEL
 end subroutine compute_back_distance_f
+
+subroutine mask2ij( &
+    mask, nrows, ncols, ij, nij, cnt)
+    implicit none
+    integer, intent(in) :: nrows, ncols
+    logical, dimension(nrows, ncols), intent(in) :: mask
+    integer, intent(in) :: nij
+    integer, dimension(nij, 2), intent(out) :: ij
+    integer, intent(out) :: cnt
+
+    integer :: ci, cj
+
+    ! Count number of valid neighbors
+    cnt = 0
+    do cj = 1, ncols
+        do ci = 1, nrows
+            if (mask(ci, cj)) then
+                cnt = cnt + 1
+                if (cnt <= nij) then
+                    ij(cnt, 1) = ci
+                    ij(cnt, 2) = cj
+                end if
+            end if
+        end do
+    end do
+end subroutine mask2ij

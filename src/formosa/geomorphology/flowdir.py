@@ -12,9 +12,8 @@ from formosa.geomorphology.flowdir_f import (
     compute_back_distance_f,
 )
 
-# from tqdm import tqdm
 import numpy.typing as npt
-from typing import Iterable
+from typing import Iterable, Literal
 
 
 def _compute_flowdir_simple(
@@ -39,12 +38,6 @@ def _compute_flowdir_simple(
     is_flat : NDArray[bool]
         A boolean mask array where True indicates cells that are part of flat areas.
     """
-    is_low_flat = find_flat(dem, directions=directions)
-    flat_neighbours, _, _ = get_neighbour_values(
-        is_low_flat, directions=D8Directions(window=3), include_self=False
-    )
-    is_1px_flat = is_low_flat & ~np.any(flat_neighbours, axis=0)
-
     neighbours, codes, _ = get_neighbour_values(
         dem, directions=directions, include_self=True, pad_value=np.max(dem) + 1
     )
@@ -53,9 +46,6 @@ def _compute_flowdir_simple(
     # find where not all neighbours are nan
     valid_mask = ~np.all(np.isnan(neighbours), axis=0)
     flowdir[valid_mask] = np.nanargmin(neighbours[:, valid_mask], axis=0)
-
-    is_ambiguous = find_ambiguous(dem, directions=directions)
-    is_ambiguous = is_ambiguous & ~is_1px_flat
 
     flowdir = codes[flowdir].astype(np.int32)
     is_flat = flowdir == 0
@@ -441,30 +431,11 @@ def _format_edges_f(
     return edges_list
 
 
-def compute_masked_flowdir(
+def _compute_masked_flowdir_py(
     z: npt.NDArray[np.integer | np.floating],
     labels: npt.NDArray[np.integer],
     directions: D8Directions = D8Directions(),
 ) -> npt.NDArray[np.integer]:
-    """
-    Computes flow directions within flat areas using synthetic elevation.
-    Very similar to the naive flow direction computation, but only search within the same flat area.
-
-    Parameters
-    ----------
-    z : NDArray[int | float]
-        A 2D array representing the synthetic elevation within flat areas.
-    labels : NDArray[int]
-        A 2D array where each flat region is labeled with a unique integer.
-    directions : D8Directions, optional
-        An instance of D8Directions defining the flow direction scheme.
-        Default is D8Directions().
-
-    Returns
-    -------
-    flowdir : NDArray[int]
-        A 2D integer array representing the flow directions within flat areas.
-    """
     neighbours, codes, _ = get_neighbour_values(
         z,
         directions=directions,
@@ -481,6 +452,50 @@ def compute_masked_flowdir(
     min_indices = np.argmin(neighbours, axis=0)
     flowdir = codes[min_indices]
     flowdir[labels == 0] = 0
+
+    return flowdir
+
+
+def compute_masked_flowdir(
+    z: npt.NDArray[np.integer | np.floating],
+    labels: npt.NDArray[np.integer],
+    directions: D8Directions = D8Directions(),
+    backend: Literal["fortran", "python"] = "fortran",
+) -> npt.NDArray[np.integer]:
+    """
+    Computes flow directions within flat areas using synthetic elevation.
+    Very similar to the naive flow direction computation, but only search within the same flat area.
+
+    Parameters
+    ----------
+    z : NDArray[int | float]
+        A 2D array representing the synthetic elevation within flat areas.
+    labels : NDArray[int]
+        A 2D array where each flat region is labeled with a unique integer.
+    directions : D8Directions, optional
+        An instance of D8Directions defining the flow direction scheme.
+        Default is D8Directions().
+    backend : {'fortran', 'python'}, optional
+        The backend to use for computation. 'fortran' uses the Fortran extension for performance,
+        while 'python' uses a pure Python implementation. Default is 'fortran'.
+
+    Returns
+    -------
+    flowdir : NDArray[int]
+        A 2D integer array representing the flow directions within flat areas.
+    """
+    match backend:
+        case "python":
+            flowdir = _compute_masked_flowdir_py(z, labels, directions=directions)
+        case "fortran":
+            from formosa.geomorphology.flowdir_f import compute_masked_flowdir_f
+
+            flowdir = compute_masked_flowdir_f(
+                z.astype(np.int32, order="F"),
+                labels.astype(np.int32, order="F"),
+                directions.offsets.astype(np.int32, order="F"),
+                directions.codes.astype(np.int32, order="F"),
+            )
 
     return flowdir
 
@@ -851,6 +866,28 @@ def compute_back_distance(
     y: npt.NDArray[np.integer | np.floating] | None = None,
     valids: npt.NDArray[np.bool] | None = None,
 ) -> npt.NDArray[np.float32]:
+    """
+    Computes the distance upstream along flow directions for each cell in the flow direction grid.
+
+    Parameters
+    ----------
+    flowdir : NDArray[int]
+        A 2D array representing the flow direction for each cell.
+    directions : D8Directions, optional
+        An instance of D8Directions defining the flow direction scheme.
+        Default is D8Directions().
+    x : NDArray[int | float], optional
+        A 2D array representing the x-coordinates of each cell. If None, a default grid will be created.
+    y : NDArray[int | float], optional
+        A 2D array representing the y-coordinates of each cell. If None, a default grid will be created.
+    valids : NDArray[bool], optional
+        A boolean mask array where True indicates valid cells. If None, all non-NaN cells in flowdir are considered valid.
+
+    Returns
+    -------
+    NDArray[float32]
+        A 2D array representing the upstream distance for each cell.
+    """
     if valids is None:
         valids = ~np.isnan(flowdir)
     elif isinstance(valids, np.ndarray):
