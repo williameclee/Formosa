@@ -1,3 +1,78 @@
+subroutine compute_flowdir_simple_f( &
+    z, valids, flowdir, is_flat, nrows, ncols, &
+    offsets, codes, noffsets)
+    implicit none
+    ! Inputs
+    integer, intent(in) :: nrows, ncols ! Size of the grid
+    real, dimension(nrows, ncols), intent(in) :: z
+    logical, dimension(nrows, ncols), intent(in) :: valids
+    integer, intent(in) :: noffsets
+    integer, dimension(noffsets, 2), intent(in) :: offsets
+    integer, dimension(noffsets), intent(in) :: codes
+    ! Outputs
+    integer, dimension(nrows, ncols), intent(out) :: flowdir
+    logical, dimension(nrows, ncols), intent(out) :: is_flat
+
+    integer :: ci, cj ! Current indices
+    integer :: ni, nj ! Neighbour indices
+    integer :: iofs ! Offset index
+    real :: zmin
+    integer :: noflow_code = 0 ! Assume 0 is noflow unless found otherwise
+
+    ! Find noflow code
+    do iofs = 1, noffsets
+        if (offsets(iofs, 1) == 0 .and. offsets(iofs, 2) == 0) then
+            noflow_code = codes(iofs)
+            exit
+        end if
+    end do
+
+    !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(ci, cj, iofs, ni, nj, zmin) &
+    !$omp COLLAPSE(2) &
+    !$omp SCHEDULE(STATIC)
+    do ci = 1, nrows
+        do cj = 1, ncols
+            if (.not. valids(ci, cj)) then
+                flowdir(ci, cj) = noflow_code
+                cycle
+            end if
+
+            zmin = z(ci, cj)
+
+            do iofs = 1, noffsets
+                ni = ci + offsets(iofs, 1)
+                nj = cj + offsets(iofs, 2)
+                ! Check bounds
+                if (ni < 1 .or. ni > nrows .or. nj < 1 .or. nj > ncols) cycle
+                ! Check if neighbour is part of the same flat
+                if (.not. valids(ni, nj)) cycle
+                ! Check if neighbour has lower elevation
+                if (z(ni, nj) < zmin) then
+                    zmin = z(ni, nj)
+                    flowdir(ci, cj) = codes(iofs)
+                end if
+            end do
+        end do
+    end do
+    !$omp END PARALLEL DO
+
+    ! Identify flat cells
+    !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(ci, cj) &
+    !$omp COLLAPSE(2) &
+    !$omp SCHEDULE(STATIC)
+    do ci = 1, nrows
+        do cj = 1, ncols
+            if (.not. valids(ci, cj)) then
+                is_flat(ci, cj) = .false.
+            else if (flowdir(ci, cj) == noflow_code) then
+                is_flat(ci, cj) = .true.
+            else
+                is_flat(ci, cj) = .false.
+            end if
+        end do
+    end do
+end subroutine compute_flowdir_simple_f
+
 subroutine compute_masked_flowdir_f( &
     z, labels, flowdir, nrows, ncols, &
     offsets, codes, noffsets)
@@ -15,6 +90,15 @@ subroutine compute_masked_flowdir_f( &
     integer :: ni, nj ! Neighbour indices
     integer :: iofs ! Offset index
     integer :: zmin
+    integer :: noflow_code = 0 ! Assume 0 is noflow unless found otherwise
+
+    ! Find noflow code
+    do iofs = 1, noffsets
+        if (offsets(iofs, 1) == 0 .and. offsets(iofs, 2) == 0) then
+            noflow_code = codes(iofs)
+            exit
+        end if
+    end do
 
     !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(ci, cj, iofs, ni, nj, zmin) &
     !$omp COLLAPSE(2) &
@@ -22,7 +106,7 @@ subroutine compute_masked_flowdir_f( &
     do ci = 1, nrows
         do cj = 1, ncols
             if (labels(ci, cj) == 0) then
-                flowdir(ci, cj) = 0 ! No flow direction for non-flats
+                flowdir(ci, cj) = noflow_code
                 cycle
             end if
 

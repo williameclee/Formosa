@@ -16,9 +16,29 @@ import numpy.typing as npt
 from typing import Iterable, Literal
 
 
-def _compute_flowdir_simple(
+def _compute_flowdir_simple_py(
     dem: npt.NDArray[np.number],
     directions: D8Directions = D8Directions(),
+) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.bool]]:
+    neighbours, codes, _ = get_neighbour_values(
+        dem, directions=directions, include_self=True, pad_value=np.max(dem) + 1
+    )
+    flow2self_code = np.where(np.all(directions.offsets == [0, 0], axis=1))[0][0]
+    flowdir = np.full(dem.shape, flow2self_code, dtype=np.int32)
+    # find where not all neighbours are nan
+    valid_mask = ~np.all(np.isnan(neighbours), axis=0)
+    flowdir[valid_mask] = np.nanargmin(neighbours[:, valid_mask], axis=0)
+
+    flowdir = codes[flowdir].astype(np.int32)
+    is_flat = flowdir == 0
+    return flowdir, is_flat
+
+
+def compute_flowdir_simple(
+    dem: npt.NDArray[np.number],
+    directions: D8Directions = D8Directions(),
+    valids: npt.NDArray[np.bool] | None = None,
+    backend: Literal["fortran", "python"] = "fortran",
 ) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.bool]]:
     """
     Computes flow directions for a DEM using a simple D8 algorithm.
@@ -38,18 +58,21 @@ def _compute_flowdir_simple(
     is_flat : NDArray[bool]
         A boolean mask array where True indicates cells that are part of flat areas.
     """
-    neighbours, codes, _ = get_neighbour_values(
-        dem, directions=directions, include_self=True, pad_value=np.max(dem) + 1
-    )
-    flow2self_code = np.where(np.all(directions.offsets == [0, 0], axis=1))[0][0]
-    flowdir = np.full(dem.shape, flow2self_code, dtype=np.int32)
-    # find where not all neighbours are nan
-    valid_mask = ~np.all(np.isnan(neighbours), axis=0)
-    flowdir[valid_mask] = np.nanargmin(neighbours[:, valid_mask], axis=0)
+    match backend:
+        case "python":
+            flowdir, is_flat = _compute_flowdir_simple_py(dem, directions=directions)
+        case "fortran":
+            from formosa.geomorphology.flowdir_f import compute_flowdir_simple_f
 
-    flowdir = codes[flowdir].astype(np.int32)
-    is_flat = flowdir == 0
-    return flowdir, is_flat
+            if valids is None:
+                valids = np.ones(dem.shape, dtype=bool, order="F")
+            flowdir, is_flat = compute_flowdir_simple_f(
+                dem.astype(np.float32, order="F"),
+                valids.astype(np.bool, order="F"),
+                directions.offsets.astype(np.int32, order="F"),
+                directions.codes.astype(np.int32, order="F"),
+            )
+    return flowdir.astype(np.uint8, order="F"), is_flat.astype(np.bool, order="F")
 
 
 def find_flat_edges(
@@ -503,6 +526,7 @@ def compute_masked_flowdir(
 def _compute_flowdir_total(
     dem: npt.NDArray[np.number],
     directions: D8Directions = D8Directions(),
+    valids: npt.NDArray[np.bool] | None = None,
     step_size: int = 4,
 ) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.bool], npt.NDArray[np.integer]]:
     """
@@ -516,6 +540,10 @@ def _compute_flowdir_total(
     directions : D8Directions, optional
         An instance of D8Directions defining the flow direction scheme.
         Default is D8Directions().
+    valids : NDArray[bool], optional
+        A boolean mask array indicating valid cells in the DEM.
+        If None, all cells are considered valid.
+        Default is None.
     step_size : int, optional
         The increment in synthetic elevation per step away from low edges to avoid ties when combined with the result of `compute_away_from_high`.
         Default is 4.
@@ -529,7 +557,7 @@ def _compute_flowdir_total(
     z_syn : NDArray[int]
         A 2D integer array representing the synthetic elevation that resolves flat areas.
     """
-    flowdir, is_flat = _compute_flowdir_simple(dem, directions=directions)
+    flowdir, is_flat = compute_flowdir_simple(dem, directions=directions, valids=valids)
 
     is_low_edge, is_high_edge = find_flat_edges(dem, flowdir, directions=directions)
 
@@ -558,6 +586,7 @@ def _compute_flowdir_total(
 def compute_flowdir(
     dem: npt.NDArray[np.number],
     directions: D8Directions = D8Directions(),
+    valids: npt.NDArray[np.bool] | None = None,
     resolve_flat: bool = True,
     step_size: int = 4,
 ) -> tuple[
@@ -573,6 +602,10 @@ def compute_flowdir(
     directions : D8Directions, optional
         An instance of D8Directions defining the flow direction scheme.
         Default is D8Directions().
+    valids : NDArray[bool], optional
+        A boolean mask array indicating valid cells in the DEM.
+        If None, all cells are considered valid.
+        Default is None.
     resolve_flat : bool, optional
         Whether to resolve flat areas using synthetic elevations.
         Default is True.
@@ -591,10 +624,12 @@ def compute_flowdir(
     """
     if resolve_flat:
         flowdir, is_flat, flat_gradient = _compute_flowdir_total(
-            dem, directions=directions, step_size=step_size
+            dem, directions=directions, valids=valids, step_size=step_size
         )
     else:
-        flowdir, is_flat = _compute_flowdir_simple(dem, directions=directions)
+        flowdir, is_flat = compute_flowdir_simple(
+            dem, directions=directions, valids=valids
+        )
         flat_gradient = None
     return flowdir, is_flat, flat_gradient
 
