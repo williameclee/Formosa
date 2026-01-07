@@ -1,8 +1,6 @@
-from collections import deque
 import numpy as np
 
 from formosa.geomorphology.d8directions import D8Directions
-from formosa.geomorphology.flow_distance_loop import _flow_distance_loop
 
 import numpy.typing as npt
 from typing import Literal
@@ -190,7 +188,10 @@ def label_flats(
         If the shapes of the input arrays do not match the expected dimensions.
     """
     from formosa.geomorphology.flowdir_f import label_flats_f
-    assert dem.shape == seeds.shape, f"Shapes for dem ({dem.shape}) and seeds ({seeds.shape}) do not match."
+
+    assert (
+        dem.shape == seeds.shape
+    ), f"Shapes for dem ({dem.shape}) and seeds ({seeds.shape}) do not match."
 
     labels = label_flats_f(
         dem.astype(np.float64, order="F"),
@@ -716,6 +717,7 @@ def _compute_accumulation_py(
     dsij: npt.NDArray[np.integer] | None = None,
     directions: D8Directions = D8Directions(),
 ) -> np.ndarray:
+    from collections import deque
     # Initialisation
     I, J = flowdirs.shape
 
@@ -860,6 +862,7 @@ def compute_strahler_order(
     indegrees: npt.NDArray[np.integer] | None = None,
     downstream_ij: npt.NDArray[np.integer] | None = None,
 ) -> npt.NDArray[np.integer]:
+    from collections import deque
     if flowdir is None and (indegrees is None or downstream_ij is None):
         raise ValueError(
             "[FORMOSA] Either FLOWDIR or (INDEGREES and DOWNSTREAM_IJ) must be provided"
@@ -897,29 +900,50 @@ def compute_strahler_order(
 
 
 def compute_flow_distance(
-    flowdir: npt.NDArray[np.integer], directions: D8Directions = D8Directions()
-) -> npt.NDArray[np.integer]:
-    downstream_i, downstreamj, _ = compute_downstream_indices(
-        flowdir, directions=directions
+    flowdir: npt.NDArray[np.integer],
+    directions: D8Directions = D8Directions(),
+    x: npt.NDArray[np.integer | np.floating] | None = None,
+    y: npt.NDArray[np.integer | np.floating] | None = None,
+    valids: npt.NDArray[np.bool] | None = None,
+    indegrees: npt.NDArray[np.integer] | None = None,
+) -> npt.NDArray[np.float64]:
+    from formosa.geomorphology.flowdir_f import compute_distance_f
+
+    if valids is None:
+        valids = np.ones(flowdir.shape, dtype=bool)
+    elif isinstance(valids, np.ndarray):
+        assert (
+            valids.shape == flowdir.shape
+        ), f"Shape for flow direction ({flowdir.shape}) and valid mask ({valids.shape}) do not match."
+    else:
+        raise TypeError(f"Valid mask must be a NumPy array (got {type(valids)}).")
+    if x is not None and y is not None:
+        assert (
+            x.shape == flowdir.shape and y.shape == flowdir.shape
+        ), f"Shapes for flow direction ({flowdir.shape}) and x ({x.shape}) and y ({y.shape}) must match."
+    else:
+        x = np.arange(flowdir.shape[1], dtype=np.float32)
+        y = np.arange(flowdir.shape[0], dtype=np.float32)
+        x, y = np.meshgrid(x, y, indexing="xy")
+    if indegrees is None:
+        indegrees = compute_indegree(flowdir, directions=directions)
+    elif isinstance(indegrees, np.ndarray):
+        assert (
+            indegrees.shape == flowdir.shape
+        ), f"Shape for flow direction ({flowdir.shape}) and indegree ({indegrees.shape}) do not match."
+    else:
+        raise TypeError(f"Indegree must be a NumPy array (got {type(indegrees)}).")
+
+    distance = compute_distance_f(
+        flowdir.astype(np.int32, order="F"),
+        valids.astype(np.bool, order="F"),
+        x.astype(np.float32, order="F"),
+        y.astype(np.float32, order="F"),
+        indegrees.astype(np.int32, order="F"),
+        directions.offsets.astype(np.int32, order="F"),
+        directions.codes.astype(np.int32, order="F"),
     )
-
-    distance: npt.NDArray[np.int32] = np.zeros(flowdir.shape, dtype=np.int32)
-
-    ii, jj = np.indices(flowdir.shape, dtype=np.int32)
-    seeds: list[tuple[int, int]] = list(zip(ii[flowdir == 0], jj[flowdir == 0]))  # type: ignore TODO: figure out what the type error actually is
-    distance[flowdir == 0] = 1
-
-    shape_ij: tuple[int, int] = flowdir.shape
-
-    distance = _flow_distance_loop(
-        distance,
-        seeds,
-        directions.offsets.astype(np.int32, copy=False),
-        downstream_i.astype(np.int32, copy=False),
-        downstreamj.astype(np.int32, copy=False),
-        shape_ij,
-    )
-    return distance
+    return distance.astype(np.float64, order="F")
 
 
 def label_watersheds(
@@ -985,7 +1009,7 @@ def compute_back_distance(
     x: npt.NDArray[np.integer | np.floating] | None = None,
     y: npt.NDArray[np.integer | np.floating] | None = None,
     valids: npt.NDArray[np.bool] | None = None,
-) -> npt.NDArray[np.float32]:
+) -> npt.NDArray[np.float64]:
     """
     Computes the distance upstream along flow directions for each cell in the flow direction grid.
 
@@ -1039,4 +1063,4 @@ def compute_back_distance(
         directions.offsets.astype(np.int32, order="F"),
         directions.codes.astype(np.int32, order="F"),
     )
-    return distance.astype(np.float32, copy=False)
+    return distance.astype(np.float64, order="F")
