@@ -277,6 +277,30 @@ def compute_downstream_indices(
     directions: D8Directions = D8Directions(),
     valids: npt.NDArray[np.bool] | None = None,
 ) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.integer], npt.NDArray[np.int32]]:
+    """
+    Computes the downstream indices for each cell in a flow direction grid.
+    
+    Parameters
+    ----------
+    flowdirs : NDArray[int]
+        A 2D array representing the flow directions for each cell.
+    directions : D8Directions, optional
+        An instance of D8Directions defining the flow direction scheme.
+        Default is D8Directions().
+    valids : NDArray[bool], optional
+        A boolean mask array indicating valid cells in the flow direction grid.
+        If None, all cells are considered valid.
+        Default is None.
+    
+    Returns
+    -------
+    dsi : NDArray[int]
+        A 2D array of downstream row indices for each cell.
+    dsj : NDArray[int]
+        A 2D array of downstream column indices for each cell.
+    dsij : NDArray[int32]
+        A 2D array of flattened downstream indices for each cell.
+    """
     if valids is None:
         valids = ~np.isnan(flowdirs)
     elif isinstance(valids, np.ndarray):
@@ -307,6 +331,22 @@ def find_ambiguous(
     dem: npt.NDArray[np.number],
     directions: D8Directions = D8Directions(),
 ) -> npt.NDArray[np.bool]:
+    """
+    Detects ambiguous flow directions in a DEM, where multiple neighbouring cells have the same minimum elevation.
+    
+    Parameters
+    ----------
+    dem : NDArray[number]
+        A 2D array representing the digital elevation model (DEM).
+    directions : D8Directions, optional
+        An instance of D8Directions defining the flow direction scheme.
+        Default is D8Directions().
+    
+    Returns
+    -------
+    is_ambiguous : NDArray[bool]
+        A boolean mask array where True indicates cells with ambiguous flow directions.
+    """
     neighbours, _, _ = get_neighbour_values(dem, directions=directions)
     min_neighbours = np.min(neighbours, axis=0)
     is_ambiguous = np.sum(neighbours == min_neighbours, axis=0) > 1
@@ -320,6 +360,30 @@ def find_flat(
     only_min: bool = True,
     directions: D8Directions = D8Directions(window=3),
 ) -> npt.NDArray[np.bool]:
+    """
+    Identifies flat areas in a DEM where cells have no lower neighbouring cells.
+    
+    Parameters
+    ----------
+    dem : NDArray[number]
+        A 2D array representing the digital elevation model (DEM).
+    valid : NDArray[bool], optional
+        A boolean mask array indicating valid cells in the DEM.
+        If None, all cells are considered valid.
+        Default is None.
+    only_min : bool, optional
+        If True, only cells that are equal to the minimum of their neighbours are considered flat.
+        If False, cells equal to any neighbour are considered flat.
+        Default is True.
+    directions : D8Directions, optional
+        An instance of D8Directions defining the neighbour offsets.
+        Default is D8Directions(window=3).
+    
+    Returns
+    -------
+    is_flat : NDArray[bool]
+        A boolean mask array where True indicates cells that are part of flat areas.
+    """
     if valid is not None and np.any(~valid):
         dem[~valid] = np.max(dem[~valid]) + 1
 
@@ -670,6 +734,36 @@ def compute_flowdir_graph(
     x: npt.NDArray[np.number] | None = None,
     y: npt.NDArray[np.number] | None = None,
 ) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.integer]]:
+    """
+    Computes a graph representation of the flow directions in a flow direction grid.
+    
+    Parameters
+    ----------
+    flowdirs : NDArray[int]
+        A 2D array representing the flow directions for each cell.
+    valid : NDArray[bool], optional
+        A boolean mask array indicating valid cells in the flow direction grid.
+        If None, all cells are considered valid.
+        Default is None.
+    directions : D8Directions, optional
+        An instance of D8Directions defining the flow direction scheme.
+        Default is D8Directions().
+    x : NDArray[number], optional
+        A 2D array representing the x-coordinates of each cell.
+        If provided, the graph will use these coordinates instead of grid indices.
+        Default is None.
+    y : NDArray[number], optional
+        A 2D array representing the y-coordinates of each cell.
+        If provided, the graph will use these coordinates instead of grid indices.
+        Default is None.
+    
+    Returns
+    -------
+    graphi : NDArray[int]
+        A 1D array representing the row indices of the graph edges.
+    graphj : NDArray[int]
+        A 1D array representing the column indices of the graph edges.
+    """
     if valid is not None:
         assert (
             valid.shape == flowdirs.shape
@@ -718,6 +812,7 @@ def _compute_accumulation_py(
     directions: D8Directions = D8Directions(),
 ) -> np.ndarray:
     from collections import deque
+
     # Initialisation
     I, J = flowdirs.shape
 
@@ -863,6 +958,7 @@ def compute_strahler_order(
     downstream_ij: npt.NDArray[np.integer] | None = None,
 ) -> npt.NDArray[np.integer]:
     from collections import deque
+
     if flowdir is None and (indegrees is None or downstream_ij is None):
         raise ValueError(
             "[FORMOSA] Either FLOWDIR or (INDEGREES and DOWNSTREAM_IJ) must be provided"
@@ -907,6 +1003,43 @@ def compute_flow_distance(
     valids: npt.NDArray[np.bool] | None = None,
     indegrees: npt.NDArray[np.integer] | None = None,
 ) -> npt.NDArray[np.float64]:
+    """
+    Computes the distance downstream along flow directions for each cell in the flow direction grid.
+
+    Parameters
+    ----------
+    flowdir : NDArray[int]
+        A 2D array representing the flow direction for each cell.
+    directions : D8Directions, optional
+        An instance of D8Directions defining the flow direction scheme.
+        Default is D8Directions().
+    x : NDArray[int | float], optional
+        A 2D array representing the x-coordinates of each cell. If None, cell indices are used.
+        Default is None.
+    y : NDArray[int | float], optional
+        A 2D array representing the y-coordinates of each cell. If None, cell indices are used.
+        Default is None.
+    valids : NDArray[bool], optional
+        A boolean mask array indicating valid cells in the flow direction grid.
+        If None, all cells are considered valid.
+        Default is None.
+    indegrees : NDArray[int], optional
+        A 2D array representing the indegree (number of upstream cells) for each cell.
+        If None, indegrees are computed from the flow direction grid.
+        Default is None.
+
+    Returns
+    -------
+    distance : NDArray[float64]
+        A 2D array representing the downstream distance for each cell.
+
+    Raises
+    ------
+    TypeError
+        If the input arrays are not of the expected type or format.
+    ValueError
+        If the shapes of the input arrays do not match the expected dimensions.
+    """
     from formosa.geomorphology.flowdir_f import compute_distance_f
 
     if valids is None:
@@ -952,7 +1085,24 @@ def label_watersheds(
     valids: npt.NDArray[np.bool] | None = None,
 ) -> npt.NDArray[np.int32]:
     """
-    Find and label watersheds in a DEM based on flow direction.
+    Finds and labels watersheds in a DEM based on flow direction.
+    
+    Parameters
+    ----------
+    flowdir : NDArray[int]
+        A 2D array representing the flow direction for each cell.
+    directions : D8Directions, optional
+        An instance of D8Directions defining the flow direction scheme.
+        Default is D8Directions().
+    valids : NDArray[bool], optional
+        A boolean mask array indicating valid cells in the flow direction grid.
+        If None, all non-NaN cells in flowdir are considered valid.
+        Default is None.
+    
+    Returns
+    -------
+    watershed : NDArray[int32]
+        A 2D array where each watershed is labeled with a unique integer.
     """
     if valids is None:
         valids = ~np.isnan(flowdir)
