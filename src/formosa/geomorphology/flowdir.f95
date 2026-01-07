@@ -1,6 +1,72 @@
+module flow_utils
+    implicit none
+contains
+    subroutine find_noflow_code( &
+        offsets, codes, noffsets, noflow_code)
+        implicit none
+        integer, intent(in) :: noffsets
+        integer, dimension(noffsets, 2), intent(in) :: offsets
+        integer, dimension(noffsets), intent(in) :: codes
+        integer, intent(out) :: noflow_code
+
+        integer :: iofs ! Offset index
+        do iofs = 1, noffsets
+            if (offsets(iofs, 1) == 0 .and. offsets(iofs, 2) == 0) then
+                noflow_code = codes(iofs)
+                exit
+            end if
+        end do
+    end subroutine find_noflow_code
+    subroutine make_offset_lookups(offsets, codes, noffsets, mincode, maxcode, diffs)
+        implicit none
+        ! Inputs
+        integer, intent(in) :: noffsets
+        integer, dimension(noffsets, 2), intent(in) :: offsets
+        integer, dimension(noffsets), intent(in) :: codes
+        integer, intent(in) :: mincode, maxcode
+        ! Outputs
+        integer, dimension(mincode:maxcode, 2), intent(out) :: diffs ! Lookup table for offsets
+
+        integer :: iofs
+
+        ! Create lookup tables for offsets
+        do iofs = 1, noffsets
+            diffs(codes(iofs), 1) = offsets(iofs, 1)
+            diffs(codes(iofs), 2) = offsets(iofs, 2)
+        end do
+    end subroutine make_offset_lookups
+    subroutine mask2ij( &
+        mask, nrows, ncols, ij, nij, cnt)
+        ! TODO: Optimise this subroutine?
+        implicit none
+        integer, intent(in) :: nrows, ncols
+        logical, dimension(nrows, ncols), intent(in) :: mask
+        integer, intent(in) :: nij
+        integer, dimension(nij, 2), intent(out) :: ij
+        integer, intent(out) :: cnt
+
+        integer :: ci, cj
+
+        ! Count number of valid neighbors
+        cnt = 0
+        do cj = 1, ncols
+            do ci = 1, nrows
+                if (mask(ci, cj)) then
+                    cnt = cnt + 1
+                    if (cnt <= nij) then
+                        ij(cnt, 1) = ci
+                        ij(cnt, 2) = cj
+                    end if
+                end if
+            end do
+        end do
+    end subroutine mask2ij
+end module flow_utils
+
 subroutine compute_flowdir_simple_f( &
     z, valids, flowdir, is_flat, nrows, ncols, &
     offsets, codes, noffsets)
+    use flow_utils
     implicit none
     ! Inputs
     integer, intent(in) :: nrows, ncols ! Size of the grid
@@ -71,6 +137,7 @@ end subroutine compute_flowdir_simple_f
 subroutine compute_masked_flowdir_f( &
     z, labels, flowdir, nrows, ncols, &
     offsets, codes, noffsets)
+    use flow_utils
     implicit none
     ! Inputs
     integer, intent(in) :: nrows, ncols ! Size of the grid
@@ -123,6 +190,7 @@ end subroutine compute_masked_flowdir_f
 subroutine find_flat_edges_f( &
     z, flowdir, valids, is_low_edge, is_high_edge, nrows, ncols, &
     offsets, codes, noffsets)
+    use flow_utils
     implicit none
     ! Inputs
     integer, intent(in) :: nrows, ncols ! Size of the grid
@@ -185,8 +253,9 @@ subroutine find_flat_edges_f( &
 end subroutine find_flat_edges_f
 
 subroutine label_flats_f( &
-    z, labels, is_seed, nrows, ncols, &
+    z, is_seed, labels, nrows, ncols, &
     offsets, noffsets)
+    use flow_utils
     implicit none
     ! Inputs
     integer, intent(in) :: nrows, ncols ! Size of the grid
@@ -198,7 +267,7 @@ subroutine label_flats_f( &
     integer, dimension(nrows, ncols), intent(out) :: labels
 
     integer :: ilabel = 1
-    integer, dimension(nrows*ncols, 2) :: tofill_buf
+    integer, dimension(:, :), allocatable :: tofill_buf
     integer :: ifill, nfills
     integer :: iseed = 1
     integer :: si, sj ! Seed indices
@@ -208,8 +277,10 @@ subroutine label_flats_f( &
     integer :: ni, nj ! Neighbour indices
 
     ! Convert is_seed mask to list of seed indices
-    integer, dimension(nrows*ncols, 2) :: seeds
+    integer, dimension(:, :), allocatable :: seeds
     integer :: nseeds
+    allocate (tofill_buf(nrows*ncols, 2))
+    allocate (seeds(nrows*ncols, 2))
     call mask2ij( &
         is_seed, nrows, ncols, &
         seeds, size(seeds, dim=1), nseeds)
@@ -264,11 +335,14 @@ subroutine label_flats_f( &
 
         ilabel = ilabel + 1
     end do
+    deallocate (tofill_buf)
+    deallocate (seeds)
 end subroutine label_flats_f
 
 subroutine away_from_high_loop_f( &
     z, labels, nrows, ncols, &
     is_high_edge, offsets, noffsets)
+    use flow_utils
     implicit none
     integer, intent(in) :: nrows, ncols ! Size of the grid
     integer, dimension(nrows, ncols), intent(out) :: z
@@ -291,7 +365,9 @@ subroutine away_from_high_loop_f( &
 
     ! Initialise high_edges buffer as a queue
     integer :: nedges
-    integer, dimension(count(labels /= 0) + max(nrows, ncols)*(maxval(labels) - minval(labels) + 1), 2) :: high_edges_buf
+    integer, dimension(:, :), allocatable :: high_edges_buf
+    allocate (high_edges_buf(count(labels /= 0) + max(nrows, ncols)*(maxval(labels) - minval(labels) + 1), 2))
+
     call mask2ij( &
         is_high_edge, nrows, ncols, &
         high_edges_buf, size(high_edges_buf, dim=1), nedges)
@@ -379,17 +455,12 @@ subroutine away_from_high_loop_f( &
     do concurrent(ci=1:nrows, cj=1:ncols, labels(ci, cj) /= 0)
         z(ci, cj) = zmax(labels(ci, cj)) - z(ci, cj) + 1
     end do
-    ! do cj = 1, ncols
-    !     do ci = 1, nrows
-    !         if (labels(ci, cj) == 0) cycle
-    !         z(ci, cj) = zmax(labels(ci, cj)) - z(ci, cj) + 1
-    !     end do
-    ! end do
 end subroutine away_from_high_loop_f
 
 subroutine towards_low_loop_f( &
     z, labels, nrows, ncols, &
     is_low_edge, offsets, noffsets)
+    use flow_utils
     implicit none
     ! Inputs
     integer, intent(in) :: nrows, ncols ! Size of the grid
@@ -412,7 +483,9 @@ subroutine towards_low_loop_f( &
 
     ! Initialise low_edges buffer as a queue
     integer :: nedges
-    integer, dimension(count(labels /= 0) + max(nrows, ncols)*maxval(labels), 2) :: low_edges_buf
+    integer, dimension(:, :), allocatable :: low_edges_buf
+    allocate (low_edges_buf(count(labels /= 0) + max(nrows, ncols)*maxval(labels), 2))
+
     call mask2ij( &
         is_low_edge, nrows, ncols, &
         low_edges_buf, size(low_edges_buf, dim=1), nedges)
@@ -494,10 +567,142 @@ subroutine towards_low_loop_f( &
     end do
 end subroutine towards_low_loop_f
 
+subroutine compute_indegree_f( &
+    flowdir, indegree, nrows, ncols, &
+    offsets, codes, noffsets)
+    use flow_utils
+    implicit none
+    ! Inputs
+    integer, intent(in) :: nrows, ncols
+    integer, dimension(nrows, ncols), intent(in) :: flowdir
+    integer, intent(in) :: noffsets
+    integer, dimension(noffsets, 2), intent(in) :: offsets
+    integer, dimension(noffsets), intent(in) :: codes
+    ! Outputs
+    integer, dimension(nrows, ncols), intent(out) :: indegree
+
+    integer :: ci, cj ! Current indices
+    integer :: ni, nj ! Neighbour indices
+    integer, dimension(:, :), allocatable :: diffs ! Lookup tables for offsets
+    integer :: code, mincode, maxcode
+
+    ! Create lookup tables for offsets
+    mincode = minval(codes)
+    maxcode = maxval(codes)
+    allocate (diffs(mincode:maxcode, 2))
+    call make_offset_lookups(offsets, codes, noffsets, mincode, maxcode, diffs)
+
+    indegree = 0
+
+    !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(ci, cj, ni, nj) &
+    !$omp COLLAPSE(2) &
+    !$omp SCHEDULE(STATIC)
+    do ci = 1, nrows
+        do cj = 1, ncols
+            ! Get neighbour indices based on flow direction
+            code = flowdir(ci, cj)
+            if (code < mincode .or. code > maxcode) cycle
+            ni = ci + diffs(code, 1)
+            nj = cj + diffs(code, 2)
+
+            ! Check bounds
+            if (ni < 1 .or. ni > nrows .or. nj < 1 .or. nj > ncols) cycle
+            ! Skip self-loops
+            if (ni == ci .and. nj == cj) cycle
+
+            ! Increment indegree of downstream cell, make sure only one thread updates at a time
+            !$omp ATOMIC UPDATE
+            indegree(ni, nj) = indegree(ni, nj) + 1
+            !$omp END ATOMIC
+        end do
+    end do
+    !$omp END PARALLEL DO
+    deallocate (diffs)
+end subroutine compute_indegree_f
+
+subroutine compute_accumulation_f( &
+    flowdir, valids, weights, indegrees, accumulations, nrows, ncols, &
+    offsets, codes, noffsets)
+    use flow_utils
+    implicit none
+    ! Inputs
+    integer, intent(in) :: nrows, ncols
+    integer, dimension(nrows, ncols), intent(in) :: flowdir
+    logical, dimension(nrows, ncols), intent(in) :: valids
+    real, dimension(nrows, ncols), intent(in) :: weights
+    integer, dimension(nrows, ncols), intent(inout) :: indegrees
+    integer, intent(in) :: noffsets
+    integer, dimension(noffsets, 2), intent(in) :: offsets
+    integer, dimension(noffsets), intent(in) :: codes
+    ! Outputs
+    real, dimension(nrows, ncols), intent(out) :: accumulations
+
+    logical, dimension(:, :), allocatable :: is_tofill_seed
+    integer, dimension(:, :), allocatable :: tofill_buf
+    integer :: itofill, ntofills
+    integer :: ci, cj ! Current indices
+    integer :: ni, nj ! Neighbour indices
+    integer, dimension(:, :), allocatable :: diffs ! Lookup tables for offsets
+    integer :: code, mincode, maxcode
+
+    ! Create lookup tables for offsets
+    mincode = minval(codes)
+    maxcode = maxval(codes)
+    allocate (diffs(mincode:maxcode, 2))
+    call make_offset_lookups(offsets, codes, noffsets, mincode, maxcode, diffs)
+
+    ! Fill the tofill buffer with all valid cells with zero indegree
+    allocate (tofill_buf(nrows*ncols, 2))
+    allocate (is_tofill_seed(nrows, ncols))
+    is_tofill_seed = valids .and. (indegrees == 0)
+    call mask2ij(is_tofill_seed, &
+                 nrows, ncols, &
+                 tofill_buf, nrows*ncols, ntofills)
+    deallocate (is_tofill_seed)
+
+    accumulations = weights
+    itofill = 1
+    do while (itofill <= ntofills)
+        ci = tofill_buf(itofill, 1)
+        cj = tofill_buf(itofill, 2)
+        itofill = itofill + 1
+
+        code = flowdir(ci, cj)
+        if (code < mincode .or. code > maxcode) cycle
+        ni = ci + diffs(flowdir(ci, cj), 1)
+        nj = cj + diffs(flowdir(ci, cj), 2)
+
+        ! Check bounds
+        if (ni < 1 .or. ni > nrows .or. nj < 1 .or. nj > ncols) cycle
+        ! Check mask
+        if (.not. valids(ni, nj)) cycle
+        ! Check not a self-loop
+        if (ni == ci .and. nj == cj) cycle
+        ! Check not already processed
+        if (indegrees(ni, nj) <= 0) cycle
+
+        ! Update accumulation of downstream cell
+        accumulations(ni, nj) = accumulations(ni, nj) + accumulations(ci, cj)
+        ! Decrement indegree of downstream cell
+        indegrees(ni, nj) = indegrees(ni, nj) - 1
+        ! If indegree is zero, add to tofill buffer
+        if (indegrees(ni, nj) == 0) then
+            ntofills = ntofills + 1
+            if (ntofills > size(tofill_buf, 1)) then
+                print *, "Error: tofill buffer overflow (size:", ntofills, ", allocated:", size(tofill_buf, 1), ")"
+                stop
+            end if
+            tofill_buf(ntofills, :) = [ni, nj]
+        end if
+    end do
+    deallocate (tofill_buf)
+    deallocate (diffs)
+end subroutine compute_accumulation_f
+
 subroutine compute_back_distance_f( &
     dist, flowdir, x, y, valid, nrows, ncols, offsets, codes, noffsets)
     use omp_lib
-
+    use flow_utils
     implicit none
     integer, intent(in) :: nrows, ncols
     integer, dimension(nrows, ncols), intent(in) :: flowdir
@@ -508,9 +713,10 @@ subroutine compute_back_distance_f( &
     integer, dimension(noffsets, 2), intent(in) :: offsets
     integer, dimension(noffsets), intent(in) :: codes
 
-    integer, dimension(nrows*ncols, 2) :: seed_buf
+    integer, dimension(:, :), allocatable :: seed_buf
     integer :: iseed, nseeds
     integer, dimension(:, :), allocatable :: tofill_buf
+    logical, dimension(:, :), allocatable :: is_seed
     integer :: ifill, nfills
     integer :: si, sj ! Seed indices
     integer :: ci, cj ! Current indices
@@ -524,10 +730,12 @@ subroutine compute_back_distance_f( &
     dist = -1
 
     ! Append all cells with noflow direction to buffer
-    call mask2ij( &
-        valid .and. (flowdir == noflow_code), &
-        nrows, ncols, &
-        seed_buf, nrows*ncols, nseeds)
+    allocate (seed_buf(nrows*ncols, 2))
+    allocate (is_seed(nrows, ncols))
+    is_seed = valid .and. (flowdir == noflow_code)
+    call mask2ij(is_seed, nrows, ncols, &
+                 seed_buf, nrows*ncols, nseeds)
+    deallocate (is_seed)
 
     ! Loop through seeds
     !$omp PARALLEL DEFAULT(SHARED) PRIVATE(iseed, si, sj, ci, cj, ifill, nfills, tofill_buf)
@@ -582,46 +790,3 @@ subroutine compute_back_distance_f( &
     deallocate (tofill_buf)
     !$omp END PARALLEL
 end subroutine compute_back_distance_f
-
-subroutine find_noflow_code( &
-    offsets, codes, noffsets, noflow_code)
-    implicit none
-    integer, intent(in) :: noffsets
-    integer, dimension(noffsets, 2), intent(in) :: offsets
-    integer, dimension(noffsets), intent(in) :: codes
-    integer, intent(out) :: noflow_code
-
-    integer :: iofs ! Offset index
-    do iofs = 1, noffsets
-        if (offsets(iofs, 1) == 0 .and. offsets(iofs, 2) == 0) then
-            noflow_code = codes(iofs)
-            exit
-        end if
-    end do
-end subroutine find_noflow_code
-
-subroutine mask2ij( &
-    mask, nrows, ncols, ij, nij, cnt)
-    implicit none
-    integer, intent(in) :: nrows, ncols
-    logical, dimension(nrows, ncols), intent(in) :: mask
-    integer, intent(in) :: nij
-    integer, dimension(nij, 2), intent(out) :: ij
-    integer, intent(out) :: cnt
-
-    integer :: ci, cj
-
-    ! Count number of valid neighbors
-    cnt = 0
-    do cj = 1, ncols
-        do ci = 1, nrows
-            if (mask(ci, cj)) then
-                cnt = cnt + 1
-                if (cnt <= nij) then
-                    ij(cnt, 1) = ci
-                    ij(cnt, 2) = cj
-                end if
-            end if
-        end do
-    end do
-end subroutine mask2ij

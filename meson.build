@@ -48,7 +48,7 @@ ext_suffix = run_command(
 
 flowdir_f = custom_target(
   'flowdir_f',
-  input: files('src/formosa/geomorphology/flowdir_f.f95'),
+  input: files('src/formosa/geomorphology/flowdir.f95'),
   output: ['flowdir_f' + ext_suffix],
   command: [
     py.full_path(), '-m', 'numpy.f2py',

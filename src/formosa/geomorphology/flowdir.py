@@ -4,15 +4,8 @@ import numpy as np
 from formosa.geomorphology.d8directions import D8Directions
 from formosa.geomorphology.flow_distance_loop import _flow_distance_loop
 
-# Extensions
-from formosa.geomorphology.flowdir_f import (
-    away_from_high_loop_f,
-    towards_low_loop_f,
-    compute_back_distance_f,
-)
-
 import numpy.typing as npt
-from typing import Iterable, Literal
+from typing import Literal
 
 
 def _compute_flowdir_simple_py(
@@ -197,10 +190,10 @@ def label_flats(
         If the shapes of the input arrays do not match the expected dimensions.
     """
     from formosa.geomorphology.flowdir_f import label_flats_f
+    assert dem.shape == seeds.shape, f"Shapes for dem ({dem.shape}) and seeds ({seeds.shape}) do not match."
 
-    # Main
     labels = label_flats_f(
-        dem.astype(np.float32, order="F"),
+        dem.astype(np.float64, order="F"),
         seeds.astype(np.bool, order="F"),
         directions.offsets.astype(np.int32, order="F"),
     )
@@ -374,6 +367,8 @@ def compute_away_from_high(
     ValueError
         If the shapes of the input arrays do not match the expected dimensions.
     """
+    from formosa.geomorphology.flowdir_f import away_from_high_loop_f
+
     z_syn = away_from_high_loop_f(
         labels.astype(np.int32, order="F"),
         high_edges.astype(np.bool, order="F"),
@@ -386,7 +381,6 @@ def compute_towards_low(
     labels: npt.NDArray[np.number],
     low_edges: npt.NDArray[np.bool],
     directions: D8Directions = D8Directions(),
-    step_size: int = 1,
 ) -> npt.NDArray[np.integer]:
     """
     Produces a synthetic elevation that drains towards 'low edges' of flats.
@@ -402,9 +396,6 @@ def compute_towards_low(
     directions : D8Directions, optional
         An instance of D8Directions defining the flow direction scheme, here it is used to determine the offsets for neighbor cells.
         Default is D8Directions().
-    step_size : int, optional
-        The increment in synthetic elevation per step away from low edges to avoid ties when combined with the result of `compute_away_from_high`.
-        Default is 1, although R. Barnes *et al.* (2014) uses 2.
 
     Returns
     -------
@@ -418,19 +409,13 @@ def compute_towards_low(
     ValueError
         If the shapes of the input arrays do not match the expected dimensions.
     """
-    # Input validation and initialisation
-    assert (
-        step_size > 0
-    ), f"STEPSIZE must be a positive integer, got {step_size} instead"
-
-    # low_edges_list = _format_edges_f(low_edges, labels.shape)
+    from formosa.geomorphology.flowdir_f import towards_low_loop_f
 
     z_syn = towards_low_loop_f(
         labels.astype(np.int32, order="F"),
         low_edges.astype(np.bool, order="F"),
         directions.offsets.astype(np.int32, order="F"),
     )
-    z_syn *= step_size
     return z_syn
 
 
@@ -537,13 +522,15 @@ def _compute_flowdir_total(
     z_syn : NDArray[int]
         A 2D integer array representing the synthetic elevation that resolves flat areas.
     """
+    if step_size <= 0:
+        raise ValueError(f"Step size must be a positive integer (got {step_size}).")
     flowdir, is_flat = compute_flowdir_simple(dem, directions=directions, valids=valids)
 
     is_low_edge, is_high_edge = find_flat_edges(
         dem, flowdir, directions=directions, valids=valids
     )
 
-    flat_labels = label_flats(dem, is_low_edge | is_flat, directions=directions)
+    flat_labels = label_flats(dem, (is_low_edge | is_flat), directions=directions)
 
     is_high_edge = is_high_edge & (flat_labels != 0)
 
@@ -555,9 +542,8 @@ def _compute_flowdir_total(
         flat_labels,
         is_low_edge,
         directions=directions,
-        step_size=step_size,
     )
-    z_syn = z_syn_away + z_syn_towards
+    z_syn = z_syn_away + z_syn_towards * step_size
 
     flat_flowdir = compute_masked_flowdir(z_syn, flat_labels, directions=directions)
 
@@ -616,7 +602,7 @@ def compute_flowdir(
     return flowdir, is_flat, flat_gradient
 
 
-def compute_indegree(
+def _compute_indegree_py(
     flowdirs: npt.NDArray[np.integer], directions: D8Directions = D8Directions()
 ) -> npt.NDArray[np.integer]:
     indegree = np.zeros(flowdirs.shape, dtype=np.int32)
@@ -635,6 +621,45 @@ def compute_indegree(
         indegree[dsi[is_Valid_ds], dsj[is_Valid_ds]] += 1
 
     return indegree
+
+
+def compute_indegree(
+    flowdirs: npt.NDArray[np.integer],
+    directions: D8Directions = D8Directions(),
+    backend: Literal["fortran", "python"] = "fortran",
+) -> npt.NDArray[np.uint8]:
+    """
+    Computes the number of upstream cells (indegree) for each cell in a flow direction grid.
+
+    Parameters
+    ----------
+    flowdirs : NDArray[int]
+        A 2D array representing the flow directions for each cell.
+    directions : D8Directions, optional
+        An instance of D8Directions defining the flow direction scheme.
+        Default is D8Directions().
+    backend : {'fortran', 'python'}, optional
+        The backend to use for computation. 'fortran' uses the Fortran extension for performance, while 'python' uses a pure Python implementation.
+        Default is 'fortran'.
+
+    Returns
+    -------
+    indegree : NDArray[int]
+        A 2D integer array representing the indegree (number of upstream cells) for each cell.
+    """
+    match backend:
+        case "python":
+            indegree = _compute_indegree_py(flowdirs, directions=directions)
+        case "fortran":
+            from formosa.geomorphology.flowdir_f import compute_indegree_f
+
+            indegree = compute_indegree_f(
+                flowdirs.astype(np.int32, order="F"),
+                directions.offsets.astype(np.int32, order="F"),
+                directions.codes.astype(np.int32, order="F"),
+            )
+
+    return indegree.astype(np.uint8, order="F")
 
 
 def compute_flowdir_graph(
@@ -683,7 +708,7 @@ def compute_flowdir_graph(
     return graphi, graphj
 
 
-def compute_accumulation(
+def _compute_accumulation_py(
     flowdirs: npt.NDArray[np.integer],
     valids=None,
     weights=None,
@@ -695,7 +720,7 @@ def compute_accumulation(
     I, J = flowdirs.shape
 
     if indegrees is None:
-        indegrees = compute_indegree(flowdirs, directions=directions)
+        indegrees = _compute_indegree_py(flowdirs, directions=directions)
     else:
         assert (
             indegrees.shape == flowdirs.shape
@@ -751,6 +776,84 @@ def compute_accumulation(
     return accumulation
 
 
+def compute_accumulation(
+    flowdirs: npt.NDArray[np.integer],
+    valids: npt.NDArray[np.bool] | None = None,
+    weights: npt.NDArray[np.floating] | None = None,
+    indegrees: npt.NDArray[np.integer] | None = None,
+    dsij: npt.NDArray[np.integer] | None = None,
+    directions: D8Directions = D8Directions(),
+    backend: Literal["fortran", "python"] = "fortran",
+) -> npt.NDArray[np.float64]:
+    """
+    Computes flow accumulation for each cell in a flow direction grid.
+
+    Parameters
+    ----------
+    flowdirs : NDArray[int]
+        A 2D array representing the flow directions for each cell.
+    valids : NDArray[bool], optional
+        A boolean mask array indicating valid cells in the flow direction grid.
+        If None, all cells are considered valid.
+        Default is None.
+    weights : NDArray[float], optional
+        A 2D array of weights for each cell, representing the contribution of each cell to its downstream cell.
+        If None, each valid cell contributes a weight of 1.0.
+        Default is None.
+    indegrees : NDArray[int], optional
+        A 2D array representing the indegree (number of upstream cells) for each cell.
+        If None, indegrees are computed from the flow direction grid.
+        Default is None.
+    dsij : NDArray[int], optional
+        A 2D array of downstream cell indices for each cell.
+        If None, downstream indices are computed from the flow direction grid.
+        Default is None.
+    directions : D8Directions, optional
+        An instance of D8Directions defining the flow direction scheme.
+        Default is D8Directions().
+    backend : {'fortran', 'python'}, optional
+        The backend to use for computation. 'fortran' uses the Fortran extension for performance, while 'python' uses a pure Python implementation.
+        Default is 'fortran'.
+
+    Returns
+    -------
+    accumulation : NDArray[float64]
+        A 2D array representing the flow accumulation for each cell.
+    """
+    match backend:
+        case "python":
+            accumulation = _compute_accumulation_py(
+                flowdirs,
+                valids=valids,
+                weights=weights,
+                indegrees=indegrees,
+                dsij=dsij,
+                directions=directions,
+            )
+        case "fortran":
+            from formosa.geomorphology.flowdir_f import compute_accumulation_f
+
+            if indegrees is None:
+                indegrees = compute_indegree(flowdirs, directions=directions)
+
+            if valids is None:
+                valids = np.ones(flowdirs.shape, dtype=bool)
+
+            if weights is None:
+                weights = np.where(valids, 1.0, 0.0).astype(np.float64)
+
+            accumulation = compute_accumulation_f(
+                flowdirs.astype(np.int32, order="F"),
+                valids.astype(np.bool, order="F"),
+                weights.astype(np.float64, order="F"),
+                indegrees.astype(np.int32, order="F"),
+                directions.offsets.astype(np.int32, order="F"),
+                directions.codes.astype(np.int32, order="F"),
+            )
+
+    return accumulation.astype(np.float64, order="F")
+
+
 def compute_strahler_order(
     flowdir: npt.NDArray[np.integer] | None = None,
     directions: D8Directions = D8Directions(),
@@ -765,7 +868,7 @@ def compute_strahler_order(
         downstream_i, downstreamj, _ = compute_downstream_indices(
             flowdir, directions=directions
         )
-        indegrees = compute_indegree(flowdir, directions=directions)
+        indegrees = _compute_indegree_py(flowdir, directions=directions)
     else:
         raise NotImplementedError("Unknown case for FLOWDIR and INDEGREES")
 
@@ -905,6 +1008,8 @@ def compute_back_distance(
     NDArray[float32]
         A 2D array representing the upstream distance for each cell.
     """
+    from formosa.geomorphology.flowdir_f import compute_back_distance_f
+
     if valids is None:
         valids = ~np.isnan(flowdir)
     elif isinstance(valids, np.ndarray):

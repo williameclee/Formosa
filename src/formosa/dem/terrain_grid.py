@@ -207,7 +207,7 @@ class DEMGrid:
         self._flat_gradient: None | npt.NDArray[np.integer] = None
         self._flowdir: None | npt.NDArray[np.integer] = None
         self._indegree: None | npt.NDArray[np.integer] = None
-        self._accumulation: None | npt.NDArray[np.integer] = None
+        self._accumulation: None | npt.NDArray[np.integer | np.floating] = None
         self._strahler_order: None | npt.NDArray[np.integer] = None
         self._watershed: None | npt.NDArray[np.int32] = None
         self._graphx = None
@@ -263,7 +263,9 @@ class DEMGrid:
     @property
     def indegree(self) -> npt.NDArray[np.integer]:
         if self._indegree is None:
-            self._indegree = compute_indegree(self.flowdir, directions=self.directions)
+            self._indegree = compute_indegree(
+                self.flowdir, directions=self.directions
+            )
         return self._indegree
 
     @property
