@@ -207,13 +207,13 @@ class DEMGrid:
         self._flat_gradient: None | npt.NDArray[np.integer] = None
         self._flowdir: None | npt.NDArray[np.integer] = None
         self._indegree: None | npt.NDArray[np.integer] = None
-        self._accumulation: None | npt.NDArray[np.integer] = None
+        self._accumulation: None | npt.NDArray[np.integer | np.floating] = None
         self._strahler_order: None | npt.NDArray[np.integer] = None
         self._watershed: None | npt.NDArray[np.int32] = None
         self._graphx = None
         self._graphy = None
-        self._backdist: None | npt.NDArray[np.float32] = None
-        self._flowdist: None | npt.NDArray[np.integer] = None
+        self._flowdist: None | npt.NDArray[np.floating] = None
+        self._backdist: None | npt.NDArray[np.floating] = None
 
     @property
     def slope(self) -> npt.NDArray[np.floating | np.integer]:
@@ -255,7 +255,7 @@ class DEMGrid:
             self.flowdir,
             directions=self.directions,
             valid=valid if valid is not None else self.valid,
-            x=self.x,
+            x=self.x.astype(np.float64),
             y=self.y,
         )
         return graphx, graphy
@@ -293,11 +293,15 @@ class DEMGrid:
         return self
 
     @property
-    def flow_distance(self) -> npt.NDArray[np.integer]:
+    def flow_distance(self) -> npt.NDArray[np.floating]:
         if self._flowdist is None:
             self._flowdist = compute_flow_distance(
                 self.flowdir,
                 directions=self.directions,
+                x=self.x,
+                y=self.y,
+                valids=self.valid,
+                indegrees=self.indegree,
             )
         return self._flowdist
 
@@ -316,7 +320,7 @@ class DEMGrid:
         return self._watershed
 
     @property
-    def backdist(self) -> npt.NDArray[np.float32]:
+    def backdist(self) -> npt.NDArray[np.floating]:
         if self._backdist is not None:
             return self._backdist
 
@@ -325,6 +329,8 @@ class DEMGrid:
         self._backdist = compute_back_distance(
             self.flowdir,
             directions=self.directions,
+            x=self.x,
+            y=self.y,
             valids=self.valid,
         )
         return self._backdist

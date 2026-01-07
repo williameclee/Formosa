@@ -153,6 +153,7 @@ def construct_d8_directions(
     else:
         dirs = []
 
+    codes = codes.astype(np.int32, order="F")
     return offsets, codes, dirs
 
 
