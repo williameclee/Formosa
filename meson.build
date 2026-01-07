@@ -1,28 +1,6 @@
 project('formosa', 'fortran')
-# project('formosa', 'c', 'cython', 'fortran')
 
 py = import('python').find_installation(pure: false)
-# py_dep = py.dependency()
-
-# NumPy include dir (needed for Cython/NumPy C-API)
-# numpy_inc = run_command(
-#   py, ['-c', 'import numpy; print(numpy.get_include())'],
-#   check: true
-# ).stdout().strip()
-# numpy_incdir = include_directories(numpy_inc)
-# numpy_inc = run_command(
-#   py, ['-c', 'import numpy; print(numpy.get_include())'],
-#   check: true
-# ).stdout().strip()
-
-# # FIX: If numpy_inc is inside the project, make it relative
-# source_root = meson.project_source_root()
-# if numpy_inc.startswith(source_root)
-#   # Strip the root path + leading slash to make it relative
-#   numpy_inc = numpy_inc.replace(source_root + '/', '')
-# endif
-
-# numpy_incdir = include_directories(numpy_inc)
 
 # Where platform-specific files (extensions) should go
 pkg_pure_dir      = py.get_install_dir(pure: false)
