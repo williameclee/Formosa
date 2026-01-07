@@ -6,7 +6,7 @@ py = import('python').find_installation(pure: false)
 pkg_pure_dir      = py.get_install_dir(pure: false)
 pkg_geom_plat_dir = py.get_install_dir(pure: false, subdir: 'formosa/geomorphology')
 
-# --- Install your pure Python package (src layout)
+# --- Install pure Python package
 install_subdir('src/formosa', install_dir: pkg_pure_dir)
 
 # --- Fortran extension

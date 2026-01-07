@@ -1,29 +1,29 @@
 module flow_utils
     implicit none
 contains
-    subroutine find_noflow_code( &
-        offsets, codes, noffsets, noflow_code)
+    function find_noflow_code(offsets, codes, noffsets) result(noflow_code)
         implicit none
         integer, intent(in) :: noffsets
-        integer, dimension(noffsets, 2), intent(in) :: offsets
-        integer, dimension(noffsets), intent(in) :: codes
-        integer, intent(out) :: noflow_code
+        integer, intent(in) :: offsets(noffsets, 2)
+        integer*1, intent(in) :: codes(noffsets)
+        integer*1 :: noflow_code
 
         integer :: iofs ! Offset index
+        noflow_code = 0
         do iofs = 1, noffsets
             if (offsets(iofs, 1) == 0 .and. offsets(iofs, 2) == 0) then
                 noflow_code = codes(iofs)
                 exit
             end if
         end do
-    end subroutine find_noflow_code
+    end function find_noflow_code
     subroutine make_offset_lookups(offsets, codes, noffsets, mincode, maxcode, diffs)
         implicit none
         ! Inputs
         integer, intent(in) :: noffsets
         integer, dimension(noffsets, 2), intent(in) :: offsets
-        integer, dimension(noffsets), intent(in) :: codes
-        integer, intent(in) :: mincode, maxcode
+        integer*1, dimension(noffsets), intent(in) :: codes
+        integer*1, intent(in) :: mincode, maxcode
         ! Outputs
         integer, dimension(mincode:maxcode, 2), intent(out) :: diffs ! Lookup table for offsets
 
@@ -70,23 +70,23 @@ subroutine compute_flowdir_simple_f( &
     implicit none
     ! Inputs
     integer, intent(in) :: nrows, ncols ! Size of the grid
-    real, dimension(nrows, ncols), intent(in) :: z
-    logical, dimension(nrows, ncols), intent(in) :: valids
+    real, intent(in) :: z(nrows, ncols)
+    logical, intent(in) :: valids(nrows, ncols)
     integer, intent(in) :: noffsets
-    integer, dimension(noffsets, 2), intent(in) :: offsets
-    integer, dimension(noffsets), intent(in) :: codes
+    integer, intent(in) :: offsets(noffsets, 2)
+    integer*1, intent(in) :: codes(noffsets)
     ! Outputs
-    integer, dimension(nrows, ncols), intent(out) :: flowdir
-    logical, dimension(nrows, ncols), intent(out) :: is_flat
+    integer*1, intent(out) :: flowdir(nrows, ncols)
+    logical, intent(out) :: is_flat(nrows, ncols)
 
     integer :: ci, cj ! Current indices
     integer :: ni, nj ! Neighbour indices
     integer :: iofs ! Offset index
     real :: zmin
-    integer :: noflow_code = 0 ! Assume 0 is noflow unless found otherwise
+    integer*1 :: noflow_code = 0 ! Assume 0 is noflow unless found otherwise
 
     ! Find noflow code
-    call find_noflow_code(offsets, codes, noffsets, noflow_code)
+    noflow_code = find_noflow_code(offsets, codes, noffsets)
 
     !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(ci, cj, iofs, ni, nj, zmin) &
     !$omp COLLAPSE(2) &
@@ -141,21 +141,21 @@ subroutine compute_masked_flowdir_f( &
     implicit none
     ! Inputs
     integer, intent(in) :: nrows, ncols ! Size of the grid
-    integer, dimension(nrows, ncols), intent(in) :: z, labels
+    integer, intent(in) :: z(nrows, ncols), labels(nrows, ncols)
     integer, intent(in) :: noffsets
-    integer, dimension(noffsets, 2), intent(in) :: offsets
-    integer, dimension(noffsets), intent(in) :: codes
+    integer, intent(in) :: offsets(noffsets, 2)
+    integer*1, intent(in) :: codes(noffsets)
     ! Outputs
-    integer, dimension(nrows, ncols), intent(out) :: flowdir
+    integer*1, intent(out) :: flowdir(nrows, ncols)
 
     integer :: ci, cj ! Current indices
     integer :: ni, nj ! Neighbour indices
     integer :: iofs ! Offset index
     integer :: zmin
-    integer :: noflow_code = 0 ! Assume 0 is noflow unless found otherwise
+    integer*1 :: noflow_code = 0 ! Assume 0 is noflow unless found otherwise
 
     ! Find noflow code
-    call find_noflow_code(offsets, codes, noffsets, noflow_code)
+    noflow_code = find_noflow_code(offsets, codes, noffsets)
 
     !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(ci, cj, iofs, ni, nj, zmin) &
     !$omp COLLAPSE(2) &
@@ -194,22 +194,22 @@ subroutine find_flat_edges_f( &
     implicit none
     ! Inputs
     integer, intent(in) :: nrows, ncols ! Size of the grid
-    real, dimension(nrows, ncols), intent(in) :: z
-    integer, dimension(nrows, ncols), intent(in) :: flowdir
-    logical, dimension(nrows, ncols), intent(in) :: valids
+    real, intent(in) :: z(nrows, ncols)
+    integer*1, intent(in) :: flowdir(nrows, ncols)
+    logical, intent(in) :: valids(nrows, ncols)
     integer, intent(in) :: noffsets
-    integer, dimension(noffsets, 2), intent(in) :: offsets
-    integer, dimension(noffsets), intent(in) :: codes
+    integer, intent(in) :: offsets(noffsets, 2)
+    integer*1, intent(in) :: codes(noffsets)
     ! Outputs
-    logical, dimension(nrows, ncols), intent(out) :: is_low_edge, is_high_edge
+    logical, intent(out) :: is_low_edge(nrows, ncols), is_high_edge(nrows, ncols)
 
     integer :: ci, cj ! Current indices
     integer :: ni, nj ! Neighbour indices
     integer :: iofs ! Offset index
-    integer :: noflow_code = 0 ! Assume 0 is noflow unless found otherwise
+    integer*1 :: noflow_code = 0 ! Assume 0 is noflow unless found otherwise
 
     ! Find noflow code
-    call find_noflow_code(offsets, codes, noffsets, noflow_code)
+    noflow_code = find_noflow_code(offsets, codes, noffsets)
 
     !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(ci, cj, iofs, ni, nj) &
     !$omp COLLAPSE(2) &
@@ -574,17 +574,17 @@ subroutine compute_indegree_f( &
     implicit none
     ! Inputs
     integer, intent(in) :: nrows, ncols
-    integer, dimension(nrows, ncols), intent(in) :: flowdir
+    integer*1, dimension(nrows, ncols), intent(in) :: flowdir
     integer, intent(in) :: noffsets
     integer, dimension(noffsets, 2), intent(in) :: offsets
-    integer, dimension(noffsets), intent(in) :: codes
+    integer*1, dimension(noffsets), intent(in) :: codes
     ! Outputs
-    integer, dimension(nrows, ncols), intent(out) :: indegree
+    integer*1, dimension(nrows, ncols), intent(out) :: indegree
 
     integer :: ci, cj ! Current indices
     integer :: ni, nj ! Neighbour indices
     integer, dimension(:, :), allocatable :: diffs ! Lookup tables for offsets
-    integer :: code, mincode, maxcode
+    integer*1 :: code, mincode, maxcode
 
     ! Create lookup tables for offsets
     mincode = minval(codes)
@@ -627,13 +627,13 @@ subroutine compute_accumulation_f( &
     implicit none
     ! Inputs
     integer, intent(in) :: nrows, ncols
-    integer, dimension(nrows, ncols), intent(in) :: flowdir
+    integer*1, dimension(nrows, ncols), intent(in) :: flowdir
     logical, dimension(nrows, ncols), intent(in) :: valids
     real, dimension(nrows, ncols), intent(in) :: weights
     integer, dimension(nrows, ncols), intent(inout) :: indegrees
     integer, intent(in) :: noffsets
     integer, dimension(noffsets, 2), intent(in) :: offsets
-    integer, dimension(noffsets), intent(in) :: codes
+    integer*1, dimension(noffsets), intent(in) :: codes
     ! Outputs
     real, dimension(nrows, ncols), intent(out) :: accumulations
 
@@ -643,7 +643,7 @@ subroutine compute_accumulation_f( &
     integer :: ci, cj ! Current indices
     integer :: ni, nj ! Neighbour indices
     integer, dimension(:, :), allocatable :: diffs ! Lookup tables for offsets
-    integer :: code, mincode, maxcode
+    integer*1 :: code, mincode, maxcode
 
     ! Create lookup tables for offsets
     mincode = minval(codes)
@@ -706,14 +706,14 @@ subroutine compute_distance_f( &
     implicit none
     ! Inputs
     integer, intent(in) :: nrows, ncols
-    integer, dimension(nrows, ncols), intent(in) :: flowdir
+    integer*1, dimension(nrows, ncols), intent(in) :: flowdir
     logical, dimension(nrows, ncols), intent(in) :: valids
     real, dimension(nrows, ncols), intent(in) :: x
     real, dimension(nrows, ncols), intent(in) :: y
-    integer, dimension(nrows, ncols), intent(inout) :: indegrees
+    integer*1, dimension(nrows, ncols), intent(inout) :: indegrees
     integer, intent(in) :: noffsets
     integer, dimension(noffsets, 2), intent(in) :: offsets
-    integer, dimension(noffsets), intent(in) :: codes
+    integer*1, dimension(noffsets), intent(in) :: codes
     ! Outputs
     real, dimension(nrows, ncols), intent(out) :: dists
 
@@ -724,7 +724,7 @@ subroutine compute_distance_f( &
     integer :: ni, nj ! Neighbour indices
     real :: step_dist
     integer, dimension(:, :), allocatable :: diffs ! Lookup tables for offsets
-    integer :: code, mincode, maxcode
+    integer*1 :: code, mincode, maxcode
 
     ! Create lookup tables for offsets
     mincode = minval(codes)
@@ -790,28 +790,30 @@ subroutine compute_back_distance_f( &
     use omp_lib
     use flow_utils
     implicit none
+    ! Inputs
     integer, intent(in) :: nrows, ncols
-    integer, dimension(nrows, ncols), intent(in) :: flowdir
-    real, dimension(nrows, ncols), intent(in) :: x, y
-    logical, dimension(nrows, ncols), intent(in) :: valid
-    real, dimension(nrows, ncols), intent(out) :: dist
+    integer*1, intent(in) :: flowdir(nrows, ncols)
+    real, intent(in) :: x(nrows, ncols), y(nrows, ncols)
+    logical, intent(in) :: valid(nrows, ncols)
     integer, intent(in) :: noffsets
-    integer, dimension(noffsets, 2), intent(in) :: offsets
-    integer, dimension(noffsets), intent(in) :: codes
+    integer, intent(in) :: offsets(noffsets, 2)
+    integer*1, intent(in) :: codes(noffsets)
+    ! Outputs
+    real, intent(out) :: dist(nrows, ncols)
 
-    integer, dimension(:, :), allocatable :: seed_buf
+    integer, allocatable :: seed_buf(:, :)
     integer :: iseed, nseeds
-    integer, dimension(:, :), allocatable :: tofill_buf
-    logical, dimension(:, :), allocatable :: is_seed
+    integer, allocatable :: tofill_buf(:, :)
+    logical, allocatable :: is_seed(:, :)
     integer :: ifill, nfills
     integer :: si, sj ! Seed indices
     integer :: ci, cj ! Current indices
     integer :: ui, uj ! Upstream indices
     integer :: iofs ! Offset index
-    integer :: noflow_code = 0 ! Assume 0 is noflow unless found otherwise
+    integer*1 :: noflow_code = 0 ! Assume 0 is noflow unless found otherwise
 
     ! Find noflow code
-    call find_noflow_code(offsets, codes, noffsets, noflow_code)
+    noflow_code = find_noflow_code(offsets, codes, noffsets)
 
     dist = -1
 
@@ -876,3 +878,176 @@ subroutine compute_back_distance_f( &
     deallocate (tofill_buf)
     !$omp END PARALLEL
 end subroutine compute_back_distance_f
+
+subroutine compute_strahler_order_f( &
+    flowdir, valids, indegrees, orders, nrows, ncols, &
+    offsets, codes, noffsets)
+    use flow_utils
+    implicit none
+    ! Inputs
+    integer, intent(in) :: nrows, ncols
+    integer*1, dimension(nrows, ncols), intent(in) :: flowdir
+    logical, dimension(nrows, ncols), intent(in) :: valids
+    integer*1, dimension(nrows, ncols), intent(inout) :: indegrees
+    integer, intent(in) :: noffsets
+    integer, dimension(noffsets, 2), intent(in) :: offsets
+    integer*1, dimension(noffsets), intent(in) :: codes
+    ! Outputs
+    integer*2, dimension(nrows, ncols), intent(out) :: orders
+
+    logical, dimension(:, :), allocatable :: is_tofill_seed
+    integer, dimension(:, :), allocatable :: tofill_buf
+    integer :: itofill, ntofills
+    integer :: ci, cj ! Current indices
+    integer :: ni, nj ! Neighbour indices
+    integer, dimension(:, :), allocatable :: diffs ! Lookup tables for offsets
+    integer*1 :: code, mincode, maxcode
+
+    ! Create lookup tables for offsets
+    mincode = minval(codes)
+    maxcode = maxval(codes)
+    allocate (diffs(mincode:maxcode, 2))
+    call make_offset_lookups(offsets, codes, noffsets, mincode, maxcode, diffs)
+
+    ! Fill the tofill buffer with all valid cells with zero indegree
+    allocate (tofill_buf(nrows*ncols, 2))
+    allocate (is_tofill_seed(nrows, ncols))
+    is_tofill_seed = valids .and. (indegrees == 0)
+    call mask2ij(is_tofill_seed, &
+                 nrows, ncols, &
+                 tofill_buf, nrows*ncols, ntofills)
+    deallocate (is_tofill_seed)
+
+    orders = 1
+    itofill = 1
+    do while (itofill <= ntofills)
+        ci = tofill_buf(itofill, 1)
+        cj = tofill_buf(itofill, 2)
+        itofill = itofill + 1
+
+        code = flowdir(ci, cj)
+        if (code < mincode .or. code > maxcode) cycle
+        ni = ci + diffs(flowdir(ci, cj), 1)
+        nj = cj + diffs(flowdir(ci, cj), 2)
+
+        ! Check bounds
+        if (ni < 1 .or. ni > nrows .or. nj < 1 .or. nj > ncols) cycle
+        ! Check mask
+        if (.not. valids(ni, nj)) cycle
+        ! Check not a self-loop
+        if (ni == ci .and. nj == cj) cycle
+        ! Check not already processed
+        if (indegrees(ni, nj) <= 0) cycle
+
+        ! Update distance of downstream cell
+        if (orders(ni, nj) < orders(ci, cj)) then
+            orders(ni, nj) = orders(ci, cj)
+        else if (orders(ni, nj) == orders(ci, cj)) then
+            orders(ni, nj) = orders(ni, nj) + 1
+        end if
+        ! Decrement indegree of downstream cell
+        indegrees(ni, nj) = indegrees(ni, nj) - 1
+        ! If indegree is zero, add to tofill buffer
+        if (indegrees(ni, nj) == 0) then
+            ntofills = ntofills + 1
+            if (ntofills > size(tofill_buf, 1)) then
+                print *, "Error: tofill buffer overflow (size:", ntofills, ", allocated:", size(tofill_buf, 1), ")"
+                stop
+            end if
+            tofill_buf(ntofills, :) = [ni, nj]
+        end if
+    end do
+    deallocate (tofill_buf)
+    deallocate (diffs)
+end subroutine compute_strahler_order_f
+
+subroutine label_watersheds_f( &
+    labels, flowdir, valid, nrows, ncols, offsets, codes, noffsets)
+    use omp_lib
+    use flow_utils
+    implicit none
+    ! Inputs
+    integer, intent(in) :: nrows, ncols
+    integer*1, intent(in) :: flowdir(nrows, ncols)
+    logical, intent(in) :: valid(nrows, ncols)
+    integer, intent(in) :: noffsets
+    integer, intent(in) :: offsets(noffsets, 2)
+    integer*1, intent(in) :: codes(noffsets)
+    ! Outputs
+    integer, intent(out) :: labels(nrows, ncols)
+
+    integer, allocatable :: seed_buf(:, :)
+    integer :: iseed, nseeds
+    integer, allocatable :: tofill_buf(:, :)
+    logical, allocatable :: is_seed(:, :)
+    integer :: ifill, nfills
+    integer :: si, sj ! Seed indices
+    integer :: ci, cj ! Current indices
+    integer :: ui, uj ! Upstream indices
+    integer :: iofs ! Offset index
+    integer*1 :: noflow_code = 0 ! Assume 0 is noflow unless found otherwise
+
+    ! Find noflow code
+    noflow_code = find_noflow_code(offsets, codes, noffsets)
+
+    labels = 0
+
+    ! Append all cells with noflow direction to buffer
+    allocate (seed_buf(nrows*ncols, 2))
+    allocate (is_seed(nrows, ncols))
+    is_seed = valid .and. (flowdir == noflow_code)
+    call mask2ij(is_seed, nrows, ncols, &
+                 seed_buf, nrows*ncols, nseeds)
+    deallocate (is_seed)
+
+    ! Loop through seeds
+    !$omp PARALLEL DEFAULT(SHARED) PRIVATE(iseed, si, sj, ci, cj, ifill, nfills, tofill_buf)
+    allocate (tofill_buf(nrows*ncols, 2))
+    !$omp DO SCHEDULE(DYNAMIC)
+    do iseed = 1, nseeds
+        si = seed_buf(iseed, 1)
+        sj = seed_buf(iseed, 2)
+
+        ! Loop through buffer
+        nfills = 1
+        ifill = 1
+        labels(si, sj) = iseed
+        tofill_buf(1, :) = [si, sj]
+
+        do while (ifill <= nfills)
+            ci = tofill_buf(ifill, 1)
+            cj = tofill_buf(ifill, 2)
+            ifill = ifill + 1
+
+            ! Loop over offsets to find contributing cells
+            do iofs = 1, noffsets
+                ! Skip self
+                if (offsets(iofs, 1) == 0 .and. offsets(iofs, 2) == 0) cycle
+                ui = ci - offsets(iofs, 1)
+                uj = cj - offsets(iofs, 2)
+
+                ! Check bounds
+                if (ui < 1 .or. ui > nrows .or. uj < 1 .or. uj > ncols) cycle
+                ! Check mask
+                if (.not. valid(ui, uj)) cycle
+                ! Check if already assigned
+                if (labels(ui, uj) > 0) cycle
+                ! Check if flows into current cell
+                if (flowdir(ui, uj) /= codes(iofs)) cycle
+
+                ! Add to buffer
+                nfills = nfills + 1
+                if (nfills > size(tofill_buf, 1)) then
+                    print *, "Error: tofill buffer overflow (size:", nfills, ", allocated:", size(tofill_buf, 1), ")"
+                    stop
+                end if
+                tofill_buf(nfills, :) = [ui, uj]
+                ! Compute distance
+                labels(ui, uj) = labels(ci, cj)
+            end do
+        end do
+    end do
+    !$omp END DO
+    deallocate (tofill_buf)
+    !$omp END PARALLEL
+end subroutine label_watersheds_f
