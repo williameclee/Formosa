@@ -4,22 +4,8 @@ from typing import TypeVar, Tuple, Callable
 import numpy.typing as npt
 
 names = ["self", "E", "SE", "S", "SW", "W", "NW", "N", "NE"]
-codes = np.array([0, 1, 2, 4, 8, 16, 32, 64, 128])
-offsets = np.array(
-    [
-        (0, 0),  # self
-        (0, 1),  # E
-        (1, 1),  # SE
-        (1, 0),  # S
-        (1, -1),  # SW
-        (0, -1),  # W
-        (-1, -1),  # NW
-        (-1, 0),  # N
-        (-1, 1),  # NE
-    ],
-    dtype=np.int32,
-    order="F",
-)
+
+T = TypeVar("T", int, np.integer, npt.NDArray[np.integer])
 
 
 class D8Directions:
@@ -28,8 +14,7 @@ class D8Directions:
         window: int = 3,
         slices: int = 8,
         shape: str = "circular",
-        codes: npt.NDArray[np.integer] = codes,
-        offsets: npt.NDArray[np.integer] = offsets,
+        transform_codes: Callable | None = lambda x: 2 ** (x - 1),
         sort_by_distance: bool = True,
     ):
         # assert (
@@ -45,19 +30,21 @@ class D8Directions:
             window=window,
             slices=slices,
             shape=shape,
+            code_transform_func=transform_codes,
             sort_by_distance=sort_by_distance,
         )
 
-        self.offset_dict = {code: (di, dj) for code, (di, dj) in zip(codes, offsets)}
-
-    T = TypeVar("T", int, np.integer, npt.NDArray[np.integer])
+        self.offset_dict = {
+            int(code): (int(di), int(dj))
+            for code, (di, dj) in zip(self.codes, self.offsets)
+        }
 
     def code2d8offset(self, code: T) -> tuple[T, T]:
         """Get offset (di, dj) for a given D8 code."""
         if isinstance(code, np.ndarray):
-            return self._code2offset_ndarray(code, get_d8_offset_dict())  # type: ignore
+            return self._code2offset_ndarray(code, self.offset_dict)  # type: ignore
         elif isinstance(code, (int, np.integer)):
-            return self._code2offset_scalar(code, get_d8_offset_dict())  # type: ignore
+            return self._code2offset_scalar(code, self.offset_dict)  # type: ignore
         else:
             raise TypeError(f"Unsupported type for code: {type(code)}")
 
@@ -113,11 +100,7 @@ def construct_d8_directions(
     j: npt.NDArray[np.integer] = np.arange(
         -half_window, half_window + 1, dtype=np.int32
     )
-    ii, jj = np.meshgrid(
-        i,
-        j,
-        indexing="ij",
-    )
+    ii, jj = np.meshgrid(i, j, indexing="ij")
 
     az: npt.NDArray[np.integer] = np.degrees(np.arctan2(ii, jj)) % 360
     az_agg: npt.NDArray[np.integer] = np.mod(np.round(az * slices / 360), slices) + 1
@@ -135,6 +118,12 @@ def construct_d8_directions(
     codes = codes.flatten()
     offsets = offsets[az_agg.flatten() >= 0]
     codes = codes[az_agg.flatten() >= 0]
+
+    # Check for duplicate codes
+    unique_codes, counts = np.unique(codes, return_counts=True)
+    duplicate_codes = unique_codes[counts > 1]
+    if len(duplicate_codes) > 0:
+        raise ValueError(f"Duplicate codes found: {duplicate_codes}")
 
     if sort_by_distance:
         dists = dists.flatten()[az_agg.flatten() >= 0]
@@ -157,19 +146,6 @@ def construct_d8_directions(
     return offsets, codes, dirs
 
 
-def get_d8_offset_dict(
-    convert2int: bool = False,
-) -> dict[int, tuple[int, int]]:
-    offsets, codes, _ = construct_d8_directions(window=3, slices=8, shape="square")
-    if convert2int:
-        offset_dict = {
-            int(code): (int(di), int(dj)) for code, (di, dj) in zip(codes, offsets)
-        }
-    else:
-        offset_dict = {code: (di, dj) for code, (di, dj) in zip(codes, offsets)}
-    return offset_dict
-
-
 if __name__ == "__main__":
     flowdir = np.array([[0, 1], [4, 16]], dtype=np.int32)  # 2x2 array with D8 codes
     di, dj = D8Directions(window=5).code2d8offset(flowdir)
@@ -180,7 +156,6 @@ if __name__ == "__main__":
     # print("Offsets:\n", offsets)
     # print("Codes:\n", codes)
     # print("Names:\n", names)
-    # print("Offset dict:\n", get_d8_offset_dict())
 
 # plt.imshow(codes)
 # plt.colorbar()

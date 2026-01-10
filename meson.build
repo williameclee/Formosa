@@ -6,10 +6,10 @@ py = import('python').find_installation(pure: false)
 pkg_pure_dir      = py.get_install_dir(pure: false)
 pkg_geom_plat_dir = py.get_install_dir(pure: false, subdir: 'formosa/geomorphology')
 
-# --- Install pure Python package
+# Install pure Python package
 install_subdir('src/formosa', install_dir: pkg_pure_dir)
 
-# --- Fortran extension
+# Fortran extension
 ext_suffix = run_command(
   py, ['-c', 'import sysconfig; print(sysconfig.get_config_var("EXT_SUFFIX") or "")'],
   check: true
@@ -28,7 +28,7 @@ flowdir_f = custom_target(
     '--f90flags="-march=native -fopenmp -O3"',
     '-lgomp',
   ],
-  build_by_default: true,
   install: true,
   install_dir: pkg_geom_plat_dir,
+  build_by_default: true,
 )

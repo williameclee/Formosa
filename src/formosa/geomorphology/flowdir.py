@@ -1,6 +1,7 @@
 import numpy as np
 
 from formosa.geomorphology.d8directions import D8Directions
+from formosa.geomorphology.flowdir_f import flowdir as flowdir_f
 
 import numpy.typing as npt
 from typing import Literal
@@ -59,12 +60,10 @@ def compute_flowdir_simple(
         case "python":
             flowdir, is_flat = _compute_flowdir_simple_py(dem, directions=directions)
         case "fortran":
-            from formosa.geomorphology.flowdir_f import compute_flowdir_simple_f
-
             if valids is None:
                 valids = np.ones(dem.shape, dtype=bool, order="F")
-            flowdir, is_flat = compute_flowdir_simple_f(
-                dem.astype(np.float64, order="F"),
+            flowdir, is_flat = flowdir_f.compute_flowdir_simple(
+                dem.astype(np.float32, order="F"),
                 valids.astype(np.bool, order="F"),
                 directions.offsets.astype(np.int32, order="F"),
                 directions.codes.astype(np.uint8, order="F"),
@@ -138,12 +137,10 @@ def find_flat_edges(
                 dem, flowdir, directions=directions
             )
         case "fortran":
-            from formosa.geomorphology.flowdir_f import find_flat_edges_f
-
             if valids is None:
                 valids = np.ones(dem.shape, dtype=bool, order="F")
 
-            is_low_edge, is_high_edge = find_flat_edges_f(
+            is_low_edge, is_high_edge = flowdir_f.find_flat_edges(
                 dem.astype(np.float32, order="F"),
                 flowdir.astype(np.int32, order="F"),
                 valids.astype(np.bool, order="F"),
@@ -188,14 +185,12 @@ def label_flats(
     ValueError
         If the shapes of the input arrays do not match the expected dimensions.
     """
-    from formosa.geomorphology.flowdir_f import label_flats_f
-
     assert (
         dem.shape == seeds.shape
     ), f"Shapes for dem ({dem.shape}) and seeds ({seeds.shape}) do not match."
 
-    labels = label_flats_f(
-        dem.astype(np.float64, order="F"),
+    labels = flowdir_f.label_flats(
+        dem.astype(np.float32, order="F"),
         seeds.astype(np.bool, order="F"),
         directions.offsets.astype(np.int32, order="F"),
     )
@@ -405,7 +400,7 @@ def compute_away_from_high(
     labels: npt.NDArray[np.number],
     high_edges: npt.NDArray[np.bool],
     directions: D8Directions = D8Directions(),
-) -> npt.NDArray[np.integer]:
+) -> npt.NDArray[np.int32]:
     """
     Produces a synthetic elevation that decreases away from 'high edges' of flats.
     Modified from [R. Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009), Algorithm 5 (p. 133–134).
@@ -423,7 +418,7 @@ def compute_away_from_high(
 
     Returns
     -------
-    NDArray[integer]
+    NDArray[int32]
         A 2D integer array representing the synthetic elevation that increases away from high edges within each flat region.
 
     Raises
@@ -433,14 +428,16 @@ def compute_away_from_high(
     ValueError
         If the shapes of the input arrays do not match the expected dimensions.
     """
-    from formosa.geomorphology.flowdir_f import away_from_high_loop_f
-
-    z_syn = away_from_high_loop_f(
+    assert (
+        labels.shape == high_edges.shape
+    ), f"Shapes for labels ({labels.shape}) and high_edges ({high_edges.shape}) do not match."
+    
+    z_syn = flowdir_f.away_from_high(
         labels.astype(np.int32, order="F"),
         high_edges.astype(np.bool, order="F"),
         directions.offsets.astype(np.int32, order="F"),
     )
-    return z_syn
+    return z_syn.astype(np.int32, order="F")
 
 
 def compute_towards_low(
@@ -475,9 +472,7 @@ def compute_towards_low(
     ValueError
         If the shapes of the input arrays do not match the expected dimensions.
     """
-    from formosa.geomorphology.flowdir_f import towards_low_loop_f
-
-    z_syn = towards_low_loop_f(
+    z_syn = flowdir_f.towards_low(
         labels.astype(np.int32, order="F"),
         low_edges.astype(np.bool, order="F"),
         directions.offsets.astype(np.int32, order="F"),
@@ -542,9 +537,7 @@ def compute_masked_flowdir(
         case "python":
             flowdir = _compute_masked_flowdir_py(z, labels, directions=directions)
         case "fortran":
-            from formosa.geomorphology.flowdir_f import compute_masked_flowdir_f
-
-            flowdir = compute_masked_flowdir_f(
+            flowdir = flowdir_f.compute_masked_flowdir(
                 z.astype(np.int32, order="F"),
                 labels.astype(np.int32, order="F"),
                 directions.offsets.astype(np.int32, order="F"),
@@ -590,20 +583,16 @@ def _compute_flowdir_total(
     """
     if step_size <= 0:
         raise ValueError(f"Step size must be a positive integer (got {step_size}).")
+    
     flowdir, is_flat = compute_flowdir_simple(dem, directions=directions, valids=valids)
-
     is_low_edge, is_high_edge = find_flat_edges(
         dem, flowdir, directions=directions, valids=valids
     )
-
     flat_labels = label_flats(dem, (is_low_edge | is_flat), directions=directions)
-
     is_high_edge = is_high_edge & (flat_labels != 0)
-
     z_syn_away = compute_away_from_high(
         flat_labels, is_high_edge, directions=directions
     )
-
     z_syn_towards = compute_towards_low(
         flat_labels,
         is_low_edge,
@@ -612,7 +601,6 @@ def _compute_flowdir_total(
     z_syn = z_syn_away + z_syn_towards * step_size
 
     flat_flowdir = compute_masked_flowdir(z_syn, flat_labels, directions=directions)
-
     flowdir[flowdir == 0] = flat_flowdir[flowdir == 0]
     return flowdir, is_flat, z_syn
 
@@ -623,9 +611,7 @@ def compute_flowdir(
     valids: npt.NDArray[np.bool] | None = None,
     resolve_flat: bool = True,
     step_size: int = 4,
-) -> tuple[
-    npt.NDArray[np.uint8], npt.NDArray[np.bool], npt.NDArray[np.integer] | None
-]:
+) -> tuple[npt.NDArray[np.uint8], npt.NDArray[np.bool], npt.NDArray[np.integer] | None]:
     """
     Computes flow directions for a DEM, optionally resolving flat areas.
 
@@ -721,9 +707,7 @@ def compute_indegree(
         case "python":
             indegree = _compute_indegree_py(flowdirs, directions=directions)
         case "fortran":
-            from formosa.geomorphology.flowdir_f import compute_indegree_f
-
-            indegree = compute_indegree_f(
+            indegree = flowdir_f.compute_indegree(
                 flowdirs.astype(np.uint8, order="F"),
                 directions.offsets.astype(np.int32, order="F"),
                 directions.codes.astype(np.uint8, order="F"),
@@ -886,7 +870,7 @@ def compute_accumulation(
     dsij: npt.NDArray[np.integer] | None = None,
     directions: D8Directions = D8Directions(),
     backend: Literal["fortran", "python"] = "fortran",
-) -> npt.NDArray[np.float64]:
+) -> npt.NDArray[np.float32]:
     """
     Computes flow accumulation for each cell in a flow direction grid.
 
@@ -919,7 +903,7 @@ def compute_accumulation(
 
     Returns
     -------
-    accumulation : NDArray[float64]
+    accumulation : NDArray[float32]
         A 2D array representing the flow accumulation for each cell.
     """
     match backend:
@@ -933,8 +917,6 @@ def compute_accumulation(
                 directions=directions,
             )
         case "fortran":
-            from formosa.geomorphology.flowdir_f import compute_accumulation_f
-
             if indegrees is None:
                 indegrees = compute_indegree(flowdirs, directions=directions)
 
@@ -942,18 +924,18 @@ def compute_accumulation(
                 valids = np.ones(flowdirs.shape, dtype=bool)
 
             if weights is None:
-                weights = np.where(valids, 1.0, 0.0).astype(np.float64)
+                weights = np.where(valids, 1.0, 0.0).astype(np.float32)
 
-            accumulation = compute_accumulation_f(
+            accumulation = flowdir_f.compute_accumulation(
                 flowdirs.astype(np.uint8, order="F"),
                 valids.astype(np.bool, order="F"),
-                weights.astype(np.float64, order="F"),
-                indegrees.astype(np.uint8, order="F"),
+                weights.astype(np.float32, order="F"),
+                indegrees.astype(np.int8, order="F"),
                 directions.offsets.astype(np.int32, order="F"),
                 directions.codes.astype(np.uint8, order="F"),
             )
 
-    return accumulation.astype(np.float64, order="F")
+    return accumulation.astype(np.float32, order="F")
 
 
 def _compute_strahler_order_py(
@@ -1033,8 +1015,6 @@ def compute_strahler_order(
                 indegrees=indegrees,
             )
         case "fortran":
-            from formosa.geomorphology.flowdir_f import compute_strahler_order_f
-
             if valids is None:
                 valids = np.ones(flowdir.shape, dtype=bool)
 
@@ -1043,7 +1023,7 @@ def compute_strahler_order(
                     flowdir, directions=directions, backend="fortran"
                 )
 
-            strahler_order = compute_strahler_order_f(
+            strahler_order = flowdir_f.compute_strahler_order(
                 flowdir.astype(np.uint8, order="F"),
                 valids.astype(np.bool, order="F"),
                 indegrees.astype(np.int8, order="F"),
@@ -1061,7 +1041,7 @@ def compute_flow_distance(
     y: npt.NDArray[np.integer | np.floating] | None = None,
     valids: npt.NDArray[np.bool] | None = None,
     indegrees: npt.NDArray[np.integer] | None = None,
-) -> npt.NDArray[np.float64]:
+) -> npt.NDArray[np.float32]:
     """
     Computes the distance downstream along flow directions for each cell in the flow direction grid.
 
@@ -1089,7 +1069,7 @@ def compute_flow_distance(
 
     Returns
     -------
-    distance : NDArray[float64]
+    distance : NDArray[float32]
         A 2D array representing the downstream distance for each cell.
 
     Raises
@@ -1099,8 +1079,6 @@ def compute_flow_distance(
     ValueError
         If the shapes of the input arrays do not match the expected dimensions.
     """
-    from formosa.geomorphology.flowdir_f import compute_distance_f
-
     if valids is None:
         valids = np.ones(flowdir.shape, dtype=bool)
     elif isinstance(valids, np.ndarray):
@@ -1126,16 +1104,16 @@ def compute_flow_distance(
     else:
         raise TypeError(f"Indegree must be a NumPy array (got {type(indegrees)}).")
 
-    distance = compute_distance_f(
+    distance = flowdir_f.compute_distance(
         flowdir.astype(np.uint8, order="F"),
         valids.astype(np.bool, order="F"),
         x.astype(np.float32, order="F"),
         y.astype(np.float32, order="F"),
-        indegrees.astype(np.uint8, order="F"),
+        indegrees.astype(np.int8, order="F"),
         directions.offsets.astype(np.int32, order="F"),
         directions.codes.astype(np.uint8, order="F"),
     )
-    return distance.astype(np.float64, order="F")
+    return distance.astype(np.float32, order="F")
 
 
 def _label_watersheds_py(
@@ -1226,8 +1204,6 @@ def label_watersheds(
                 valids=valids,
             )
         case "fortran":
-            from formosa.geomorphology.flowdir_f import label_watersheds_f
-
             if valids is None:
                 valids = np.ones(flowdir.shape, dtype=bool)
             elif isinstance(valids, np.ndarray):
@@ -1241,7 +1217,7 @@ def label_watersheds(
                     f"Valid mask must be a NumPy array (got {type(valids)})."
                 )
 
-            watersheds = label_watersheds_f(
+            watersheds = flowdir_f.label_watersheds(
                 flowdir.astype(np.uint8, order="F"),
                 valids.astype(np.bool, order="F"),
                 directions.offsets.astype(np.int32, order="F"),
@@ -1256,7 +1232,7 @@ def compute_back_distance(
     x: npt.NDArray[np.integer | np.floating] | None = None,
     y: npt.NDArray[np.integer | np.floating] | None = None,
     valids: npt.NDArray[np.bool] | None = None,
-) -> npt.NDArray[np.float64]:
+) -> npt.NDArray[np.float32]:
     """
     Computes the distance upstream along flow directions for each cell in the flow direction grid.
 
@@ -1279,8 +1255,6 @@ def compute_back_distance(
     NDArray[float32]
         A 2D array representing the upstream distance for each cell.
     """
-    from formosa.geomorphology.flowdir_f import compute_back_distance_f
-
     if valids is None:
         valids = ~np.isnan(flowdir)
     elif isinstance(valids, np.ndarray):
@@ -1302,7 +1276,7 @@ def compute_back_distance(
         y = np.arange(flowdir.shape[0], dtype=np.float32)
         x, y = np.meshgrid(x, y, indexing="xy")
 
-    distance = compute_back_distance_f(
+    distance = flowdir_f.compute_back_distance(
         flowdir.astype(np.uint8, order="F"),
         x.astype(np.float32, order="F"),
         y.astype(np.float32, order="F"),
@@ -1310,4 +1284,4 @@ def compute_back_distance(
         directions.offsets.astype(np.int32, order="F"),
         directions.codes.astype(np.uint8, order="F"),
     )
-    return distance.astype(np.float64, order="F")
+    return distance.astype(np.float32, order="F")
