@@ -4,9 +4,9 @@ uv.lock
 __pycache__/
 *_test.py
 
-build
-*.egg-info
+build/
+assets/
+*.egg-info/
 *.prof
 *.mod
 *.so
-assets/*.tiff

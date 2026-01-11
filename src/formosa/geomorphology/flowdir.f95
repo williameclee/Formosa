@@ -878,8 +878,7 @@ contains
         integer :: iofs ! Offset index
         integer*1 :: noflow_code
         logical*1, allocatable :: is_seed(:, :)
-        integer, allocatable :: seed_buf(:, :)
-        integer, allocatable :: tofill_buf(:, :)
+        integer, allocatable :: seed_buf(:, :), tofill_buf(:, :)
 
         ! Find noflow code
         noflow_code = find_noflow_code(offsets, codes, noffsets)
@@ -944,9 +943,9 @@ contains
             end do
         end do
         !$omp END DO
-        deallocate (seed_buf)
         deallocate (tofill_buf)
         !$omp END PARALLEL
+        deallocate (seed_buf)
     end subroutine compute_back_distance
 
     subroutine compute_strahler_order( &
@@ -1206,8 +1205,9 @@ contains
         integer :: nneighbour, neighbour_offsets(4, 2)
         integer :: ci, cj, ni, nj ! Current and neighbour indices
         integer, allocatable :: diffs(:, :)
-        integer :: maxlen, token
-        integer, allocatable :: path1(:, :), path2(:, :)
+        integer :: maxlen, path1id, path2id
+        integer, allocatable :: path1(:, :), path2(:, :), visited(:, :)
+        logical*1, allocatable :: is_max_dist(:, :)
 
         ! Create lookup tables for offsets
         allocate (diffs(0:255, 2))
@@ -1221,43 +1221,65 @@ contains
                      1, 0 & ! S
                      ], [4, 2])
 
-        maxlen = nrows*ncols
+        maxlen = 2*(nrows + ncols)
 
+        allocate (is_max_dist(nrows, ncols))
         maxbdists = 0.0
+        is_max_dist = .false.
         !$omp PARALLEL DEFAULT(SHARED) &
         !$omp PRIVATE(ci, cj, ni, nj, nneighbour, dists) &
-        !$omp PRIVATE(path1, path2)
+        !$omp PRIVATE(path1, path2, path1id, path2id, visited)
         allocate (path1(maxlen, 2))
         allocate (path2(maxlen, 2))
-        token = 1
+        allocate (visited(nrows, ncols))
+        visited = 0
+        path1id = 1
+        path2id = 2
         !$omp DO SCHEDULE(DYNAMIC) &
         !$omp COLLAPSE(2)
-        do ci = 1, nrows
-            do cj = 1, ncols
-                if (.not. valids(ci, cj)) cycle
+        do cj = 1, ncols
+            do ci = 1, nrows
                 do nneighbour = 1, size(neighbour_offsets, 1)
+                    if (.not. valids(ci, cj)) cycle
                     ni = ci + neighbour_offsets(nneighbour, 1)
                     nj = cj + neighbour_offsets(nneighbour, 2)
                     ! Check bounds
                     if (ni < 1 .or. ni > nrows .or. nj < 1 .or. nj > ncols) cycle
                     ! Check mask
                     if (.not. valids(ni, nj)) cycle
+                    if (is_max_dist(ci, cj) .and. is_max_dist(ni, nj)) cycle
                     call inner_compute_confluence_dist( &
-                        dists, [ci, cj], [ni, nj], flowdirs, x, y, diffs, &
+                        dists, ci, cj, ni, nj, flowdirs, x, y, diffs, &
                         maxpathlen=maxlen, path1=path1, path2=path2, &
+                        visited=visited, id1=path1id, id2=path2id, &
                         check_flag=logical(basin_ids(ni, nj) == basin_ids(ci, cj), kind=1))
-                    ! dists = compute_confluence_dist( &
-                    !         [ci, cj], [ni, nj], flowdirs, x, y, diffs, &
-                    !         check_flag=logical(basin_ids(ni, nj) == basin_ids(ci, cj), kind=1))
                     maxbdists(ci, cj) = max(maxbdists(ci, cj), dists(1))
-                    !$omp CRITICAL(max_update)
+                    !$omp ATOMIC UPDATE
                     maxbdists(ni, nj) = max(maxbdists(ni, nj), dists(2))
-                    !$omp END CRITICAL(max_update)
+                    !$omp END ATOMIC
+
+                    ! If different basin ids, mark as max distance computed
+                    if (basin_ids(ni, nj) /= basin_ids(ci, cj)) then
+                        is_max_dist(ci, cj) = .true.
+                        is_max_dist(ni, nj) = .true.
+                    end if
+
+                    if (path1id > 2147483640) then
+                        visited = 0
+                        path1id = 1
+                        path2id = 2
+                    end if
+                    path1id = path1id + 2
+                    path2id = path2id + 2
                 end do
             end do
         end do
         !$omp END DO
+        deallocate (path1)
+        deallocate (path2)
+        deallocate (visited)
         !$omp END PARALLEL
+        deallocate (is_max_dist)
         deallocate (diffs)
     end subroutine compute_max_branch_dist
 
@@ -1275,37 +1297,48 @@ contains
         ! Outputs
         real, intent(out) :: dists(2)
         ! Local variables
-        logical*1 :: local_check_flag
+        logical*1 :: check_flag_
         integer :: maxpathlen
-        integer, allocatable :: path1(:, :), path2(:, :)
-        maxpathlen = size(flowdirs, 1)*size(flowdirs, 2)
+        integer :: id1, id2
+        integer, allocatable :: path1(:, :), path2(:, :), visited(:, :)
+
+        maxpathlen = 4*(size(flowdirs, 1) + size(flowdirs, 2))
+        id1 = 1
+        id2 = 2
         allocate (path1(maxpathlen, 2))
         allocate (path2(maxpathlen, 2))
+        allocate (visited(size(flowdirs, 1), size(flowdirs, 2)))
+        visited = 0
 
-        local_check_flag = (.not. present(check_flag)) .or. check_flag
+        check_flag_ = (.not. present(check_flag)) .or. check_flag
 
         call inner_compute_confluence_dist( &
             dists, &
-            s1ij, s2ij, flowdirs, x, y, offset_lookup, maxpathlen, path1, path2, local_check_flag)
+            s1ij(1), s1ij(2), s2ij(1), s2ij(2), flowdirs, x, y, offset_lookup, &
+            maxpathlen, path1, path2, visited, id1, id2, &
+            check_flag=check_flag_)
         deallocate (path1)
         deallocate (path2)
+        deallocate (visited)
     end subroutine compute_confluence_dist
 
     subroutine inner_compute_confluence_dist( &
-        dists, s1ij, s2ij, flowdirs, x, y, &
-        offset_lookup, maxpathlen, path1, path2, check_flag)
+        dists, s1i, s1j, s2i, s2j, flowdirs, x, y, &
+        offset_lookup, maxpathlen, path1, path2, visited, id1, id2, check_flag)
         implicit none
         ! Inputs
-        integer, intent(in) :: s1ij(2), s2ij(2) ! Indices of the two seed cells
+        integer, intent(in) :: s1i, s1j, s2i, s2j ! Indices of the two seed cells
         integer*1, intent(in) :: flowdirs(:, :)
         real, intent(in) :: x(:, :), y(:, :)
         integer, intent(in) :: offset_lookup(0:255, 2)
         logical*1, intent(in), optional :: check_flag ! Whether to check for confluence at each step
         integer, intent(in) :: maxpathlen
         integer, intent(inout) :: path1(maxpathlen, 2), path2(maxpathlen, 2) ! Indices of paths
+        integer :: id1, id2
+        integer, intent(inout) :: visited(:, :) ! A grid to track visited paths by ids
         ! Outputs
         real :: dists(2)
-
+        ! Local variables
         integer :: ipath1, ipath2, npath1, npath2 ! Lengths of paths
         integer :: iconf1, iconf2 ! Indices of confluence in paths
         integer :: n1i, n1j, n2i, n2j
@@ -1321,15 +1354,19 @@ contains
         is_active2 = .true.
 
         ! Return zero if same cell
-        if (all(s1ij == s2ij)) then
+        if ((s1i == s2i) .and. (s1j == s2j)) then
             dists = 0.0
             return
         end if
 
         npath1 = 1
-        path1(npath1, :) = s1ij
+        path1(npath1, 1) = s1i
+        path1(npath1, 2) = s1j
+        visited(s1i, s1j) = id1
         npath2 = 1
-        path2(npath2, :) = s2ij
+        path2(npath2, 1) = s2i
+        path2(npath2, 2) = s2j
+        visited(s2i, s2j) = id2
 
         tracer_loop: do while (is_active1 .or. is_active2)
             path1_prc: block
@@ -1341,7 +1378,6 @@ contains
                     is_active1 = .false.
                     exit path1_prc
                 else if (offset_lookup(code1, 1) == 0 .and. offset_lookup(code1, 2) == 0) then
-                    ! else if (code1 == noflow_code) then
                     iconf1 = npath1
                     is_active1 = .false.
                     exit path1_prc
@@ -1360,20 +1396,33 @@ contains
                     print *, "[CONFLUENCE_DISTANCE] Warning: Path 1 exceeded max length of ", maxpathlen
                     iconf1 = npath1
                     is_active1 = .false.
-                    ! print *, "Path1 max length reached"
                     exit path1_prc
                 end if
                 npath1 = npath1 + 1
                 path1(npath1, :) = [n1i, n1j]
+                ! Check for self-intersection
+                if (visited(n1i, n1j) == id1) then
+                    print *, "[CONFLUENCE_DISTANCE] Warning: Path 1 self-intersection at ", n1i, ",", n1j
+                    iconf1 = npath1
+                    is_active1 = .false.
+                    exit path1_prc
+                end if
                 ! Check if enters a visited cell
                 if (.not. local_check_flag) exit path1_prc
+                if (visited(n1i, n1j) /= id2) then
+                    visited(n1i, n1j) = id1
+                    exit path1_prc
+                end if
+                ! Confluence found
                 do ipath2 = 1, npath2
-                    if (all(path2(ipath2, :) == [n1i, n1j])) then
-                        iconf1 = npath1
-                        iconf2 = ipath2
-                        ! print *, "Confluence found at ", n1i, ",", n1j
-                        exit tracer_loop
-                    end if
+                    if (.not. all(path2(ipath2, :) == [n1i, n1j])) cycle
+                    ! print *, "Confluence found at ", n1i, ",", n1j
+                    iconf1 = npath1
+                    iconf2 = ipath2
+                    exit tracer_loop
+                    if (ipath2 < npath2) cycle
+                    print *, "[CONFLUENCE_DISTANCE] Error: Confluence promised but not found"
+                    iconf1 = npath1
                 end do
             end block path1_prc
 
@@ -1386,7 +1435,6 @@ contains
                     is_active2 = .false.
                     exit path2_prc
                 else if (offset_lookup(code2, 1) == 0 .and. offset_lookup(code2, 2) == 0) then
-                    ! else if (code2 == noflow_code) then
                     iconf2 = npath2
                     is_active2 = .false.
                     exit path2_prc
@@ -1403,20 +1451,33 @@ contains
                     print *, "[CONFLUENCE_DISTANCE] Warning: Path 2 exceeded max length of ", maxpathlen
                     iconf2 = npath2
                     is_active2 = .false.
-                    ! print *, "Path2 max length reached"
                     exit path2_prc
                 end if
                 npath2 = npath2 + 1
                 path2(npath2, :) = [n2i, n2j]
+                ! Check for self-intersection
+                if (visited(n2i, n2j) == id2) then
+                    print *, "[CONFLUENCE_DISTANCE] Warning: Path 2 self-intersection at ", n2i, ",", n2j
+                    iconf2 = npath2
+                    is_active2 = .false.
+                    exit path2_prc
+                end if
                 ! Check if enters a visited cell
                 if (.not. local_check_flag) exit path2_prc
+                if (visited(n2i, n2j) /= id1) then
+                    visited(n2i, n2j) = id2
+                    exit path2_prc
+                end if
+                ! Confluence found
                 do ipath1 = 1, npath1
-                    if (all(path1(ipath1, :) == [n2i, n2j])) then
-                        iconf1 = ipath1
-                        iconf2 = npath2
-                        ! print *, "Confluence found at ", n2i, ",", n2j
-                        exit tracer_loop
-                    end if
+                    if (.not. all(path1(ipath1, :) == [n2i, n2j])) cycle
+                    ! print *, "Confluence found at ", n2i, ",", n2j
+                    iconf1 = ipath1
+                    iconf2 = npath2
+                    exit tracer_loop
+                    if (ipath1 < npath1) cycle
+                    print *, "[CONFLUENCE_DISTANCE] Error: Confluence promised but not found"
+                    iconf2 = npath2
                 end do
             end block path2_prc
         end do tracer_loop

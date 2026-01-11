@@ -25,7 +25,7 @@ flowdir_f = custom_target(
     '-m', 'flowdir_f',
     # OpenMP flags
     '--fcompiler=gnu95',
-    '--f90flags="-march=native -fopenmp -O3"',
+    '--f90flags="-march=native -fopenmp -O3"', # -pg for profiling
     '-lgomp',
   ],
   install: true,

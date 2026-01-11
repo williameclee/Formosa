@@ -7,6 +7,41 @@ import numpy.typing as npt
 from typing import Literal
 
 
+def fill_depressions(
+    dem: npt.NDArray[np.number],
+    valid: npt.NDArray[np.bool] | None = None,
+    method: str = "erosion",
+) -> npt.NDArray[np.number]:
+    assert method in [
+        "erosion",
+        "dilation",
+    ], f"METHOD must be either 'erosion' or 'dilation', got {method} instead"
+    
+    from skimage import morphology
+
+    dem_seed = dem.copy()
+    if valid is not None:
+        if method == "erosion":
+            dem[~valid] = np.nanmin(dem[valid])
+            seed_value = np.nanmax(dem[valid]) + 1
+        else:
+            dem[~valid] = np.nanmax(dem[valid])
+            seed_value = np.nanmin(dem[valid]) - 1
+    else:
+        if method == "erosion":
+            seed_value = np.nanmax(dem) + 1
+        else:
+            seed_value = np.nanmin(dem) - 1
+
+    dem_mask = np.full(dem.shape, True, dtype=np.bool)
+    dem_mask[0, :] = False
+    dem_mask[-1, :] = False
+    dem_mask[:, 0] = False
+    dem_mask[:, -1] = False
+    dem_seed[dem_mask] = seed_value
+    return morphology.reconstruction(dem_seed, dem, method=method).astype(dem.dtype)
+
+
 def _compute_flowdir_simple_py(
     dem: npt.NDArray[np.number],
     directions: D8Directions = D8Directions(),
@@ -431,7 +466,7 @@ def compute_away_from_high(
     assert (
         labels.shape == high_edges.shape
     ), f"Shapes for labels ({labels.shape}) and high_edges ({high_edges.shape}) do not match."
-    
+
     z_syn = flowdir_f.away_from_high(
         labels.astype(np.int32, order="F"),
         high_edges.astype(np.bool, order="F"),
@@ -583,7 +618,7 @@ def _compute_flowdir_total(
     """
     if step_size <= 0:
         raise ValueError(f"Step size must be a positive integer (got {step_size}).")
-    
+
     flowdir, is_flat = compute_flowdir_simple(dem, directions=directions, valids=valids)
     is_low_edge, is_high_edge = find_flat_edges(
         dem, flowdir, directions=directions, valids=valids
@@ -1285,3 +1320,76 @@ def compute_back_distance(
         directions.codes.astype(np.uint8, order="F"),
     )
     return distance.astype(np.float32, order="F")
+
+
+def compute_max_confluence_distance(
+    flowdirs: npt.NDArray[np.integer],
+    valids: npt.NDArray[np.bool] | None = None,
+    x: npt.NDArray[np.integer | np.floating] | None = None,
+    y: npt.NDArray[np.integer | np.floating] | None = None,
+    labels: npt.NDArray[np.integer] | None = None,
+    directions: D8Directions = D8Directions(),
+) -> npt.NDArray[np.float32]:
+    """
+    Computes the maximum distance to confluence for each cell in the flow direction grid.
+
+    Parameters
+    ----------
+    flowdirs : NDArray[uint8]
+        A 2D array representing the flow directions for each cell.
+    valids : NDArray[bool], optional
+        A boolean mask array where True indicates valid cells. If None, all cells are considered valid.
+        Default is None.
+    x : NDArray[int | float], optional
+        A 2D array representing the x-coordinates of each cell. If None, a default grid will be created.
+        Default is None.
+    y : NDArray[int | float], optional
+        A 2D array representing the y-coordinates of each cell. If None, a default grid will be created.
+        Default is None.
+    labels : NDArray[int], optional
+        A 2D array representing labels for different regions in the flow direction grid. If None, all cells are assigned the same label.
+        Default is None.
+    directions : D8Directions, optional
+        An instance of D8Directions defining the flow direction scheme.
+        Default is D8Directions().
+
+    Returns
+    -------
+    NDArray[float32]
+        A 2D array representing the maximum distance to confluence for each cell.
+    """
+    if valids is None:
+        valids = np.ones(flowdirs.shape, dtype=bool)
+    elif isinstance(valids, np.ndarray):
+        assert (
+            valids.shape == flowdirs.shape
+        ), f"Shape for flow direction ({flowdirs.shape}) and valid mask ({valids.shape}) do not match."
+    else:
+        raise TypeError(f"Valid mask must be a NumPy array (got {type(valids)}).")
+    if x is not None and y is not None:
+        assert (
+            x.shape == flowdirs.shape and y.shape == flowdirs.shape
+        ), f"Shapes for flow direction ({flowdirs.shape}) and x ({x.shape}) and y ({y.shape}) must match."
+    else:
+        x = np.arange(flowdirs.shape[1], dtype=np.float32)
+        y = np.arange(flowdirs.shape[0], dtype=np.float32)
+        x, y = np.meshgrid(x, y, indexing="xy")
+    if labels is None:
+        labels = np.ones(flowdirs.shape, dtype=np.int32)
+    elif isinstance(labels, np.ndarray):
+        assert (
+            labels.shape == flowdirs.shape
+        ), f"Shape for flow direction ({flowdirs.shape}) and labels ({labels.shape}) do not match."
+    else:
+        raise TypeError(f"Labels must be a NumPy array (got {type(labels)}).")
+
+    bmax = flowdir_f.compute_max_branch_dist(
+        flowdirs.astype(np.uint8, order="F"),
+        valids.astype(np.bool, order="F"),
+        x.astype(np.float32, order="F"),
+        y.astype(np.float32, order="F"),
+        labels.astype(np.int32, order="F"),
+        directions.offsets.astype(np.int32, order="F"),
+        directions.codes.astype(np.uint8, order="F"),
+    )
+    return bmax.astype(np.float32, order="F")

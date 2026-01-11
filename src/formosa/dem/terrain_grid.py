@@ -4,18 +4,22 @@ import numpy as np
 import rasterio
 import rasterio.transform as rt
 import scipy.ndimage as ndi
-from skimage import morphology
 
 from formosa.dem.demio import read_dem
-from formosa.geomorphology.d8directions import D8Directions
-from formosa.geomorphology.flowdir import (
+from formosa.geomorphology import D8Directions
+from formosa.geomorphology import (
+    get_neighbour_values,
+    compute_slope,
+    fill_depressions,
     compute_flowdir,
     compute_flowdir_graph,
     compute_indegree,
     compute_accumulation,
     compute_strahler_order,
     compute_flow_distance,
-    get_neighbour_values,
+    compute_back_distance,
+    compute_max_confluence_distance,
+    label_watersheds,
 )
 
 import numpy.typing as npt
@@ -214,13 +218,12 @@ class DEMGrid:
         self._graphy = None
         self._flowdist: None | npt.NDArray[np.floating] = None
         self._backdist: None | npt.NDArray[np.floating] = None
+        self._bmax: None | npt.NDArray[np.floating] = None
 
     @property
     def slope(self) -> npt.NDArray[np.floating | np.integer]:
         if self._slope is not None:
             return self._slope
-
-        from formosa.geomorphology.terrain import compute_slope
 
         self._slope = compute_slope(self.dem, x=self.x, y=self.y)
         self._slope[~self.valid] = np.nan
@@ -310,8 +313,6 @@ class DEMGrid:
         if self._watershed is not None:
             return self._watershed
 
-        from formosa.geomorphology.flowdir import label_watersheds
-
         self._watershed = label_watersheds(
             self.flowdir,
             directions=self.directions,
@@ -324,8 +325,6 @@ class DEMGrid:
         if self._backdist is not None:
             return self._backdist
 
-        from formosa.geomorphology.flowdir import compute_back_distance
-
         self._backdist = compute_back_distance(
             self.flowdir,
             directions=self.directions,
@@ -334,6 +333,21 @@ class DEMGrid:
             valids=self.valid,
         )
         return self._backdist
+
+    @property
+    def bmax(self) -> npt.NDArray[np.floating]:
+        if self._bmax is not None:
+            return self._bmax
+
+        self._bmax = compute_max_confluence_distance(
+            self.flowdir.astype(np.uint8, order="F"),
+            self.valid.astype(np.bool, order="F"),
+            self.x.astype(np.float32, order="F"),
+            self.y.astype(np.float32, order="F"),
+            labels=self.watersheds.astype(np.int32, order="F"),
+            directions=self.directions,
+        )
+        return self._bmax
 
 
 def detect_ocean_mask(dem, ocean_threshold: int | float = 0):
@@ -354,36 +368,3 @@ def fill_pits(
     dem_filled[is_pit] = min_neighbours[is_pit]
 
     return dem_filled, is_pit
-
-
-def fill_depressions(
-    dem: npt.NDArray[np.number],
-    valid: npt.NDArray[np.bool] | None = None,
-    method: str = "erosion",
-) -> npt.NDArray[np.number]:
-    assert method in [
-        "erosion",
-        "dilation",
-    ], f"METHOD must be either 'erosion' or 'dilation', got {method} instead"
-
-    dem_seed = dem.copy()
-    if valid is not None:
-        if method == "erosion":
-            dem[~valid] = np.nanmin(dem[valid])
-            seed_value = np.nanmax(dem[valid]) + 1
-        else:
-            dem[~valid] = np.nanmax(dem[valid])
-            seed_value = np.nanmin(dem[valid]) - 1
-    else:
-        if method == "erosion":
-            seed_value = np.nanmax(dem) + 1
-        else:
-            seed_value = np.nanmin(dem) - 1
-
-    dem_mask = np.full(dem.shape, True, dtype=np.bool)
-    dem_mask[0, :] = False
-    dem_mask[-1, :] = False
-    dem_mask[:, 0] = False
-    dem_mask[:, -1] = False
-    dem_seed[dem_mask] = seed_value
-    return morphology.reconstruction(dem_seed, dem, method=method).astype(dem.dtype)
