@@ -7,8 +7,6 @@ from formosa import D8Directions
 def test_confluence_distance_2x2():
     from formosa.geomorphology.flowdir_f import flowdir as flowdir_f
 
-    print("Available functions in flowdir_f:", dir(flowdir_f))
-
     directions = D8Directions(transform_codes=lambda x: x)
     offset_lookup = np.zeros((256, 2), dtype=np.int32)
     for code, (di, dj) in zip(directions.codes, directions.offsets):

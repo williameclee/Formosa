@@ -1,5 +1,6 @@
 .venv
 .vscode
+.coverage
 uv.lock
 __pycache__/
 *_test.py

@@ -731,6 +731,7 @@ def compute_indegree(
         Default is D8Directions().
     backend : {'fortran', 'python'}, optional
         The backend to use for computation. 'fortran' uses the Fortran extension for performance, while 'python' uses a pure Python implementation.
+        Note: the Python implementation is unmaintained.
         Default is 'fortran'.
 
     Returns

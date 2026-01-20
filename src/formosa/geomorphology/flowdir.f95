@@ -125,8 +125,8 @@ contains
         !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(ci, cj, iofs, ni, nj, zmin) &
         !$omp COLLAPSE(2) &
         !$omp SCHEDULE(STATIC)
-        do ci = 1, nrows
-            do cj = 1, ncols
+        do cj = 1, ncols
+            do ci = 1, nrows
                 if (.not. valids(ci, cj)) then
                     flowdir(ci, cj) = noflow_code
                     cycle
@@ -155,8 +155,8 @@ contains
         !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(ci, cj) &
         !$omp COLLAPSE(2) &
         !$omp SCHEDULE(STATIC)
-        do ci = 1, nrows
-            do cj = 1, ncols
+        do cj = 1, ncols
+            do ci = 1, nrows
                 if (.not. valids(ci, cj)) then
                     is_flat(ci, cj) = .false.
                 else if (flowdir(ci, cj) == noflow_code) then
@@ -191,8 +191,8 @@ contains
         !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(ci, cj, iofs, ni, nj, zmin) &
         !$omp COLLAPSE(2) &
         !$omp SCHEDULE(STATIC)
-        do ci = 1, nrows
-            do cj = 1, ncols
+        do cj = 1, ncols
+            do ci = 1, nrows
                 if (labels(ci, cj) == 0) then
                     flowdir(ci, cj) = noflow_code
                     cycle
@@ -241,8 +241,8 @@ contains
         !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(ci, cj, iofs, ni, nj) &
         !$omp COLLAPSE(2) &
         !$omp SCHEDULE(STATIC)
-        do ci = 1, nrows
-            do cj = 1, ncols
+        do cj = 1, ncols
+            do ci = 1, nrows
                 if (.not. valids(ci, cj)) then
                     is_high_edge(ci, cj) = .false.
                     is_low_edge(ci, cj) = .false.
@@ -607,7 +607,8 @@ contains
         integer*1, intent(out) :: indegree(nrows, ncols)
 
         integer :: ci, cj, ni, nj ! Current and neighbour indices
-        integer*1 :: code
+        integer :: iofs ! Offset index
+        ! integer*1 :: code
         integer, allocatable :: diffs(:, :) ! Lookup tables for offsets
 
         ! Create lookup tables for offsets
@@ -619,22 +620,22 @@ contains
         !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(ci, cj, ni, nj) &
         !$omp COLLAPSE(2) &
         !$omp SCHEDULE(STATIC)
-        do ci = 1, nrows
-            do cj = 1, ncols
-                ! Get neighbour indices based on flow direction
-                code = flowdir(ci, cj)
-                ni = ci + diffs(code, 1)
-                nj = cj + diffs(code, 2)
-
-                ! Check bounds
-                if (ni < 1 .or. ni > nrows .or. nj < 1 .or. nj > ncols) cycle
-                ! Skip self-loops
-                if (ni == ci .and. nj == cj) cycle
-
-                ! Increment indegree of downstream cell, make sure only one thread updates at a time
-                !$omp ATOMIC UPDATE
-                indegree(ni, nj) = indegree(ni, nj) + int(1, kind=1)
-                !$omp END ATOMIC
+        do cj = 1, ncols
+            do ci = 1, nrows
+                ! Loop over offsets to find neighbours flowing into current cell
+                do iofs = 1, noffsets
+                    ! Upstream neighbour indices
+                    ni = ci - offsets(iofs, 1)
+                    nj = cj - offsets(iofs, 2)
+                    ! Check bounds
+                    if (ni < 1 .or. ni > nrows .or. nj < 1 .or. nj > ncols) cycle
+                    ! Skip self-loops
+                    if (ni == ci .and. nj == cj) cycle
+                    ! Check if neighbour flows into current cell
+                    if (flowdir(ni, nj) == codes(iofs)) then
+                        indegree(ci, cj) = indegree(ci, cj) + int(1, kind=1)
+                    end if
+                end do
             end do
         end do
         !$omp END PARALLEL DO
