@@ -1,3 +1,9 @@
+!!!
+! Last modified
+!   2026-02-11, En-Chi Lee (williameclee@arizona.edu)
+!     - Rename flowdir functions to be more descriptive
+!!!
+
 module flowdir_utils
     implicit none
 contains
@@ -642,7 +648,7 @@ contains
         deallocate (diffs)
     end subroutine compute_indegree
 
-    subroutine compute_accumulation( &
+    subroutine compute_flow_accumulation( &
         flowdir, valids, weights, indegrees, accumulations, nrows, ncols, &
         offsets, codes, noffsets)
         implicit none
@@ -703,7 +709,7 @@ contains
             if (indegrees(ni, nj) == 0) then
                 ntofills = ntofills + 1
                 if (ntofills > size(tofill_buf, 1)) then
-          print *, "[COMPUTE_ACCUMULATION] Error: tofill buffer overflow (size:", ntofills, ", allocated:", size(tofill_buf, 1), ")"
+             print *, "[FLOW_ACCUMULATION] Error: tofill buffer overflow (size:", ntofills, ", allocated:", size(tofill_buf, 1), ")"
                     stop
                 end if
                 tofill_buf(ntofills, :) = [ni, nj]
@@ -711,9 +717,9 @@ contains
         end do
         deallocate (diffs)
         deallocate (tofill_buf)
-    end subroutine compute_accumulation
+    end subroutine compute_flow_accumulation
 
-    subroutine compute_l1_distance( &
+    subroutine compute_dist2source_l1( &
         flowdir, valids, indegrees, dists, nrows, ncols, &
         offsets, codes, noffsets)
         implicit none
@@ -775,7 +781,7 @@ contains
             if (indegrees(ni, nj) == 0) then
                 ntofills = ntofills + 1
                 if (ntofills > size(tofill_buf, 1)) then
-           print *, "[COMPUTE_L1_DISTANCE] Error: tofill buffer overflow (size:", ntofills, ", allocated:", size(tofill_buf, 1), ")"
+                print *, "[DIST2SOURCE_L1] Error: tofill buffer overflow (size:", ntofills, ", allocated:", size(tofill_buf, 1), ")"
                     stop
                 end if
                 tofill_buf(ntofills, :) = [ni, nj]
@@ -783,9 +789,9 @@ contains
         end do
         deallocate (diffs)
         deallocate (tofill_buf)
-    end subroutine compute_l1_distance
+    end subroutine compute_dist2source_l1
 
-    subroutine compute_distance( &
+    subroutine compute_dist2source( &
         flowdir, valids, x, y, indegrees, dists, nrows, ncols, &
         offsets, codes, noffsets)
         implicit none
@@ -852,7 +858,7 @@ contains
             if (indegrees(ni, nj) == 0) then
                 ntofills = ntofills + 1
                 if (ntofills > size(tofill_buf, 1)) then
-              print *, "[COMPUTE_DISTANCE] Error: tofill buffer overflow (size:", ntofills, ", allocated:", size(tofill_buf, 1), ")"
+                   print *, "[DIST2SOURCE] Error: tofill buffer overflow (size:", ntofills, ", allocated:", size(tofill_buf, 1), ")"
                     stop
                 end if
                 tofill_buf(ntofills, :) = [ni, nj]
@@ -860,9 +866,9 @@ contains
         end do
         deallocate (diffs)
         deallocate (tofill_buf)
-    end subroutine compute_distance
+    end subroutine compute_dist2source
 
-    subroutine compute_back_distance( &
+    subroutine compute_flow_dist2sink( &
         dist, flowdir, x, y, valid, nrows, ncols, offsets, codes, noffsets)
         implicit none
         ! Inputs
@@ -932,7 +938,7 @@ contains
                     ! Add to buffer
                     nfills = nfills + 1
                     if (nfills > size(tofill_buf, 1)) then
-           print *, "[COMPUTE_BACK_DISTANCE] Error: tofill buffer overflow (size:", nfills, ", allocated:", size(tofill_buf, 1), ")"
+                       print *, "[DIST2SINK] Error: tofill buffer overflow (size:", nfills, ", allocated:", size(tofill_buf, 1), ")"
                         stop
                     end if
                     tofill_buf(nfills, :) = [ui, uj]
@@ -947,7 +953,7 @@ contains
         deallocate (tofill_buf)
         !$omp END PARALLEL
         deallocate (seed_buf)
-    end subroutine compute_back_distance
+    end subroutine compute_flow_dist2sink
 
     subroutine compute_strahler_order( &
         flowdir, valids, indegrees, orders, nrows, ncols, &
@@ -1539,7 +1545,7 @@ contains
     !         offsets, codes, noffsets)
 
     !     allocate (dists(nrows, ncols))
-    !     call compute_l1_distance( &
+    !     call compute_dist2source_l1( &
     !         flowdirs, valids, indegrees, dists, nrows, ncols, &
     !         offsets, codes, noffsets)
 

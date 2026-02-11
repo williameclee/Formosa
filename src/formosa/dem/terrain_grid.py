@@ -1,3 +1,7 @@
+# Last modified
+#   2026-02-11, En-Chi Lee (williameclee@arizona.edu)
+#     - Rename flowdir functions to be more descriptive
+
 from pathlib import Path
 import warnings
 import numpy as np
@@ -14,11 +18,11 @@ from formosa.geomorphology import (
     compute_flowdir,
     compute_flowdir_graph,
     compute_indegree,
-    compute_accumulation,
+    compute_flow_accumulation,
     compute_strahler_order,
-    compute_flow_distance,
-    compute_back_distance,
-    compute_max_confluence_distance,
+    compute_flow_dist2source,
+    compute_flow_dist2sink,
+    compute_flow_dist2conf_max,
     label_watersheds,
 )
 
@@ -272,7 +276,7 @@ class DEMGrid:
     @property
     def accumulation(self) -> np.ndarray:
         if self._accumulation is None:
-            self._accumulation = compute_accumulation(
+            self._accumulation = compute_flow_accumulation(
                 self.flowdir,
                 valids=self.valid,
                 indegrees=self.indegree,
@@ -298,7 +302,7 @@ class DEMGrid:
     @property
     def flow_distance(self) -> npt.NDArray[np.floating]:
         if self._flowdist is None:
-            self._flowdist = compute_flow_distance(
+            self._flowdist = compute_flow_dist2source(
                 self.flowdir,
                 directions=self.directions,
                 x=self.x,
@@ -325,7 +329,7 @@ class DEMGrid:
         if self._backdist is not None:
             return self._backdist
 
-        self._backdist = compute_back_distance(
+        self._backdist = compute_flow_dist2sink(
             self.flowdir,
             directions=self.directions,
             x=self.x,
@@ -339,7 +343,7 @@ class DEMGrid:
         if self._bmax is not None:
             return self._bmax
 
-        self._bmax = compute_max_confluence_distance(
+        self._bmax = compute_flow_dist2conf_max(
             self.flowdir.astype(np.uint8, order="F"),
             self.valid.astype(np.bool, order="F"),
             self.x.astype(np.float32, order="F"),

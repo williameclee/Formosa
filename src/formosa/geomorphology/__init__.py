@@ -1,3 +1,7 @@
+# Last modified
+#   2026-02-11, En-Chi Lee (williameclee@arizona.edu)
+#     - Rename flowdir functions to be more descriptive
+
 from formosa.geomorphology.d8directions import D8Directions
 from formosa.geomorphology.terrain import compute_slope
 from formosa.geomorphology.flowdir import (
@@ -6,10 +10,10 @@ from formosa.geomorphology.flowdir import (
     compute_flowdir,
     compute_flowdir_graph,
     compute_indegree,
-    compute_accumulation,
+    compute_flow_accumulation,
     compute_strahler_order,
-    compute_flow_distance,
-    compute_back_distance,
+    compute_flow_dist2source,
+    compute_flow_dist2sink,
     label_watersheds,
-    compute_max_confluence_distance,
+    compute_flow_dist2conf_max,
 )

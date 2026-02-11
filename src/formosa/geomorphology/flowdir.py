@@ -1,3 +1,7 @@
+# Last modified
+#   2026-02-11, En-Chi Lee (williameclee@arizona.edu)
+#     - Rename flowdir functions to be more descriptive
+
 import numpy as np
 
 from formosa.geomorphology.d8directions import D8Directions
@@ -16,7 +20,7 @@ def fill_depressions(
         "erosion",
         "dilation",
     ], f"METHOD must be either 'erosion' or 'dilation', got {method} instead"
-    
+
     from skimage import morphology
 
     dem_seed = dem.copy()
@@ -828,7 +832,7 @@ def compute_flowdir_graph(
     return graphi, graphj
 
 
-def _compute_accumulation_py(
+def _compute_flow_accumulation_py(
     flowdirs: npt.NDArray[np.integer],
     valids=None,
     weights=None,
@@ -898,7 +902,7 @@ def _compute_accumulation_py(
     return accumulation
 
 
-def compute_accumulation(
+def compute_flow_accumulation(
     flowdirs: npt.NDArray[np.integer],
     valids: npt.NDArray[np.bool] | None = None,
     weights: npt.NDArray[np.floating] | None = None,
@@ -944,7 +948,7 @@ def compute_accumulation(
     """
     match backend:
         case "python":
-            accumulation = _compute_accumulation_py(
+            accumulation = _compute_flow_accumulation_py(
                 flowdirs,
                 valids=valids,
                 weights=weights,
@@ -962,7 +966,7 @@ def compute_accumulation(
             if weights is None:
                 weights = np.where(valids, 1.0, 0.0).astype(np.float32)
 
-            accumulation = flowdir_f.compute_accumulation(
+            accumulation = flowdir_f.compute_flow_accumulation(
                 flowdirs.astype(np.uint8, order="F"),
                 valids.astype(np.bool, order="F"),
                 weights.astype(np.float32, order="F"),
@@ -1070,7 +1074,7 @@ def compute_strahler_order(
     return strahler_order.astype(np.int16, order="F")
 
 
-def compute_flow_distance(
+def compute_flow_dist2source(
     flowdir: npt.NDArray[np.integer],
     directions: D8Directions = D8Directions(),
     x: npt.NDArray[np.integer | np.floating] | None = None,
@@ -1140,7 +1144,7 @@ def compute_flow_distance(
     else:
         raise TypeError(f"Indegree must be a NumPy array (got {type(indegrees)}).")
 
-    distance = flowdir_f.compute_distance(
+    distance = flowdir_f.compute_dist2source(
         flowdir.astype(np.uint8, order="F"),
         valids.astype(np.bool, order="F"),
         x.astype(np.float32, order="F"),
@@ -1262,7 +1266,7 @@ def label_watersheds(
     return watersheds.astype(np.int32, order="F")
 
 
-def compute_back_distance(
+def compute_flow_dist2sink(
     flowdir: npt.NDArray[np.integer],
     directions: D8Directions = D8Directions(),
     x: npt.NDArray[np.integer | np.floating] | None = None,
@@ -1312,7 +1316,7 @@ def compute_back_distance(
         y = np.arange(flowdir.shape[0], dtype=np.float32)
         x, y = np.meshgrid(x, y, indexing="xy")
 
-    distance = flowdir_f.compute_back_distance(
+    distance = flowdir_f.compute_flow_dist2sink(
         flowdir.astype(np.uint8, order="F"),
         x.astype(np.float32, order="F"),
         y.astype(np.float32, order="F"),
@@ -1323,7 +1327,7 @@ def compute_back_distance(
     return distance.astype(np.float32, order="F")
 
 
-def compute_max_confluence_distance(
+def compute_flow_dist2conf_max(
     flowdirs: npt.NDArray[np.integer],
     valids: npt.NDArray[np.bool] | None = None,
     x: npt.NDArray[np.integer | np.floating] | None = None,
