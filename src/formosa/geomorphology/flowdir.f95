@@ -72,9 +72,9 @@ contains
         ! TODO: Optimise this subroutine?
         implicit none
         integer, intent(in) :: nrows, ncols
-        logical*1, dimension(nrows, ncols), intent(in) :: mask
+        logical*1, intent(in) :: mask(nrows, ncols)
         integer, intent(in) :: nij
-        integer, dimension(nij, 2), intent(out) :: ij
+        integer, intent(out) :: ij(nij, 2)
         integer, intent(out) :: cnt
 
         integer :: ci, cj
