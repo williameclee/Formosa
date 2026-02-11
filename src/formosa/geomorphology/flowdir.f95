@@ -709,7 +709,7 @@ contains
             if (indegrees(ni, nj) == 0) then
                 ntofills = ntofills + 1
                 if (ntofills > size(tofill_buf, 1)) then
-          print *, "[COMPUTE_ACCUMULATION] Error: tofill buffer overflow (size:", ntofills, ", allocated:", size(tofill_buf, 1), ")"
+             print *, "[FLOW_ACCUMULATION] Error: tofill buffer overflow (size:", ntofills, ", allocated:", size(tofill_buf, 1), ")"
                     stop
                 end if
                 tofill_buf(ntofills, :) = [ni, nj]
