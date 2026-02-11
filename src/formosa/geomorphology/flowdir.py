@@ -966,7 +966,7 @@ def compute_flow_accumulation(
             if weights is None:
                 weights = np.where(valids, 1.0, 0.0).astype(np.float32)
 
-            accumulation = flowdir_f.compute_accumulation(
+            accumulation = flowdir_f.compute_flow_accumulation(
                 flowdirs.astype(np.uint8, order="F"),
                 valids.astype(np.bool, order="F"),
                 weights.astype(np.float32, order="F"),

@@ -648,7 +648,7 @@ contains
         deallocate (diffs)
     end subroutine compute_indegree
 
-    subroutine compute_accumulation( &
+    subroutine compute_flow_accumulation( &
         flowdir, valids, weights, indegrees, accumulations, nrows, ncols, &
         offsets, codes, noffsets)
         implicit none
@@ -717,7 +717,7 @@ contains
         end do
         deallocate (diffs)
         deallocate (tofill_buf)
-    end subroutine compute_accumulation
+    end subroutine compute_flow_accumulation
 
     subroutine compute_dist2source_l1( &
         flowdir, valids, indegrees, dists, nrows, ncols, &
