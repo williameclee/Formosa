@@ -12,15 +12,18 @@ from formosa.geomorphology.d8directions import D8Directions
 
 try:
     from formosa.geomorphology.flowdir_f import flowdir as flowdir_f
-except ImportError as e:
+except ImportError as err:
 
     class _MissingFortranBackend:
+        def __init__(self, err: ImportError):
+            self._err = err
+
         def __getattr__(self, name):
             raise ImportError(
                 "formosa.geomorphology.flowdir_f is required for backend='fortran' but is not available."
-            ) from e
+            ) from self._err
 
-    flowdir_f = _MissingFortranBackend()
+    flowdir_f = _MissingFortranBackend(err)
 
 import numpy.typing as npt
 from typing import Literal
