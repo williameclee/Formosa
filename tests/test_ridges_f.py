@@ -11,7 +11,7 @@ def test_confluence_distance_2x2():
     offset_lookup = np.zeros((256, 2), dtype=np.int32)
     for code, (di, dj) in zip(directions.codes, directions.offsets):
         offset_lookup[code, :] = [di, dj]
-        print(f"Code {code}: offset ({di:3d}, {dj:3d})")
+        # print(f"Code {code}: offset ({di:3d}, {dj:3d})")
 
     flowdirs = np.array([[3, 3], [1, 0]], dtype=np.uint8)
     x, y = np.meshgrid(
@@ -138,7 +138,7 @@ def test_confluence_distance_3x3():
     offset_lookup = np.zeros((256, 2), dtype=np.int32)
     for code, (di, dj) in zip(directions.codes, directions.offsets):
         offset_lookup[code, :] = [di, dj]
-        print(f"Code {code}: offset ({di:3d}, {dj:3d})")
+        # print(f"Code {code}: offset ({di:3d}, {dj:3d})")
 
     flowdirs = np.array([[3, 3, 3], [3, 3, 3], [1, 1, 0]], dtype=np.uint8)
     x, y = np.meshgrid(

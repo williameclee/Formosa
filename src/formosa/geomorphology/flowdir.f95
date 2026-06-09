@@ -2,6 +2,8 @@
 ! Last modified
 !   2026-02-11, En-Chi Lee (williameclee@arizona.edu)
 !     - Rename flowdir functions to be more descriptive
+!   2026-06-09, En-Chi Lee (williameclee@arizona.edu)
+!     - Small refactors and documentation cleanup
 !!!
 
 module flowdir_utils
@@ -127,16 +129,14 @@ contains
 
         ! Find noflow code
         noflow_code = find_noflow_code(offsets, codes, noffsets)
+        flowdir(ci, cj) = noflow_code
 
         !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(ci, cj, iofs, ni, nj, zmin) &
         !$omp COLLAPSE(2) &
         !$omp SCHEDULE(STATIC)
         do cj = 1, ncols
             do ci = 1, nrows
-                if (.not. valids(ci, cj)) then
-                    flowdir(ci, cj) = noflow_code
-                    cycle
-                end if
+                if (.not. valids(ci, cj)) cycle
 
                 zmin = z(ci, cj)
 
@@ -193,16 +193,14 @@ contains
 
         ! Find noflow code
         noflow_code = find_noflow_code(offsets, codes, noffsets)
+        flowdir(ci, cj) = noflow_code
 
         !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(ci, cj, iofs, ni, nj, zmin) &
         !$omp COLLAPSE(2) &
         !$omp SCHEDULE(STATIC)
         do cj = 1, ncols
             do ci = 1, nrows
-                if (labels(ci, cj) == 0) then
-                    flowdir(ci, cj) = noflow_code
-                    cycle
-                end if
+                if (labels(ci, cj) == 0) cycle
 
                 zmin = z(ci, cj)
 
@@ -309,6 +307,7 @@ contains
             is_seed, nrows, ncols, &
             seeds, size(seeds, dim=1), nseeds)
 
+        labels = 0
         label = 1
         iseed = 1
         do while (iseed <= nseeds)
@@ -398,6 +397,8 @@ contains
         ! No high edges found, set z to zero and exit
         if (nedges == 0) then
             z = 0
+            deallocate (queued)
+            deallocate (high_edges_buf)
             return
         end if
         nedges = nedges + 1
