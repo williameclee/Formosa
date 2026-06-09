@@ -5,6 +5,8 @@
 #     - Added `compute_flow_dist2ridge` function to compute 'distance to ridges'
 #     - Added error for missing Fortran backend
 #     - Removed Numpy type `np.bool` to either `np.bool_` or `bool` for compatibility with newer Numpy versions
+#     - Renamed Fortran function call: `compute_masked_flowdir` -> `compute_synthetic_flowdir`
+#     - Added `valids` argument to `label_flats` function
 
 import numpy as np
 
@@ -214,6 +216,7 @@ def find_flat_edges(
 def label_flats(
     dem: npt.NDArray[np.number],
     seeds: npt.NDArray[np.bool_],
+    valids: npt.NDArray[np.bool_] | None = None,
     directions: D8Directions = D8Directions(),
 ) -> npt.NDArray[np.int32]:
     """
@@ -226,6 +229,10 @@ def label_flats(
         A 2D array representing the digital elevation model (DEM).
     seeds : NDArray[bool] | NDArray[int] | Iterable[Iterable[int]]
         Either a boolean mask array indicating flat area locations, or a 2D integer array of coordinates, or an iterable of coordinate pairs.
+    valids : NDArray[bool], optional
+        A boolean mask array indicating valid cells in the DEM.
+        If `None`, all cells are considered valid.
+        Default is `None`.
     directions : D8Directions, optional
         An instance of D8Directions defining the flow direction scheme.
         Default is D8Directions().
@@ -245,10 +252,17 @@ def label_flats(
     assert (
         dem.shape == seeds.shape
     ), f"Shapes for dem ({dem.shape}) and seeds ({seeds.shape}) do not match."
+    if valids is not None:
+        assert (
+            dem.shape == valids.shape
+        ), f"Shapes for dem ({dem.shape}) and valids ({valids.shape}) do not match."
+    else:
+        valids = np.ones(dem.shape, dtype=bool, order="F")
 
     labels = flowdir_f.label_flats(
         dem.astype(np.float32, order="F"),
         seeds.astype(bool, order="F"),
+        valids.astype(bool, order="F"),
         directions.offsets.astype(np.int32, order="F"),
     )
 
@@ -594,7 +608,7 @@ def compute_masked_flowdir(
         case "python":
             flowdir = _compute_masked_flowdir_py(z, labels, directions=directions)
         case "fortran":
-            flowdir = flowdir_f.compute_masked_flowdir(
+            flowdir = flowdir_f.compute_synthetic_flowdir(
                 z.astype(np.int32, order="F"),
                 labels.astype(np.int32, order="F"),
                 directions.offsets.astype(np.int32, order="F"),

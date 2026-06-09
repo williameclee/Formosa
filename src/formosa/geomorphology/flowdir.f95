@@ -4,6 +4,8 @@
 !     - Rename flowdir functions to be more descriptive
 !   2026-06-09, En-Chi Lee (williameclee@arizona.edu)
 !     - Small refactors and documentation cleanup
+!     - Renamed function: compute_masked_flowdir -> compute_synthetic_flowdir
+!     - Added valids argument to label_flats function
 !!!
 
 module flowdir_utils
@@ -12,7 +14,6 @@ contains
     function find_noflow_code(offsets, codes, noffsets, default_noflow_code) result(noflow_code)
         !! For pairs of flow direction codes and their corresponding offsets, find the code that corresponds to the no-flow direction (0, 0). If not found, return the provided default no-flow code or 0 if not provided.
         implicit none
-
         ! Arguments
         integer, intent(in) :: noffsets
             !! Number of offset codes
@@ -48,7 +49,6 @@ contains
         !! For pairs of flow direction codes and their corresponding offsets, find the list of codes that correspond to the opposite direction of each code.
         !! For example, if code 1 corresponds to offset (1, 0), and code 2 corresponds to offset (-1, 0), then code 2 is the opposite code of code 1 and vice verse.
         implicit none
-
         ! Arguments
         integer, intent(in) :: noffsets
             !! Number of offset codes
@@ -79,7 +79,6 @@ contains
         !! The offset codes must be between 0 and 255, and the returned lookup table will have a size of 256-by-2 to accommodate all possible codes. Unused indices will have an offset of (-99, -99) to indicate invalid code.
         !! For example, if code 1 corresponds to offset (1, 0), then diffs(1, :) = (1, 0).
         implicit none
-
         ! Arguments
         integer, intent(in) :: noffsets
             !! Number of offset codes
@@ -109,7 +108,7 @@ contains
     subroutine mask2ij( &
         mask, nrows, ncols, ij, nij, cnt)
         !! Converts a 2D logical mask to a list of (i, j) indices where the mask is true.
-        !! The output list  will have a maximum size of `nij`-by-2, and the actual number of valid indices found will be returned in `nij`. If the number of valid indices exceeds `nij`, the remaining will be ignored.
+        !! The output list  will have a maximum size of nij-by-2, and the actual number of valid indices found will be returned in nij. If the number of valid indices exceeds nij, the remaining will be ignored.
         ! TODO: Optimise this subroutine?
         implicit none
         ! Arguments
@@ -151,29 +150,46 @@ module flowdir
     implicit none
 contains
     subroutine compute_flowdir_simple( &
-        z, valids, flowdir, is_flat, nrows, ncols, &
+        z, valids, dirs, is_flat, nrows, ncols, &
         offsets, codes, noffsets)
+        !! Finds D-n flow directions for a given elevation grid, using the provided flow direction codes and offsets.
+        !! Also identifies flat cells where no flow direction can be assigned.
         implicit none
-        ! Inputs
-        integer, intent(in) :: nrows, ncols, noffsets ! Size of the grid and number of offsets
+        ! Arguments
+        integer, intent(in) :: nrows, ncols
+            !! Size of the grid
         real, intent(in) :: z(nrows, ncols)
+            !! Elevation grid
         logical*1, intent(in) :: valids(nrows, ncols)
+            !! Validity mask (true for valid cells, false for no-data)
+        integer, intent(in) :: noffsets
+            !! Number of flow directions
         integer, intent(in) :: offsets(noffsets, 2)
+            !! List of offsets for each flow direction
         integer*1, intent(in) :: codes(noffsets)
+            !! List of flow direction codes corresponding to the offsets
         ! Outputs
-        integer*1, intent(out) :: flowdir(nrows, ncols)
+        integer*1, intent(out) :: dirs(nrows, ncols)
+            !! Flow direction grid, using the provided codes
         logical*1, intent(out) :: is_flat(nrows, ncols)
-
-        integer :: ci, cj, ni, nj ! Current and neighbour indices
-        integer :: iofs ! Offset index
+            !! Mask indicating which cells are part of flats (i.e. direction is no-flow)
+        ! Local variables
+        integer*1 :: noflow_code
+            !! Code corresponding to no-flow direction, to be determined from offsets and codes
+        integer :: ci, cj, ni, nj
+            !! (Cell-private) Rows/columns for current and neighbour cells
+        integer :: iofs
+            !! (Cell-private) Offset index for iterating through flow directions
         real :: zmin
-        integer*1 :: noflow_code ! Assume 0 is noflow unless found otherwise
+            !! (Cell-private) Minimum elevation among valid neighbours
 
         ! Find noflow code
         noflow_code = find_noflow_code(offsets, codes, noffsets)
-        flowdir = noflow_code
+        dirs = noflow_code
+        is_flat = .false.
 
-        !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(ci, cj, iofs, ni, nj, zmin) &
+        !! Main loop to compute flow directions
+        !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(ci, cj, ni, nj, iofs, zmin) &
         !$omp COLLAPSE(2) &
         !$omp SCHEDULE(STATIC)
         do cj = 1, ncols
@@ -192,57 +208,59 @@ contains
                     ! Check if neighbour has lower elevation
                     if (z(ni, nj) < zmin) then
                         zmin = z(ni, nj)
-                        flowdir(ci, cj) = codes(iofs)
+                        dirs(ci, cj) = codes(iofs)
                     end if
                 end do
-            end do
-        end do
-        !$omp END PARALLEL DO
-
-        ! Identify flat cells
-        !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(ci, cj) &
-        !$omp COLLAPSE(2) &
-        !$omp SCHEDULE(STATIC)
-        do cj = 1, ncols
-            do ci = 1, nrows
-                if (.not. valids(ci, cj)) then
-                    is_flat(ci, cj) = .false.
-                else if (flowdir(ci, cj) == noflow_code) then
+                if (dirs(ci, cj) == noflow_code) then
                     is_flat(ci, cj) = .true.
-                else
-                    is_flat(ci, cj) = .false.
                 end if
             end do
         end do
+        !$omp END PARALLEL DO
     end subroutine compute_flowdir_simple
 
-    subroutine compute_masked_flowdir( &
-        z, labels, flowdir, nrows, ncols, &
+    subroutine compute_synthetic_flowdir( &
+        z, flats, dirs, nrows, ncols, &
         offsets, codes, noffsets)
+        !! Finds D-n flow directions for a synthetic elevation grid, using the provided flow direction codes and offsets. !! The flow directions are only computed for cells that are part of flats, as indicated by the  label grid. For each flat cell, the flow direction is assigned towards the neighbour with the lowest elevation within the same flat region. If no neighbour has a lower elevation, the cell is assigned the no-flow code.
+        !! Note: This function is intended to be used for the synthetic terrain to resolve flats, which should be integer-typed.
         implicit none
-        ! Inputs
-        integer, intent(in) :: nrows, ncols, noffsets ! Size of the grid and number of offsets
-        integer, intent(in) :: z(nrows, ncols), labels(nrows, ncols)
+        ! Arguments
+        integer, intent(in) :: nrows, ncols
+            !! Size of the grid
+        integer, intent(in) :: z(nrows, ncols)
+            !! Synthetic elevation grid
+        integer, intent(in) :: flats(nrows, ncols)
+            !! Label grid indicating individual flat regions (or 0 for non-flat cells)
+        integer, intent(in) :: noffsets
+            !! Number of flow directions
         integer, intent(in) :: offsets(noffsets, 2)
+            !! List of offsets for each flow direction
         integer*1, intent(in) :: codes(noffsets)
+            !! List of flow direction codes corresponding to the offsets
         ! Outputs
-        integer*1, intent(out) :: flowdir(nrows, ncols)
-
-        integer :: ci, cj, ni, nj ! Current and neighbour indices
-        integer :: iofs ! Offset index
-        integer :: zmin
+        integer*1, intent(out) :: dirs(nrows, ncols)
+            !! Flow direction grid, using the provided codes
+        ! Local variables
         integer*1 :: noflow_code
+            !! Code corresponding to no-flow direction, to be determined from offsets and codes
+        integer :: ci, cj, ni, nj
+            !! (Cell-private) Rows/columns for current and neighbour cells
+        integer :: iofs
+            !! (Cell-private) Offset index for iterating through flow directions
+        integer :: zmin
+            !! (Cell-private) Minimum elevation among valid neighbours
 
         ! Find noflow code
         noflow_code = find_noflow_code(offsets, codes, noffsets)
-        flowdir = noflow_code
+        dirs = noflow_code
 
-        !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(ci, cj, iofs, ni, nj, zmin) &
+        !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(ci, cj, ni, nj, iofs, zmin) &
         !$omp COLLAPSE(2) &
         !$omp SCHEDULE(STATIC)
         do cj = 1, ncols
             do ci = 1, nrows
-                if (labels(ci, cj) == 0) cycle
+                if (flats(ci, cj) == 0) cycle
 
                 zmin = z(ci, cj)
 
@@ -251,131 +269,159 @@ contains
                     nj = cj + offsets(iofs, 2)
                     ! Check bounds
                     if (ni < 1 .or. ni > nrows .or. nj < 1 .or. nj > ncols) cycle
-                    ! Check if neighbour is part of the same flat
-                    if (labels(ni, nj) /= labels(ci, cj)) cycle
+                    ! Skip if neighbour is differen flat
+                    if (flats(ni, nj) /= flats(ci, cj)) cycle
                     ! Check if neighbour has lower elevation
                     if (z(ni, nj) < zmin) then
                         zmin = z(ni, nj)
-                        flowdir(ci, cj) = codes(iofs)
+                        dirs(ci, cj) = codes(iofs)
                     end if
                 end do
             end do
         end do
         !$omp END PARALLEL DO
-    end subroutine compute_masked_flowdir
+    end subroutine compute_synthetic_flowdir
 
     subroutine find_flat_edges( &
-        z, flowdir, valids, is_low_edge, is_high_edge, nrows, ncols, &
+        z, dirs, valids, is_low_edge, is_high_edge, nrows, ncols, &
         offsets, codes, noffsets)
+        !! Finds the cells on the edges of flat areas that drain to lower terrain (low edges) and those that are adjacent to higher terrain (high edges).
+        !! From [R. Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009), Algorithm 3 (p. 133).
         implicit none
-        ! Inputs
-        integer, intent(in) :: nrows, ncols, noffsets ! Size of the grid and number of offsets
+        ! Arguments
+        integer, intent(in) :: nrows, ncols
+            !! Size of the grid
         real, intent(in) :: z(nrows, ncols)
-        integer*1, intent(in) :: flowdir(nrows, ncols), codes(noffsets)
+            !! Elevation grid
+        integer*1, intent(in) :: dirs(nrows, ncols)
+            !! Flow direction grid, using the provided codes
         logical*1, intent(in) :: valids(nrows, ncols)
+            !! Validity mask (true for valid cells, false for no-data)
+        integer, intent(in) :: noffsets
+            !! Number of flow directions
         integer, intent(in) :: offsets(noffsets, 2)
+            !! List of offsets for each flow direction
+        integer*1, intent(in) :: codes(noffsets)
+            !! List of flow direction codes corresponding to the offsets
         ! Outputs
         logical*1, intent(out) :: is_low_edge(nrows, ncols), is_high_edge(nrows, ncols)
-
-        integer :: ci, cj, ni, nj ! Current and neighbour indices
-        integer :: iofs ! Offset index
+            !! Whether each cell is a 'low edge' or a 'high edge of a flat.
+        ! Local variables
         integer*1 :: noflow_code
+            !! Code corresponding to no-flow direction, to be determined from offsets and codes
+        integer :: ci, cj, ni, nj
+            !! (Cell-private) Rows/columns for current and neighbour cells
+        integer :: iofs
+            !! (Cell-private) Offset index for iterating through flow directions
 
         ! Find noflow code
         noflow_code = find_noflow_code(offsets, codes, noffsets)
 
-        !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(ci, cj, iofs, ni, nj) &
+        is_low_edge = .false.
+        is_high_edge = .false.
+
+        !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(ci, cj, ni, nj, iofs) &
         !$omp COLLAPSE(2) &
         !$omp SCHEDULE(STATIC)
         do cj = 1, ncols
             do ci = 1, nrows
-                if (.not. valids(ci, cj)) then
-                    is_high_edge(ci, cj) = .false.
-                    is_low_edge(ci, cj) = .false.
-                    cycle
-                end if
+                if (.not. valids(ci, cj)) cycle
 
                 do iofs = 1, noffsets
                     ni = ci + offsets(iofs, 1)
                     nj = cj + offsets(iofs, 2)
                     ! Check bounds
                     if (ni < 1 .or. ni > nrows .or. nj < 1 .or. nj > ncols) cycle
-                    ! Check if neighbour is part of the same flat
+                    ! Skip if neighbour is not valid
                     if (.not. valids(ni, nj)) cycle
                     ! Check for low edge
-                    if (flowdir(ci, cj) /= noflow_code .and. flowdir(ni, nj) == noflow_code .and. z(ci, cj) == z(ni, nj)) then
+                    if (dirs(ci, cj) /= noflow_code .and. dirs(ni, nj) == noflow_code .and. z(ci, cj) == z(ni, nj)) then
                         is_low_edge(ci, cj) = .true.
-                        is_high_edge(ci, cj) = .false.
                         exit
                     end if
                     ! Check for high edge
-                    if (flowdir(ci, cj) == noflow_code .and. z(ci, cj) < z(ni, nj)) then
+                    if (dirs(ci, cj) == noflow_code .and. z(ci, cj) < z(ni, nj)) then
                         is_high_edge(ci, cj) = .true.
-                        is_low_edge(ci, cj) = .false.
                         exit
                     end if
                 end do
-                ! If neither edge type found
-                if (.not. is_high_edge(ci, cj) .and. .not. is_low_edge(ci, cj)) then
-                    is_high_edge(ci, cj) = .false.
-                    is_low_edge(ci, cj) = .false.
-                end if
             end do
         end do
         !$omp END PARALLEL DO
     end subroutine find_flat_edges
 
     subroutine label_flats( &
-        z, is_seed, labels, nrows, ncols, &
+        z, seeds, valids, flats, nrows, ncols, &
         offsets, noffsets)
+        !! Labels connected flat regions in the elevation grid, using a flood-fill algorithm starting from the provided seed cells.
+        !! Only valid cells (as indicated by the valids mask) will be considered for labelling. Each flat region will be assigned a unique integer label in the output  grid, while non-flat cells will be assigned 0.
         implicit none
-        ! Inputs
-        integer, intent(in) :: nrows, ncols, noffsets ! Size of the grid and number of offsets
+        ! Arguments
+        integer, intent(in) :: nrows, ncols
+            !! Size of the grid
         real, intent(in) :: z(nrows, ncols)
-        logical*1, intent(in) :: is_seed(nrows, ncols)
+            !! Elevation grid
+        logical*1, intent(in) :: seeds(nrows, ncols)
+            !! Seed mask indicating starting points for labelling flat regions
+        logical*1, intent(in) :: valids(nrows, ncols)
+            !! Validity mask (true for valid cells, false for no-data)
+        integer, intent(in) :: noffsets
+            !! Number of flow directions
         integer, intent(in) :: offsets(noffsets, 2)
+            !! List of offsets for each flow direction
         ! Outputs
-        integer, intent(out) :: labels(nrows, ncols)
-
-        integer :: label, iseed, nseeds, ifill, nfills
-        integer :: si, sj, ci, cj, ni, nj ! Seed, current, neighbour indices
-        real :: sz ! Seed elevation
+        integer, intent(out) :: flats(nrows, ncols)
+            !! Label grid indicating individual flat regions (or 0 for non-flat cells)
+        ! Local variables
+        integer :: iflat
+            !! Index of the current flat region being labeled (!= issed because same flat can have multiple seeds)
+        integer, allocatable :: seed_ijs(:, :)
+            !! List of (i, j) indices for seed cells
+            !! It should be safe to assume that the number of seed cells will not exceed nrows*ncols/2, since each flat region should have at least 2 cells.
+        integer :: iseed, nseeds
+            !! Index and total number of seed cells (stored in seed_ijs)
+        integer, allocatable :: flat_ijs(:, :)
+            !! Buffer for storing (i, j) indices of cells to be filled in the current flat region
+        integer :: ifill, nfills
+            !! Index and total number of cells in the current flat region being filled (stored in flat_ijs)
+        integer :: si, sj, ci, cj, ni, nj
+            !! Rows/columns for seed, current and neighbour cells
+        real :: sz
+            !! Elevation of the current flat region being labeled
         integer :: iofs ! Offset index
-        integer, allocatable :: tofill_buf(:, :), seeds(:, :)
+            !! Index for iterating through offsets
 
-        allocate (tofill_buf(nrows*ncols, 2))
-        allocate (seeds(nrows*ncols, 2))
+        allocate (flat_ijs(nrows*ncols, 2))
+        allocate (seed_ijs(nrows*ncols/2, 2))
+        ! Convert seed mask to list of (i, j) indices
         call mask2ij( &
-            is_seed, nrows, ncols, &
-            seeds, size(seeds, dim=1), nseeds)
+            seeds, nrows, ncols, &
+            seed_ijs, size(seed_ijs, dim=1), nseeds)
 
-        labels = 0
-        label = 1
+        flats = 0
+        iflat = 1
         iseed = 1
-        do while (iseed <= nseeds)
-            si = seeds(iseed, 1)
-            sj = seeds(iseed, 2)
-            iseed = iseed + 1
+        ! Loop over seed cells to label flats using a flood-fill algorithm
+        do iseed = 1, nseeds
+            si = seed_ijs(iseed, 1)
+            sj = seed_ijs(iseed, 2)
 
-            ! Skip if out of bounds
-            if (si < 1 .or. si > nrows .or. sj < 1 .or. sj > ncols) then
-                print *, "Warning: Skipping out of bound seed index (", si, ",", sj, ")"
-                cycle
-            end if
+            ! Skip if not valid
+            if (.not. valids(si, sj)) cycle
             ! Skip if already labeled
-            if (labels(si, sj) /= 0) cycle
+            if (flats(si, sj) /= 0) cycle
 
             sz = z(si, sj)
 
             ! Reset buffer
             ifill = 1
             nfills = 1
-            tofill_buf(ifill, :) = [si, sj]
-            labels(si, sj) = label
+            flat_ijs(ifill, :) = [si, sj]
+            flats(si, sj) = iflat
 
             do while (ifill <= nfills)
-                ci = tofill_buf(ifill, 1)
-                cj = tofill_buf(ifill, 2)
+                ci = flat_ijs(ifill, 1)
+                cj = flat_ijs(ifill, 2)
                 ifill = ifill + 1
 
                 ! Loop over offsets to find connected flat cells
@@ -384,103 +430,126 @@ contains
                     nj = cj + offsets(iofs, 2)
                     ! Check bounds
                     if (ni < 1 .or. ni > nrows .or. nj < 1 .or. nj > ncols) cycle
-                    ! Check if already labeled
-                    if (labels(ni, nj) /= 0) cycle
-                    ! Check if same elevation
+                    ! Skip if not valid
+                    if (.not. valids(ni, nj)) cycle
+                    ! Skip if already labeled
+                    if (flats(ni, nj) /= 0) cycle
+                    ! Skip if not the same flat (i.e. different elevation)
                     if (z(ni, nj) /= sz) cycle
                     ! Add to tofill buffer
                     nfills = nfills + 1
-                    if (nfills > size(tofill_buf, 1)) then
-                      print *, "[LABEL_FLAT] Error: tofill buffer overflow (size:", nfills, ", allocated:", size(tofill_buf, 1), ")"
+                    if (nfills > size(flat_ijs, 1)) then
+                 print *, "[LABEL_FLAT] Error: Flat flooding buffer overflow (size:", nfills, ", allocated:", size(flat_ijs, 1), ")"
                         stop
                     end if
-                    tofill_buf(nfills, :) = [ni, nj]
-                    labels(ni, nj) = label
+                    flat_ijs(nfills, :) = [ni, nj]
+                    flats(ni, nj) = iflat
                 end do
 
             end do
 
-            label = label + 1
+            iflat = iflat + 1
         end do
-        deallocate (tofill_buf)
-        deallocate (seeds)
+        deallocate (flat_ijs)
+        deallocate (seed_ijs)
     end subroutine label_flats
 
     subroutine away_from_high( &
-        z, labels, nrows, ncols, &
-        is_high_edge, offsets, noffsets)
-        ! Inputs
-        integer, intent(in) :: nrows, ncols, noffsets ! Size of the grid and number of offsets
-        integer, intent(in) :: labels(nrows, ncols)
-        logical*1, intent(in) :: is_high_edge(nrows, ncols)
+        z, flats, nrows, ncols, &
+        high_edges, offsets, noffsets)
+        !! Produces a synthetic elevation that decreases away from 'high edges' of flats.
+        !! Modified from [R. Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009), Algorithm 5 (p. 133--134).
+        implicit none
+        ! Arguments
+        integer, intent(in) :: nrows, ncols
+            !! Size of the grid
+        integer, intent(in) :: flats(nrows, ncols)
+            !! Label grid indicating individual flat regions (or 0 for non-flat cells)
+        logical*1, intent(in) :: high_edges(nrows, ncols)
+            !! Mask indicating which cells are 'high edges'
+        integer, intent(in) :: noffsets
+            !! Number of flow directions
         integer, intent(in) :: offsets(noffsets, 2)
+            !! List of offsets for each flow direction
         ! Outputs
         integer, intent(out) :: z(nrows, ncols)
-
-        integer :: nlabels ! number of unique labels
-        integer :: nloops
-        integer :: iedge, nedges ! Index for high_edges
-        integer :: iofs ! Offset index
-        integer :: ci, cj, ni, nj ! Current and neighbour indices
-        logical*1 :: added_since_marker
+            !! Synthetic elevation grid that has the down gradient flow away from high edges
+        ! Local variables
+        integer :: nflats
+            !! Number of unique flat labels (excluding 0 for non-flat cells)
+        integer :: dist
+            !! Current distance from high edges, used to assign synthetic elevation values
+        integer, allocatable :: maxdist(:)
+            !! Maximum synthetic elevation value assigned to each flat region, used to adjust final z values to ensure they flow away from high edges
+        integer :: iedge, nedges
+            !! Index for iterating through high edge cells and total number of high edge cells in the queue
+            !! As the algorithm proceeds, new cells will be added to the queue and nedges will be updated accordingly
+        integer :: iofs
+            !! Index for iterating through offsets
+        integer :: ci, cj, ni, nj
+            !! Rows/columns for current and neighbour cells
         integer, parameter :: marker(2) = [-1, -1]
+            !! Special index used to mark the end of each iteration in the queue
+        logical*1 :: added_since_marker
+            !! Flag to track whether new cells have been added to the queue since the last marker, used to determine when to stop the algorithm
         logical*1, allocatable :: queued(:, :)
-        integer, allocatable :: zmax(:) ! max z per label
-        integer, allocatable :: high_edges_buf(:, :) ! Queue buffer
+        integer, allocatable :: high_edges_ij(:, :) ! Queue buffer
+        integer :: max_queue_size
 
-        allocate (queued(nrows, ncols))
-        allocate (high_edges_buf(count(labels /= 0) + max(nrows, ncols)*(maxval(labels) - minval(labels) + 1), 2))
+        max_queue_size = count(flats /= 0) + max(nrows, ncols)*(maxval(flats) - minval(flats) + 1)
+        allocate (high_edges_ij(max_queue_size, 2))
 
-        high_edges_buf = 0
+        high_edges_ij = 0
         nedges = 0
+        z = 0
         call mask2ij( &
-            is_high_edge, nrows, ncols, &
-            high_edges_buf, size(high_edges_buf, dim=1), nedges)
+            high_edges, nrows, ncols, &
+            high_edges_ij, size(high_edges_ij, dim=1), nedges)
         ! No high edges found, set z to zero and exit
         if (nedges == 0) then
-            z = 0
-            deallocate (queued)
-            deallocate (high_edges_buf)
+            deallocate (high_edges_ij)
             return
         end if
+
         nedges = nedges + 1
-        high_edges_buf(nedges, :) = marker
+        high_edges_ij(nedges, :) = marker
 
-        nlabels = maxval(labels)
-        allocate (zmax(nlabels))
-        zmax = 0
+        nflats = maxval(flats)
+        allocate (maxdist(nflats))
+        maxdist = 0
 
-        ! Initialise z to zero
-        z = 0
+        allocate (queued(nrows, ncols))
         queued = .false.
         added_since_marker = .false.
 
         ! Mark initial seeds as queued
         do iedge = 1, nedges - 1
-            ci = high_edges_buf(iedge, 1)
-            cj = high_edges_buf(iedge, 2)
+            ci = high_edges_ij(iedge, 1)
+            cj = high_edges_ij(iedge, 2)
             queued(ci, cj) = .true.
         end do
         ! Loop through all high_edges to find cells flowing away from flats
-        nloops = 1
+        ! After this the first loop, z values decreases towards high edges (opposite of desired)
+        dist = 1
         iedge = 1
         do while (iedge <= nedges)
-            ci = high_edges_buf(iedge, 1)
-            cj = high_edges_buf(iedge, 2)
+            ci = high_edges_ij(iedge, 1)
+            cj = high_edges_ij(iedge, 2)
             iedge = iedge + 1
 
+            ! Check for marker to separate iterations
             if (ci == marker(1) .and. cj == marker(2)) then
                 ! Break if no more cells to process
                 if (.not. added_since_marker) exit
                 ! Skip if encountered marker
-                nloops = nloops + 1
+                dist = dist + 1
                 nedges = nedges + 1
                 ! Check buffer size
-                if (nedges > size(high_edges_buf, 1)) then
-          print *, "[AWAY_FROM_HIGH] Error: High edges buffer overflow (size:", nedges, ", allocated:", size(high_edges_buf, 1), ")"
+                if (nedges > max_queue_size) then
+                   print *, "[AWAY_FROM_HIGH] Error: High edges buffer overflow (size:", nedges, ", allocated:", max_queue_size, ")"
                     stop
                 end if
-                high_edges_buf(nedges, :) = marker
+                high_edges_ij(nedges, :) = marker
                 added_since_marker = .false.
                 cycle
             end if
@@ -489,13 +558,14 @@ contains
             if (ci < 1 .or. ci > nrows .or. cj < 1 .or. cj > ncols) then
                 print *, "[AWAY_FROM_HIGH] Error: Current index out of bounds (", ci, ",", cj, ")"
                 stop
+            else if (flats(ci, cj) == 0) then
+                ! Skip if for some reason we ended up with a non-flat cell in the queue
+                print *, "[AWAY_FROM_HIGH] Warning: Encountered non-flat cell in queue at (", ci, ",", cj, "). This should not happen, but will be skipped."
+                cycle
             end if
 
-            ! Queueing should guarantee we only visit each cell once
-            z(ci, cj) = nloops
-            if (labels(ci, cj) /= 0) then
-                zmax(labels(ci, cj)) = nloops
-            end if
+            z(ci, cj) = dist
+            maxdist(flats(ci, cj)) = dist
 
             ! Loop over offsets to find contributing cells
             do iofs = 1, noffsets
@@ -507,72 +577,86 @@ contains
 
                 ! Check bounds
                 if (ni < 1 .or. ni > nrows .or. nj < 1 .or. nj > ncols) cycle
-                ! Check if already queued
+                ! Skip if already queued
                 if (queued(ni, nj)) cycle
-                ! Check if is a flat
-                if (labels(ni, nj) == 0) cycle
-                ! Check if already processed
+                ! Skip if not a flat
+                if (flats(ni, nj) == 0) cycle
+                ! Skip if already processed
                 if (z(ni, nj) > 0) cycle
-                ! Check if neighbor is part of the same flat
-                if (labels(ni, nj) /= labels(ci, cj)) cycle
+                ! Skip if different flat
+                if (flats(ni, nj) /= flats(ci, cj)) cycle
                 ! Update queue
                 nedges = nedges + 1
-                if (nedges > size(high_edges_buf, 1)) then
-          print *, "[AWAY_FROM_HIGH] Error: High edges buffer overflow (size:", nedges, ", allocated:", size(high_edges_buf, 1), ")"
+                if (nedges > max_queue_size) then
+                   print *, "[AWAY_FROM_HIGH] Error: High edges buffer overflow (size:", nedges, ", allocated:", max_queue_size, ")"
                     stop
                 end if
-                high_edges_buf(nedges, :) = [ni, nj]
+                high_edges_ij(nedges, :) = [ni, nj]
                 queued(ni, nj) = .true.
                 added_since_marker = .true.
             end do
         end do
-        deallocate (high_edges_buf)
+        deallocate (high_edges_ij)
         deallocate (queued)
 
         ! Adjust z values within flats to ensure they flow away from high edges
-        do concurrent(ci=1:nrows, cj=1:ncols, labels(ci, cj) /= 0)
-            z(ci, cj) = zmax(labels(ci, cj)) - z(ci, cj) + 1
+        do concurrent(ci=1:nrows, cj=1:ncols, flats(ci, cj) /= 0)
+            z(ci, cj) = maxdist(flats(ci, cj)) - z(ci, cj) + 1
         end do
-        deallocate (zmax)
+        deallocate (maxdist)
     end subroutine away_from_high
 
     subroutine towards_low( &
-        z, labels, nrows, ncols, &
-        is_low_edge, offsets, noffsets)
+        z, flats, nrows, ncols, &
+        low_edges, offsets, noffsets)
+        !! Produces a synthetic elevation that drains towards 'low edges' of flats.
+        !! Modified from [R. Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009), Algorithm 6 (p. 134).
         implicit none
-        ! Inputs
-        integer, intent(in) :: nrows, ncols, noffsets ! Size of the grid and number of offsets
-        integer, intent(in) :: labels(nrows, ncols)
-        logical*1, intent(in) :: is_low_edge(nrows, ncols)
+        ! Arguments
+        integer, intent(in) :: nrows, ncols
+            !! Size of the grid
+        integer, intent(in) :: flats(nrows, ncols)
+            !! Label grid indicating individual flat regions (or 0 for non-flat cells)
+        logical*1, intent(in) :: low_edges(nrows, ncols)
+            !! Mask indicating which cells are 'low edges'
+        integer, intent(in) :: noffsets
+            !! Number of flow directions
         integer, intent(in) :: offsets(noffsets, 2)
+            !! List of offsets for each flow direction
         ! Outputs
         integer, intent(out) :: z(nrows, ncols)
-
+        ! Local variables
         integer, parameter :: marker(2) = [-1, -1]
+            !! Special marker to indicate the end of an iteration in the queue
         logical*1 :: added_since_marker
-        integer :: iedge, jedge, nedges, nloops ! Index for low_edges TODO: iedge and jedge can be combined?
-        integer :: iofs ! Offset index
-        integer :: ci, cj, ni, nj ! Current and neighbour indices
+            !! Flag to track whether new cells have been added to the queue since the last marker, used to determine when to stop the algorithm
+        integer :: iedge, jedge ! TODO: iedge and jedge can be combined?
+        integer :: nedges, nloops
+        integer :: iofs
+            !! Index for iterating through offsets
+        integer :: ci, cj, ni, nj
+            !! Rows/columns for current and neighbour cells
         logical*1, allocatable :: queued(:, :)
-        integer, allocatable :: low_edges_buf(:, :)
+        integer, allocatable :: low_edges_ijs(:, :)
+        integer :: max_queue_size
 
-        allocate (queued(nrows, ncols))
-        allocate (low_edges_buf(count(labels /= 0) + max(nrows, ncols)*maxval(labels), 2))
-
+        max_queue_size = count(flats /= 0) + max(nrows, ncols)*maxval(flats)
+        allocate (low_edges_ijs(max_queue_size, 2))
         call mask2ij( &
-            is_low_edge, nrows, ncols, &
-            low_edges_buf, size(low_edges_buf, dim=1), nedges)
+            low_edges, nrows, ncols, &
+            low_edges_ijs, size(low_edges_ijs, dim=1), nedges)
         nedges = nedges + 1
-        low_edges_buf(nedges, :) = marker
+        low_edges_ijs(nedges, :) = marker
 
         ! Initialise z to zero
         z = 0
+        allocate (queued(nrows, ncols))
         queued = .false.
 
         ! Mark initial seeds as queued
         do jedge = 1, nedges - 1
-            ci = low_edges_buf(jedge, 1)
-            cj = low_edges_buf(jedge, 2)
+            ci = low_edges_ijs(jedge, 1)
+            cj = low_edges_ijs(jedge, 2)
             queued(ci, cj) = .true.
         end do
 
@@ -581,8 +665,8 @@ contains
         nloops = 1
         added_since_marker = .false.
         do while (iedge <= nedges)
-            ci = low_edges_buf(iedge, 1)
-            cj = low_edges_buf(iedge, 2)
+            ci = low_edges_ijs(iedge, 1)
+            cj = low_edges_ijs(iedge, 2)
             iedge = iedge + 1
 
             if (ci == marker(1) .and. cj == marker(2)) then
@@ -592,11 +676,11 @@ contains
                 nloops = nloops + 1
                 nedges = nedges + 1
                 ! Check buffer size
-                if (nedges > size(low_edges_buf, 1)) then
-               print *, "[TOWARDS_LOW] Error: Low edges buffer overflow (size:", nedges, ", allocated:", size(low_edges_buf, 1), ")"
+                if (nedges > max_queue_size) then
+                    print *, "[TOWARDS_LOW] Error: Low edges buffer overflow (size:", nedges, ", allocated:", max_queue_size, ")"
                     stop
                 end if
-                low_edges_buf(nedges, :) = marker
+                low_edges_ijs(nedges, :) = marker
                 added_since_marker = .false.
                 cycle
             end if
@@ -622,26 +706,26 @@ contains
                 if (ni < 1 .or. ni > nrows .or. nj < 1 .or. nj > ncols) cycle
                 ! Check if already queued
                 if (queued(ni, nj)) cycle
-                ! Check if is a flat
-                if (labels(ni, nj) == 0) cycle
-                ! Check if already processed
+                ! Skip if not a flat
+                if (flats(ni, nj) == 0) cycle
+                ! Skip if already processed
                 if (z(ni, nj) > 0) cycle
-                ! Check if neighbor is part of the same flat
-                if (labels(ni, nj) /= labels(ci, cj)) cycle
+                ! Skip if different flat
+                if (flats(ni, nj) /= flats(ci, cj)) cycle
 
                 ! Update queue
                 nedges = nedges + 1
-                if (nedges > size(low_edges_buf, 1)) then
-               print *, "[TOWARDS_LOW] Error: Low edges buffer overflow (size:", nedges, ", allocated:", size(low_edges_buf, 1), ")"
+                if (nedges > max_queue_size) then
+                    print *, "[TOWARDS_LOW] Error: Low edges buffer overflow (size:", nedges, ", allocated:", max_queue_size, ")"
                     stop
                 end if
-                low_edges_buf(nedges, :) = [ni, nj]
+                low_edges_ijs(nedges, :) = [ni, nj]
                 queued(ni, nj) = .true.
                 added_since_marker = .true.
             end do
         end do
         deallocate (queued)
-        deallocate (low_edges_buf)
+        deallocate (low_edges_ijs)
     end subroutine towards_low
 
     subroutine compute_indegree( &
