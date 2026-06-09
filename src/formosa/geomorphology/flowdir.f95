@@ -15,7 +15,7 @@ contains
 
         ! Arguments
         integer, intent(in) :: noffsets
-            !! Number of offser codes
+            !! Number of offset codes
         integer, intent(in) :: offsets(noffsets, 2)
             !! List of offsets
         integer*1, intent(in) :: codes(noffsets)
@@ -28,6 +28,7 @@ contains
         integer :: iofs
             !! Offset index for iterating
 
+        ! Assign default no-flow code if not provided
         if (present(default_noflow_code)) then
             noflow_code = default_noflow_code
         else
@@ -108,7 +109,7 @@ contains
     subroutine mask2ij( &
         mask, nrows, ncols, ij, nij, cnt)
         !! Converts a 2D logical mask to a list of (i, j) indices where the mask is true.
-        !! The output list  will have a maximum size of , and the actual number of valid indices found will be returned in . If the number of valid indices exceeds , only the first  indices will be returned.
+        !! The output list  will have a maximum size of `nij`-by-2, and the actual number of valid indices found will be returned in `nij`. If the number of valid indices exceeds `nij`, the remaining will be ignored.
         ! TODO: Optimise this subroutine?
         implicit none
         ! Arguments
@@ -170,7 +171,7 @@ contains
 
         ! Find noflow code
         noflow_code = find_noflow_code(offsets, codes, noffsets)
-        flowdir(ci, cj) = noflow_code
+        flowdir = noflow_code
 
         !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(ci, cj, iofs, ni, nj, zmin) &
         !$omp COLLAPSE(2) &
@@ -234,7 +235,7 @@ contains
 
         ! Find noflow code
         noflow_code = find_noflow_code(offsets, codes, noffsets)
-        flowdir(ci, cj) = noflow_code
+        flowdir = noflow_code
 
         !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(ci, cj, iofs, ni, nj, zmin) &
         !$omp COLLAPSE(2) &
