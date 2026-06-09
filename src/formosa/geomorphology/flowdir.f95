@@ -10,14 +10,23 @@ module flowdir_utils
     implicit none
 contains
     function find_noflow_code(offsets, codes, noffsets, default_noflow_code) result(noflow_code)
+        !! For pairs of flow direction codes and their corresponding offsets, find the code that corresponds to the no-flow direction (0, 0). If not found, return the provided default no-flow code or 0 if not provided.
         implicit none
-        integer, intent(in) :: noffsets
-        integer, intent(in) :: offsets(noffsets, 2)
-        integer*1, intent(in) :: codes(noffsets)
-        integer*1, intent(in), optional :: default_noflow_code
-        integer*1 :: noflow_code
 
-        integer :: iofs ! Offset index
+        ! Arguments
+        integer, intent(in) :: noffsets
+            !! Number of offser codes
+        integer, intent(in) :: offsets(noffsets, 2)
+            !! List of offsets
+        integer*1, intent(in) :: codes(noffsets)
+            !! List of codes corresponding to the offsets
+        integer*1, intent(in), optional :: default_noflow_code
+            !! Optional default no-flow code to use if not found in offsets (default: 0)
+        integer*1 :: noflow_code
+            !! No-flow code to be returned
+        ! Local variables
+        integer :: iofs
+            !! Offset index for iterating
 
         if (present(default_noflow_code)) then
             noflow_code = default_noflow_code
@@ -25,6 +34,7 @@ contains
             noflow_code = 0
         end if
 
+        ! Loop through offsets to find the no-flow code
         do iofs = 1, noffsets
             if (offsets(iofs, 1) == 0 .and. offsets(iofs, 2) == 0) then
                 noflow_code = codes(iofs)
@@ -34,13 +44,24 @@ contains
     end function find_noflow_code
 
     function find_opposite_codes(offsets, codes, noffsets) result(opp_codes)
+        !! For pairs of flow direction codes and their corresponding offsets, find the list of codes that correspond to the opposite direction of each code.
+        !! For example, if code 1 corresponds to offset (1, 0), and code 2 corresponds to offset (-1, 0), then code 2 is the opposite code of code 1 and vice verse.
         implicit none
-        integer, intent(in) :: noffsets
-        integer, intent(in) :: offsets(noffsets, 2)
-        integer*1, intent(in) :: codes(noffsets)
-        integer*1 :: opp_codes(noffsets)
-        integer :: iofs, jofs
 
+        ! Arguments
+        integer, intent(in) :: noffsets
+            !! Number of offset codes
+        integer, intent(in) :: offsets(noffsets, 2)
+            !! List of offsets
+        integer*1, intent(in) :: codes(noffsets)
+            !! List of codes corresponding to the offsets
+        integer*1 :: opp_codes(noffsets)
+            !! List of opposite codes corresponding to the offsets (same order as input codes)
+        ! Local variables
+        integer :: iofs, jofs
+            !! Offset indices for iterating
+
+        ! Loop through offsets to find opposite codes
         do iofs = 1, noffsets
             do jofs = 1, noffsets
                 if (offsets(iofs, 1) == -offsets(jofs, 1) .and. &
@@ -53,14 +74,22 @@ contains
     end function find_opposite_codes
 
     function fill_offset_lookup(offsets, codes, noffsets) result(diffs)
+        !! For pairs of flow direction codes and their corresponding offsets, create a lookup table (array) where the index corresponds to the code and the value is the offset.
+        !! The offset codes must be between 0 and 255, and the returned lookup table will have a size of 256-by-2 to accommodate all possible codes. Unused indices will have an offset of (-99, -99) to indicate invalid code.
+        !! For example, if code 1 corresponds to offset (1, 0), then diffs(1, :) = (1, 0).
         implicit none
-        ! Inputs
-        integer, intent(in) :: noffsets
-        integer, intent(in) :: offsets(noffsets, 2)
-        integer*1, intent(in) :: codes(noffsets)
-        ! Outputs
-        integer :: diffs(0:255, 2) ! Lookup table for offsets
 
+        ! Arguments
+        integer, intent(in) :: noffsets
+            !! Number of offset codes
+        integer, intent(in) :: offsets(noffsets, 2)
+            !! List of offsets
+        integer*1, intent(in) :: codes(noffsets)
+            !! List of codes corresponding to the offsets
+        ! Outputs
+        integer :: diffs(0:255, 2)
+            !! Lookup table for offsets
+        ! Local variables
         integer :: iofs
 
         ! Create lookup tables for offsets
@@ -70,6 +99,7 @@ contains
                 print *, "[OFFSET_LOOKUP] Error: Flow direction code out of bounds: ", codes(iofs)
                 stop
             end if
+            ! Fill in the offset for the corresponding code index
             diffs(codes(iofs), 1) = offsets(iofs, 1)
             diffs(codes(iofs), 2) = offsets(iofs, 2)
         end do
@@ -77,27 +107,38 @@ contains
 
     subroutine mask2ij( &
         mask, nrows, ncols, ij, nij, cnt)
+        !! Converts a 2D logical mask to a list of (i, j) indices where the mask is true.
+        !! The output list  will have a maximum size of , and the actual number of valid indices found will be returned in . If the number of valid indices exceeds , only the first  indices will be returned.
         ! TODO: Optimise this subroutine?
         implicit none
+        ! Arguments
         integer, intent(in) :: nrows, ncols
+            !! Size of the input mask
         logical*1, intent(in) :: mask(nrows, ncols)
+            !! Input logical mask
         integer, intent(in) :: nij
+            !! Maximum number of indices to return
+        ! Outputs
         integer, intent(out) :: ij(nij, 2)
+            !! Output list of (i, j) indices where mask is true, with a maximum size of nij
         integer, intent(out) :: cnt
-
+            !! Actual number of valid indices found (up to nij)
+        ! Local variables
         integer :: ci, cj
 
         ! Count number of valid neighbors
         cnt = 0
+
         do cj = 1, ncols
             do ci = 1, nrows
-                if (mask(ci, cj)) then
-                    cnt = cnt + 1
-                    if (cnt <= nij) then
-                        ij(cnt, 1) = ci
-                        ij(cnt, 2) = cj
-                    end if
+                if (.not. mask(ci, cj)) cycle
+                if (cnt == nij) then
+                    print *, "Warning: mask2ij found more valid indices than the maximum allowed (", cnt, "). Only the first ", nij, " indices will be returned."
+                    return
                 end if
+                cnt = cnt + 1
+                ij(cnt, 1) = ci
+                ij(cnt, 2) = cj
             end do
         end do
     end subroutine mask2ij
