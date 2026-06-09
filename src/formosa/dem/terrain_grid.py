@@ -1,6 +1,8 @@
 # Last modified
 #   2026-02-11, En-Chi Lee (williameclee@arizona.edu)
 #     - Rename flowdir functions to be more descriptive
+#   2026-06-09, En-Chi Lee (williameclee@gmail.com)
+#     - Added wrapper function for ridge distance computation in `DEMGrid` class
 
 from pathlib import Path
 import warnings
@@ -23,6 +25,7 @@ from formosa.geomorphology import (
     compute_flow_dist2source,
     compute_flow_dist2sink,
     compute_flow_dist2conf_max,
+    compute_flow_dist2ridge,
     label_watersheds,
 )
 
@@ -223,6 +226,7 @@ class DEMGrid:
         self._flowdist: None | npt.NDArray[np.floating] = None
         self._backdist: None | npt.NDArray[np.floating] = None
         self._bmax: None | npt.NDArray[np.floating] = None
+        self._ridge_dist: None | npt.NDArray[np.float32] = None
 
     @property
     def slope(self) -> npt.NDArray[np.floating | np.integer]:
@@ -348,10 +352,34 @@ class DEMGrid:
             self.valid.astype(np.bool, order="F"),
             self.x.astype(np.float32, order="F"),
             self.y.astype(np.float32, order="F"),
-            labels=self.watersheds.astype(np.int32, order="F"),
+            watershed_labels=self.watersheds.astype(np.int32, order="F"),
             directions=self.directions,
         )
         return self._bmax
+
+    @property
+    def ridge_dist(self) -> npt.NDArray[np.floating]:
+        """
+        'Distance' to the ridge, approximated by the distance to sink in the maximum confluence distance landscape.
+
+        Returns
+        -------
+        dist : npt.NDArray[np.float32]
+            Distance to the ridge, approximated by the distance to sink in the maximum confluence distance landscape.
+        """
+
+        if self._ridge_dist is not None:
+            return self._ridge_dist
+
+        self._ridge_dist = compute_flow_dist2ridge(
+            self.flowdir.astype(np.uint8, order="F"),
+            valids=self.valid.astype(np.bool, order="F"),
+            x=self.x.astype(np.float32, order="F"),
+            y=self.y.astype(np.float32, order="F"),
+            watershed_labels=self.watersheds.astype(np.int32, order="F"),
+            directions=self.directions,
+        )
+        return self._ridge_dist
 
 
 def detect_ocean_mask(dem, ocean_threshold: int | float = 0):
