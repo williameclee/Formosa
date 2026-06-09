@@ -352,7 +352,7 @@ class DEMGrid:
             self.valid.astype(np.bool, order="F"),
             self.x.astype(np.float32, order="F"),
             self.y.astype(np.float32, order="F"),
-            labels=self.watersheds.astype(np.int32, order="F"),
+            watershed_labels=self.watersheds.astype(np.int32, order="F"),
             directions=self.directions,
         )
         return self._bmax
@@ -376,7 +376,7 @@ class DEMGrid:
             valids=self.valid.astype(np.bool, order="F"),
             x=self.x.astype(np.float32, order="F"),
             y=self.y.astype(np.float32, order="F"),
-            labels=self.watersheds.astype(np.int32, order="F"),
+            watershed_labels=self.watersheds.astype(np.int32, order="F"),
             directions=self.directions,
         )
         return self._ridge_dist

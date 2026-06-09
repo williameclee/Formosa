@@ -1344,11 +1344,14 @@ def compute_flow_dist2conf_max(
     valids: npt.NDArray[np.bool] | None = None,
     x: npt.NDArray[np.integer | np.floating] | None = None,
     y: npt.NDArray[np.integer | np.floating] | None = None,
-    labels: npt.NDArray[np.integer] | None = None,
+    watershed_labels: npt.NDArray[np.integer] | None = None,
     directions: D8Directions = D8Directions(),
 ) -> npt.NDArray[np.float32]:
     """
-    Computes the maximum distance to confluence for each cell in the flow direction grid.
+    Computes the maximum distance to confluence for each cell with its neighbours in the flow direction grid.
+    If the cell does not share a confluence with any of its neighbours, the distance to sink is returned instead.
+    This field can be used as an proxy for the ridge network, where cells with a larger distance to confluence are more likely to be part of the ridge network.
+    See `compute_flow_dist2ridge` for computing the distance to ridge based on this field.
 
     Parameters
     ----------
@@ -1363,8 +1366,9 @@ def compute_flow_dist2conf_max(
     y : NDArray[int | float], optional
         A 2D array representing the y-coordinates of each cell. If None, a default grid will be created.
         Default is None.
-    labels : NDArray[int], optional
-        A 2D array representing labels for different regions in the flow direction grid. If None, all cells are assigned the same label.
+    watershed_labels : NDArray[int], optional
+         A 2D array representing labels for different watersheds in the flow direction grid. Since celss in different watersheds do not share confluences, providing watershed labels can skip unnecessary comparisons.
+        If None, all cells are assigned the same label.
         Default is None.
     directions : D8Directions, optional
         An instance of D8Directions defining the flow direction scheme.
@@ -1391,21 +1395,21 @@ def compute_flow_dist2conf_max(
         x = np.arange(flowdirs.shape[1], dtype=np.float32)
         y = np.arange(flowdirs.shape[0], dtype=np.float32)
         x, y = np.meshgrid(x, y, indexing="xy")
-    if labels is None:
-        labels = np.ones(flowdirs.shape, dtype=np.int32)
-    elif isinstance(labels, np.ndarray):
+    if watershed_labels is None:
+        watershed_labels = np.ones(flowdirs.shape, dtype=np.int32)
+    elif isinstance(watershed_labels, np.ndarray):
         assert (
-            labels.shape == flowdirs.shape
-        ), f"Shape for flow direction ({flowdirs.shape}) and labels ({labels.shape}) do not match."
+            watershed_labels.shape == flowdirs.shape
+        ), f"Shape for flow direction ({flowdirs.shape}) and labels ({watershed_labels.shape}) do not match."
     else:
-        raise TypeError(f"Labels must be a NumPy array (got {type(labels)}).")
+        raise TypeError(f"Labels must be a NumPy array (got {type(watershed_labels)}).")
 
     bmax = flowdir_f.compute_max_branch_dist(
         flowdirs.astype(np.uint8, order="F"),
         valids.astype(np.bool, order="F"),
         x.astype(np.float32, order="F"),
         y.astype(np.float32, order="F"),
-        labels.astype(np.int32, order="F"),
+        watershed_labels.astype(np.int32, order="F"),
         directions.offsets.astype(np.int32, order="F"),
         directions.codes.astype(np.uint8, order="F"),
     )
@@ -1417,11 +1421,12 @@ def compute_flow_dist2ridge(
     valids: npt.NDArray[np.bool] | None = None,
     x: npt.NDArray[np.integer | np.floating] | None = None,
     y: npt.NDArray[np.integer | np.floating] | None = None,
-    labels: npt.NDArray[np.integer] | None = None,
+    watershed_labels: npt.NDArray[np.integer] | None = None,
     directions: D8Directions = D8Directions(),
 ) -> npt.NDArray[np.float32]:
     """
-    Computes the distance to ridge for each cell in the flow direction grid.
+    Computes the 'distance to ridge' for each cell in the flow direction grid.
+    The ridge network/intensity is defined as the maximum distance to confluence (see `compute_flow_dist2conf_max`), and the distance to ridge is computed as the downstream distance traversing the inverse of the intensity.
 
     Parameters
     ----------
@@ -1436,8 +1441,9 @@ def compute_flow_dist2ridge(
     y : NDArray[int | float], optional
         A 2D array representing the y-coordinates of each cell. If None, a default grid will be created.
         Default is None.
-    labels : NDArray[int], optional
-        A 2D array representing labels for different regions in the flow direction grid. If None, all cells are assigned the same label.
+    watershed_labels : NDArray[int], optional
+        A 2D array representing labels for different watersheds in the flow direction grid. Since celss in different watersheds do not share confluences, providing watershed labels can skip unnecessary comparisons.
+        If None, all cells are assigned the same label.
         Default is None.
     directions : D8Directions, optional
         An instance of D8Directions defining the flow direction scheme.
@@ -1449,7 +1455,7 @@ def compute_flow_dist2ridge(
         A 2D array representing the distance to ridge for each cell.
     """
     bmax = compute_flow_dist2conf_max(
-        flowdirs, valids=valids, x=x, y=y, labels=labels, directions=directions
+        flowdirs, valids=valids, x=x, y=y, watershed_labels=watershed_labels, directions=directions
     )
     bmaxdir, _, _ = compute_flowdir(
         -bmax, directions=directions, valids=valids, fill_depression=True

@@ -1199,12 +1199,18 @@ contains
         offsets, codes, noffsets)
         implicit none
         ! Inputs
-        integer, intent(in) :: nrows, ncols, noffsets ! Size of the grid and number of offsets
+        !> Size of the grid
+        integer, intent(in) :: nrows, ncols
+        !> Grid of flow direction codes and corresponding lookup tables
+        integer, intent(in) :: noffsets
         integer*1, intent(in) :: flowdirs(nrows, ncols), codes(noffsets)
-        real, intent(in) :: x(nrows, ncols), y(nrows, ncols)
-        logical*1, intent(in) :: valids(nrows, ncols)
-        integer, intent(in) :: basin_ids(nrows, ncols)
         integer, intent(in) :: offsets(noffsets, 2)
+        !> Coordinates of cell centres for distance calculation
+        real, intent(in) :: x(nrows, ncols), y(nrows, ncols)
+        !> Mask of valid cells and basin ids for checking confluence
+        logical*1, intent(in) :: valids(nrows, ncols)
+        !> Basin ids for checking if two cells belong to the same basin (to skip confluence check)
+        integer, intent(in) :: basin_ids(nrows, ncols)
         ! Outputs
         real, intent(out) :: maxbdists(nrows, ncols)
         ! Local variables
@@ -1334,16 +1340,24 @@ contains
         offset_lookup, maxpathlen, path1, path2, visited, id1, id2, check_flag)
         implicit none
         ! Inputs
-        integer, intent(in) :: s1i, s1j, s2i, s2j ! Indices of the two seed cells
+        !> Indices of the two seed cells from which to trace flow paths
+        integer, intent(in) :: s1i, s1j, s2i, s2j
+        !> Gird of flow direction codes and the corresponding offset lookup table
         integer*1, intent(in) :: flowdirs(:, :)
-        real, intent(in) :: x(:, :), y(:, :)
         integer, intent(in) :: offset_lookup(0:255, 2)
-        logical*1, intent(in), optional :: check_flag ! Whether to check for confluence at each step
+        !> Coordinates of cell centres for distance calculation
+        real, intent(in) :: x(:, :), y(:, :)
+        !> Flag for whether to check for confluence at each step (can be turned off for performance if many confluences are expected)
+        logical*1, intent(in), optional :: check_flag
+        !> Maximum path length to search before giving up and assuming no confluence (should be large enough to allow confluence but prevent infinite loops in case of errors)
         integer, intent(in) :: maxpathlen
-        integer, intent(inout) :: path1(maxpathlen, 2), path2(maxpathlen, 2) ! Indices of paths
+        !> Workspace arrays for paths and visited grid (to avoid repeated allocation in recursive calls)
+        integer, intent(inout) :: path1(maxpathlen, 2), path2(maxpathlen, 2)
         integer :: id1, id2
-        integer, intent(inout) :: visited(:, :) ! A grid to track visited paths by ids
+        !> Grid to track visited paths by ids
+        integer, intent(inout) :: visited(:, :)
         ! Outputs
+        !> Distances from each seed ceel to the confluence cell (or to max path length if no confluence found)
         real :: dists(2)
         ! Local variables
         integer :: ipath1, ipath2, npath1, npath2 ! Lengths of paths
@@ -1352,6 +1366,7 @@ contains
         integer*1 :: code1, code2
         logical*1 :: is_active1, is_active2, local_check_flag
 
+        !! Initialisation and checks
         local_check_flag = (.not. present(check_flag)) .or. check_flag
         iconf1 = maxpathlen
         iconf2 = maxpathlen
@@ -1366,6 +1381,7 @@ contains
             return
         end if
 
+        !! Main algorithm
         npath1 = 1
         path1(npath1, 1) = s1i
         path1(npath1, 2) = s1j
@@ -1393,11 +1409,9 @@ contains
                 ! Compute next step
                 n1i = path1(npath1, 1) + offset_lookup(code1, 1)
                 n1j = path1(npath1, 2) + offset_lookup(code1, 2)
-                ! print *, "Path1 step from ", path1(npath1, 1), ",", path1(npath1, 2), " to ", n1i, ",", n1j, "(code ", code1, ")"
                 if (n1i < 1 .or. n1i > size(flowdirs, 1) .or. n1j < 1 .or. n1j > size(flowdirs, 2)) then
                     iconf1 = npath1
                     is_active1 = .false.
-                    ! print *, "Path1 out of bounds"
                     exit path1_prc
                 else if (npath1 >= maxpathlen) then
                     print *, "[CONFLUENCE_DISTANCE] Warning: Path 1 exceeded max length of ", maxpathlen
@@ -1423,7 +1437,6 @@ contains
                 ! Confluence found
                 do ipath2 = 1, npath2
                     if (.not. all(path2(ipath2, :) == [n1i, n1j])) cycle
-                    ! print *, "Confluence found at ", n1i, ",", n1j
                     iconf1 = npath1
                     iconf2 = ipath2
                     exit tracer_loop
@@ -1448,11 +1461,9 @@ contains
                 end if
                 n2i = path2(npath2, 1) + offset_lookup(code2, 1)
                 n2j = path2(npath2, 2) + offset_lookup(code2, 2)
-                ! print *, "Path2 step from ", path2(npath2, 1), ",", path2(npath2, 2), " to ", n2i, ",", n2j, "(code ", code2, ")"
                 if (n2i < 1 .or. n2i > size(flowdirs, 1) .or. n2j < 1 .or. n2j > size(flowdirs, 2)) then
                     iconf2 = npath2
                     is_active2 = .false.
-                    ! print *, "Path2 out of bounds"
                     exit path2_prc
                 else if (npath2 >= maxpathlen) then
                     print *, "[CONFLUENCE_DISTANCE] Warning: Path 2 exceeded max length of ", maxpathlen
@@ -1478,7 +1489,6 @@ contains
                 ! Confluence found
                 do ipath1 = 1, npath1
                     if (.not. all(path1(ipath1, :) == [n2i, n2j])) cycle
-                    ! print *, "Confluence found at ", n2i, ",", n2j
                     iconf1 = ipath1
                     iconf2 = npath2
                     exit tracer_loop
