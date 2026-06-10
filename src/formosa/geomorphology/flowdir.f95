@@ -108,7 +108,7 @@ contains
     subroutine mask2ij( &
         mask, nrows, ncols, ij, nij, cnt)
         !! Converts a 2D logical mask to a list of (i, j) indices where the mask is true.
-        !! The output list  will have a maximum size of nij-by-2, and the actual number of valid indices found will be returned in nij. If the number of valid indices exceeds nij, the remaining will be ignored.
+        !! The output list  will have a maximum size of nij-by-2, and the actual number of valid indices found will be returned in cnt. If the number of valid indices exceeds nij, the remaining will be ignored.
         ! TODO: Optimise this subroutine?
         implicit none
         ! Arguments
@@ -269,7 +269,7 @@ contains
                     nj = cj + offsets(iofs, 2)
                     ! Check bounds
                     if (ni < 1 .or. ni > nrows .or. nj < 1 .or. nj > ncols) cycle
-                    ! Skip if neighbour is differen flat
+                    ! Skip if neighbour is different flat
                     if (flats(ni, nj) /= flats(ci, cj)) cycle
                     ! Check if neighbour has lower elevation
                     if (z(ni, nj) < zmin) then

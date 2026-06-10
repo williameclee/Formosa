@@ -227,7 +227,7 @@ def label_flats(
     ----------
     dem : NDArray[number]
         A 2D array representing the digital elevation model (DEM).
-    seeds : NDArray[bool] | NDArray[int] | Iterable[Iterable[int]]
+    seeds : NDArray[bool]
         Either a boolean mask array indicating flat area locations, or a 2D integer array of coordinates, or an iterable of coordinate pairs.
     valids : NDArray[bool], optional
         A boolean mask array indicating valid cells in the DEM.
