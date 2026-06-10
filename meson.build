@@ -1,4 +1,4 @@
-project('formosa', 'fortran')
+project('formosa', 'fortran', version: '0.1.0a0')
 
 py = import('python').find_installation(pure: false)
 
@@ -15,18 +15,17 @@ ext_suffix = run_command(
   check: true
 ).stdout().strip()
 
-flowdir_f = custom_target(
+custom_target(
   'flowdir_f',
   input: files('src/formosa/geomorphology/flowdir.f95'),
   output: ['flowdir_f' + ext_suffix],
   command: [
     py.full_path(), '-m', 'numpy.f2py',
-    '-c', '@INPUT@',
     '-m', 'flowdir_f',
     # OpenMP flags
-    '--fcompiler=gnu95',
     '--f90flags="-march=native -fopenmp -O3"', # -pg for profiling
     '-lgomp',
+    '-c', '@INPUT@',
   ],
   install: true,
   install_dir: pkg_geom_plat_dir,
