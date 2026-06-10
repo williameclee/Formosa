@@ -266,7 +266,7 @@ class DEMGrid:
         graphy, graphx = compute_flowdir_graph(
             self.flowdir,
             directions=self.directions,
-            valid=valid if valid is not None else self.valid,
+            valids=valid if valid is not None else self.valid,
             x=self.x.astype(np.float64),
             y=self.y,
         )
@@ -300,7 +300,7 @@ class DEMGrid:
 
     def fill_depressions(self, method: str = "erosion") -> "DEMGrid":
         self.dem = fill_depressions(
-            fill_pits(self.dem)[0], valid=self.valid, method=method
+            fill_pits(self.dem)[0], valids=self.valid, method=method
         )
         return self
 
