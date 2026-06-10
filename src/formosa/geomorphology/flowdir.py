@@ -7,6 +7,8 @@
 #     - Removed Numpy type `np.bool` to either `np.bool_` or `bool` for compatibility with newer Numpy versions
 #     - Renamed Fortran function call: `compute_masked_flowdir` -> `compute_synthetic_flowdir`
 #     - Added `valids` argument to `label_flats` function
+#   2026-06-09, En-Chi Lee (williameclee@gmail.com)
+#     - Small refactors and documentation cleanup
 
 import numpy as np
 
@@ -28,12 +30,12 @@ except ImportError as err:
     flowdir_f = _MissingFortranBackend(err)
 
 import numpy.typing as npt
-from typing import Literal
+from typing import Literal, Optional
 
 
 def fill_depressions(
     dem: npt.NDArray[np.number],
-    valid: npt.NDArray[np.bool_] | None = None,
+    valids: Optional[npt.NDArray[np.bool_]] = None,
     method: str = "erosion",
 ) -> npt.NDArray[np.number]:
     assert method in [
@@ -44,13 +46,13 @@ def fill_depressions(
     from skimage import morphology
 
     dem_seed = dem.copy()
-    if valid is not None:
+    if valids is not None:
         if method == "erosion":
-            dem[~valid] = np.nanmin(dem[valid])
-            seed_value = np.nanmax(dem[valid]) + 1
+            dem[~valids] = np.nanmin(dem[valids])
+            seed_value = np.nanmax(dem[valids]) + 1
         else:
-            dem[~valid] = np.nanmax(dem[valid])
-            seed_value = np.nanmin(dem[valid]) - 1
+            dem[~valids] = np.nanmax(dem[valids])
+            seed_value = np.nanmin(dem[valids]) - 1
     else:
         if method == "erosion":
             seed_value = np.nanmax(dem) + 1
@@ -87,7 +89,7 @@ def _compute_flowdir_simple_py(
 def compute_flowdir_simple(
     dem: npt.NDArray[np.number],
     directions: D8Directions = D8Directions(),
-    valids: npt.NDArray[np.bool_] | None = None,
+    valids: Optional[npt.NDArray[np.bool_]] = None,
     backend: Literal["fortran", "python"] = "fortran",
 ) -> tuple[npt.NDArray[np.uint8], npt.NDArray[np.bool_]]:
     """
@@ -158,8 +160,8 @@ def _find_flat_edges_py(
 def find_flat_edges(
     dem: npt.NDArray[np.number],
     flowdir: npt.NDArray[np.integer],
-    directions=D8Directions(),
-    valids: npt.NDArray[np.bool_] | None = None,
+    directions: D8Directions = D8Directions(),
+    valids: Optional[npt.NDArray[np.bool_]] = None,
     backend: Literal["fortran", "python"] = "fortran",
 ) -> tuple[npt.NDArray[np.bool_], npt.NDArray[np.bool_]]:
     """
@@ -216,7 +218,7 @@ def find_flat_edges(
 def label_flats(
     dem: npt.NDArray[np.number],
     seeds: npt.NDArray[np.bool_],
-    valids: npt.NDArray[np.bool_] | None = None,
+    valids: Optional[npt.NDArray[np.bool_]] = None,
     directions: D8Directions = D8Directions(),
 ) -> npt.NDArray[np.int32]:
     """
@@ -342,7 +344,7 @@ def get_neighbour_values(
 def compute_downstream_indices(
     flowdirs: npt.NDArray[np.integer],
     directions: D8Directions = D8Directions(),
-    valids: npt.NDArray[np.bool_] | None = None,
+    valids: Optional[npt.NDArray[np.bool_]] = None,
 ) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.integer], npt.NDArray[np.int32]]:
     """
     Computes the downstream indices for each cell in a flow direction grid.
@@ -423,7 +425,7 @@ def find_ambiguous(
 
 def find_flat(
     dem: npt.NDArray[np.number],
-    valid: npt.NDArray[np.bool_] | None = None,
+    valids: Optional[npt.NDArray[np.bool_]] = None,
     only_min: bool = True,
     directions: D8Directions = D8Directions(window=3),
 ) -> npt.NDArray[np.bool_]:
@@ -451,8 +453,8 @@ def find_flat(
     is_flat : NDArray[bool]
         A boolean mask array where True indicates cells that are part of flat areas.
     """
-    if valid is not None and np.any(~valid):
-        dem[~valid] = np.max(dem[~valid]) + 1
+    if valids is not None and np.any(~valids):
+        dem[~valids] = np.max(dem[~valids]) + 1
 
     neighbours, _, _ = get_neighbour_values(
         dem, directions=directions, pad_value=np.nan, include_self=False
@@ -462,8 +464,8 @@ def find_flat(
     else:
         is_flat = np.any(dem == neighbours, axis=0)
 
-    if valid is not None:
-        is_flat = is_flat & valid
+    if valids is not None:
+        is_flat = is_flat & valids
     return is_flat
 
 
@@ -621,7 +623,7 @@ def compute_masked_flowdir(
 def _compute_flowdir_total(
     dem: npt.NDArray[np.number],
     directions: D8Directions = D8Directions(),
-    valids: npt.NDArray[np.bool_] | None = None,
+    valids: Optional[npt.NDArray[np.bool_]] = None,
     step_size: int = 4,
 ) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.bool_], npt.NDArray[np.integer]]:
     """
@@ -679,13 +681,13 @@ def _compute_flowdir_total(
 def compute_flowdir(
     dem: npt.NDArray[np.number],
     directions: D8Directions = D8Directions(),
-    valids: npt.NDArray[np.bool_] | None = None,
+    valids: Optional[npt.NDArray[np.bool_]] = None,
     fill_depression: bool = False,
     fill_depression_method: str = "erosion",
     resolve_flat: bool = True,
     step_size: int = 4,
 ) -> tuple[
-    npt.NDArray[np.uint8], npt.NDArray[np.bool_], npt.NDArray[np.integer] | None
+    npt.NDArray[np.uint8], npt.NDArray[np.bool_], Optional[npt.NDArray[np.integer]]
 ]:
     """
     Computes flow directions for a DEM, optionally resolving flat areas.
@@ -724,7 +726,7 @@ def compute_flowdir(
         A 2D integer array representing the synthetic elevation that resolves flat areas, or None if resolve_flat is False.
     """
     if fill_depression:
-        dem = fill_depressions(dem, valid=valids, method=fill_depression_method)
+        dem = fill_depressions(dem, valids=valids, method=fill_depression_method)
     if resolve_flat:
         flowdir, is_flat, flat_gradient = _compute_flowdir_total(
             dem, directions=directions, valids=valids, step_size=step_size
@@ -802,10 +804,10 @@ def compute_indegree(
 
 def compute_flowdir_graph(
     flowdirs: npt.NDArray[np.integer],
-    valid: npt.NDArray[np.bool_] | None = None,
+    valids: Optional[npt.NDArray[np.bool_]] = None,
     directions: D8Directions = D8Directions(),
-    x: npt.NDArray[np.number] | None = None,
-    y: npt.NDArray[np.number] | None = None,
+    x: Optional[npt.NDArray[np.number]] = None,
+    y: Optional[npt.NDArray[np.number]] = None,
 ) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.integer]]:
     """
     Computes a graph representation of the flow directions in a flow direction grid.
@@ -837,12 +839,12 @@ def compute_flowdir_graph(
     graphj : NDArray[int]
         A 1D array representing the column indices of the graph edges.
     """
-    if valid is not None:
+    if valids is not None:
         assert (
-            valid.shape == flowdirs.shape
-        ), f"Shape for FLOWDIR and VALID mask must match, but got valid shape {flowdirs.shape} and flowdir shape {valid.shape} instead"
+            valids.shape == flowdirs.shape
+        ), f"Shape for FLOWDIR and VALID mask must match, but got valid shape {flowdirs.shape} and flowdir shape {valids.shape} instead"
     else:
-        valid = np.full(flowdirs.shape, True, dtype=bool)
+        valids = np.full(flowdirs.shape, True, dtype=bool)
 
     i, j = np.meshgrid(
         np.arange(flowdirs.shape[0], dtype=np.int32),
@@ -859,17 +861,17 @@ def compute_flowdir_graph(
 
     graphi = np.stack(
         (
-            i[valid],
-            dsi[valid],
-            np.full(i[valid].size, np.nan),
+            i[valids],
+            dsi[valids],
+            np.full(i[valids].size, np.nan),
         ),
         axis=1,
     ).ravel(order="C")
     graphj = np.stack(
         (
-            j[valid],
-            dsj[valid],
-            np.full(j[valid].size, np.nan),
+            j[valids],
+            dsj[valids],
+            np.full(j[valids].size, np.nan),
         ),
         axis=1,
     ).ravel(order="C")
@@ -878,10 +880,10 @@ def compute_flowdir_graph(
 
 def _compute_flow_accumulation_py(
     flowdirs: npt.NDArray[np.integer],
-    valids=None,
-    weights=None,
-    indegrees: npt.NDArray[np.integer] | None = None,
-    dsij: npt.NDArray[np.integer] | None = None,
+    valids: Optional[npt.NDArray[np.bool_]] = None,
+    weights: Optional[npt.NDArray[np.floating]] = None,
+    indegrees: Optional[npt.NDArray[np.integer]] = None,
+    dsij: Optional[npt.NDArray[np.integer]] = None,
     directions: D8Directions = D8Directions(),
 ) -> np.ndarray:
     from collections import deque
@@ -902,14 +904,13 @@ def _compute_flow_accumulation_py(
         assert (
             valids.shape == flowdirs.shape
         ), f"Shape for flowidr and valid mask must match, but got valid shape {valids.shape} and flowdir shape {flowdirs.shape} instead"
-
     if weights is None:
-        weights = np.where(valids, 1, 0).astype(np.uint64)
+        weights = np.where(valids, 1, 0).astype(np.uint64)  # type: ignore
     else:
         assert (
             weights.shape == flowdirs.shape
         ), f"Shape for flowdir and weight must match, but got weight shape {weights.shape} and flowdir shape {flowdirs.shape} instead"
-        weights = np.where(valids, weights, 0)
+        weights = np.where(valids, weights, 0)  # type: ignore
 
     if dsij is None:
         _, _, dsij = compute_downstream_indices(flowdirs, directions=directions)
@@ -919,8 +920,8 @@ def _compute_flow_accumulation_py(
         ), f"Shape for flowdir and downstream ij indices must match, but got dsij: {dsij.shape} and flowdir: {flowdirs.shape} instead"
 
     indegrees = indegrees.flatten(order="F")
-    valids = valids.flatten(order="F")
-    weights = weights.flatten(order="F")
+    valids = valids.flatten(order="F")  # type: ignore
+    weights = weights.flatten(order="F")  # type: ignore
     dsij = dsij.flatten(order="F")
     flowdirs = flowdirs.flatten(order="F")
 
@@ -948,10 +949,10 @@ def _compute_flow_accumulation_py(
 
 def compute_flow_accumulation(
     flowdirs: npt.NDArray[np.integer],
-    valids: npt.NDArray[np.bool_] | None = None,
-    weights: npt.NDArray[np.floating] | None = None,
-    indegrees: npt.NDArray[np.integer] | None = None,
-    dsij: npt.NDArray[np.integer] | None = None,
+    valids: Optional[npt.NDArray[np.bool_]] = None,
+    weights: Optional[npt.NDArray[np.floating]] = None,
+    indegrees: Optional[npt.NDArray[np.integer]] = None,
+    dsij: Optional[npt.NDArray[np.integer]] = None,
     directions: D8Directions = D8Directions(),
     backend: Literal["fortran", "python"] = "fortran",
 ) -> npt.NDArray[np.float32]:
@@ -1025,7 +1026,7 @@ def compute_flow_accumulation(
 def _compute_strahler_order_py(
     flowdir: npt.NDArray[np.integer],
     directions: D8Directions = D8Directions(),
-    indegrees: npt.NDArray[np.integer] | None = None,
+    indegrees: Optional[npt.NDArray[np.integer]] = None,
 ) -> npt.NDArray[np.int16]:
     from collections import deque
 
@@ -1062,8 +1063,8 @@ def _compute_strahler_order_py(
 def compute_strahler_order(
     flowdir: npt.NDArray[np.integer],
     directions: D8Directions = D8Directions(),
-    valids: npt.NDArray[np.bool_] | None = None,
-    indegrees: npt.NDArray[np.integer] | None = None,
+    valids: Optional[npt.NDArray[np.bool_]] = None,
+    indegrees: Optional[npt.NDArray[np.integer]] = None,
     backend: Literal["fortran", "python"] = "fortran",
 ) -> npt.NDArray[np.int16]:
     """
@@ -1121,10 +1122,10 @@ def compute_strahler_order(
 def compute_flow_dist2source(
     flowdir: npt.NDArray[np.integer],
     directions: D8Directions = D8Directions(),
-    x: npt.NDArray[np.integer | np.floating] | None = None,
-    y: npt.NDArray[np.integer | np.floating] | None = None,
-    valids: npt.NDArray[np.bool_] | None = None,
-    indegrees: npt.NDArray[np.integer] | None = None,
+    x: Optional[npt.NDArray[np.number]] = None,
+    y: Optional[npt.NDArray[np.number]] = None,
+    valids: Optional[npt.NDArray[np.bool_]] = None,
+    indegrees: Optional[npt.NDArray[np.integer]] = None,
 ) -> npt.NDArray[np.float32]:
     """
     Computes the distance downstream along flow directions for each cell in the flow direction grid.
@@ -1203,7 +1204,7 @@ def compute_flow_dist2source(
 def _label_watersheds_py(
     flowdir: npt.NDArray[np.integer],
     directions: D8Directions = D8Directions(),
-    valids: npt.NDArray[np.bool_] | None = None,
+    valids: Optional[npt.NDArray[np.bool_]] = None,
 ) -> npt.NDArray[np.int32]:
     if valids is None:
         valids = ~np.isnan(flowdir)
@@ -1257,7 +1258,7 @@ def _label_watersheds_py(
 def label_watersheds(
     flowdir: npt.NDArray[np.integer],
     directions: D8Directions = D8Directions(),
-    valids: npt.NDArray[np.bool_] | None = None,
+    valids: Optional[npt.NDArray[np.bool_]] = None,
     backend: Literal["fortran", "python"] = "fortran",
 ) -> npt.NDArray[np.int32]:
     """
@@ -1313,9 +1314,9 @@ def label_watersheds(
 def compute_flow_dist2sink(
     flowdir: npt.NDArray[np.integer],
     directions: D8Directions = D8Directions(),
-    x: npt.NDArray[np.integer | np.floating] | None = None,
-    y: npt.NDArray[np.integer | np.floating] | None = None,
-    valids: npt.NDArray[np.bool_] | None = None,
+    x: Optional[npt.NDArray[np.number]] = None,
+    y: Optional[npt.NDArray[np.number]] = None,
+    valids: Optional[npt.NDArray[np.bool_]] = None,
 ) -> npt.NDArray[np.float32]:
     """
     Computes the distance upstream along flow directions for each cell in the flow direction grid.
@@ -1373,10 +1374,10 @@ def compute_flow_dist2sink(
 
 def compute_flow_dist2conf_max(
     flowdirs: npt.NDArray[np.integer],
-    valids: npt.NDArray[np.bool_] | None = None,
-    x: npt.NDArray[np.integer | np.floating] | None = None,
-    y: npt.NDArray[np.integer | np.floating] | None = None,
-    watershed_labels: npt.NDArray[np.integer] | None = None,
+    valids: Optional[npt.NDArray[np.bool_]] = None,
+    x: Optional[npt.NDArray[np.number]] = None,
+    y: Optional[npt.NDArray[np.number]] = None,
+    watershed_labels: Optional[npt.NDArray[np.integer]] = None,
     directions: D8Directions = D8Directions(),
 ) -> npt.NDArray[np.float32]:
     """
@@ -1450,10 +1451,10 @@ def compute_flow_dist2conf_max(
 
 def compute_flow_dist2ridge(
     flowdirs: npt.NDArray[np.integer],
-    valids: npt.NDArray[np.bool_] | None = None,
-    x: npt.NDArray[np.integer | np.floating] | None = None,
-    y: npt.NDArray[np.integer | np.floating] | None = None,
-    watershed_labels: npt.NDArray[np.integer] | None = None,
+    valids: Optional[npt.NDArray[np.bool_]] = None,
+    x: Optional[npt.NDArray[np.number]] = None,
+    y: Optional[npt.NDArray[np.number]] = None,
+    watershed_labels: Optional[npt.NDArray[np.integer]] = None,
     directions: D8Directions = D8Directions(),
 ) -> npt.NDArray[np.float32]:
     """
