@@ -10,7 +10,7 @@
 !     - Small refactors and documentation cleanup
 !   2026-06-11, En-Chi Lee (williameclee@gmail.com)
 !     - Added precomputed 'dist_lookup' for L1 distance in 'compute_dist2source_l1'
-!     - Standardised variable and argument names
+!     - Standardised variable, argument, and function names
 !!!
 
 module flowdir_utils
@@ -224,7 +224,7 @@ contains
         !$omp END PARALLEL DO
     end subroutine compute_flowdir_simple
 
-    subroutine compute_synthetic_flowdir( &
+    subroutine compute_syn_flowdir( &
         z, flats, dirs, nrows, ncols, &
         offsets, codes, noffsets)
         !! Finds D-n flow directions for a synthetic elevation grid, using the provided flow direction codes and offsets. !! The flow directions are only computed for cells that are part of flats, as indicated by the  label grid. For each flat cell, the flow direction is assigned towards the neighbour with the lowest elevation within the same flat region. If no neighbour has a lower elevation, the cell is assigned the no-flow code.
@@ -285,7 +285,7 @@ contains
             end do
         end do
         !$omp END PARALLEL DO
-    end subroutine compute_synthetic_flowdir
+    end subroutine compute_syn_flowdir
 
     subroutine find_flat_edges( &
         z, dirs, valids, is_low_edge, is_high_edge, nrows, ncols, &
@@ -458,7 +458,7 @@ contains
         deallocate (seed_ijs)
     end subroutine label_flats
 
-    subroutine away_from_high( &
+    subroutine create_pushing_syn_grad( &
         z, flats, nrows, ncols, &
         high_edges, offsets, noffsets)
         !! Produces a synthetic elevation that decreases away from 'high edges' of flats.
@@ -610,9 +610,9 @@ contains
             z(ci, cj) = maxdist(flats(ci, cj)) - z(ci, cj) + 1
         end do
         deallocate (maxdist)
-    end subroutine away_from_high
+    end subroutine create_pushing_syn_grad
 
-    subroutine towards_low( &
+    subroutine create_pulling_syn_grad( &
         z, flats, nrows, ncols, &
         low_edges, offsets, noffsets)
         !! Produces a synthetic elevation that drains towards 'low edges' of flats.
@@ -736,9 +736,9 @@ contains
         end do
         deallocate (queued)
         deallocate (low_edges_ijs)
-    end subroutine towards_low
+    end subroutine create_pulling_syn_grad
 
-    subroutine compute_indegree( &
+    subroutine count_indegree( &
         dirs, indegs, nrows, ncols, &
         offsets, codes, noffsets)
         !! Computes the number of upstream cells (indegs) for each cell in a flow direction grid.
@@ -787,7 +787,7 @@ contains
             end do
         end do
         !$omp END PARALLEL DO
-    end subroutine compute_indegree
+    end subroutine count_indegree
 
     subroutine compute_flow_accumulation( &
         dirs, valids, areas, indegs, accumulations, nrows, ncols, &
@@ -1073,7 +1073,7 @@ contains
         deallocate (tofill_ijs)
     end subroutine compute_dist2source
 
-    subroutine compute_flow_dist2sink( &
+    subroutine compute_dist2sink( &
         dists, dirs, x, y, valids, nrows, ncols, offsets, codes, noffsets)
         !! Computes the distance upstream along flow directions for each cell in the flow direction grid.
         implicit none
@@ -1179,9 +1179,9 @@ contains
         deallocate (tofill_ijs)
         !$omp END PARALLEL
         deallocate (seed_ijs)
-    end subroutine compute_flow_dist2sink
+    end subroutine compute_dist2sink
 
-    subroutine compute_strahler_order( &
+    subroutine compute_flow_strahler_order( &
         dirs, valids, indegs, orders, nrows, ncols, &
         offsets, codes, noffsets)
         implicit none
@@ -1270,7 +1270,7 @@ contains
         end do
         deallocate (offset_lookup)
         deallocate (tofill_ijs)
-    end subroutine compute_strahler_order
+    end subroutine compute_flow_strahler_order
 
     subroutine label_watersheds( &
         labels, dirs, valids, nrows, ncols, offsets, codes, noffsets)

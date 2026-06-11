@@ -2,7 +2,7 @@
 #   2026-06-11, En-Chi Lee (williameclee@gmail.com)
 #     - Moved Python backend implementations to this file
 #     - Removed redundant NaN checks against integer arrays
-#     - Standardised variable and argument names
+#     - Standardised variable, argument, and function names
 
 import numpy as np
 
@@ -56,7 +56,7 @@ def _compute_masked_flowdir_py(
     return flowdirs
 
 
-def _compute_indegree_py(
+def _count_indegree_py(
     dirs: npt.NDArray[np.integer], dir_scheme: D8Directions = D8Directions()
 ) -> npt.NDArray[np.integer]:
     indegree = np.zeros(dirs.shape, dtype=np.int32)
@@ -114,7 +114,7 @@ def _compute_flow_accumulation_py(
     I, J = dirs.shape
 
     if indegs is None:
-        indegs = _compute_indegree_py(dirs, dir_scheme=dir_scheme)
+        indegs = _count_indegree_py(dirs, dir_scheme=dir_scheme)
     else:
         assert (
             indegs.shape == dirs.shape
@@ -169,7 +169,7 @@ def _compute_flow_accumulation_py(
     return accumulation
 
 
-def _compute_strahler_order_py(
+def _compute_flow_strahler_order_py(
     dirs: npt.NDArray[np.integer],
     dir_scheme: D8Directions = D8Directions(),
     indegs: Optional[npt.NDArray[np.integer]] = None,
@@ -177,7 +177,7 @@ def _compute_strahler_order_py(
     from collections import deque
 
     if indegs is None:
-        indegs = _compute_indegree_py(dirs, dir_scheme=dir_scheme)
+        indegs = _count_indegree_py(dirs, dir_scheme=dir_scheme)
     downstream_i, downstreamj, _ = compute_downstream_indices(
         dirs, dir_scheme=dir_scheme
     )

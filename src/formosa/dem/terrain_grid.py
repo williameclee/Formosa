@@ -4,7 +4,8 @@
 #   2026-06-09, En-Chi Lee (williameclee@gmail.com)
 #     - Added wrapper function for ridge distance computation in `DEMGrid` class
 #     - Removed Numpy type `np.bool` to either `np.bool_` or `bool` for compatibility with newer Numpy versions
-#     - Updated function argument names to match the standardised names
+#   2026-06-11, En-Chi Lee (williameclee@gmail.com)
+#     - Updated function and argument names to match the standardised names
 
 from pathlib import Path
 import warnings
@@ -20,14 +21,14 @@ from formosa.geomorphology import (
     compute_slope,
     fill_depressions,
     compute_flowdir,
-    compute_flowdir_graph,
-    compute_indegree,
+    create_flowgraph,
+    count_indegree,
     compute_flow_accumulation,
-    compute_strahler_order,
-    compute_flow_dist2source,
-    compute_flow_dist2sink,
-    compute_flow_dist2conf_max,
-    compute_flow_dist2ridge,
+    compute_flow_strahler_order,
+    compute_dist2source,
+    compute_dist2sink,
+    compute_dist2conf_max,
+    compute_dist2ridge,
     label_watersheds,
 )
 
@@ -264,7 +265,7 @@ class DEMGrid:
         self,
         valid: npt.NDArray[np.bool_] | None = None,
     ) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.integer]]:
-        graphy, graphx = compute_flowdir_graph(
+        graphy, graphx = create_flowgraph(
             self.flowdir,
             dir_scheme=self.directions,
             valids=valid if valid is not None else self.valid,
@@ -276,7 +277,7 @@ class DEMGrid:
     @property
     def indegree(self) -> npt.NDArray[np.integer]:
         if self._indegree is None:
-            self._indegree = compute_indegree(self.flowdir, dir_scheme=self.directions)
+            self._indegree = count_indegree(self.flowdir, dir_scheme=self.directions)
         return self._indegree
 
     @property
@@ -293,7 +294,7 @@ class DEMGrid:
     @property
     def strahler_order(self) -> npt.NDArray[np.integer]:
         if self._strahler_order is None:
-            self._strahler_order = compute_strahler_order(
+            self._strahler_order = compute_flow_strahler_order(
                 self.flowdir,
                 dir_scheme=self.directions,
             )
@@ -308,7 +309,7 @@ class DEMGrid:
     @property
     def flow_distance(self) -> npt.NDArray[np.floating]:
         if self._flowdist is None:
-            self._flowdist = compute_flow_dist2source(
+            self._flowdist = compute_dist2source(
                 self.flowdir,
                 dir_scheme=self.directions,
                 x=self.x,
@@ -335,7 +336,7 @@ class DEMGrid:
         if self._backdist is not None:
             return self._backdist
 
-        self._backdist = compute_flow_dist2sink(
+        self._backdist = compute_dist2sink(
             self.flowdir,
             dir_scheme=self.directions,
             x=self.x,
@@ -349,7 +350,7 @@ class DEMGrid:
         if self._bmax is not None:
             return self._bmax
 
-        self._bmax = compute_flow_dist2conf_max(
+        self._bmax = compute_dist2conf_max(
             self.flowdir.astype(np.uint8, order="F"),
             self.valid.astype(np.bool_, order="F"),
             self.x.astype(np.float32, order="F"),
@@ -373,7 +374,7 @@ class DEMGrid:
         if self._ridge_dist is not None:
             return self._ridge_dist
 
-        self._ridge_dist = compute_flow_dist2ridge(
+        self._ridge_dist = compute_dist2ridge(
             self.flowdir.astype(np.uint8, order="F"),
             valids=self.valid.astype(np.bool_, order="F"),
             x=self.x.astype(np.float32, order="F"),

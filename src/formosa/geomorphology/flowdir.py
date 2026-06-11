@@ -11,7 +11,7 @@
 #     - Small refactors and documentation cleanup
 #   2026-06-11, En-Chi Lee (williameclee@gmail.com)
 #     - Moved Python backend implementations and auxiliary functions to separate files
-#     - Standardised variable and argument names
+#     - Standardised variable, argument, and function names
 
 import numpy as np
 
@@ -309,7 +309,7 @@ def find_flat(
     return flats
 
 
-def compute_away_from_high(
+def create_pushing_syn_grad(
     labels: npt.NDArray[np.number],
     high_edges: npt.NDArray[np.bool_],
     dir_scheme: D8Directions = D8Directions(),
@@ -345,7 +345,7 @@ def compute_away_from_high(
         labels.shape == high_edges.shape
     ), f"Shapes for labels ({labels.shape}) and high_edges ({high_edges.shape}) do not match."
 
-    z_syn = flowdir_f.away_from_high(
+    z_syn = flowdir_f.create_pushing_syn_grad(
         labels.astype(np.int32, order="F"),
         high_edges.astype(bool, order="F"),
         dir_scheme.offsets.astype(np.int32, order="F"),
@@ -353,7 +353,7 @@ def compute_away_from_high(
     return z_syn.astype(np.int32, order="F")
 
 
-def compute_towards_low(
+def create_pulling_syn_grad(
     labels: npt.NDArray[np.number],
     low_edges: npt.NDArray[np.bool_],
     dir_scheme: D8Directions = D8Directions(),
@@ -385,7 +385,7 @@ def compute_towards_low(
     ValueError
         If the shapes of the input arrays do not match the expected dimensions.
     """
-    z_syn = flowdir_f.towards_low(
+    z_syn = flowdir_f.create_pulling_syn_grad(
         labels.astype(np.int32, order="F"),
         low_edges.astype(bool, order="F"),
         dir_scheme.offsets.astype(np.int32, order="F"),
@@ -393,7 +393,7 @@ def compute_towards_low(
     return z_syn
 
 
-def compute_masked_flowdir(
+def compute_syn_flowdir(
     z: npt.NDArray[np.integer | np.floating],
     labels: npt.NDArray[np.integer],
     dir_scheme: D8Directions = D8Directions(),
@@ -427,7 +427,7 @@ def compute_masked_flowdir(
 
             dirs = _compute_masked_flowdir_py(z, labels, dir_scheme=dir_scheme)
         case "fortran":
-            dirs = flowdir_f.compute_synthetic_flowdir(
+            dirs = flowdir_f.compute_syn_flowdir(
                 z.astype(np.int32, order="F"),
                 labels.astype(np.int32, order="F"),
                 dir_scheme.offsets.astype(np.int32, order="F"),
@@ -437,7 +437,7 @@ def compute_masked_flowdir(
     return dirs.astype(np.uint8, order="F")
 
 
-def _compute_flowdir_total(
+def compute_flowdir_complete(
     dem: npt.NDArray[np.number],
     dir_scheme: D8Directions = D8Directions(),
     valids: Optional[npt.NDArray[np.bool_]] = None,
@@ -480,17 +480,17 @@ def _compute_flowdir_total(
     )
     flat_labels = label_flats(dem, (is_low_edge | flats), dir_scheme=dir_scheme)
     is_high_edge = is_high_edge & (flat_labels != 0)
-    z_syn_away = compute_away_from_high(
+    z_syn_away = create_pushing_syn_grad(
         flat_labels, is_high_edge, dir_scheme=dir_scheme
     )
-    z_syn_towards = compute_towards_low(
+    z_syn_towards = create_pulling_syn_grad(
         flat_labels,
         is_low_edge,
         dir_scheme=dir_scheme,
     )
     z_syn = z_syn_away + z_syn_towards * step_size
 
-    flat_flowdir = compute_masked_flowdir(z_syn, flat_labels, dir_scheme=dir_scheme)
+    flat_flowdir = compute_syn_flowdir(z_syn, flat_labels, dir_scheme=dir_scheme)
     dirs[dirs == 0] = flat_flowdir[dirs == 0]
     return dirs, flats, z_syn
 
@@ -545,13 +545,11 @@ def compute_flowdir(
     if fill_depression:
         dem = fill_depressions(dem, valids=valids, method=fill_depression_method)
     if resolve_flat:
-        dirs, flats, syn_grads = _compute_flowdir_total(
+        dirs, flats, syn_grads = compute_flowdir_complete(
             dem, dir_scheme=dir_scheme, valids=valids, step_size=step_size
         )
     else:
-        dirs, flats = compute_flowdir_simple(
-            dem, dir_scheme=dir_scheme, valids=valids
-        )
+        dirs, flats = compute_flowdir_simple(dem, dir_scheme=dir_scheme, valids=valids)
         syn_grads = None
     return (
         dirs.astype(np.uint8, order="F"),
@@ -560,7 +558,7 @@ def compute_flowdir(
     )
 
 
-def compute_indegree(
+def count_indegree(
     dirs: npt.NDArray[np.integer],
     dir_scheme: D8Directions = D8Directions(),
     backend: Literal["fortran", "python"] = "fortran",
@@ -587,11 +585,11 @@ def compute_indegree(
     """
     match backend:
         case "python":
-            from .flowdir_py import _compute_indegree_py
+            from .flowdir_py import _count_indegree_py
 
-            indegs = _compute_indegree_py(dirs, dir_scheme=dir_scheme)
+            indegs = _count_indegree_py(dirs, dir_scheme=dir_scheme)
         case "fortran":
-            indegs = flowdir_f.compute_indegree(
+            indegs = flowdir_f.count_indegree(
                 dirs.astype(np.uint8, order="F"),
                 dir_scheme.offsets.astype(np.int32, order="F"),
                 dir_scheme.codes.astype(np.uint8, order="F"),
@@ -600,7 +598,7 @@ def compute_indegree(
     return indegs.astype(np.int8, order="F")
 
 
-def compute_flowdir_graph(
+def create_flowgraph(
     dirs: npt.NDArray[np.integer],
     valids: Optional[npt.NDArray[np.bool_]] = None,
     dir_scheme: D8Directions = D8Directions(),
@@ -734,7 +732,7 @@ def compute_flow_accumulation(
             )
         case "fortran":
             if indegs is None:
-                indegs = compute_indegree(dirs, dir_scheme=dir_scheme)
+                indegs = count_indegree(dirs, dir_scheme=dir_scheme)
 
             if valids is None:
                 valids = np.ones(dirs.shape, dtype=bool)
@@ -754,7 +752,7 @@ def compute_flow_accumulation(
     return accums.astype(np.float32, order="F")
 
 
-def compute_strahler_order(
+def compute_flow_strahler_order(
     dirs: npt.NDArray[np.integer],
     dir_scheme: D8Directions = D8Directions(),
     valids: Optional[npt.NDArray[np.bool_]] = None,
@@ -786,9 +784,9 @@ def compute_strahler_order(
     """
     match backend:
         case "python":
-            from .flowdir_py import _compute_strahler_order_py
+            from .flowdir_py import _compute_flow_strahler_order_py
 
-            orders = _compute_strahler_order_py(
+            orders = _compute_flow_strahler_order_py(
                 dirs=dirs,
                 dir_scheme=dir_scheme,
                 indegs=indegs,
@@ -798,11 +796,9 @@ def compute_strahler_order(
                 valids = np.ones(dirs.shape, dtype=bool)
 
             if indegs is None:
-                indegs = compute_indegree(
-                    dirs, dir_scheme=dir_scheme, backend="fortran"
-                )
+                indegs = count_indegree(dirs, dir_scheme=dir_scheme, backend="fortran")
 
-            orders = flowdir_f.compute_strahler_order(
+            orders = flowdir_f.compute_flow_strahler_order(
                 dirs.astype(np.uint8, order="F"),
                 valids.astype(bool, order="F"),
                 indegs.astype(np.int8, order="F"),
@@ -813,7 +809,7 @@ def compute_strahler_order(
     return orders.astype(np.int16, order="F")
 
 
-def compute_flow_dist2source(
+def compute_dist2source(
     dirs: npt.NDArray[np.integer],
     dir_scheme: D8Directions = D8Directions(),
     x: Optional[npt.NDArray[np.number]] = None,
@@ -875,7 +871,7 @@ def compute_flow_dist2source(
         y = np.arange(dirs.shape[0], dtype=np.float32)
         x, y = np.meshgrid(x, y, indexing="xy")
     if indegs is None:
-        indegs = compute_indegree(dirs, dir_scheme=dir_scheme)
+        indegs = count_indegree(dirs, dir_scheme=dir_scheme)
     elif isinstance(indegs, np.ndarray):
         assert (
             indegs.shape == dirs.shape
@@ -953,7 +949,7 @@ def label_watersheds(
     return watersheds.astype(np.int32, order="F")
 
 
-def compute_flow_dist2sink(
+def compute_dist2sink(
     dirs: npt.NDArray[np.integer],
     dir_scheme: D8Directions = D8Directions(),
     x: Optional[npt.NDArray[np.number]] = None,
@@ -1003,7 +999,7 @@ def compute_flow_dist2sink(
         y = np.arange(dirs.shape[0], dtype=np.float32)
         x, y = np.meshgrid(x, y, indexing="xy")
 
-    dists = flowdir_f.compute_flow_dist2sink(
+    dists = flowdir_f.compute_dist2sink(
         dirs.astype(np.uint8, order="F"),
         x.astype(np.float32, order="F"),
         y.astype(np.float32, order="F"),
@@ -1014,7 +1010,7 @@ def compute_flow_dist2sink(
     return dists.astype(np.float32, order="F")
 
 
-def compute_flow_dist2conf_max(
+def compute_dist2conf_max(
     dirs: npt.NDArray[np.integer],
     valids: Optional[npt.NDArray[np.bool_]] = None,
     x: Optional[npt.NDArray[np.number]] = None,
@@ -1091,7 +1087,7 @@ def compute_flow_dist2conf_max(
     return bmax.astype(np.float32, order="F")
 
 
-def compute_flow_dist2ridge(
+def compute_dist2ridge(
     dirs: npt.NDArray[np.integer],
     valids: Optional[npt.NDArray[np.bool_]] = None,
     x: Optional[npt.NDArray[np.number]] = None,
@@ -1129,7 +1125,7 @@ def compute_flow_dist2ridge(
     bmaxdists : NDArray[float32]
         A 2D array representing the distance to ridge for each cell.
     """
-    bmax = compute_flow_dist2conf_max(
+    bmax = compute_dist2conf_max(
         dirs,
         valids=valids,
         x=x,
@@ -1140,5 +1136,5 @@ def compute_flow_dist2ridge(
     bmaxdirs, _, _ = compute_flowdir(
         -bmax, dir_scheme=dir_scheme, valids=valids, fill_depression=True
     )
-    bmaxdists = compute_flow_dist2source(bmaxdirs, dir_scheme=dir_scheme, valids=valids)
+    bmaxdists = compute_dist2source(bmaxdirs, dir_scheme=dir_scheme, valids=valids)
     return bmaxdists

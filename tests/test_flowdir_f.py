@@ -1,3 +1,7 @@
+# Last modified
+#   2026-06-11, En-Chi Lee (williameclee@gmail.com)
+#     - Updated function and argument names to match the standardised names
+
 import pytest
 import numpy as np
 
@@ -23,7 +27,7 @@ def test_indegree_3x3():
     )
 
     np.testing.assert_array_equal(
-        flowdir.compute_indegree(dirs, dir_scheme=dir_scheme, backend="fortran"),
+        flowdir.count_indegree(dirs, dir_scheme=dir_scheme, backend="fortran"),
         expected_indegree,
     )
 
@@ -41,7 +45,7 @@ def test_indegree_3x3():
     )
 
     np.testing.assert_array_equal(
-        flowdir.compute_indegree(dirs, dir_scheme=dir_scheme, backend="fortran"),
+        flowdir.count_indegree(dirs, dir_scheme=dir_scheme, backend="fortran"),
         expected_indegree,
     )
 
