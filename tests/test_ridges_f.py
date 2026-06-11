@@ -1,6 +1,8 @@
 # Last modified
 #   2026-06-09, En-Chi Lee (williameclee@gmail.com)
 #     - Changed argument name: `flowdirs` -> `dirs` to match updated function signature in flowdir_f.compute_confluence_dist
+#   2026-06-11, En-Chi Lee (williameclee@gmail.com)
+#     - Updated function and argument names to match the standardised names
 
 import pytest
 import numpy as np
@@ -11,21 +13,21 @@ from formosa import D8Directions
 def test_confluence_distance_2x2():
     from formosa.geomorphology.flowdir_f import flowdir as flowdir_f
 
-    directions = D8Directions(transform_codes=lambda x: x)
+    dir_scheme = D8Directions(transform_codes=lambda x: x)
     offset_lookup = np.zeros((256, 2), dtype=np.int32)
-    for code, (di, dj) in zip(directions.codes, directions.offsets):
+    for code, (di, dj) in zip(dir_scheme.codes, dir_scheme.offsets):
         offset_lookup[code, :] = [di, dj]
         # print(f"Code {code}: offset ({di:3d}, {dj:3d})")
 
-    flowdirs = np.array([[3, 3], [1, 0]], dtype=np.uint8)
+    dirs = np.array([[3, 3], [1, 0]], dtype=np.uint8)
     x, y = np.meshgrid(
-        np.arange(flowdirs.shape[1], dtype=np.float32),
-        np.arange(flowdirs.shape[0], dtype=np.float32),
+        np.arange(dirs.shape[1], dtype=np.float32),
+        np.arange(dirs.shape[0], dtype=np.float32),
         indexing="xy",
     )
 
     common_kwargs = {
-        "dirs": flowdirs.astype(np.uint8, order="F"),
+        "dirs": dirs.astype(np.uint8, order="F"),
         "x": x.astype(np.float32, order="F"),
         "y": y.astype(np.float32, order="F"),
         "offset_lookup": offset_lookup,
@@ -138,21 +140,21 @@ def test_confluence_distance_2x2():
 def test_confluence_distance_3x3():
     from formosa.geomorphology.flowdir_f import flowdir as flowdir_f
 
-    directions = D8Directions(transform_codes=lambda x: x)
+    dir_scheme = D8Directions(transform_codes=lambda x: x)
     offset_lookup = np.zeros((256, 2), dtype=np.int32)
-    for code, (di, dj) in zip(directions.codes, directions.offsets):
+    for code, (di, dj) in zip(dir_scheme.codes, dir_scheme.offsets):
         offset_lookup[code, :] = [di, dj]
         # print(f"Code {code}: offset ({di:3d}, {dj:3d})")
 
-    flowdirs = np.array([[3, 3, 3], [3, 3, 3], [1, 1, 0]], dtype=np.uint8)
+    dirs = np.array([[3, 3, 3], [3, 3, 3], [1, 1, 0]], dtype=np.uint8)
     x, y = np.meshgrid(
-        np.arange(flowdirs.shape[1], dtype=np.float32),
-        np.arange(flowdirs.shape[0], dtype=np.float32),
+        np.arange(dirs.shape[1], dtype=np.float32),
+        np.arange(dirs.shape[0], dtype=np.float32),
         indexing="xy",
     )
 
     common_kwargs = {
-        "dirs": flowdirs.astype(np.uint8, order="F"),
+        "dirs": dirs.astype(np.uint8, order="F"),
         "x": x.astype(np.float32, order="F"),
         "y": y.astype(np.float32, order="F"),
         "offset_lookup": offset_lookup,
