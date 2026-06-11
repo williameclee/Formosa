@@ -1,3 +1,7 @@
+# Last modified
+#   2026-06-11, En-Chi Lee (williameclee@gmail.com)
+#     - Updated function and argument names to match the standardised names
+
 import pytest
 import numpy as np
 
@@ -7,10 +11,10 @@ from formosa import D8Directions
 def test_indegree_3x3():
     from formosa.geomorphology import flowdir
 
-    directions = D8Directions(transform_codes=lambda x: x)
+    dir_scheme = D8Directions(transform_codes=lambda x: x)
 
     # Config 1
-    flowdirs = np.array([[3, 3, 3], [3, 3, 3], [1, 1, 0]], dtype=np.uint8, order="F")
+    dirs = np.array([[3, 3, 3], [3, 3, 3], [1, 1, 0]], dtype=np.uint8, order="F")
 
     expected_indegree = np.array(
         [
@@ -23,12 +27,12 @@ def test_indegree_3x3():
     )
 
     np.testing.assert_array_equal(
-        flowdir.compute_indegree(flowdirs, directions=directions, backend="fortran"),
+        flowdir.count_indegree(dirs, dir_scheme=dir_scheme, backend="fortran"),
         expected_indegree,
     )
 
     # Config 2
-    flowdirs = np.array([[5, 1, 1], [5, 1, 1], [5, 1, 1]], dtype=np.uint8, order="F")
+    dirs = np.array([[5, 1, 1], [5, 1, 1], [5, 1, 1]], dtype=np.uint8, order="F")
 
     expected_indegree = np.array(
         [
@@ -41,7 +45,7 @@ def test_indegree_3x3():
     )
 
     np.testing.assert_array_equal(
-        flowdir.compute_indegree(flowdirs, directions=directions, backend="fortran"),
+        flowdir.count_indegree(dirs, dir_scheme=dir_scheme, backend="fortran"),
         expected_indegree,
     )
 

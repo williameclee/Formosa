@@ -3,6 +3,9 @@
 #     - Rename flowdir functions to be more descriptive
 #   2026-06-09, En-Chi Lee (williameclee@gmail.com)
 #     - Added wrapper function for ridge distance computation in `DEMGrid` class
+#     - Removed Numpy type `np.bool` to either `np.bool_` or `bool` for compatibility with newer Numpy versions
+#   2026-06-11, En-Chi Lee (williameclee@gmail.com)
+#     - Updated function and argument names to match the standardised names
 
 from pathlib import Path
 import warnings
@@ -18,14 +21,14 @@ from formosa.geomorphology import (
     compute_slope,
     fill_depressions,
     compute_flowdir,
-    compute_flowdir_graph,
-    compute_indegree,
+    create_flowgraph,
+    count_indegree,
     compute_flow_accumulation,
-    compute_strahler_order,
-    compute_flow_dist2source,
-    compute_flow_dist2sink,
-    compute_flow_dist2conf_max,
-    compute_flow_dist2ridge,
+    compute_flow_strahler_order,
+    compute_dist2source,
+    compute_dist2sink,
+    compute_dist2conf_max,
+    compute_dist2ridge,
     label_watersheds,
 )
 
@@ -40,7 +43,7 @@ class DEMGrid:
     transform: rasterio.Affine
     i: npt.NDArray[np.uint32]
     j: npt.NDArray[np.uint32]
-    valid: npt.NDArray[np.bool]
+    valid: npt.NDArray[np.bool_]
 
     def __init__(
         self,
@@ -214,7 +217,7 @@ class DEMGrid:
 
         self.quality = np.zeros(self.dem.shape, dtype=np.int16)
         self._slope: None | npt.NDArray[np.integer | np.floating] = None
-        self._flat: None | npt.NDArray[np.bool] = None
+        self._flat: None | npt.NDArray[np.bool_] = None
         self._flat_gradient: None | npt.NDArray[np.integer] = None
         self._flowdir: None | npt.NDArray[np.integer] = None
         self._indegree: None | npt.NDArray[np.integer] = None
@@ -238,7 +241,7 @@ class DEMGrid:
         return self._slope
 
     @property
-    def sea_mask(self) -> npt.NDArray[np.bool]:
+    def sea_mask(self) -> npt.NDArray[np.bool_]:
         if self._sea_mask is None or self.sea_threshold is None:
             if self.sea_threshold is None:
                 self.sea_threshold = 0
@@ -253,19 +256,19 @@ class DEMGrid:
         if self._flowdir is None:
             self._flowdir, self._flat, self._flat_gradient = compute_flowdir(
                 self.dem,
-                directions=self.directions,
+                dir_scheme=self.directions,
                 resolve_flat=True,
             )
         return self._flowdir
 
     def flowdir_graph_xy(
         self,
-        valid: npt.NDArray[np.bool] | None = None,
+        valid: npt.NDArray[np.bool_] | None = None,
     ) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.integer]]:
-        graphy, graphx = compute_flowdir_graph(
+        graphy, graphx = create_flowgraph(
             self.flowdir,
-            directions=self.directions,
-            valid=valid if valid is not None else self.valid,
+            dir_scheme=self.directions,
+            valids=valid if valid is not None else self.valid,
             x=self.x.astype(np.float64),
             y=self.y,
         )
@@ -274,7 +277,7 @@ class DEMGrid:
     @property
     def indegree(self) -> npt.NDArray[np.integer]:
         if self._indegree is None:
-            self._indegree = compute_indegree(self.flowdir, directions=self.directions)
+            self._indegree = count_indegree(self.flowdir, dir_scheme=self.directions)
         return self._indegree
 
     @property
@@ -283,36 +286,36 @@ class DEMGrid:
             self._accumulation = compute_flow_accumulation(
                 self.flowdir,
                 valids=self.valid,
-                indegrees=self.indegree,
-                directions=self.directions,
+                indegs=self.indegree,
+                dir_scheme=self.directions,
             )
         return self._accumulation
 
     @property
     def strahler_order(self) -> npt.NDArray[np.integer]:
         if self._strahler_order is None:
-            self._strahler_order = compute_strahler_order(
+            self._strahler_order = compute_flow_strahler_order(
                 self.flowdir,
-                directions=self.directions,
+                dir_scheme=self.directions,
             )
         return self._strahler_order
 
     def fill_depressions(self, method: str = "erosion") -> "DEMGrid":
         self.dem = fill_depressions(
-            fill_pits(self.dem)[0], valid=self.valid, method=method
+            fill_pits(self.dem)[0], valids=self.valid, method=method
         )
         return self
 
     @property
     def flow_distance(self) -> npt.NDArray[np.floating]:
         if self._flowdist is None:
-            self._flowdist = compute_flow_dist2source(
+            self._flowdist = compute_dist2source(
                 self.flowdir,
-                directions=self.directions,
+                dir_scheme=self.directions,
                 x=self.x,
                 y=self.y,
                 valids=self.valid,
-                indegrees=self.indegree,
+                indegs=self.indegree,
             )
         return self._flowdist
 
@@ -323,7 +326,7 @@ class DEMGrid:
 
         self._watershed = label_watersheds(
             self.flowdir,
-            directions=self.directions,
+            dir_scheme=self.directions,
             valids=self.valid,
         )
         return self._watershed
@@ -333,9 +336,9 @@ class DEMGrid:
         if self._backdist is not None:
             return self._backdist
 
-        self._backdist = compute_flow_dist2sink(
+        self._backdist = compute_dist2sink(
             self.flowdir,
-            directions=self.directions,
+            dir_scheme=self.directions,
             x=self.x,
             y=self.y,
             valids=self.valid,
@@ -347,13 +350,13 @@ class DEMGrid:
         if self._bmax is not None:
             return self._bmax
 
-        self._bmax = compute_flow_dist2conf_max(
+        self._bmax = compute_dist2conf_max(
             self.flowdir.astype(np.uint8, order="F"),
-            self.valid.astype(np.bool, order="F"),
+            self.valid.astype(np.bool_, order="F"),
             self.x.astype(np.float32, order="F"),
             self.y.astype(np.float32, order="F"),
             watershed_labels=self.watersheds.astype(np.int32, order="F"),
-            directions=self.directions,
+            dir_scheme=self.directions,
         )
         return self._bmax
 
@@ -371,13 +374,13 @@ class DEMGrid:
         if self._ridge_dist is not None:
             return self._ridge_dist
 
-        self._ridge_dist = compute_flow_dist2ridge(
+        self._ridge_dist = compute_dist2ridge(
             self.flowdir.astype(np.uint8, order="F"),
-            valids=self.valid.astype(np.bool, order="F"),
+            valids=self.valid.astype(np.bool_, order="F"),
             x=self.x.astype(np.float32, order="F"),
             y=self.y.astype(np.float32, order="F"),
             watershed_labels=self.watersheds.astype(np.int32, order="F"),
-            directions=self.directions,
+            dir_scheme=self.directions,
         )
         return self._ridge_dist
 
@@ -392,7 +395,7 @@ def detect_ocean_mask(dem, ocean_threshold: int | float = 0):
 
 def fill_pits(
     dem: npt.NDArray[np.number],
-) -> tuple[npt.NDArray[np.number], npt.NDArray[np.bool]]:
+) -> tuple[npt.NDArray[np.number], npt.NDArray[np.bool_]]:
     dem_filled = dem.copy()
 
     min_neighbours = np.min(get_neighbour_values(dem_filled)[0], axis=0)

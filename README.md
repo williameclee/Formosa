@@ -1,6 +1,8 @@
-# FORMOSA
+# Formosa
 
-A Python cartography and geomorphology package, with Fortran extensions for performance-critical routines.
+A Python cartography and geomorphology package, with Fortran extensions for heavy routines.
+
+For the style of the code, see the [style guide](STYLE_GUIDE.md).
 
 ----
-Last updated: Jan 4, 2025 ([@williameclee](https://github.com/williameclee))
+Last updated: Jun 11, 2026 ([@williameclee](https://github.com/williameclee))
