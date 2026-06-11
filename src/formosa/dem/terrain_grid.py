@@ -4,6 +4,7 @@
 #   2026-06-09, En-Chi Lee (williameclee@gmail.com)
 #     - Added wrapper function for ridge distance computation in `DEMGrid` class
 #     - Removed Numpy type `np.bool` to either `np.bool_` or `bool` for compatibility with newer Numpy versions
+#     - Updated function argument names to match the standardised names
 
 from pathlib import Path
 import warnings
@@ -254,7 +255,7 @@ class DEMGrid:
         if self._flowdir is None:
             self._flowdir, self._flat, self._flat_gradient = compute_flowdir(
                 self.dem,
-                directions=self.directions,
+                dir_scheme=self.directions,
                 resolve_flat=True,
             )
         return self._flowdir
@@ -265,7 +266,7 @@ class DEMGrid:
     ) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.integer]]:
         graphy, graphx = compute_flowdir_graph(
             self.flowdir,
-            directions=self.directions,
+            dir_scheme=self.directions,
             valids=valid if valid is not None else self.valid,
             x=self.x.astype(np.float64),
             y=self.y,
@@ -275,7 +276,7 @@ class DEMGrid:
     @property
     def indegree(self) -> npt.NDArray[np.integer]:
         if self._indegree is None:
-            self._indegree = compute_indegree(self.flowdir, directions=self.directions)
+            self._indegree = compute_indegree(self.flowdir, dir_scheme=self.directions)
         return self._indegree
 
     @property
@@ -284,8 +285,8 @@ class DEMGrid:
             self._accumulation = compute_flow_accumulation(
                 self.flowdir,
                 valids=self.valid,
-                indegrees=self.indegree,
-                directions=self.directions,
+                indegs=self.indegree,
+                dir_scheme=self.directions,
             )
         return self._accumulation
 
@@ -294,7 +295,7 @@ class DEMGrid:
         if self._strahler_order is None:
             self._strahler_order = compute_strahler_order(
                 self.flowdir,
-                directions=self.directions,
+                dir_scheme=self.directions,
             )
         return self._strahler_order
 
@@ -309,11 +310,11 @@ class DEMGrid:
         if self._flowdist is None:
             self._flowdist = compute_flow_dist2source(
                 self.flowdir,
-                directions=self.directions,
+                dir_scheme=self.directions,
                 x=self.x,
                 y=self.y,
                 valids=self.valid,
-                indegrees=self.indegree,
+                indegs=self.indegree,
             )
         return self._flowdist
 
@@ -324,7 +325,7 @@ class DEMGrid:
 
         self._watershed = label_watersheds(
             self.flowdir,
-            directions=self.directions,
+            dir_scheme=self.directions,
             valids=self.valid,
         )
         return self._watershed
@@ -336,7 +337,7 @@ class DEMGrid:
 
         self._backdist = compute_flow_dist2sink(
             self.flowdir,
-            directions=self.directions,
+            dir_scheme=self.directions,
             x=self.x,
             y=self.y,
             valids=self.valid,
@@ -354,7 +355,7 @@ class DEMGrid:
             self.x.astype(np.float32, order="F"),
             self.y.astype(np.float32, order="F"),
             watershed_labels=self.watersheds.astype(np.int32, order="F"),
-            directions=self.directions,
+            dir_scheme=self.directions,
         )
         return self._bmax
 
@@ -378,7 +379,7 @@ class DEMGrid:
             x=self.x.astype(np.float32, order="F"),
             y=self.y.astype(np.float32, order="F"),
             watershed_labels=self.watersheds.astype(np.int32, order="F"),
-            directions=self.directions,
+            dir_scheme=self.directions,
         )
         return self._ridge_dist
 

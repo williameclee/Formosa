@@ -2,6 +2,7 @@
 #   2026-06-11, En-Chi Lee (williameclee@gmail.com)
 #     - Moved Python backend implementations to this file
 #     - Removed redundant NaN checks against integer arrays
+#     - Standardised variable and argument names
 
 import numpy as np
 
@@ -14,120 +15,143 @@ from typing import Optional
 
 def _compute_flowdir_simple_py(
     dem: npt.NDArray[np.number],
-    directions: D8Directions = D8Directions(),
+    dir_scheme: D8Directions = D8Directions(),
 ) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.bool_]]:
     neighbours, codes, _ = get_neighbour_values(
-        dem, directions=directions, include_self=True, pad_value=np.max(dem) + 1
+        dem, dir_scheme=dir_scheme, include_self=True, pad_value=np.max(dem) + 1
     )
-    flow2self_code = np.where(np.all(directions.offsets == [0, 0], axis=1))[0][0]
-    flowdir = np.full(dem.shape, flow2self_code, dtype=np.int32)
+    flow2self_code = np.where(np.all(dir_scheme.offsets == [0, 0], axis=1))[0][0]
+    flowdirs = np.full(dem.shape, flow2self_code, dtype=np.int32)
     # find where not all neighbours are nan
     valid_mask = ~np.all(np.isnan(neighbours), axis=0)
-    flowdir[valid_mask] = np.nanargmin(neighbours[:, valid_mask], axis=0)
+    flowdirs[valid_mask] = np.nanargmin(neighbours[:, valid_mask], axis=0)
 
-    flowdir = codes[flowdir].astype(np.int32)
-    is_flat = flowdir == 0
-    return flowdir, is_flat
+    flowdirs = codes[flowdirs].astype(np.int32)
+    is_flat = flowdirs == 0
+    return flowdirs, is_flat
 
 
 def _compute_masked_flowdir_py(
     z: npt.NDArray[np.integer | np.floating],
     labels: npt.NDArray[np.integer],
-    directions: D8Directions = D8Directions(),
+    dir_scheme: D8Directions = D8Directions(),
 ) -> npt.NDArray[np.integer]:
     neighbours, codes, _ = get_neighbour_values(
         z,
-        directions=directions,
+        dir_scheme=dir_scheme,
         include_self=True,
         pad_value=z.max() + 1,
     )
     neighbour_labels, _, _ = get_neighbour_values(
-        labels, directions=directions, include_self=True, pad_value=-1
+        labels, dir_scheme=dir_scheme, include_self=True, pad_value=-1
     )
     # Mask neighbours that are not in the same flat
     neighbours = np.where(
         neighbour_labels != labels[np.newaxis, :, :], np.inf, neighbours
     )
     min_indices = np.argmin(neighbours, axis=0)
-    flowdir = codes[min_indices]
-    flowdir[labels == 0] = 0
+    flowdirs = codes[min_indices]
+    flowdirs[labels == 0] = 0
 
-    return flowdir
+    return flowdirs
 
 
 def _compute_indegree_py(
-    flowdirs: npt.NDArray[np.integer], directions: D8Directions = D8Directions()
+    dirs: npt.NDArray[np.integer], dir_scheme: D8Directions = D8Directions()
 ) -> npt.NDArray[np.integer]:
-    indegree = np.zeros(flowdirs.shape, dtype=np.int32)
-    dsi, dsj, _ = compute_downstream_indices(flowdirs, directions=directions)
+    indegree = np.zeros(dirs.shape, dtype=np.int32)
+    dsi, dsj, _ = compute_downstream_indices(dirs, dir_scheme=dir_scheme)
 
-    for flowdir in np.unique(flowdirs):
+    for flowdir in np.unique(dirs):
         if flowdir == 0:
             continue
         is_Valid_ds = (
-            (flowdirs == flowdir)
+            (dirs == flowdir)
             & (dsi >= 0)
-            & (dsi < flowdirs.shape[0])
+            & (dsi < dirs.shape[0])
             & (dsj >= 0)
-            & (dsj < flowdirs.shape[1])
+            & (dsj < dirs.shape[1])
         )
         indegree[dsi[is_Valid_ds], dsj[is_Valid_ds]] += 1
 
     return indegree
 
 
+def _find_flat_edges_py(
+    dem: npt.NDArray[np.number],
+    dirs: npt.NDArray[np.integer],
+    dir_scheme=D8Directions(),
+) -> tuple[npt.NDArray[np.bool_], npt.NDArray[np.bool_]]:
+    neighbours, _, _ = get_neighbour_values(
+        dem,
+        dir_scheme=dir_scheme,
+        include_self=False,
+        pad_value=np.min(dem) - 1,  # since is_high_edge
+    )
+    neighbour_flowdirs, _, _ = get_neighbour_values(
+        dirs, dir_scheme=dir_scheme, include_self=False, pad_value=-1
+    )
+
+    is_high_edge: npt.NDArray[np.bool_] = (dirs == 0) & np.any(dem < neighbours, axis=0)
+    is_low_edge: npt.NDArray[np.bool_] = (dirs != 0) & (
+        np.any((neighbour_flowdirs == 0) & (dem == neighbours), axis=0)
+    )
+
+    return is_low_edge, is_high_edge
+
+
 def _compute_flow_accumulation_py(
-    flowdirs: npt.NDArray[np.integer],
+    dirs: npt.NDArray[np.integer],
     valids: Optional[npt.NDArray[np.bool_]] = None,
     weights: Optional[npt.NDArray[np.floating]] = None,
-    indegrees: Optional[npt.NDArray[np.integer]] = None,
+    indegs: Optional[npt.NDArray[np.integer]] = None,
     dsij: Optional[npt.NDArray[np.integer]] = None,
-    directions: D8Directions = D8Directions(),
+    dir_scheme: D8Directions = D8Directions(),
 ) -> np.ndarray:
     from collections import deque
 
     # Initialisation
-    I, J = flowdirs.shape
+    I, J = dirs.shape
 
-    if indegrees is None:
-        indegrees = _compute_indegree_py(flowdirs, directions=directions)
+    if indegs is None:
+        indegs = _compute_indegree_py(dirs, dir_scheme=dir_scheme)
     else:
         assert (
-            indegrees.shape == flowdirs.shape
-        ), f"Shape for flowdir and indegree must match, but got indegree shape {indegrees.shape} and flowdir shape {flowdirs.shape} instead"
+            indegs.shape == dirs.shape
+        ), f"Shape for flowdirs and indegree must match, but got indegree shape {indegs.shape} and flowdirs shape {dirs.shape} instead"
 
     if valids is None:
-        valids = (flowdirs != 0) | (indegrees > 0)
+        valids = (dirs != 0) | (indegs > 0)
     else:
         assert (
-            valids.shape == flowdirs.shape
-        ), f"Shape for flowidr and valid mask must match, but got valid shape {valids.shape} and flowdir shape {flowdirs.shape} instead"
+            valids.shape == dirs.shape
+        ), f"Shape for flowidr and valid mask must match, but got valid shape {valids.shape} and flowdirs shape {dirs.shape} instead"
     if weights is None:
         weights = np.where(valids, 1, 0).astype(np.uint64)  # type: ignore
     else:
         assert (
-            weights.shape == flowdirs.shape
-        ), f"Shape for flowdir and weight must match, but got weight shape {weights.shape} and flowdir shape {flowdirs.shape} instead"
+            weights.shape == dirs.shape
+        ), f"Shape for flowdirs and weight must match, but got weight shape {weights.shape} and flowdirs shape {dirs.shape} instead"
         weights = np.where(valids, weights, 0)  # type: ignore
 
     if dsij is None:
-        _, _, dsij = compute_downstream_indices(flowdirs, directions=directions)
+        _, _, dsij = compute_downstream_indices(dirs, dir_scheme=dir_scheme)
     else:
         assert (
-            dsij.shape == flowdirs.shape
-        ), f"Shape for flowdir and downstream ij indices must match, but got dsij: {dsij.shape} and flowdir: {flowdirs.shape} instead"
+            dsij.shape == dirs.shape
+        ), f"Shape for flowdirs and downstream ij indices must match, but got dsij: {dsij.shape} and flowdirs: {dirs.shape} instead"
 
-    indegrees = indegrees.flatten(order="F")
+    indegs = indegs.flatten(order="F")
     valids = valids.flatten(order="F")  # type: ignore
     weights = weights.flatten(order="F")  # type: ignore
     dsij = dsij.flatten(order="F")
-    flowdirs = flowdirs.flatten(order="F")
+    dirs = dirs.flatten(order="F")
 
     # Initialize accumulation with self weight
     accumulation = weights.ravel().astype(weights.dtype, copy=True)
 
     # Queue sources (indeg == 0) among valid cells
-    q = deque(np.flatnonzero((indegrees == 0) & valids))
+    q = deque(np.flatnonzero((indegs == 0) & valids))
 
     # Topological propagation
     while q:
@@ -136,8 +160,8 @@ def _compute_flow_accumulation_py(
         if not valids[v]:
             continue
         accumulation[v] += accumulation[u]
-        indegrees[v] -= 1
-        if indegrees[v] == 0:
+        indegs[v] -= 1
+        if indegs[v] == 0:
             q.append(v)
 
     accumulation = accumulation.reshape(I, J, order="F")
@@ -146,23 +170,23 @@ def _compute_flow_accumulation_py(
 
 
 def _compute_strahler_order_py(
-    flowdir: npt.NDArray[np.integer],
-    directions: D8Directions = D8Directions(),
-    indegrees: Optional[npt.NDArray[np.integer]] = None,
+    dirs: npt.NDArray[np.integer],
+    dir_scheme: D8Directions = D8Directions(),
+    indegs: Optional[npt.NDArray[np.integer]] = None,
 ) -> npt.NDArray[np.int16]:
     from collections import deque
 
-    if indegrees is None:
-        indegrees = _compute_indegree_py(flowdir, directions=directions)
+    if indegs is None:
+        indegs = _compute_indegree_py(dirs, dir_scheme=dir_scheme)
     downstream_i, downstreamj, _ = compute_downstream_indices(
-        flowdir, directions=directions
+        dirs, dir_scheme=dir_scheme
     )
 
-    strahler_order = np.zeros(indegrees.shape, dtype=np.int16)
-    strahler_order[indegrees == 0] = 1
+    strahler_order = np.zeros(indegs.shape, dtype=np.int16)
+    strahler_order[indegs == 0] = 1
 
-    ii, jj = np.indices(indegrees.shape, dtype=np.int32)
-    seeds = deque(zip(ii[indegrees == 0], jj[indegrees == 0]))  # type: ignore TODO: figure out what the type error actually is
+    ii, jj = np.indices(indegs.shape, dtype=np.int32)
+    seeds = deque(zip(ii[indegs == 0], jj[indegs == 0]))  # type: ignore TODO: figure out what the type error actually is
 
     while seeds:
         ci, cj = seeds.popleft()
@@ -176,43 +200,43 @@ def _compute_strahler_order_py(
             strahler_order[dsi, dsj] = strahler_order[ci, cj]
         else:
             strahler_order[dsi, dsj] += 1
-        indegrees[dsi, dsj] -= 1
-        if indegrees[dsi, dsj] == 0:
+        indegs[dsi, dsj] -= 1
+        if indegs[dsi, dsj] == 0:
             seeds.append((dsi, dsj))
     return strahler_order
 
 
 def _label_watersheds_py(
-    flowdirs: npt.NDArray[np.integer],
-    directions: D8Directions = D8Directions(),
+    dirs: npt.NDArray[np.integer],
+    dir_scheme: D8Directions = D8Directions(),
     valids: Optional[npt.NDArray[np.bool_]] = None,
 ) -> npt.NDArray[np.int32]:
     if valids is None:
-        valids = ~np.isnan(flowdirs)
+        valids = ~np.isnan(dirs)
     elif isinstance(valids, np.ndarray):
         assert (
-            valids.shape == flowdirs.shape
-        ), f"Shape for flow direction ({valids.shape}) and valid mask ({flowdirs.shape}) do not match."
+            valids.shape == dirs.shape
+        ), f"Shape for flow direction ({valids.shape}) and valid mask ({dirs.shape}) do not match."
         # Removed the check for NaN values in flowdirs, since integer types cannot hold NaN anyway
     else:
         raise TypeError(
             f"[FORMOSA] VALIDS must be either None or a numpy array, got {type(valids)} instead."
         )
 
-    I, J = flowdirs.shape
+    I, J = dirs.shape
     ii, jj = np.meshgrid(
         np.arange(I, dtype=np.int32), np.arange(J, dtype=np.int32), indexing="ij"
     )
-    codes: list[int] = directions.codes.tolist()
+    codes: list[int] = dir_scheme.codes.tolist()
     offsets: list[tuple[int, int]] = [
-        (int(di), int(dj)) for di, dj in directions.offsets.astype(np.int32, copy=False)
+        (int(di), int(dj)) for di, dj in dir_scheme.offsets.astype(np.int32, copy=False)
     ]
 
     seeds: list[tuple[int, int]] = list(
-        zip(ii[valids & (flowdirs == 0)], jj[valids & (flowdirs == 0)])
+        zip(ii[valids & (dirs == 0)], jj[valids & (dirs == 0)])
     )
 
-    watershed = -np.ones(flowdirs.shape, dtype=np.int32)
+    watershed = -np.ones(dirs.shape, dtype=np.int32)
 
     for label, seed in enumerate(seeds):
         to_fill: list[tuple[int, int]] = [seed]
@@ -229,7 +253,7 @@ def _label_watersheds_py(
                 elif watershed[ni, nj] != -1:
                     continue
 
-                if flowdirs[ni, nj] == code:
+                if dirs[ni, nj] == code:
                     to_fill.append((ni, nj))
     watershed = watershed + 1  # make background 0 and watersheds start from 1
     return watershed

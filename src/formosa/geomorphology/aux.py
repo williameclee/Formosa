@@ -1,6 +1,7 @@
 # Last modified
 #   2026-06-11, En-Chi Lee (williameclee@gmail.com)
 #     - Moved auxiliary functions to this file
+#     - Standardised variable and argument names
 
 import numpy as np
 
@@ -12,7 +13,7 @@ from typing import Optional
 
 def get_neighbour_values(
     array: np.ndarray,
-    directions: D8Directions = D8Directions(),
+    dir_scheme: D8Directions = D8Directions(),
     pad_value: np.number | float | int = np.nan,
     include_self: bool = False,
     self_at_last: bool = False,
@@ -24,7 +25,7 @@ def get_neighbour_values(
     ----------
     array : NDArray
         A 2D array from which to extract neighbour values.
-    directions : D8Directions, optional
+    dir_scheme : D8Directions, optional
         An instance of D8Directions defining the neighbour offsets.
         Default is D8Directions().
     pad_value : number | float | int, optional
@@ -50,26 +51,26 @@ def get_neighbour_values(
 
     # Main
     # get padding width from offset
-    pad_width = np.max(abs(directions.offsets))
+    pad_width = np.max(abs(dir_scheme.offsets))
     array_padded = np.pad(
         array,
         pad_width=pad_width,
         mode="constant",
         constant_values=pad_value,
     )
-    neighbours = np.zeros((len(directions.codes), *array.shape), dtype=array.dtype)
-    offsets = np.zeros((len(directions.codes), 2), dtype=np.int16)
-    for i_offset, [di, dj] in enumerate(directions.offsets.astype(np.int16)):
+    neighbours = np.zeros((len(dir_scheme.codes), *array.shape), dtype=array.dtype)
+    offsets = np.zeros((len(dir_scheme.codes), 2), dtype=np.int16)
+    for i_offset, [di, dj] in enumerate(dir_scheme.offsets.astype(np.int16)):
         offsets[i_offset, :] = [di, dj]
         neighbours[i_offset, :, :] = array_padded[
             pad_width + di : pad_width + di + array.shape[0],
             pad_width + dj : pad_width + dj + array.shape[1],
         ]
 
-    codes = directions.codes
+    codes = dir_scheme.codes
     if not include_self:
         # exclude self (first offset)
-        self_id = np.where(np.all(directions.offsets == [0, 0], axis=1))[0][0]
+        self_id = np.where(np.all(dir_scheme.offsets == [0, 0], axis=1))[0][0]
         neighbours = np.delete(neighbours, self_id, axis=0)
         codes = np.delete(codes, self_id, axis=0)
         offsets = np.delete(offsets, self_id, axis=0)
@@ -81,8 +82,8 @@ def get_neighbour_values(
 
 
 def compute_downstream_indices(
-    flowdirs: npt.NDArray[np.integer],
-    directions: D8Directions = D8Directions(),
+    dirs: npt.NDArray[np.integer],
+    dir_scheme: D8Directions = D8Directions(),
     valids: Optional[npt.NDArray[np.bool_]] = None,
 ) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.integer], npt.NDArray[np.int32]]:
     """
@@ -90,9 +91,9 @@ def compute_downstream_indices(
 
     Parameters
     ----------
-    flowdirs : NDArray[int]
+    dirs : NDArray[int]
         A 2D array representing the flow directions for each cell.
-    directions : D8Directions, optional
+    dir_scheme : D8Directions, optional
         An instance of D8Directions defining the flow direction scheme.
         Default is D8Directions().
     valids : NDArray[bool], optional
@@ -110,21 +111,21 @@ def compute_downstream_indices(
         A 2D array of flattened downstream indices for each cell.
     """
     if valids is None:
-        valids = ~np.isnan(flowdirs)
+        valids = ~np.isnan(dirs)
     elif isinstance(valids, np.ndarray):
         assert (
-            valids.shape == flowdirs.shape
-        ), f"Shapes for flow direction ({flowdirs.shape}) and valid mask ({valids.shape}) do not match."
+            valids.shape == dirs.shape
+        ), f"Shapes for flow direction ({dirs.shape}) and valid mask ({valids.shape}) do not match."
     else:
         raise TypeError(
             f"Expected valids to be None or np.ndarray, got {type(valids)} instead."
         )
 
-    I, J = flowdirs.shape
+    I, J = dirs.shape
     ii, jj = np.meshgrid(
         np.arange(I, dtype=np.int32), np.arange(J, dtype=np.int32), indexing="ij"
     )
-    di, dj = directions.code2d8offset(flowdirs)
+    di, dj = dir_scheme.code2d8offset(dirs)
     dsi = (ii.astype(np.int16) + (di).astype(np.int16)).astype(np.int16)
     dsj = (jj.astype(np.int16) + (dj).astype(np.int16)).astype(np.int16)
     dsij: npt.NDArray[np.int32] = dsj.astype(np.int32) * I + dsi.astype(np.int32)

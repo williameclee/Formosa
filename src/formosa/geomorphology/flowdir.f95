@@ -10,6 +10,7 @@
 !     - Small refactors and documentation cleanup
 !   2026-06-11, En-Chi Lee (williameclee@gmail.com)
 !     - Added precomputed 'dist_lookup' for L1 distance in 'compute_dist2source_l1'
+!     - Standardised variable and argument names
 !!!
 
 module flowdir_utils
@@ -383,11 +384,11 @@ contains
             !! List of (i, j) indices for seed cells
             !! It should be safe to assume that the number of seed cells will not exceed nrows*ncols/2, since each flat region should have at least 2 cells.
         integer :: iseed, nseeds
-            !! Index and total number of seed cells (stored in seed_ijs)
+            !! Index and total number of seed cells ('seed_ijs')
         integer, allocatable :: flat_ijs(:, :)
             !! Buffer for storing (i, j) indices of cells to be filled in the current flat region
         integer :: ifill, nfills
-            !! Index and total number of cells in the current flat region being filled (stored in flat_ijs)
+            !! Index and total number of cells in the current flat region being filled ('flat_ijs')
         integer :: si, sj, ci, cj, ni, nj
             !! Rows/columns for seed, current and neighbour cells
         real :: sz
@@ -497,27 +498,27 @@ contains
             !! Flag to track whether new cells have been added to the queue since the last marker, used to determine when to stop the algorithm
         logical*1, allocatable :: queued(:, :)
             !! Mask to track which cells have already been added to the queue, to avoid adding the same cell multiple times
-        integer, allocatable :: high_edges_ij(:, :)
+        integer, allocatable :: high_edge_ijs(:, :)
             !! List of (i, j) indices for high edge cells to be processed in the algorithm, used as a queue for breadth-first search
         integer :: max_queue_size
-            !! Maximum size of the queue buffer for high edge cells (high_edges_ij, including the marker)
+            !! Maximum size of the queue buffer for high edge cells ('high_edges_ijs', including the marker)
 
         max_queue_size = count(flats /= 0) + max(nrows, ncols)*(maxval(flats) - minval(flats) + 1)
-        allocate (high_edges_ij(max_queue_size, 2))
+        allocate (high_edge_ijs(max_queue_size, 2))
 
-        high_edges_ij = 0
+        high_edge_ijs = 0
         nedges = 0
         z = 0
         call mask2ij(high_edges, nrows, ncols, &
-                     high_edges_ij, size(high_edges_ij, dim=1), nedges)
+                     high_edge_ijs, size(high_edge_ijs, dim=1), nedges)
         if (nedges == 0) then
             ! No high edges found, set z to zero and exit
-            deallocate (high_edges_ij)
+            deallocate (high_edge_ijs)
             return
         end if
 
         nedges = nedges + 1
-        high_edges_ij(nedges, :) = marker
+        high_edge_ijs(nedges, :) = marker
 
         nflats = maxval(flats)
         allocate (maxdist(nflats))
@@ -529,8 +530,8 @@ contains
 
         ! Mark initial seeds as queued
         do iedge = 1, nedges - 1
-            ci = high_edges_ij(iedge, 1)
-            cj = high_edges_ij(iedge, 2)
+            ci = high_edge_ijs(iedge, 1)
+            cj = high_edge_ijs(iedge, 2)
             queued(ci, cj) = .true.
         end do
         ! Loop through all high_edges to find cells flowing away from flats
@@ -538,8 +539,8 @@ contains
         dist = 1
         iedge = 1
         do while (iedge <= nedges)
-            ci = high_edges_ij(iedge, 1)
-            cj = high_edges_ij(iedge, 2)
+            ci = high_edge_ijs(iedge, 1)
+            cj = high_edge_ijs(iedge, 2)
             iedge = iedge + 1
 
             ! Check for marker to separate iterations
@@ -554,7 +555,7 @@ contains
                    print *, "[AWAY_FROM_HIGH] Error: High edges buffer overflow (size:", nedges, ", allocated:", max_queue_size, ")"
                     stop
                 end if
-                high_edges_ij(nedges, :) = marker
+                high_edge_ijs(nedges, :) = marker
                 added_since_marker = .false.
                 cycle
             end if
@@ -596,12 +597,12 @@ contains
                    print *, "[AWAY_FROM_HIGH] Error: High edges buffer overflow (size:", nedges, ", allocated:", max_queue_size, ")"
                     stop
                 end if
-                high_edges_ij(nedges, :) = [ni, nj]
+                high_edge_ijs(nedges, :) = [ni, nj]
                 queued(ni, nj) = .true.
                 added_since_marker = .true.
             end do
         end do
-        deallocate (high_edges_ij)
+        deallocate (high_edge_ijs)
         deallocate (queued)
 
         ! Adjust z values within flats to ensure they flow away from high edges
@@ -648,7 +649,7 @@ contains
         integer, allocatable :: low_edges_ijs(:, :)
             !! List of (i, j) indices for low edge cells to be processed in the algorithm, used as a queue for breadth-first search
         integer :: max_queue_size
-            !! Maximum size of the queue buffer for low edge cells (low_edges_ijs, including the marker)
+            !! Maximum size of the queue buffer for low edge cells ('low_edges_ijs', including the marker)
 
         max_queue_size = count(flats /= 0) + max(nrows, ncols)*maxval(flats)
         allocate (low_edges_ijs(max_queue_size, 2))
@@ -821,31 +822,31 @@ contains
             !! Index for iterating through cells to fill and total number of cells to fill
         integer :: ci, cj, ni, nj
             !! Rows/columns for current and neighbour cells
-        integer, allocatable :: floods_ij(:, :)
+        integer, allocatable :: flood_ijs(:, :)
             !! Buffer for storing (i, j) indices of cells to be processed in the flooding algorithm
         integer :: max_queue_size
-            !! Maximum size of the flooding buffer (floods_ij)
+            !! Maximum size of the flooding buffer ('flood_ijs')
         logical*1, allocatable :: flood_seeds(:, :)
-            !! Mask to identify initial seed cells for the flooding algorithm (valid cells with zero indegree)
+            !! Mask to identify initial seed cells for the flooding algorithm (valid cells with zero in-degrees)
 
         ! Create lookup tables for offsets
         allocate (offset_lookup(0:255, 2))
         offset_lookup = fill_offset_lookup(offsets, codes, noffsets)
 
-        ! Fill the tofill buffer with all valid cells with zero indegree
+        ! Fill the tofill buffer with all valid cells with zero in-degrees
         max_queue_size = nrows*ncols
-        allocate (floods_ij(max_queue_size, 2))
+        allocate (flood_ijs(max_queue_size, 2))
         allocate (flood_seeds(nrows, ncols))
         flood_seeds = valids .and. (indegs == 0)
         call mask2ij(flood_seeds, nrows, ncols, &
-                     floods_ij, max_queue_size, ntofills)
+                     flood_ijs, max_queue_size, ntofills)
         deallocate (flood_seeds)
 
         accumulations = areas
         itofill = 1
         do while (itofill <= ntofills)
-            ci = floods_ij(itofill, 1)
-            cj = floods_ij(itofill, 2)
+            ci = flood_ijs(itofill, 1)
+            cj = flood_ijs(itofill, 2)
             itofill = itofill + 1
 
             ni = ci + offset_lookup(dirs(ci, cj), 1)
@@ -871,10 +872,10 @@ contains
                 print *, "[FLOW_ACCUMULATION] Error: Flooding buffer overflow (size:", ntofills, ", allocated:", max_queue_size, ")"
                 stop
             end if
-            floods_ij(ntofills, :) = [ni, nj]
+            flood_ijs(ntofills, :) = [ni, nj]
         end do
         deallocate (offset_lookup)
-        deallocate (floods_ij)
+        deallocate (flood_ijs)
     end subroutine compute_flow_accumulation
 
     subroutine compute_dist2source_l1( &
@@ -916,7 +917,7 @@ contains
         integer, allocatable :: tofill_ijs(:, :)
             !! Buffer for storing (i, j) indices of cells to be processed in the flooding algorithm
         integer :: max_queue_size
-            !! Maximum size of the flooding buffer (tofill_ijs)
+            !! Maximum size of the flooding buffer ('tofill_ijs')
 
         ! Create lookup tables for offsets
         allocate (offset_lookup(0:255, 2))
@@ -1014,7 +1015,7 @@ contains
         integer, allocatable :: tofill_ijs(:, :)
             !! Buffer for storing (i, j) indices of cells to be processed in the flooding algorithm
         integer :: max_queue_size
-            !! Maximum size of the flooding buffer (tofill_ijs)
+            !! Maximum size of the flooding buffer ('tofill_ijs')
 
         ! Create lookup tables for offsets
         allocate (offset_lookup(0:255, 2))
@@ -1104,12 +1105,12 @@ contains
             !! Rows/columns for seed, current and upstream cells
         logical*1, allocatable :: seeds(:, :)
             !! Mask to identify seed cells for the algorithm (valid cells with noflow direction)
-        integer, allocatable :: seeds_ij(:, :)
+        integer, allocatable :: seed_ijs(:, :)
             !! Buffer for storing (i, j) indices of seed cells to be processed in the algorithm
-        integer, allocatable :: tofill_ij(:, :)
+        integer, allocatable :: tofill_ijs(:, :)
             !! Buffer for storing (i, j) indices of cells to be processed in the breadth-first search from sink cells
         integer :: max_queue_size
-            !! Maximum size of the buffer for cells to be processed (seeds_ij and tofill_ij)
+            !! Maximum size of the buffer for cells to be processed ('seed_ijs' and 'tofill_ijs')
 
         ! Find noflow code
         noflow_code = find_noflow_code(offsets, codes, noffsets)
@@ -1118,30 +1119,30 @@ contains
 
         ! Append all cells with noflow direction to buffer
         max_queue_size = nrows*ncols
-        allocate (seeds_ij(max_queue_size, 2))
+        allocate (seed_ijs(max_queue_size, 2))
         allocate (seeds(nrows, ncols))
         seeds = valids .and. (dirs == noflow_code)
         call mask2ij(seeds, nrows, ncols, &
-                     seeds_ij, max_queue_size, nseeds)
+                     seed_ijs, max_queue_size, nseeds)
         deallocate (seeds)
 
         ! Loop through seeds
-        !$omp PARALLEL DEFAULT(SHARED) PRIVATE(iseed, si, sj, ci, cj, ifill, nfills, tofill_ij)
-        allocate (tofill_ij(max_queue_size, 2))
+        !$omp PARALLEL DEFAULT(SHARED) PRIVATE(iseed, si, sj, ci, cj, ifill, nfills, tofill_ijs)
+        allocate (tofill_ijs(max_queue_size, 2))
         !$omp DO SCHEDULE(DYNAMIC)
         do iseed = 1, nseeds
-            si = seeds_ij(iseed, 1)
-            sj = seeds_ij(iseed, 2)
+            si = seed_ijs(iseed, 1)
+            sj = seed_ijs(iseed, 2)
 
             ! Loop through buffer
             nfills = 1
             ifill = 1
             dists(si, sj) = 0.0
-            tofill_ij(1, :) = [si, sj]
+            tofill_ijs(1, :) = [si, sj]
 
             do while (ifill <= nfills)
-                ci = tofill_ij(ifill, 1)
-                cj = tofill_ij(ifill, 2)
+                ci = tofill_ijs(ifill, 1)
+                cj = tofill_ijs(ifill, 2)
                 ifill = ifill + 1
 
                 ! Loop over offsets to find contributing cells
@@ -1166,7 +1167,7 @@ contains
                         print *, "[DIST2SINK] Error: tofill buffer overflow (size:", nfills, ", allocated:", max_queue_size, ")"
                         stop
                     end if
-                    tofill_ij(nfills, :) = [ui, uj]
+                    tofill_ijs(nfills, :) = [ui, uj]
                     ! Compute distance
                     dists(ui, uj) = dists(ci, cj) + hypot( &
                                     x(ui, uj) - x(ci, cj), &
@@ -1175,9 +1176,9 @@ contains
             end do
         end do
         !$omp END DO
-        deallocate (tofill_ij)
+        deallocate (tofill_ijs)
         !$omp END PARALLEL
-        deallocate (seeds_ij)
+        deallocate (seed_ijs)
     end subroutine compute_flow_dist2sink
 
     subroutine compute_strahler_order( &
@@ -1212,10 +1213,10 @@ contains
             !! Rows/columns for current and neighbour cells
         logical*1, allocatable :: seeds(:, :)
             !! Mask to identify initial seed cells for the algorithm (valid cells with zero indegree)
-        integer, allocatable :: tofills_ij(:, :)
+        integer, allocatable :: tofill_ijs(:, :)
             !! Buffer for storing (i, j) indices of cells to be processed in the breadth-first search from source cells
         integer :: max_queue_size
-            !! Maximum size of the buffer for cells to be processed (tofills_ij)
+            !! Maximum size of the buffer for cells to be processed ('tofill_ijs')
 
         ! Create lookup tables for offsets
         allocate (offset_lookup(0:255, 2))
@@ -1223,18 +1224,18 @@ contains
 
         ! Fill the tofill buffer with all valid cells with zero indegree
         max_queue_size = nrows*ncols
-        allocate (tofills_ij(max_queue_size, 2))
+        allocate (tofill_ijs(max_queue_size, 2))
         allocate (seeds(nrows, ncols))
         seeds = valids .and. (indegs == 0)
         call mask2ij(seeds, nrows, ncols, &
-                     tofills_ij, max_queue_size, ntofills)
+                     tofill_ijs, max_queue_size, ntofills)
         deallocate (seeds)
 
         orders = 1
         itofill = 1
         do while (itofill <= ntofills)
-            ci = tofills_ij(itofill, 1)
-            cj = tofills_ij(itofill, 2)
+            ci = tofill_ijs(itofill, 1)
+            cj = tofill_ijs(itofill, 2)
             itofill = itofill + 1
 
             ni = ci + offset_lookup(dirs(ci, cj), 1)
@@ -1264,11 +1265,11 @@ contains
              print *, "[COMPUTE_STRAHLER_ORDER] Error: tofill buffer overflow (size:", ntofills, ", allocated:", max_queue_size, ")"
                     stop
                 end if
-                tofills_ij(ntofills, :) = [ni, nj]
+                tofill_ijs(ntofills, :) = [ni, nj]
             end if
         end do
         deallocate (offset_lookup)
-        deallocate (tofills_ij)
+        deallocate (tofill_ijs)
     end subroutine compute_strahler_order
 
     subroutine label_watersheds( &
@@ -1302,10 +1303,10 @@ contains
             !! Rows/columns for seed, current and upstream indices
         logical*1, allocatable :: seeds(:, :)
             !! Mask to identify seed cells for the algorithm (valid cells with noflow direction)
-        integer, allocatable :: seeds_ij(:, :), tofills_ij(:, :)
+        integer, allocatable :: seed_ijs(:, :), tofill_ijs(:, :)
             !! Buffers for storing (i, j) indices of seed cells and cells to be processed in the breadth-first search from seed cells
         integer :: max_queue_size
-            !! Maximum size of the buffer for cells to be processed (seeds_ij and tofills_ij)
+            !! Maximum size of the buffer for cells to be processed ('seed_ijs' and 'tofill_ijs')
 
         ! Find noflow code
         noflow_code = find_noflow_code(offsets, codes, noffsets)
@@ -1314,30 +1315,30 @@ contains
 
         ! Append all cells with noflow direction to buffer
         max_queue_size = nrows*ncols
-        allocate (seeds_ij(max_queue_size, 2))
+        allocate (seed_ijs(max_queue_size, 2))
         allocate (seeds(nrows, ncols))
         seeds = valids .and. (dirs == noflow_code)
         call mask2ij(seeds, nrows, ncols, &
-                     seeds_ij, max_queue_size, nseeds)
+                     seed_ijs, max_queue_size, nseeds)
         deallocate (seeds)
 
         ! Loop through seeds
-        !$omp PARALLEL DEFAULT(SHARED) PRIVATE(iseed, si, sj, ci, cj, ifill, nfills, tofills_ij)
-        allocate (tofills_ij(max_queue_size, 2))
+        !$omp PARALLEL DEFAULT(SHARED) PRIVATE(iseed, si, sj, ci, cj, ifill, nfills, tofill_ijs)
+        allocate (tofill_ijs(max_queue_size, 2))
         !$omp DO SCHEDULE(DYNAMIC)
         do iseed = 1, nseeds
-            si = seeds_ij(iseed, 1)
-            sj = seeds_ij(iseed, 2)
+            si = seed_ijs(iseed, 1)
+            sj = seed_ijs(iseed, 2)
 
             ! Loop through buffer
             nfills = 1
             ifill = 1
             labels(si, sj) = iseed
-            tofills_ij(1, :) = [si, sj]
+            tofill_ijs(1, :) = [si, sj]
 
             do while (ifill <= nfills)
-                ci = tofills_ij(ifill, 1)
-                cj = tofills_ij(ifill, 2)
+                ci = tofill_ijs(ifill, 1)
+                cj = tofill_ijs(ifill, 2)
                 ifill = ifill + 1
 
                 ! Loop over offsets to find contributing cells
@@ -1362,14 +1363,14 @@ contains
                     print *, "[LABEL_WATERSHEDS] Error: To-fill buffer overflow (size:", nfills, ", allocated:", max_queue_size, ")"
                         stop
                     end if
-                    tofills_ij(nfills, :) = [ui, uj]
+                    tofill_ijs(nfills, :) = [ui, uj]
                     ! Compute distance
                     labels(ui, uj) = labels(ci, cj)
                 end do
             end do
         end do
         !$omp END DO
-        deallocate (tofills_ij)
+        deallocate (tofill_ijs)
         !$omp END PARALLEL
     end subroutine label_watersheds
 
@@ -1401,10 +1402,10 @@ contains
             !! Index for iterating through seed cells and buffer, and total number of seed cells and buffer fills
         integer :: si, sj, ci, cj, ui, uj
             !! Rows/columns for seed, current and upstream indices
-        integer, allocatable :: seeds_ij(:, :), tofills_ij(:, :)
+        integer, allocatable :: seed_ijs(:, :), tofill_ijs(:, :)
             !! Buffers for storing (i, j) indices of seed cells and cells to be processed in the flooding algorithm
         integer :: max_queue_size
-            !! Maximum size of the buffer for cells to be processed (seeds_ij and tofills_ij)
+            !! Maximum size of the buffer for cells to be processed ('seed_ijs' and 'tofill_ijs')
 
         ! Find noflow code
         noflow_code = find_noflow_code(offsets, codes, noffsets)
@@ -1413,17 +1414,17 @@ contains
 
         ! Append all cells with noflow direction to buffer
         max_queue_size = nrows*ncols
-        allocate (seeds_ij(max_queue_size, 2))
+        allocate (seed_ijs(max_queue_size, 2))
         call mask2ij(seeds, nrows, ncols, &
-                     seeds_ij, max_queue_size, nseeds)
+                     seed_ijs, max_queue_size, nseeds)
 
         ! Loop through seeds
-        !$omp PARALLEL DEFAULT(SHARED) PRIVATE(iseed, si, sj, ci, cj, ifill, nfills, tofills_ij)
-        allocate (tofills_ij(max_queue_size, 2))
+        !$omp PARALLEL DEFAULT(SHARED) PRIVATE(iseed, si, sj, ci, cj, ifill, nfills, tofill_ijs)
+        allocate (tofill_ijs(max_queue_size, 2))
         !$omp DO SCHEDULE(DYNAMIC)
         do iseed = 1, nseeds
-            si = seeds_ij(iseed, 1)
-            sj = seeds_ij(iseed, 2)
+            si = seed_ijs(iseed, 1)
+            sj = seed_ijs(iseed, 2)
 
             ! Check if is valid
             if (.not. valids(si, sj)) cycle
@@ -1432,11 +1433,11 @@ contains
             nfills = 1
             ifill = 1
             flooded(si, sj) = .true.
-            tofills_ij(1, :) = [si, sj]
+            tofill_ijs(1, :) = [si, sj]
 
             do while (ifill <= nfills)
-                ci = tofills_ij(ifill, 1)
-                cj = tofills_ij(ifill, 2)
+                ci = tofill_ijs(ifill, 1)
+                cj = tofill_ijs(ifill, 2)
                 ifill = ifill + 1
 
                 ! Loop over offsets to find contributing cells
@@ -1461,15 +1462,15 @@ contains
                        print *, "[FLOOD_UPSTREAM] Error: tofill buffer overflow (size:", nfills, ", allocated:", max_queue_size, ")"
                         stop
                     end if
-                    tofills_ij(nfills, :) = [ui, uj]
+                    tofill_ijs(nfills, :) = [ui, uj]
                     ! Compute distance
                     flooded(ui, uj) = .true.
                 end do
             end do
         end do
         !$omp END DO
-        deallocate (seeds_ij)
-        deallocate (tofills_ij)
+        deallocate (seed_ijs)
+        deallocate (tofill_ijs)
         !$omp END PARALLEL
     end subroutine flood_upstream
 
@@ -1827,7 +1828,7 @@ contains
     !     integer*1, dimension(nrows, ncols), intent(out) :: flowdirs
 
     !     logical, allocatable :: processed(:, :)
-    !     integer*1, allocatable :: indegrees(:, :)
+    !     integer*1, allocatable :: indegs(:, :)
     !     integer, allocatable :: dists(:, :)
     !     integer*1, dimension(noffsets) :: opp_codes
     !     integer*1 :: noflow_code = 0
@@ -1856,7 +1857,7 @@ contains
 
     !     allocate (dists(nrows, ncols))
     !     call compute_dist2source_l1( &
-    !         flowdirs, valids, indegrees, dists, nrows, ncols, &
+    !         flowdirs, valids, indegs, dists, nrows, ncols, &
     !         offsets, codes, noffsets)
 
     !     if (count(processed) == nrows*ncols) then
