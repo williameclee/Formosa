@@ -4,10 +4,12 @@
 !     - Rename flowdir functions to be more descriptive
 !   2026-06-09, En-Chi Lee (williameclee@gmail.com)
 !     - Small refactors and documentation cleanup
-!     - Renamed function: compute_masked_flowdir -> compute_synthetic_flowdir
+!     - Renamed function: 'compute_masked_flowdir' -> 'compute_synthetic_flowdir'
 !     - Added valids argument to label_flats function
 !   2026-06-10, En-Chi Lee (williameclee@gmail.com)
 !     - Small refactors and documentation cleanup
+!   2026-06-11, En-Chi Lee (williameclee@gmail.com)
+!     - Added precomputed 'dist_lookup' for L1 distance in 'compute_dist2source_l1'
 !!!
 
 module flowdir_utils
@@ -903,6 +905,8 @@ contains
         ! Local variables
         integer, allocatable :: offset_lookup(:, :)
             !! Lookup table for offsets corresponding to each flow direction code, used to find downstream cell indices
+        integer, allocatable :: dist_lookup(:)
+            !! Lookup table for distance increments corresponding to each flow direction code, used to calculate distance to downstream cells
         integer :: itofill, ntofills
             !! Index for iterating through cells to fill and total number of cells to fill
         integer :: ci, cj, ni, nj
@@ -916,7 +920,9 @@ contains
 
         ! Create lookup tables for offsets
         allocate (offset_lookup(0:255, 2))
+        allocate (dist_lookup(0:255))
         offset_lookup = fill_offset_lookup(offsets, codes, noffsets)
+        dist_lookup = sum(abs(offset_lookup), dim=2)
 
         ! Fill the tofill buffer with all valid cells with zero indegree
         max_queue_size = nrows*ncols
@@ -949,7 +955,7 @@ contains
 
             ! Update distance of downstream cell
             if (dists(ci, cj) + 1 > dists(ni, nj)) then
-                dists(ni, nj) = dists(ci, cj) + sum(offset_lookup(dirs(ci, cj), :))
+                dists(ni, nj) = dists(ci, cj) + dist_lookup(dirs(ci, cj))
             end if
             ! Decrement indegree of downstream cell
             indegs(ni, nj) = indegs(ni, nj) - int(1, kind=1)
@@ -964,6 +970,7 @@ contains
             end if
         end do
         deallocate (offset_lookup)
+        deallocate (dist_lookup)
         deallocate (tofill_ijs)
     end subroutine compute_dist2source_l1
 
@@ -1590,7 +1597,7 @@ contains
             !! Coordinates of cell centres for distance calculation
         integer, intent(in) :: offset_lookup(0:255, 2)
             !! Lookup table for offsets corresponding to each flow direction code, used to find downstream cell indices
-        logical*1, intent(in), optional :: check_flag 
+        logical*1, intent(in), optional :: check_flag
             !! Whether to check for confluence at each step
         ! Outputs
         real, intent(out) :: dists(2)
