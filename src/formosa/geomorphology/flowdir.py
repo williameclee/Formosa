@@ -10,11 +10,12 @@
 #   2026-06-10, En-Chi Lee (williameclee@gmail.com)
 #     - Small refactors and documentation cleanup
 #   2026-06-11, En-Chi Lee (williameclee@gmail.com)
-#     - Moved Python backend implementations to separate file
+#     - Moved Python backend implementations and auxiliary functions to separate files
 
 import numpy as np
 
 from formosa.geomorphology.d8directions import D8Directions
+from .aux import get_neighbour_values, compute_downstream_indices
 
 try:
     from formosa.geomorphology.flowdir_f import flowdir as flowdir_f
@@ -70,24 +71,6 @@ def fill_depressions(
     return morphology.reconstruction(dem_seed, dem, method=method).astype(dem.dtype)
 
 
-def _compute_flowdir_simple_py(
-    dem: npt.NDArray[np.number],
-    directions: D8Directions = D8Directions(),
-) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.bool_]]:
-    neighbours, codes, _ = get_neighbour_values(
-        dem, directions=directions, include_self=True, pad_value=np.max(dem) + 1
-    )
-    flow2self_code = np.where(np.all(directions.offsets == [0, 0], axis=1))[0][0]
-    flowdir = np.full(dem.shape, flow2self_code, dtype=np.int32)
-    # find where not all neighbours are nan
-    valid_mask = ~np.all(np.isnan(neighbours), axis=0)
-    flowdir[valid_mask] = np.nanargmin(neighbours[:, valid_mask], axis=0)
-
-    flowdir = codes[flowdir].astype(np.int32)
-    is_flat = flowdir == 0
-    return flowdir, is_flat
-
-
 def compute_flowdir_simple(
     dem: npt.NDArray[np.number],
     directions: D8Directions = D8Directions(),
@@ -121,6 +104,8 @@ def compute_flowdir_simple(
     """
     match backend:
         case "python":
+            from .flowdir_py import _compute_flowdir_simple_py
+
             flowdir, is_flat = _compute_flowdir_simple_py(dem, directions=directions)
         case "fortran":
             if valids is None:
@@ -271,76 +256,6 @@ def label_flats(
     )
 
     return labels.astype(np.int32, order="F")
-
-
-def get_neighbour_values(
-    array: np.ndarray,
-    directions: D8Directions = D8Directions(),
-    pad_value: np.number | float | int = np.nan,
-    include_self: bool = False,
-    self_at_last: bool = False,
-) -> tuple[np.ndarray, npt.NDArray[np.integer], npt.NDArray[np.integer]]:
-    """
-    Gets the values of neighbouring cells in an array based on specified directions.
-
-    Parameters
-    ----------
-    array : NDArray
-        A 2D array from which to extract neighbour values.
-    directions : D8Directions, optional
-        An instance of D8Directions defining the neighbour offsets.
-        Default is D8Directions().
-    pad_value : number | float | int, optional
-        Value to use for padding the array edges (default is np.nan).
-    include_self : bool, optional
-        Whether to include the value of the cell itself as a neighbour (default is False).
-    self_at_last : bool, optional
-        If include_self is True, whether to place the self value at the end of the neighbour list (default is False).
-
-    Returns
-    -------
-    neighbours : NDArray
-        A 3D array where the first dimension corresponds to neighbour indices and the other two dimensions match the input array.
-    codes : NDArray[int]
-        A 1D array of direction codes corresponding to the neighbours.
-    offsets : NDArray[int]
-        A 2D array of offsets (di, dj) corresponding to the neighbours.
-    """
-    # Input validation and initialisation
-    if np.issubdtype(array.dtype, np.integer) and pad_value is np.nan:
-        Warning("Integer array does not support NaN padding, using max int instead")
-        pad_value = np.iinfo(array.dtype).max
-
-    # Main
-    # get padding width from offset
-    pad_width = np.max(abs(directions.offsets))
-    array_padded = np.pad(
-        array,
-        pad_width=pad_width,
-        mode="constant",
-        constant_values=pad_value,
-    )
-    neighbours = np.zeros((len(directions.codes), *array.shape), dtype=array.dtype)
-    offsets = np.zeros((len(directions.codes), 2), dtype=np.int16)
-    for i_offset, [di, dj] in enumerate(directions.offsets.astype(np.int16)):
-        offsets[i_offset, :] = [di, dj]
-        neighbours[i_offset, :, :] = array_padded[
-            pad_width + di : pad_width + di + array.shape[0],
-            pad_width + dj : pad_width + dj + array.shape[1],
-        ]
-
-    codes = directions.codes
-    if not include_self:
-        # exclude self (first offset)
-        self_id = np.where(np.all(directions.offsets == [0, 0], axis=1))[0][0]
-        neighbours = np.delete(neighbours, self_id, axis=0)
-        codes = np.delete(codes, self_id, axis=0)
-        offsets = np.delete(offsets, self_id, axis=0)
-    elif self_at_last:
-        neighbours = np.roll(neighbours, -1, axis=0)
-        codes = np.roll(codes, -1, axis=0)
-        offsets = np.roll(offsets, -1, axis=0)
-    return neighbours, codes, offsets
 
 
 def find_ambiguous(
@@ -500,31 +415,6 @@ def compute_towards_low(
     return z_syn
 
 
-def _compute_masked_flowdir_py(
-    z: npt.NDArray[np.integer | np.floating],
-    labels: npt.NDArray[np.integer],
-    directions: D8Directions = D8Directions(),
-) -> npt.NDArray[np.integer]:
-    neighbours, codes, _ = get_neighbour_values(
-        z,
-        directions=directions,
-        include_self=True,
-        pad_value=z.max() + 1,
-    )
-    neighbour_labels, _, _ = get_neighbour_values(
-        labels, directions=directions, include_self=True, pad_value=-1
-    )
-    # Mask neighbours that are not in the same flat
-    neighbours = np.where(
-        neighbour_labels != labels[np.newaxis, :, :], np.inf, neighbours
-    )
-    min_indices = np.argmin(neighbours, axis=0)
-    flowdir = codes[min_indices]
-    flowdir[labels == 0] = 0
-
-    return flowdir
-
-
 def compute_masked_flowdir(
     z: npt.NDArray[np.integer | np.floating],
     labels: npt.NDArray[np.integer],
@@ -555,6 +445,8 @@ def compute_masked_flowdir(
     """
     match backend:
         case "python":
+            from .flowdir_py import _compute_masked_flowdir_py
+
             flowdir = _compute_masked_flowdir_py(z, labels, directions=directions)
         case "fortran":
             flowdir = flowdir_f.compute_synthetic_flowdir(
@@ -728,38 +620,6 @@ def compute_indegree(
             )
 
     return indegree.astype(np.int8, order="F")
-
-
-def compute_downstream_indices(
-    *args, **kwargs
-) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.integer], npt.NDArray[np.int32]]:
-    """
-    Computes the downstream indices for each cell in a flow direction grid.
-
-    Parameters
-    ----------
-    flowdirs : NDArray[int]
-        A 2D array representing the flow directions for each cell.
-    directions : D8Directions, optional
-        An instance of D8Directions defining the flow direction scheme.
-        Default is D8Directions().
-    valids : NDArray[bool], optional
-        A boolean mask array indicating valid cells in the flow direction grid.
-        If None, all cells are considered valid.
-        Default is None.
-
-    Returns
-    -------
-    dsi : NDArray[int]
-        A 2D array of downstream row indices for each cell.
-    dsj : NDArray[int]
-        A 2D array of downstream column indices for each cell.
-    dsij : NDArray[int32]
-        A 2D array of flattened downstream indices for each cell.
-    """
-    from .flowdir_py import _compute_downstream_indices_py
-
-    return _compute_downstream_indices_py(*args, **kwargs)
 
 
 def compute_flowdir_graph(

@@ -5,70 +5,60 @@
 import numpy as np
 
 from formosa.geomorphology.d8directions import D8Directions
+from .aux import get_neighbour_values, compute_downstream_indices
+
 import numpy.typing as npt
 from typing import Optional
 
 
-def _compute_downstream_indices_py(
-    flowdirs: npt.NDArray[np.integer],
+def _compute_flowdir_simple_py(
+    dem: npt.NDArray[np.number],
     directions: D8Directions = D8Directions(),
-    valids: Optional[npt.NDArray[np.bool_]] = None,
-) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.integer], npt.NDArray[np.int32]]:
-    """
-    Computes the downstream indices for each cell in a flow direction grid.
-
-    Parameters
-    ----------
-    flowdirs : NDArray[int]
-        A 2D array representing the flow directions for each cell.
-    directions : D8Directions, optional
-        An instance of D8Directions defining the flow direction scheme.
-        Default is D8Directions().
-    valids : NDArray[bool], optional
-        A boolean mask array indicating valid cells in the flow direction grid.
-        If None, all cells are considered valid.
-        Default is None.
-
-    Returns
-    -------
-    dsi : NDArray[int]
-        A 2D array of downstream row indices for each cell.
-    dsj : NDArray[int]
-        A 2D array of downstream column indices for each cell.
-    dsij : NDArray[int32]
-        A 2D array of flattened downstream indices for each cell.
-    """
-    if valids is None:
-        valids = ~np.isnan(flowdirs)
-    elif isinstance(valids, np.ndarray):
-        assert (
-            valids.shape == flowdirs.shape
-        ), f"Shapes for flow direction ({flowdirs.shape}) and valid mask ({valids.shape}) do not match."
-    else:
-        raise TypeError(
-            f"Expected valids to be None or np.ndarray, got {type(valids)} instead."
-        )
-
-    I, J = flowdirs.shape
-    ii, jj = np.meshgrid(
-        np.arange(I, dtype=np.int32), np.arange(J, dtype=np.int32), indexing="ij"
+) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.bool_]]:
+    neighbours, codes, _ = get_neighbour_values(
+        dem, directions=directions, include_self=True, pad_value=np.max(dem) + 1
     )
-    di, dj = directions.code2d8offset(flowdirs)
-    dsi = (ii.astype(np.int16) + (di).astype(np.int16)).astype(np.int16)
-    dsj = (jj.astype(np.int16) + (dj).astype(np.int16)).astype(np.int16)
-    dsij: npt.NDArray[np.int32] = dsj.astype(np.int32) * I + dsi.astype(np.int32)
+    flow2self_code = np.where(np.all(directions.offsets == [0, 0], axis=1))[0][0]
+    flowdir = np.full(dem.shape, flow2self_code, dtype=np.int32)
+    # find where not all neighbours are nan
+    valid_mask = ~np.all(np.isnan(neighbours), axis=0)
+    flowdir[valid_mask] = np.nanargmin(neighbours[:, valid_mask], axis=0)
 
-    if np.any((dsi < 0) | (dsi >= I) | (dsj < 0) | (dsj >= J)):
-        raise ValueError("Some downstream indices out of bounds")
+    flowdir = codes[flowdir].astype(np.int32)
+    is_flat = flowdir == 0
+    return flowdir, is_flat
 
-    return dsi, dsj, dsij
+
+def _compute_masked_flowdir_py(
+    z: npt.NDArray[np.integer | np.floating],
+    labels: npt.NDArray[np.integer],
+    directions: D8Directions = D8Directions(),
+) -> npt.NDArray[np.integer]:
+    neighbours, codes, _ = get_neighbour_values(
+        z,
+        directions=directions,
+        include_self=True,
+        pad_value=z.max() + 1,
+    )
+    neighbour_labels, _, _ = get_neighbour_values(
+        labels, directions=directions, include_self=True, pad_value=-1
+    )
+    # Mask neighbours that are not in the same flat
+    neighbours = np.where(
+        neighbour_labels != labels[np.newaxis, :, :], np.inf, neighbours
+    )
+    min_indices = np.argmin(neighbours, axis=0)
+    flowdir = codes[min_indices]
+    flowdir[labels == 0] = 0
+
+    return flowdir
 
 
 def _compute_indegree_py(
     flowdirs: npt.NDArray[np.integer], directions: D8Directions = D8Directions()
 ) -> npt.NDArray[np.integer]:
     indegree = np.zeros(flowdirs.shape, dtype=np.int32)
-    dsi, dsj, _ = _compute_downstream_indices_py(flowdirs, directions=directions)
+    dsi, dsj, _ = compute_downstream_indices(flowdirs, directions=directions)
 
     for flowdir in np.unique(flowdirs):
         if flowdir == 0:
@@ -120,7 +110,7 @@ def _compute_flow_accumulation_py(
         weights = np.where(valids, weights, 0)  # type: ignore
 
     if dsij is None:
-        _, _, dsij = _compute_downstream_indices_py(flowdirs, directions=directions)
+        _, _, dsij = compute_downstream_indices(flowdirs, directions=directions)
     else:
         assert (
             dsij.shape == flowdirs.shape
@@ -162,10 +152,8 @@ def _compute_strahler_order_py(
     from collections import deque
 
     if indegrees is None:
-        from .flowdir_py import _compute_indegree_py
-
         indegrees = _compute_indegree_py(flowdir, directions=directions)
-    downstream_i, downstreamj, _ = _compute_downstream_indices_py(
+    downstream_i, downstreamj, _ = compute_downstream_indices(
         flowdir, directions=directions
     )
 
