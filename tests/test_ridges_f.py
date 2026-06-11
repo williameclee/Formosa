@@ -1,3 +1,7 @@
+# Last modified
+#   2026-06-09, En-Chi Lee (williameclee@gmail.com)
+#     - Changed argument name: `flowdirs` -> `dirs` to match updated function signature in flowdir_f.compute_confluence_dist
+
 import pytest
 import numpy as np
 
@@ -21,7 +25,7 @@ def test_confluence_distance_2x2():
     )
 
     common_kwargs = {
-        "flowdirs": flowdirs.astype(np.uint8, order="F"),
+        "dirs": flowdirs.astype(np.uint8, order="F"),
         "x": x.astype(np.float32, order="F"),
         "y": y.astype(np.float32, order="F"),
         "offset_lookup": offset_lookup,
@@ -44,7 +48,7 @@ def test_confluence_distance_2x2():
     assert np.isclose(dists[0], 0.0)
     assert np.isclose(dists[1], 0.0)
 
-    common_kwargs["flowdirs"] = np.array([[3, 3], [5, 1]], dtype=np.uint8, order="F")
+    common_kwargs["dirs"] = np.array([[3, 3], [5, 1]], dtype=np.uint8, order="F")
 
     dists = flowdir_f.compute_confluence_dist([1, 1], [1, 2], **common_kwargs)
     assert np.isclose(dists[0], 1.0)
@@ -58,7 +62,7 @@ def test_confluence_distance_2x2():
     assert np.isclose(dists[0], 0.0)
     assert np.isclose(dists[1], 0.0)
 
-    common_kwargs["flowdirs"] = np.array([[2, 3], [1, 0]], dtype=np.uint8, order="F")
+    common_kwargs["dirs"] = np.array([[2, 3], [1, 0]], dtype=np.uint8, order="F")
 
     dists = flowdir_f.compute_confluence_dist([1, 1], [1, 2], **common_kwargs)
     assert np.isclose(dists[0], np.sqrt(2))
@@ -72,7 +76,7 @@ def test_confluence_distance_2x2():
     assert np.isclose(dists[0], np.sqrt(2))
     assert np.isclose(dists[1], 0.0)
 
-    common_kwargs["flowdirs"] = np.array([[1, 0], [1, 7]], dtype=np.uint8, order="F")
+    common_kwargs["dirs"] = np.array([[1, 0], [1, 7]], dtype=np.uint8, order="F")
 
     dists = flowdir_f.compute_confluence_dist([1, 1], [1, 2], **common_kwargs)
     assert np.isclose(dists[0], 1.0)
@@ -86,7 +90,7 @@ def test_confluence_distance_2x2():
     assert np.isclose(dists[0], 0.0)
     assert np.isclose(dists[1], 1.0)
 
-    common_kwargs["flowdirs"] = np.array([[0, 5], [7, 7]], dtype=np.uint8, order="F")
+    common_kwargs["dirs"] = np.array([[0, 5], [7, 7]], dtype=np.uint8, order="F")
 
     dists = flowdir_f.compute_confluence_dist([1, 1], [1, 2], **common_kwargs)
     assert np.isclose(dists[0], 0.0)
@@ -100,7 +104,7 @@ def test_confluence_distance_2x2():
     assert np.isclose(dists[0], 1.0)
     assert np.isclose(dists[1], 2.0)
 
-    common_kwargs["flowdirs"] = np.array([[1, 0], [8, 7]], dtype=np.uint8, order="F")
+    common_kwargs["dirs"] = np.array([[1, 0], [8, 7]], dtype=np.uint8, order="F")
 
     dists = flowdir_f.compute_confluence_dist([1, 1], [1, 2], **common_kwargs)
     assert np.isclose(dists[0], 1.0)
@@ -110,7 +114,7 @@ def test_confluence_distance_2x2():
     assert np.isclose(dists[0], 1.0)
     assert np.isclose(dists[1], np.sqrt(2))
 
-    common_kwargs["flowdirs"] = np.array([[2, 3], [1, 0]], dtype=np.uint8, order="F")
+    common_kwargs["dirs"] = np.array([[2, 3], [1, 0]], dtype=np.uint8, order="F")
 
     dists = flowdir_f.compute_confluence_dist([1, 1], [1, 2], **common_kwargs)
     assert np.isclose(dists[0], np.sqrt(2))
@@ -120,7 +124,7 @@ def test_confluence_distance_2x2():
     assert np.isclose(dists[0], np.sqrt(2))
     assert np.isclose(dists[1], 1.0)
 
-    common_kwargs["flowdirs"] = np.array([[0, 5], [7, 6]], dtype=np.uint8, order="F")
+    common_kwargs["dirs"] = np.array([[0, 5], [7, 6]], dtype=np.uint8, order="F")
 
     dists = flowdir_f.compute_confluence_dist([1, 1], [1, 2], **common_kwargs)
     assert np.isclose(dists[0], 0)
@@ -148,7 +152,7 @@ def test_confluence_distance_3x3():
     )
 
     common_kwargs = {
-        "flowdirs": flowdirs.astype(np.uint8, order="F"),
+        "dirs": flowdirs.astype(np.uint8, order="F"),
         "x": x.astype(np.float32, order="F"),
         "y": y.astype(np.float32, order="F"),
         "offset_lookup": offset_lookup,
@@ -165,7 +169,7 @@ def test_confluence_distance_3x3():
     assert np.isclose(dists[0], 2.0)
     assert np.isclose(dists[1], 0.0)
 
-    common_kwargs["flowdirs"] = np.array(
+    common_kwargs["dirs"] = np.array(
         [[5, 1, 1], [5, 1, 1], [5, 1, 1]], dtype=np.uint8, order="F"
     )
     dists = flowdir_f.compute_confluence_dist([1, 1], [1, 2], **common_kwargs)
