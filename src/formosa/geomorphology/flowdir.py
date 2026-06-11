@@ -950,7 +950,7 @@ def label_watersheds(
             from .flowdir_py import _label_watersheds_py
 
             watersheds = _label_watersheds_py(
-                flowdir=flowdir,
+                flowdirs=flowdir,
                 directions=directions,
                 valids=valids,
             )

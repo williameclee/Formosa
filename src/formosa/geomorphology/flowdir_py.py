@@ -1,6 +1,7 @@
 # Last modified
 #   2026-06-11, En-Chi Lee (williameclee@gmail.com)
 #     - Moved Python backend implementations to this file
+#     - Removed redundant NaN checks against integer arrays
 
 import numpy as np
 
@@ -182,24 +183,23 @@ def _compute_strahler_order_py(
 
 
 def _label_watersheds_py(
-    flowdir: npt.NDArray[np.integer],
+    flowdirs: npt.NDArray[np.integer],
     directions: D8Directions = D8Directions(),
     valids: Optional[npt.NDArray[np.bool_]] = None,
 ) -> npt.NDArray[np.int32]:
     if valids is None:
-        valids = ~np.isnan(flowdir)
+        valids = ~np.isnan(flowdirs)
     elif isinstance(valids, np.ndarray):
         assert (
-            valids.shape == flowdir.shape
-        ), f"Shape for flow direction ({valids.shape}) and valid mask ({flowdir.shape}) do not match."
-        valids = valids.astype(bool, copy=False) & (~np.isnan(flowdir))
-        flowdir = np.where(valids, flowdir, np.nan)
+            valids.shape == flowdirs.shape
+        ), f"Shape for flow direction ({valids.shape}) and valid mask ({flowdirs.shape}) do not match."
+        # Removed the check for NaN values in flowdirs, since integer types cannot hold NaN anyway
     else:
         raise TypeError(
             f"[FORMOSA] VALIDS must be either None or a numpy array, got {type(valids)} instead."
         )
 
-    I, J = flowdir.shape
+    I, J = flowdirs.shape
     ii, jj = np.meshgrid(
         np.arange(I, dtype=np.int32), np.arange(J, dtype=np.int32), indexing="ij"
     )
@@ -209,10 +209,10 @@ def _label_watersheds_py(
     ]
 
     seeds: list[tuple[int, int]] = list(
-        zip(ii[valids & (flowdir == 0)], jj[valids & (flowdir == 0)])
+        zip(ii[valids & (flowdirs == 0)], jj[valids & (flowdirs == 0)])
     )
 
-    watershed = -np.ones(flowdir.shape, dtype=np.int32)
+    watershed = -np.ones(flowdirs.shape, dtype=np.int32)
 
     for label, seed in enumerate(seeds):
         to_fill: list[tuple[int, int]] = [seed]
@@ -229,7 +229,7 @@ def _label_watersheds_py(
                 elif watershed[ni, nj] != -1:
                     continue
 
-                if flowdir[ni, nj] == code:
+                if flowdirs[ni, nj] == code:
                     to_fill.append((ni, nj))
     watershed = watershed + 1  # make background 0 and watersheds start from 1
     return watershed
