@@ -5,4 +5,4 @@ A Python cartography and geomorphology package, with Fortran extensions for heav
 For the style of the code, see the [style guide](STYLE_GUIDE.md).
 
 ----
-Last updated: Jun 11, 2025 ([@williameclee](https://github.com/williameclee))
+Last updated: Jun 11, 2026 ([@williameclee](https://github.com/williameclee))
