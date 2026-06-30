@@ -2,10 +2,14 @@
 #   2026-06-11, En-Chi Lee (williameclee@gmail.com)
 #     - Moved auxiliary functions to this file
 #     - Standardised variable and argument names
+#   2026-07-01, En-Chi Lee (williameclee@gmail.com)
+#     - Made out-of-bound check in `compute_downstream_indices` optional
 
 import numpy as np
 
 from formosa.geomorphology.d8directions import D8Directions
+
+import warnings
 
 import numpy.typing as npt
 from typing import Optional
@@ -85,7 +89,13 @@ def compute_downstream_indices(
     dirs: npt.NDArray[np.integer],
     dir_scheme: D8Directions = D8Directions(),
     valids: Optional[npt.NDArray[np.bool_]] = None,
-) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.integer], npt.NDArray[np.int32]]:
+    check: bool = True,
+) -> tuple[
+    npt.NDArray[np.integer],
+    npt.NDArray[np.integer],
+    npt.NDArray[np.int32],
+    npt.NDArray[np.bool_] | None,
+]:
     """
     Computes the downstream indices for each cell in a flow direction grid.
 
@@ -100,6 +110,10 @@ def compute_downstream_indices(
         A boolean mask array indicating valid cells in the flow direction grid.
         If None, all cells are considered valid.
         Default is None.
+    check : bool, optional
+        Whether to raise an error if some downstream indices are out of bounds.
+        Otherwise, only a warning is issued.
+        Default is True.
 
     Returns
     -------
@@ -109,6 +123,15 @@ def compute_downstream_indices(
         A 2D array of downstream column indices for each cell.
     dsij : NDArray[int32]
         A 2D array of flattened downstream indices for each cell.
+    ds_valids : NDArray[bool]
+        A boolean mask array indicating valid downstream cells for each cell.
+
+    Raises
+    ------
+    ValueError
+        If `check` is `True` and some downstream indices are out of bounds.
+    UserWarning
+        If `check` is `False` but some downstream indices are out of bounds.
     """
     if valids is None:
         valids = ~np.isnan(dirs)
@@ -126,11 +149,16 @@ def compute_downstream_indices(
         np.arange(I, dtype=np.int32), np.arange(J, dtype=np.int32), indexing="ij"
     )
     di, dj = dir_scheme.code2d8offset(dirs)
-    dsi = (ii.astype(np.int16) + (di).astype(np.int16)).astype(np.int16)
-    dsj = (jj.astype(np.int16) + (dj).astype(np.int16)).astype(np.int16)
+    dsi = (ii.astype(np.int32) + (di).astype(np.int32)).astype(np.int16)
+    dsj = (jj.astype(np.int32) + (dj).astype(np.int32)).astype(np.int16)
     dsij: npt.NDArray[np.int32] = dsj.astype(np.int32) * I + dsi.astype(np.int32)
 
-    if np.any((dsi < 0) | (dsi >= I) | (dsj < 0) | (dsj >= J)):
+    invalid = (dsi < 0) | (dsi >= I) | (dsj < 0) | (dsj >= J)
+    if not np.any(invalid):
+        return dsi, dsj, dsij, np.full(dirs.shape, True, dtype=bool)
+
+    if check:
         raise ValueError("Some downstream indices out of bounds")
 
-    return dsi, dsj, dsij
+    warnings.warn("Some downstream indices out of bounds", UserWarning)
+    return dsi, dsj, dsij, ~invalid

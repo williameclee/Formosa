@@ -16,6 +16,9 @@
 #     - Added `x` and `y` into `compute_dist2source` in `compute_dist2ridge`
 #     - Changed strahler order output to 8-bit unsigned integer
 #     - Added functions `compute_ridgedir` and `compute_ridge_strahler_order`
+#   2026-07-01, En-Chi Lee (williameclee@gmail.com)
+#     - Opted out of the out-of-bound check in `compute_downstream_indices` in `create_flowgraph`
+
 
 import numpy as np
 
@@ -616,7 +619,7 @@ def create_flowgraph(
     ----------
     dirs : NDArray[int]
         A 2D array representing the flow directions for each cell.
-    valid : NDArray[bool], optional
+    valids : NDArray[bool], optional
         A boolean mask array indicating valid cells in the flow direction grid.
         If `None`, all cells are considered valid.
         Default is `None`.
@@ -651,27 +654,33 @@ def create_flowgraph(
         np.arange(dirs.shape[1], dtype=np.int32),
         indexing="ij",
     )
-    dsi, dsj, _ = compute_downstream_indices(dirs, dir_scheme=dir_scheme)
+    dsi, dsj, _, ds_valids = compute_downstream_indices(
+        dirs, dir_scheme=dir_scheme, check=False
+    )
 
     if x is not None and y is not None:
         j, i = x, y
 
         # Map i,j to actual coordinates
-        dsj, dsi = x[dsi, dsj], y[dsi, dsj]
+        dsx = np.full_like(dsj, np.nan, dtype=np.float64)
+        dsy = np.full_like(dsj, np.nan, dtype=np.float64)
+        dsx[ds_valids] = x[dsi[ds_valids], dsj[ds_valids]]
+        dsy[ds_valids] = y[dsi[ds_valids], dsj[ds_valids]]
+        dsi, dsj = dsy, dsx
 
     graphi = np.stack(
         (
-            i[valids],
-            dsi[valids],
-            np.full(i[valids].size, np.nan),
+            i[valids & ds_valids],
+            dsi[valids & ds_valids],
+            np.full(i[valids & ds_valids].size, np.nan),
         ),
         axis=1,
     ).ravel(order="C")
     graphj = np.stack(
         (
-            j[valids],
-            dsj[valids],
-            np.full(j[valids].size, np.nan),
+            j[valids & ds_valids],
+            dsj[valids & ds_valids],
+            np.full(j[valids & ds_valids].size, np.nan),
         ),
         axis=1,
     ).ravel(order="C")
