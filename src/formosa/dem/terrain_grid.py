@@ -6,6 +6,8 @@
 #     - Removed Numpy type `np.bool` to either `np.bool_` or `bool` for compatibility with newer Numpy versions
 #   2026-06-11, En-Chi Lee (williameclee@gmail.com)
 #     - Updated function and argument names to match the standardised names
+#   2026-06-30, En-Chi Lee (williameclee@gmail.com)
+#     - Added aliases to properties
 
 from pathlib import Path
 import warnings
@@ -222,13 +224,15 @@ class DEMGrid:
         self._flowdir: None | npt.NDArray[np.integer] = None
         self._indegree: None | npt.NDArray[np.integer] = None
         self._accumulation: None | npt.NDArray[np.integer | np.floating] = None
-        self._strahler_order: None | npt.NDArray[np.integer] = None
+        self._strahler_order: None | npt.NDArray[np.uint8] = None
         self._watershed: None | npt.NDArray[np.int32] = None
         self._graphx = None
         self._graphy = None
         self._flowdist: None | npt.NDArray[np.floating] = None
         self._backdist: None | npt.NDArray[np.floating] = None
         self._bmax: None | npt.NDArray[np.floating] = None
+        self._ridgedir: None | npt.NDArray[np.float32] = None
+        self._ridge_strahler_order: None | npt.NDArray[np.float32] = None
         self._ridge_dist: None | npt.NDArray[np.float32] = None
 
     @property
@@ -292,7 +296,7 @@ class DEMGrid:
         return self._accumulation
 
     @property
-    def strahler_order(self) -> npt.NDArray[np.integer]:
+    def strahler_order(self) -> npt.NDArray[np.uint8]:
         if self._strahler_order is None:
             self._strahler_order = compute_flow_strahler_order(
                 self.flowdir,
@@ -307,7 +311,7 @@ class DEMGrid:
         return self
 
     @property
-    def flow_distance(self) -> npt.NDArray[np.floating]:
+    def dist2source(self) -> npt.NDArray[np.floating]:
         if self._flowdist is None:
             self._flowdist = compute_dist2source(
                 self.flowdir,
@@ -318,6 +322,10 @@ class DEMGrid:
                 indegs=self.indegree,
             )
         return self._flowdist
+
+    @property
+    def flow_distance(self) -> npt.NDArray[np.floating]:
+        return self.dist2source
 
     @property
     def watersheds(self) -> npt.NDArray[np.int32]:
@@ -332,7 +340,7 @@ class DEMGrid:
         return self._watershed
 
     @property
-    def backdist(self) -> npt.NDArray[np.floating]:
+    def dist2sink(self) -> npt.NDArray[np.floating]:
         if self._backdist is not None:
             return self._backdist
 
@@ -344,6 +352,10 @@ class DEMGrid:
             valids=self.valid,
         )
         return self._backdist
+
+    @property
+    def backdist(self) -> npt.NDArray[np.floating]:
+        return self.dist2sink
 
     @property
     def bmax(self) -> npt.NDArray[np.floating]:
@@ -362,6 +374,18 @@ class DEMGrid:
 
     @property
     def ridge_dist(self) -> npt.NDArray[np.floating]:
+        """
+        'Distance' to the ridge, approximated by the distance to sink in the maximum confluence distance landscape.
+
+        Returns
+        -------
+        dist : npt.NDArray[np.float32]
+            Distance to the ridge, approximated by the distance to sink in the maximum confluence distance landscape.
+        """
+        return self.dist2ridge
+
+    @property
+    def dist2ridge(self) -> npt.NDArray[np.floating]:
         """
         'Distance' to the ridge, approximated by the distance to sink in the maximum confluence distance landscape.
 
