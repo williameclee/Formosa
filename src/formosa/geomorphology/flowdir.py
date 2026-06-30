@@ -3,8 +3,8 @@
 #     - Rename flowdir functions to be more descriptive
 #   2026-06-09, En-Chi Lee (williameclee@gmail.com)
 #     - Added `compute_flow_dist2ridge` function to compute 'distance to ridges'
-#     - Added error for missing Fortran backend
-#     - Removed Numpy type `np.bool` to either `np.bool_` or `bool` for compatibility with newer Numpy versions
+#     - Added error for missing FORTRAN backend
+#     - Removed NumPy type `np.bool` to either `np.bool_` or `bool` for compatibility with newer Numpy versions
 #     - Renamed Fortran function call: `compute_masked_flowdir` -> `compute_synthetic_flowdir`
 #     - Added `valids` argument to `label_flats` function
 #   2026-06-10, En-Chi Lee (williameclee@gmail.com)
@@ -12,6 +12,8 @@
 #   2026-06-11, En-Chi Lee (williameclee@gmail.com)
 #     - Moved Python backend implementations and auxiliary functions to separate files
 #     - Standardised variable, argument, and function names
+#   2026-06-30, En-Chi Lee (williameclee@gmail.com)
+#     - Added `x` and `y` into `compute_dist2source` in `compute_dist2ridge`
 
 import numpy as np
 
@@ -1136,5 +1138,7 @@ def compute_dist2ridge(
     bmaxdirs, _, _ = compute_flowdir(
         -bmax, dir_scheme=dir_scheme, valids=valids, fill_depression=True
     )
-    bmaxdists = compute_dist2source(bmaxdirs, dir_scheme=dir_scheme, valids=valids)
+    bmaxdists = compute_dist2source(
+        bmaxdirs, dir_scheme=dir_scheme, x=x, y=y, valids=valids
+    )
     return bmaxdists
