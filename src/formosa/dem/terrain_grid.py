@@ -8,6 +8,7 @@
 #     - Updated function and argument names to match the standardised names
 #   2026-06-30, En-Chi Lee (williameclee@gmail.com)
 #     - Added aliases to properties
+#     - Added properties `ridgedir` and `ridge_strahler_order`
 
 from pathlib import Path
 import warnings
@@ -30,7 +31,9 @@ from formosa.geomorphology import (
     compute_dist2source,
     compute_dist2sink,
     compute_dist2conf_max,
+    compute_ridgedir,
     compute_dist2ridge,
+    compute_ridge_strahler_order,
     label_watersheds,
 )
 
@@ -231,8 +234,8 @@ class DEMGrid:
         self._flowdist: None | npt.NDArray[np.floating] = None
         self._backdist: None | npt.NDArray[np.floating] = None
         self._bmax: None | npt.NDArray[np.floating] = None
-        self._ridgedir: None | npt.NDArray[np.float32] = None
-        self._ridge_strahler_order: None | npt.NDArray[np.float32] = None
+        self._ridgedir: None | npt.NDArray[np.uint8] = None
+        self._ridge_strahler_order: None | npt.NDArray[np.uint8] = None
         self._ridge_dist: None | npt.NDArray[np.float32] = None
 
     @property
@@ -385,6 +388,20 @@ class DEMGrid:
         return self.dist2ridge
 
     @property
+    def ridgedir(self) -> npt.NDArray[np.uint8]:
+        if self._ridgedir is not None:
+            return self._ridgedir
+        self._ridgedir = compute_ridgedir(
+            self.flowdir,
+            dir_scheme=self.directions,
+            valids=self.valid,
+            x=self.x,
+            y=self.y,
+            watershed_labels=self.watersheds,
+        )
+        return self._ridgedir
+
+    @property
     def dist2ridge(self) -> npt.NDArray[np.floating]:
         """
         'Distance' to the ridge, approximated by the distance to sink in the maximum confluence distance landscape.
@@ -399,14 +416,26 @@ class DEMGrid:
             return self._ridge_dist
 
         self._ridge_dist = compute_dist2ridge(
-            self.flowdir.astype(np.uint8, order="F"),
+            self.ridgedir,
             valids=self.valid.astype(np.bool_, order="F"),
             x=self.x.astype(np.float32, order="F"),
             y=self.y.astype(np.float32, order="F"),
-            watershed_labels=self.watersheds.astype(np.int32, order="F"),
             dir_scheme=self.directions,
+            dir_is_ridge=True,
         )
         return self._ridge_dist
+
+    @property
+    def ridge_strahler_order(self) -> npt.NDArray[np.uint8]:
+        if self._ridge_strahler_order is not None:
+            return self._ridge_strahler_order
+        self._ridge_strahler_order = compute_ridge_strahler_order(
+            self.ridgedir,
+            dir_scheme=self.directions,
+            valids=self.valid,
+            dir_is_ridge=True,
+        )
+        return self._ridge_strahler_order
 
 
 def detect_ocean_mask(dem, ocean_threshold: int | float = 0):
