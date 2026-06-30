@@ -9,6 +9,8 @@
 #   2026-06-30, En-Chi Lee (williameclee@gmail.com)
 #     - Added aliases to properties
 #     - Added properties `ridgedir` and `ridge_strahler_order`
+#   2026-07-01, En-Chi Lee (williameclee@gmail.com)
+#     - Added property `shape`
 
 from pathlib import Path
 import warnings
@@ -237,6 +239,10 @@ class DEMGrid:
         self._ridgedir: None | npt.NDArray[np.uint8] = None
         self._ridge_strahler_order: None | npt.NDArray[np.uint8] = None
         self._ridge_dist: None | npt.NDArray[np.float32] = None
+
+    @property
+    def shape(self) -> tuple[int]:
+        return self.dem.shape
 
     @property
     def slope(self) -> npt.NDArray[np.floating | np.integer]:
