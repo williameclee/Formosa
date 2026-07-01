@@ -15,6 +15,7 @@
 !     - Fixed Strahler order algorithm
 !     - Optimised confluence lookup algorithm
 !     - Changed index array shape to optimise cache locality
+!     - Allowed specifying validity mask in 'count_indegree'
 !!!
 
 module flowdir_utils
@@ -777,7 +778,7 @@ contains
     end subroutine create_pulling_syn_grad
 
     subroutine count_indegree( &
-        dirs, indegs, nrows, ncols, &
+        dirs, valids, indegs, nrows, ncols, &
         offsets, codes, noffsets)
         !! Computes the number of upstream cells (indegs) for each cell
         !! in a flow direction grid.
@@ -787,6 +788,8 @@ contains
             !! Size of the grid
         integer*1, intent(in) :: dirs(nrows, ncols)
             !! Flow direction grid, using the provided codes
+        logical*1, intent(in) :: valids(nrows, ncols)
+            !! Validity mask (true for valid cells, false for no-data)
         integer, intent(in) :: noffsets
             !! Number of flow directions
         integer, intent(in) :: offsets(noffsets, 2)
@@ -809,6 +812,8 @@ contains
         !$omp SCHEDULE(STATIC)
         do cj = 1, ncols
             do ci = 1, nrows
+                if (.not. valids(ci, cj)) cycle
+
                 ! Loop over offsets to find neighbours flowing into current cell
                 do iofs = 1, noffsets
                     ! Upstream neighbour indices
@@ -816,6 +821,8 @@ contains
                     nj = cj - offsets(iofs, 2)
                     ! Check bounds
                     if (ni < 1 .or. ni > nrows .or. nj < 1 .or. nj > ncols) cycle
+                    ! Check if neighbour is valid
+                    if (.not. valids(ni, nj)) cycle
                     ! Skip self-loops
                     if (ni == ci .and. nj == cj) cycle
                     ! Check if neighbour flows into current cell

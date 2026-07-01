@@ -18,6 +18,7 @@
 #     - Added functions `compute_ridgedir` and `compute_ridge_strahler_order`
 #   2026-07-01, En-Chi Lee (williameclee@gmail.com)
 #     - Opted out of the out-of-bound check in `compute_downstream_indices` in `create_flowgraph`
+#     - Allowed specifying validity mask in `count_indegree`
 
 
 import numpy as np
@@ -568,6 +569,7 @@ def compute_flowdir(
 def count_indegree(
     dirs: npt.NDArray[np.integer],
     dir_scheme: D8Directions = D8Directions(),
+    valids: Optional[npt.NDArray[np.bool_]] = None,
     backend: Literal["fortran", "python"] = "fortran",
 ) -> npt.NDArray[np.int8]:
     """
@@ -576,10 +578,14 @@ def count_indegree(
     Parameters
     ----------
     dirs : NDArray[int]
-        A 2D array representing the flow directions for each cell.
+        2D array representing the flow directions for each cell
     dir_scheme : D8Directions, optional
-        An instance of `D8Directions` defining the flow direction scheme.
+        An instance of `D8Directions` defining the flow direction scheme
         Default is `D8Directions()`.
+    valids : NDArray[int], optional
+        2D array mask indicating whether the cell is valid
+        If not provided, all cells are assumed to be valid.
+        Default is `None`.
     backend : {'fortran', 'python'}, optional
         The backend to use for computation. 'fortran' uses the Fortran extension for performance, while 'python' uses a pure Python implementation.
         Note: the Python implementation is unmaintained.
@@ -596,8 +602,11 @@ def count_indegree(
 
             indegs = _count_indegree_py(dirs, dir_scheme=dir_scheme)
         case "fortran":
+            if valids is None:
+                valids = np.ones(dirs.shape, dtype=bool, order="F")
             indegs = flowdir_f.count_indegree(
                 dirs.astype(np.uint8, order="F"),
+                valids.astype(bool, order="F"),
                 dir_scheme.offsets.astype(np.int32, order="F"),
                 dir_scheme.codes.astype(np.uint8, order="F"),
             )
