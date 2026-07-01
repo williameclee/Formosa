@@ -13,6 +13,7 @@
 !     - Standardised variable, argument, and function names
 !   2026-07-01, En-Chi Lee (williameclee@gmail.com)
 !     - Fixed Strahler order algorithm
+!     - Optimised confluence lookup algorithm
 !!!
 
 module flowdir_utils
@@ -1584,7 +1585,12 @@ contains
         integer :: nneighbour, neighbour_offsets(4, 2)
         integer :: ci, cj, ni, nj
             !! Rows/columns for current and neighbour cells
-        integer :: maxlen, path1id, path2id
+        integer :: maxlen
+            !! Maximum path length to search before giving up and assuming no confluence
+            !! It should be large enough to allow confluence but prevent infinite loops in case of errors.
+        integer :: path1id, path2id
+            !! IDs of the first and second paths to check for confluence
+            !! When incrementing, each ID is of 'maxlen' apart such that 'path1id + ilen' is unique, which allows for more efficient confluence lookup.
         integer, allocatable :: path1(:, :), path2(:, :), visited(:, :)
         logical*1, allocatable :: is_max_dist(:, :)
 
@@ -1608,12 +1614,12 @@ contains
         !$omp PARALLEL DEFAULT(SHARED) &
         !$omp PRIVATE(ci, cj, ni, nj, nneighbour, dists) &
         !$omp PRIVATE(path1, path2, path1id, path2id, visited)
-        allocate (path1(maxlen, 2))
-        allocate (path2(maxlen, 2))
+        allocate (path1(2, maxlen))
+        allocate (path2(2, maxlen))
         allocate (visited(nrows, ncols))
         visited = 0
         path1id = 1
-        path2id = 2
+        path2id = 1 + maxlen
         !$omp DO SCHEDULE(DYNAMIC) &
         !$omp COLLAPSE(2)
         do cj = 1, ncols
@@ -1643,13 +1649,13 @@ contains
                         is_max_dist(ni, nj) = .true.
                     end if
 
-                    if (path1id > 2147483640) then
+                    if (path1id > 2147483640 - 2*maxlen) then
                         visited = 0
                         path1id = 1
-                        path2id = 2
+                        path2id = 1 + maxlen
                     end if
-                    path1id = path1id + 2
-                    path2id = path2id + 2
+                    path1id = path1id + 2*maxlen
+                    path2id = path2id + 2*maxlen
                 end do
             end do
         end do
@@ -1666,6 +1672,7 @@ contains
         dists, &
         s1ij, s2ij, dirs, x, y, &
         offset_lookup, check_flag)
+        !! Traces flow paths from two seed cells downstream to compute their confluence distance.
         implicit none
         ! Arguments
         integer, intent(in) :: s1ij(2), s2ij(2)
@@ -1684,14 +1691,21 @@ contains
         ! Local variables
         logical*1 :: check_flag_
         integer :: maxpathlen
+            !! Maximum path length to search before giving up and assuming no confluence
+            !! It should be large enough to allow confluence but prevent infinite loops in case of errors.
         integer :: id1, id2
+            !! IDs of the first and second paths to check for confluence
+            !! When incrementing, each ID is of 'maxpathlen' apart such that 'path1id + ilen' is unique, which allows for more efficient confluence lookup.
         integer, allocatable :: path1(:, :), path2(:, :), visited(:, :)
 
         maxpathlen = 4*(size(dirs, 1) + size(dirs, 2))
         id1 = 1
-        id2 = 2
-        allocate (path1(maxpathlen, 2))
-        allocate (path2(maxpathlen, 2))
+        ! Storing path step offset in visited grid requires id1 and id2 to have disjoint active value ranges.
+        ! id1 uses values in [id1, id1 + maxpathlen - 1].
+        ! id2 uses values in [id2, id2 + maxpathlen - 1].
+        id2 = 1 + maxpathlen
+        allocate (path1(2, maxpathlen))
+        allocate (path2(2, maxpathlen))
         allocate (visited(size(dirs, 1), size(dirs, 2)))
         visited = 0
 
@@ -1710,6 +1724,21 @@ contains
     subroutine inner_compute_confluence_dist( &
         dists, s1i, s1j, s2i, s2j, dirs, x, y, &
         offset_lookup, maxpathlen, path1, path2, visited, id1, id2, check_flag)
+        !! Inner routine for computing the confluence distance between two seed cells.
+        !!
+        !! The 'visited' grid tracks cell visits. It stores the
+        !! exact path step index: 'id + ipath - 1'. If 'visited(n1i, n1j)' is in the range
+        !! [id2, id2 + npath2 - 1], it means Path 2 has already visited this cell. The index
+        !! at which the confluence occurs in Path 2 is then retrieved instantly via:
+        !! 'iconf2 = visited(n1i, n1j) - id2 + 1'. This avoids an O(N) linear search over the path.
+        !!
+        !! 2. Cache Locality (Column-Major Order):
+        !!    Workspace path arrays are sized (2, maxpathlen) so that the row and column indices
+        !!    for a given path step are adjacent in memory, minimizing cache misses.
+        !!
+        !! 3. Fast Euclidean Distance:
+        !!    Inline 'sqrt(dx*dx + dy*dy)' is used instead of the more expensive 'hypot' function,
+        !!    as coordinates are bounded and do not present underflow/overflow risk here.
         implicit none
         ! Inputs
         integer, intent(in) :: s1i, s1j, s2i, s2j
@@ -1723,9 +1752,10 @@ contains
         logical*1, intent(in), optional :: check_flag
             !! Flag for whether to check for confluence at each step (can be turned off for performance if many confluences are expected)
         integer, intent(in) :: maxpathlen
-            !! Maximum path length to search before giving up and assuming no confluence (should be large enough to allow confluence but prevent infinite loops in case of errors)
-        integer, intent(inout) :: path1(maxpathlen, 2), path2(maxpathlen, 2)
-            !! Workspace arrays for paths and visited grid (to avoid repeated allocation in recursive calls)
+            !! Maximum path length to search before giving up and assuming no confluence
+            !! It should be large enough to allow confluence but prevent infinite loops in case of errors.
+        integer, intent(inout) :: path1(2, maxpathlen), path2(2, maxpathlen)
+            !! Workspace arrays for paths and visited grid
         integer, intent(inout) :: visited(:, :)
             !! Grid to track visited paths by ids
         ! Outputs
@@ -1744,6 +1774,8 @@ contains
             !! Flow direction codes for current cells in paths
         logical*1 :: is_active1, is_active2, local_check_flag
             !! Flags for whether each path is still active (has not reached max length or invalid cell) and local copy of check_flag for performance
+        real :: dx, dy
+            !! Differences in coordinates for distance calculations
 
         !! Initialisation and checks
         local_check_flag = (.not. present(check_flag)) .or. check_flag
@@ -1762,19 +1794,19 @@ contains
 
         !! Main algorithm
         npath1 = 1
-        path1(npath1, 1) = s1i
-        path1(npath1, 2) = s1j
+        path1(1, npath1) = s1i
+        path1(2, npath1) = s1j
         visited(s1i, s1j) = id1
         npath2 = 1
-        path2(npath2, 1) = s2i
-        path2(npath2, 2) = s2j
+        path2(1, npath2) = s2i
+        path2(2, npath2) = s2j
         visited(s2i, s2j) = id2
 
         tracer_loop: do while (is_active1 .or. is_active2)
             path1_prc: block
                 if (.not. is_active1) exit path1_prc
                 ! Make sure code is valid
-                code1 = dirs(path1(npath1, 1), path1(npath1, 2))
+                code1 = dirs(path1(1, npath1), path1(2, npath1))
                 if (code1 < lbound(offset_lookup, 1) .or. code1 > ubound(offset_lookup, 1)) then
                     iconf1 = npath1
                     is_active1 = .false.
@@ -1786,8 +1818,8 @@ contains
                 end if
 
                 ! Compute next step
-                n1i = path1(npath1, 1) + offset_lookup(code1, 1)
-                n1j = path1(npath1, 2) + offset_lookup(code1, 2)
+                n1i = path1(1, npath1) + offset_lookup(code1, 1)
+                n1j = path1(2, npath1) + offset_lookup(code1, 2)
                 if (n1i < 1 .or. n1i > size(dirs, 1) .or. n1j < 1 .or. n1j > size(dirs, 2)) then
                     iconf1 = npath1
                     is_active1 = .false.
@@ -1799,9 +1831,10 @@ contains
                     exit path1_prc
                 end if
                 npath1 = npath1 + 1
-                path1(npath1, :) = [n1i, n1j]
-                ! Check for self-intersection
-                if (visited(n1i, n1j) == id1) then
+                path1(1, npath1) = n1i
+                path1(2, npath1) = n1j
+                ! Check for self-intersection (value lies within Path 1's active range of IDs for the current run)
+                if (visited(n1i, n1j) >= id1 .and. visited(n1i, n1j) < id1 + npath1 - 1) then
                     print *, "[CONFLUENCE_DISTANCE] Warning: Path 1 self-intersection at ", n1i, ",", n1j
                     iconf1 = npath1
                     is_active1 = .false.
@@ -1809,26 +1842,22 @@ contains
                 end if
                 ! Check if enters a visited cell
                 if (.not. local_check_flag) exit path1_prc
-                if (visited(n1i, n1j) /= id2) then
-                    visited(n1i, n1j) = id1
+                ! If the cell wasn't visited by Path 2 in the current run (value not in Path 2's ID range),
+                ! mark it with Path 1's base ID + step offset, and continue tracing.
+                if (visited(n1i, n1j) < id2 .or. visited(n1i, n1j) >= id2 + npath2) then
+                    visited(n1i, n1j) = id1 + npath1 - 1
                     exit path1_prc
                 end if
-                ! Confluence found
-                do ipath2 = 1, npath2
-                    if (.not. all(path2(ipath2, :) == [n1i, n1j])) cycle
-                    iconf1 = npath1
-                    iconf2 = ipath2
-                    exit tracer_loop
-                    if (ipath2 < npath2) cycle
-                    print *, "[CONFLUENCE_DISTANCE] Error: Confluence promised but not found"
-                    iconf1 = npath1
-                end do
+                ! Confluence found: retrieve the exact matching index in Path 2 in O(1) time
+                iconf1 = npath1
+                iconf2 = visited(n1i, n1j) - id2 + 1
+                exit tracer_loop
             end block path1_prc
 
             path2_prc: block
                 if (.not. is_active2) exit path2_prc
                 ! Make sure code is valid
-                code2 = dirs(path2(npath2, 1), path2(npath2, 2))
+                code2 = dirs(path2(1, npath2), path2(2, npath2))
                 if (code2 < lbound(offset_lookup, 1) .or. code2 > ubound(offset_lookup, 1)) then
                     iconf2 = npath2
                     is_active2 = .false.
@@ -1838,8 +1867,8 @@ contains
                     is_active2 = .false.
                     exit path2_prc
                 end if
-                n2i = path2(npath2, 1) + offset_lookup(code2, 1)
-                n2j = path2(npath2, 2) + offset_lookup(code2, 2)
+                n2i = path2(1, npath2) + offset_lookup(code2, 1)
+                n2j = path2(2, npath2) + offset_lookup(code2, 2)
                 if (n2i < 1 .or. n2i > size(dirs, 1) .or. n2j < 1 .or. n2j > size(dirs, 2)) then
                     iconf2 = npath2
                     is_active2 = .false.
@@ -1851,9 +1880,10 @@ contains
                     exit path2_prc
                 end if
                 npath2 = npath2 + 1
-                path2(npath2, :) = [n2i, n2j]
-                ! Check for self-intersection
-                if (visited(n2i, n2j) == id2) then
+                path2(1, npath2) = n2i
+                path2(2, npath2) = n2j
+                ! Check for self-intersection (value lies within Path 2's active range of IDs for the current run)
+                if (visited(n2i, n2j) >= id2 .and. visited(n2i, n2j) < id2 + npath2 - 1) then
                     print *, "[CONFLUENCE_DISTANCE] Warning: Path 2 self-intersection at ", n2i, ",", n2j
                     iconf2 = npath2
                     is_active2 = .false.
@@ -1861,33 +1891,29 @@ contains
                 end if
                 ! Check if enters a visited cell
                 if (.not. local_check_flag) exit path2_prc
-                if (visited(n2i, n2j) /= id1) then
-                    visited(n2i, n2j) = id2
+                ! If the cell wasn't visited by Path 1 in the current run (value not in Path 1's ID range),
+                ! mark it with Path 2's base ID + step offset, and continue tracing.
+                if (visited(n2i, n2j) < id1 .or. visited(n2i, n2j) >= id1 + npath1) then
+                    visited(n2i, n2j) = id2 + npath2 - 1
                     exit path2_prc
                 end if
-                ! Confluence found
-                do ipath1 = 1, npath1
-                    if (.not. all(path1(ipath1, :) == [n2i, n2j])) cycle
-                    iconf1 = ipath1
-                    iconf2 = npath2
-                    exit tracer_loop
-                    if (ipath1 < npath1) cycle
-                    print *, "[CONFLUENCE_DISTANCE] Error: Confluence promised but not found"
-                    iconf2 = npath2
-                end do
+                ! Confluence found: retrieve the exact matching index in Path 1 in O(1) time
+                iconf1 = visited(n2i, n2j) - id1 + 1
+                iconf2 = npath2
+                exit tracer_loop
             end block path2_prc
         end do tracer_loop
 
         ! Compute distances to confluence
         do ipath1 = 1, min(iconf1, npath1) - 1
-            dists(1) = dists(1) + hypot( &
-                       x(path1(ipath1 + 1, 1), path1(ipath1 + 1, 2)) - x(path1(ipath1, 1), path1(ipath1, 2)), &
-                       y(path1(ipath1 + 1, 1), path1(ipath1 + 1, 2)) - y(path1(ipath1, 1), path1(ipath1, 2)))
+            dx = x(path1(1, ipath1 + 1), path1(2, ipath1 + 1)) - x(path1(1, ipath1), path1(2, ipath1))
+            dy = y(path1(1, ipath1 + 1), path1(2, ipath1 + 1)) - y(path1(1, ipath1), path1(2, ipath1))
+            dists(1) = dists(1) + sqrt(dx*dx + dy*dy)
         end do
         do ipath2 = 1, min(iconf2, npath2) - 1
-            dists(2) = dists(2) + hypot( &
-                       x(path2(ipath2 + 1, 1), path2(ipath2 + 1, 2)) - x(path2(ipath2, 1), path2(ipath2, 2)), &
-                       y(path2(ipath2 + 1, 1), path2(ipath2 + 1, 2)) - y(path2(ipath2, 1), path2(ipath2, 2)))
+            dx = x(path2(1, ipath2 + 1), path2(2, ipath2 + 1)) - x(path2(1, ipath2), path2(2, ipath2))
+            dy = y(path2(1, ipath2 + 1), path2(2, ipath2 + 1)) - y(path2(1, ipath2), path2(2, ipath2))
+            dists(2) = dists(2) + sqrt(dx*dx + dy*dy)
         end do
     end subroutine inner_compute_confluence_dist
 
