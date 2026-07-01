@@ -11,13 +11,18 @@
 !   2026-06-11, En-Chi Lee (williameclee@gmail.com)
 !     - Added precomputed 'dist_lookup' for L1 distance in 'compute_dist2source_l1'
 !     - Standardised variable, argument, and function names
+!   2026-07-01, En-Chi Lee (williameclee@gmail.com)
+!     - Fixed Strahler order algorithm
 !!!
 
 module flowdir_utils
     implicit none
 contains
     function find_noflow_code(offsets, codes, noffsets, default_noflow_code) result(noflow_code)
-        !! For pairs of flow direction codes and their corresponding offsets, find the code that corresponds to the no-flow direction (0, 0). If not found, return the provided default no-flow code or 0 if not provided.
+        !! For pairs of flow direction codes and their corresponding
+        !! offsets, find the code that corresponds to the no-flow
+        !! direction (0, 0). If not found, return the provided default
+        !! no-flow code or 0 if not provided.
         implicit none
         ! Arguments
         integer, intent(in) :: noffsets
@@ -51,8 +56,12 @@ contains
     end function find_noflow_code
 
     function find_opposite_codes(offsets, codes, noffsets) result(opp_codes)
-        !! For pairs of flow direction codes and their corresponding offsets, find the list of codes that correspond to the opposite direction of each code.
-        !! For example, if code 1 corresponds to offset (1, 0), and code 2 corresponds to offset (-1, 0), then code 2 is the opposite code of code 1 and vice verse.
+        !! For pairs of flow direction codes and their corresponding
+        !! offsets, find the list of codes that correspond to the
+        !! opposite direction of each code.
+        !! For example, if code 1 corresponds to offset (1, 0), and code
+        !! 2 corresponds to offset (-1, 0), then code 2 is the opposite
+        !! code of code 1 and vice verse.
         implicit none
         ! Arguments
         integer, intent(in) :: noffsets
@@ -80,9 +89,15 @@ contains
     end function find_opposite_codes
 
     function fill_offset_lookup(offsets, codes, noffsets) result(diffs)
-        !! For pairs of flow direction codes and their corresponding offsets, create a lookup table (array) where the index corresponds to the code and the value is the offset.
-        !! The offset codes must be between 0 and 255, and the returned lookup table will have a size of 256-by-2 to accommodate all possible codes. Unused indices will have an offset of (-99, -99) to indicate invalid code.
-        !! For example, if code 1 corresponds to offset (1, 0), then diffs(1, :) = (1, 0).
+        !! For pairs of flow direction codes and their corresponding
+        !! offsets, create a lookup table (array) where the index
+        !! corresponds to the code and the value is the offset.
+        !! The offset codes must be between 0 and 255, and the returned
+        !! lookup table will have a size of 256-by-2 to accommodate all
+        !! possible codes. Unused indices will have an offset of
+        !! (-99, -99) to indicate invalid code.
+        !! For example, if code 1 corresponds to offset (1, 0), then
+        !! diffs(1, :) = (1, 0).
         implicit none
         ! Arguments
         integer, intent(in) :: noffsets
@@ -112,8 +127,12 @@ contains
 
     subroutine mask2ij( &
         mask, nrows, ncols, ij, nij, cnt)
-        !! Converts a 2D logical mask to a list of (i, j) indices where the mask is true.
-        !! The output list  will have a maximum size of nij-by-2, and the actual number of valid indices found will be returned in cnt. If the number of valid indices exceeds nij, the remaining will be ignored.
+        !! Converts a 2D logical mask to a list of (i, j) indices where
+        !! the mask is true.
+        !! The output list  will have a maximum size of nij-by-2, and
+        !! the actual number of valid indices found will be returned in
+        !! cnt. If the number of valid indices exceeds nij, the
+        !! remaining will be ignored.
         ! TODO: Optimise this subroutine?
         implicit none
         ! Arguments
@@ -157,8 +176,10 @@ contains
     subroutine compute_flowdir_simple( &
         z, valids, dirs, is_flat, nrows, ncols, &
         offsets, codes, noffsets)
-        !! Finds D-n flow directions for a given elevation grid, using the provided flow direction codes and offsets.
-        !! Also identifies flat cells where no flow direction can be assigned.
+        !! Finds D-n flow directions for a given elevation grid, using
+        !! the provided flow direction codes and offsets.
+        !! Also identifies flat cells where no flow direction can be
+        !! assigned.
         implicit none
         ! Arguments
         integer, intent(in) :: nrows, ncols
@@ -227,8 +248,16 @@ contains
     subroutine compute_syn_flowdir( &
         z, flats, dirs, nrows, ncols, &
         offsets, codes, noffsets)
-        !! Finds D-n flow directions for a synthetic elevation grid, using the provided flow direction codes and offsets. !! The flow directions are only computed for cells that are part of flats, as indicated by the  label grid. For each flat cell, the flow direction is assigned towards the neighbour with the lowest elevation within the same flat region. If no neighbour has a lower elevation, the cell is assigned the no-flow code.
-        !! Note: This function is intended to be used for the synthetic terrain to resolve flats, which should be integer-typed.
+        !! Finds D-n flow directions for a synthetic elevation grid,
+        !! using the provided flow direction codes and offsets.
+        !! The flow directions are only computed for cells that are part
+        !! of flats, as indicated by the  label grid. For each flat
+        !! cell, the flow direction is assigned towards the neighbour
+        !! with the lowest elevation within the same flat region. If no
+        !! neighbour has a lower elevation, the cell is assigned the
+        !! no-flow code.
+        !! Note: This function is intended to be used for the synthetic
+        !! terrain to resolve flats, which should be integer-typed.
         implicit none
         ! Arguments
         integer, intent(in) :: nrows, ncols
@@ -290,7 +319,9 @@ contains
     subroutine find_flat_edges( &
         z, dirs, valids, is_low_edge, is_high_edge, nrows, ncols, &
         offsets, codes, noffsets)
-        !! Finds the cells on the edges of flat areas that drain to lower terrain (low edges) and those that are adjacent to higher terrain (high edges).
+        !! Finds the cells on the edges of flat areas that drain to
+        !! lower terrain (low edges) and those that are adjacent to
+        !! higher terrain (high edges).
         !! From [R. Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009), Algorithm 3 (p. 133).
         implicit none
         ! Arguments
@@ -358,8 +389,12 @@ contains
     subroutine label_flats( &
         z, seeds, valids, flats, nrows, ncols, &
         offsets, noffsets)
-        !! Labels connected flat regions in the elevation grid, using a flood-fill algorithm starting from the provided seed cells.
-        !! Only valid cells (as indicated by the valids mask) will be considered for labelling. Each flat region will be assigned a unique integer label in the output  grid, while non-flat cells will be assigned 0.
+        !! Labels connected flat regions in the elevation grid, using a
+        !! flood-fill algorithm starting from the provided seed cells.
+        !! Only valid cells (as indicated by the valids mask) will be
+        !! considered for labelling. Each flat region will be assigned a
+        !! unique integer label in the output  grid, while non-flat
+        !! cells will be assigned 0.
         implicit none
         ! Arguments
         integer, intent(in) :: nrows, ncols
@@ -461,7 +496,8 @@ contains
     subroutine create_pushing_syn_grad( &
         z, flats, nrows, ncols, &
         high_edges, offsets, noffsets)
-        !! Produces a synthetic elevation that decreases away from 'high edges' of flats.
+        !! Produces a synthetic elevation that decreases away from 'high
+        !! edges' of flats.
         !! Modified from [R. Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009), Algorithm 5 (p. 133--134).
         implicit none
         ! Arguments
@@ -615,7 +651,8 @@ contains
     subroutine create_pulling_syn_grad( &
         z, flats, nrows, ncols, &
         low_edges, offsets, noffsets)
-        !! Produces a synthetic elevation that drains towards 'low edges' of flats.
+        !! Produces a synthetic elevation that drains towards 'low
+        !! edges' of flats.
         !! Modified from [R. Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009), Algorithm 6 (p. 134).
         implicit none
         ! Arguments
@@ -741,7 +778,8 @@ contains
     subroutine count_indegree( &
         dirs, indegs, nrows, ncols, &
         offsets, codes, noffsets)
-        !! Computes the number of upstream cells (indegs) for each cell in a flow direction grid.
+        !! Computes the number of upstream cells (indegs) for each cell
+        !! in a flow direction grid.
         implicit none
         ! Arguments
         integer, intent(in) :: nrows, ncols
@@ -881,8 +919,11 @@ contains
     subroutine compute_dist2source_l1( &
         dirs, valids, indegs, dists, nrows, ncols, &
         offsets, codes, noffsets)
-        !! Computes the distance to the nearest source cell (cell with zero indegree) for each cell in a flow direction grid, using a breadth-first search starting from source cells.
-        !! The distance in measured in the number of cells along the flow path (i.e. integer-typed L1 distance).
+        !! Computes the distance to the nearest source cell (cell with
+        !! zero indegree) for each cell in a flow direction grid, using
+        !! a breadth-first search starting from source cells.
+        !! The distance in measured in the number of cells along the
+        !! flow path (i.e. integer-typed L1 distance).
         implicit none
         ! Arguments
         integer, intent(in) :: nrows, ncols
@@ -978,7 +1019,8 @@ contains
     subroutine compute_dist2source( &
         dirs, valids, x, y, indegs, dists, nrows, ncols, &
         offsets, codes, noffsets)
-        !! Computes the distance downstream along flow directions for each cell in the flow direction grid.
+        !! Computes the distance downstream along flow directions for
+        !! each cell in the flow direction grid.
         implicit none
         ! Arguments
         integer, intent(in) :: nrows, ncols
@@ -1203,14 +1245,20 @@ contains
             !! List of flow direction codes corresponding to the offsets
         ! Outputs
         integer*2, intent(out) :: orders(nrows, ncols)
-            !! Grid of Strahler stream order values for each cell, where source cells (cells with zero indegree) have order 1, and the order of downstream cells is determined by the orders of their upstream cells according to Strahler's rules.
+            !! Grid of Strahler stream order values for each cell
         ! Local variables
         integer, allocatable :: offset_lookup(:, :)
             !! Lookup table for offsets corresponding to each flow direction code, used to find downstream cell indices
+        integer :: iofs
+            !! Index for iterating through offsets
         integer :: itofill, ntofills
             !! Index for iterating through cells to fill and total number of cells to fill
-        integer :: ci, cj, ni, nj
-            !! Rows/columns for current and neighbour cells
+        integer :: ci, cj, ni, nj, ui, uj
+            !! Rows/columns for current and neighbour downstream and upstream cells
+        integer*2 :: max_uorder
+            !! Maximum Strahler stream order value of a cell's upstream neighbours
+        logical*1 :: increase_order
+            !! Whether the current cell's order should be increased
         logical*1, allocatable :: seeds(:, :)
             !! Mask to identify initial seed cells for the algorithm (valid cells with zero indegree)
         integer, allocatable :: tofill_ijs(:, :)
@@ -1227,16 +1275,51 @@ contains
         allocate (tofill_ijs(max_queue_size, 2))
         allocate (seeds(nrows, ncols))
         seeds = valids .and. (indegs == 0)
+        orders = merge(int(1, kind=2), int(0, kind=2), seeds)
         call mask2ij(seeds, nrows, ncols, &
                      tofill_ijs, max_queue_size, ntofills)
         deallocate (seeds)
 
-        orders = 1
         itofill = 1
+
+        ! Push all the seeds' downstream cells to the queue
         do while (itofill <= ntofills)
             ci = tofill_ijs(itofill, 1)
             cj = tofill_ijs(itofill, 2)
             itofill = itofill + 1
+
+            if (orders(ci, cj) == 0) then
+
+                ! Check upstream cells to assign the current ones' order
+                max_uorder = 0
+                increase_order = .false.
+                do iofs = 1, noffsets
+                    ui = ci - offsets(iofs, 1)
+                    uj = cj - offsets(iofs, 2)
+
+                    ! Check bounds
+                    if (ui < 1 .or. ui > nrows .or. uj < 1 .or. uj > ncols) cycle
+                    ! Check mask
+                    if (.not. valids(ui, uj)) cycle
+                    ! Check it actually flows into the current cell
+                    if (dirs(ui, uj) /= codes(iofs)) cycle
+                    ! Check not a self-loop
+                    if (ui == ci .and. uj == cj) cycle
+
+                    if (orders(ui, uj) > max_uorder) then
+                        max_uorder = orders(ui, uj)
+                        increase_order = .false.
+                    else if (orders(ui, uj) == max_uorder) then
+                        increase_order = .true.
+                    end if
+                end do
+
+                if (increase_order) then
+                    orders(ci, cj) = max_uorder + int(1, kind=2)
+                else
+                    orders(ci, cj) = max_uorder
+                end if
+            end if
 
             ni = ci + offset_lookup(dirs(ci, cj), 1)
             nj = cj + offset_lookup(dirs(ci, cj), 2)
@@ -1247,26 +1330,21 @@ contains
             if (.not. valids(ni, nj)) cycle
             ! Check not a self-loop
             if (ni == ci .and. nj == cj) cycle
-            ! Check not already processed
-            if (indegs(ni, nj) <= 0) cycle
+            ! Check not seed or already processed
+            if (indegs(ni, nj) == 0) cycle
 
-            ! Update distance of downstream cell
-            if (orders(ni, nj) < orders(ci, cj)) then
-                orders(ni, nj) = orders(ci, cj)
-            else if (orders(ni, nj) == orders(ci, cj)) then
-                orders(ni, nj) = orders(ni, nj) + int(1, kind=2)
-            end if
             ! Decrement indegree of downstream cell
             indegs(ni, nj) = indegs(ni, nj) - int(1, kind=1)
             ! If indegree is zero, add to tofill buffer
-            if (indegs(ni, nj) == 0) then
-                ntofills = ntofills + 1
-                if (ntofills > max_queue_size) then
+            if (indegs(ni, nj) > 0) cycle
+
+            ntofills = ntofills + 1
+            if (ntofills > max_queue_size) then
              print *, "[COMPUTE_STRAHLER_ORDER] Error: tofill buffer overflow (size:", ntofills, ", allocated:", max_queue_size, ")"
-                    stop
-                end if
-                tofill_ijs(ntofills, :) = [ni, nj]
+                stop
             end if
+            tofill_ijs(ntofills, :) = [ni, nj]
+
         end do
         deallocate (offset_lookup)
         deallocate (tofill_ijs)
@@ -1652,7 +1730,7 @@ contains
             !! Grid to track visited paths by ids
         ! Outputs
         real :: dists(2)
-            !! Distances from each seed ceel to the confluence cell (or to max path length if no confluence found)
+            !! Distances from each seed cell to the confluence cell (or to max path length if no confluence found)
         ! Local variables
         integer :: id1, id2
             !! Unique ids to mark visited cells for each path in the visited grid
