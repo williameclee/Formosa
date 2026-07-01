@@ -2,7 +2,7 @@
 #   2026-06-11, En-Chi Lee (williameclee@gmail.com)
 #     - Updated function and argument names to match the standardised names
 #   2026-07-01, En-Chi Lee (williameclee@gmail.com)
-#     - Added test cases for `compute_downstream_indices` and `create_flowgraph`
+#     - Added test cases for `compute_downstream_indices`, `create_flowgraph`, and `compute_flow_strahler_order`
 
 import pytest
 import numpy as np
@@ -104,7 +104,7 @@ def test_downstreamid_3x3():
 
     with pytest.warns(UserWarning):
         dsi, dsj, dsij, ds_valids = flowdir.compute_downstream_indices(
-            dirs, dir_scheme=dir_scheme, check=F
+            dirs, dir_scheme=dir_scheme, check=False
         )
 
     np.testing.assert_array_equal(dsi, expected_dsi)
@@ -116,7 +116,7 @@ def test_downstreamid_3x3():
 def test_downstreamid_4x4():
     dir_scheme = D8Directions(transform_codes=lambda x: x)
 
-    # Config 3
+    # Config 1
     dirs = np.array(
         [
             [1, 2, 2, 2],
@@ -240,8 +240,80 @@ def test_indegree_3x3():
     )
 
 
+def test_strahler_order_3x3():
+    dir_scheme = D8Directions(transform_codes=lambda x: x)
+
+    # Config 1
+    dirs = np.array(
+        [
+            [3, 3, 3],
+            [3, 3, 3],
+            [1, 1, 0],
+        ]
+    )
+
+    expected_order = np.array(
+        [
+            [1, 1, 1],
+            [1, 1, 1],
+            [1, 2, 2],
+        ]
+    )
+    order = flowdir.compute_flow_strahler_order(dirs, dir_scheme=dir_scheme)
+
+    np.testing.assert_array_equal(order, expected_order)
+
+    # Config 2
+    dirs = np.array(
+        [
+            [5, 1, 1],
+            [5, 1, 1],
+            [5, 1, 1],
+        ]
+    )
+
+    expected_order = np.array(
+        [
+            [1, 1, 1],
+            [1, 1, 1],
+            [1, 1, 1],
+        ]
+    )
+
+    order = flowdir.compute_flow_strahler_order(dirs, dir_scheme=dir_scheme)
+
+    np.testing.assert_array_equal(order, expected_order)
+
+
+def test_strahler_order_4x4():
+    dir_scheme = D8Directions(transform_codes=lambda x: x)
+
+    # Config 1
+    dirs = np.array(
+        [
+            [1, 2, 2, 2],
+            [8, 1, 1, 1],
+            [8, 8, 8, 8],
+            [1, 2, 1, 2],
+        ]
+    )
+    expected_order = np.array(
+        [
+            [1, 2, 1, 1],
+            [1, 1, 2, 2],
+            [1, 1, 1, 1],
+            [1, 1, 1, 1],
+        ]
+    )
+    order = flowdir.compute_flow_strahler_order(dirs, dir_scheme=dir_scheme)
+
+    np.testing.assert_array_equal(order, expected_order)
+
+
 if __name__ == "__main__":
     test_downstreamid_3x3()
     test_downstreamid_4x4()
     test_flowgraph_3x3()
     test_indegree_3x3()
+    test_strahler_order_3x3()
+    test_strahler_order_4x4()
