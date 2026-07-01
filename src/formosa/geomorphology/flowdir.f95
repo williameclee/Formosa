@@ -14,6 +14,7 @@
 !   2026-07-01, En-Chi Lee (williameclee@gmail.com)
 !     - Fixed Strahler order algorithm
 !     - Optimised confluence lookup algorithm
+!     - Changed index array shape to optimise cache locality
 !!!
 
 module flowdir_utils
@@ -130,11 +131,10 @@ contains
         mask, nrows, ncols, ij, nij, cnt)
         !! Converts a 2D logical mask to a list of (i, j) indices where
         !! the mask is true.
-        !! The output list  will have a maximum size of nij-by-2, and
+        !! The output list will have a maximum size of 2-by-'nij', and
         !! the actual number of valid indices found will be returned in
-        !! cnt. If the number of valid indices exceeds nij, the
+        !! 'cnt'. If the number of valid indices exceeds nij, the
         !! remaining will be ignored.
-        ! TODO: Optimise this subroutine?
         implicit none
         ! Arguments
         integer, intent(in) :: nrows, ncols
@@ -144,8 +144,8 @@ contains
         integer, intent(in) :: nij
             !! Maximum number of indices to return
         ! Outputs
-        integer, intent(out) :: ij(nij, 2)
-            !! Output list of (i, j) indices where mask is true, with a maximum size of nij
+        integer, intent(out) :: ij(2, nij)
+            !! Output list of (i, j) indices where mask is true, with a maximum size of 2-by-nij
         integer, intent(out) :: cnt
             !! Actual number of valid indices found (up to nij)
         ! Local variables
@@ -162,8 +162,8 @@ contains
                     return
                 end if
                 cnt = cnt + 1
-                ij(cnt, 1) = ci
-                ij(cnt, 2) = cj
+                ij(1, cnt) = ci
+                ij(2, cnt) = cj
             end do
         end do
     end subroutine mask2ij
@@ -432,19 +432,19 @@ contains
         integer :: iofs
             !! Index for iterating through offsets
 
-        allocate (flat_ijs(nrows*ncols, 2))
-        allocate (seed_ijs(nrows*ncols/2, 2))
+        allocate (flat_ijs(2, nrows*ncols))
+        allocate (seed_ijs(2, nrows*ncols/2))
         ! Convert seed mask to list of (i, j) indices
         call mask2ij(seeds, nrows, ncols, &
-                     seed_ijs, size(seed_ijs, dim=1), nseeds)
+                     seed_ijs, size(seed_ijs, dim=2), nseeds)
 
         flats = 0
         iflat = 1
         iseed = 1
         ! Loop over seed cells to label flats using a flood-fill algorithm
         do iseed = 1, nseeds
-            si = seed_ijs(iseed, 1)
-            sj = seed_ijs(iseed, 2)
+            si = seed_ijs(1, iseed)
+            sj = seed_ijs(2, iseed)
 
             ! Skip if not valid
             if (.not. valids(si, sj)) cycle
@@ -456,12 +456,12 @@ contains
             ! Reset buffer
             ifill = 1
             nfills = 1
-            flat_ijs(ifill, :) = [si, sj]
+            flat_ijs(:, ifill) = [si, sj]
             flats(si, sj) = iflat
 
             do while (ifill <= nfills)
-                ci = flat_ijs(ifill, 1)
-                cj = flat_ijs(ifill, 2)
+                ci = flat_ijs(1, ifill)
+                cj = flat_ijs(2, ifill)
                 ifill = ifill + 1
 
                 ! Loop over offsets to find connected flat cells
@@ -478,11 +478,11 @@ contains
                     if (z(ni, nj) /= sz) cycle
                     ! Add to tofill buffer
                     nfills = nfills + 1
-                    if (nfills > size(flat_ijs, 1)) then
-                 print *, "[LABEL_FLAT] Error: Flat flooding buffer overflow (size:", nfills, ", allocated:", size(flat_ijs, 1), ")"
+                    if (nfills > size(flat_ijs, dim=2)) then
+             print *, "[LABEL_FLAT] Error: Flat flooding buffer overflow (size:", nfills, ", allocated:", size(flat_ijs, dim=2), ")"
                         stop
                     end if
-                    flat_ijs(nfills, :) = [ni, nj]
+                    flat_ijs(:, nfills) = [ni, nj]
                     flats(ni, nj) = iflat
                 end do
 
@@ -541,13 +541,13 @@ contains
             !! Maximum size of the queue buffer for high edge cells ('high_edges_ijs', including the marker)
 
         max_queue_size = count(flats /= 0) + max(nrows, ncols)*(maxval(flats) - minval(flats) + 1)
-        allocate (high_edge_ijs(max_queue_size, 2))
+        allocate (high_edge_ijs(2, max_queue_size))
 
         high_edge_ijs = 0
         nedges = 0
         z = 0
         call mask2ij(high_edges, nrows, ncols, &
-                     high_edge_ijs, size(high_edge_ijs, dim=1), nedges)
+                     high_edge_ijs, size(high_edge_ijs, dim=2), nedges)
         if (nedges == 0) then
             ! No high edges found, set z to zero and exit
             deallocate (high_edge_ijs)
@@ -555,7 +555,7 @@ contains
         end if
 
         nedges = nedges + 1
-        high_edge_ijs(nedges, :) = marker
+        high_edge_ijs(:, nedges) = marker
 
         nflats = maxval(flats)
         allocate (maxdist(nflats))
@@ -567,8 +567,8 @@ contains
 
         ! Mark initial seeds as queued
         do iedge = 1, nedges - 1
-            ci = high_edge_ijs(iedge, 1)
-            cj = high_edge_ijs(iedge, 2)
+            ci = high_edge_ijs(1, iedge)
+            cj = high_edge_ijs(2, iedge)
             queued(ci, cj) = .true.
         end do
         ! Loop through all high_edges to find cells flowing away from flats
@@ -576,8 +576,8 @@ contains
         dist = 1
         iedge = 1
         do while (iedge <= nedges)
-            ci = high_edge_ijs(iedge, 1)
-            cj = high_edge_ijs(iedge, 2)
+            ci = high_edge_ijs(1, iedge)
+            cj = high_edge_ijs(2, iedge)
             iedge = iedge + 1
 
             ! Check for marker to separate iterations
@@ -592,7 +592,7 @@ contains
                    print *, "[AWAY_FROM_HIGH] Error: High edges buffer overflow (size:", nedges, ", allocated:", max_queue_size, ")"
                     stop
                 end if
-                high_edge_ijs(nedges, :) = marker
+                high_edge_ijs(:, nedges) = marker
                 added_since_marker = .false.
                 cycle
             end if
@@ -634,7 +634,7 @@ contains
                    print *, "[AWAY_FROM_HIGH] Error: High edges buffer overflow (size:", nedges, ", allocated:", max_queue_size, ")"
                     stop
                 end if
-                high_edge_ijs(nedges, :) = [ni, nj]
+                high_edge_ijs(:, nedges) = [ni, nj]
                 queued(ni, nj) = .true.
                 added_since_marker = .true.
             end do
@@ -690,11 +690,11 @@ contains
             !! Maximum size of the queue buffer for low edge cells ('low_edges_ijs', including the marker)
 
         max_queue_size = count(flats /= 0) + max(nrows, ncols)*maxval(flats)
-        allocate (low_edges_ijs(max_queue_size, 2))
+        allocate (low_edges_ijs(2, max_queue_size))
         call mask2ij(low_edges, nrows, ncols, &
-                     low_edges_ijs, size(low_edges_ijs, dim=1), nedges)
+                     low_edges_ijs, size(low_edges_ijs, dim=2), nedges)
         nedges = nedges + 1
-        low_edges_ijs(nedges, :) = marker
+        low_edges_ijs(:, nedges) = marker
 
         ! Initialise z to zero
         z = 0
@@ -703,8 +703,8 @@ contains
 
         ! Mark initial seeds as queued
         do iedge = 1, nedges - 1
-            ci = low_edges_ijs(iedge, 1)
-            cj = low_edges_ijs(iedge, 2)
+            ci = low_edges_ijs(1, iedge)
+            cj = low_edges_ijs(2, iedge)
             queued(ci, cj) = .true.
         end do
 
@@ -713,8 +713,8 @@ contains
         dist = 1
         added_since_marker = .false.
         do while (iedge <= nedges)
-            ci = low_edges_ijs(iedge, 1)
-            cj = low_edges_ijs(iedge, 2)
+            ci = low_edges_ijs(1, iedge)
+            cj = low_edges_ijs(2, iedge)
             iedge = iedge + 1
 
             if (ci == marker(1) .and. cj == marker(2)) then
@@ -728,7 +728,7 @@ contains
                     print *, "[TOWARDS_LOW] Error: Low edges buffer overflow (size:", nedges, ", allocated:", max_queue_size, ")"
                     stop
                 end if
-                low_edges_ijs(nedges, :) = marker
+                low_edges_ijs(:, nedges) = marker
                 added_since_marker = .false.
                 cycle
             end if
@@ -767,7 +767,7 @@ contains
                     print *, "[TOWARDS_LOW] Error: Low edges buffer overflow (size:", nedges, ", allocated:", max_queue_size, ")"
                     stop
                 end if
-                low_edges_ijs(nedges, :) = [ni, nj]
+                low_edges_ijs(:, nedges) = [ni, nj]
                 queued(ni, nj) = .true.
                 added_since_marker = .true.
             end do
@@ -874,7 +874,7 @@ contains
 
         ! Fill the tofill buffer with all valid cells with zero in-degrees
         max_queue_size = nrows*ncols
-        allocate (flood_ijs(max_queue_size, 2))
+        allocate (flood_ijs(2, max_queue_size))
         allocate (flood_seeds(nrows, ncols))
         flood_seeds = valids .and. (indegs == 0)
         call mask2ij(flood_seeds, nrows, ncols, &
@@ -884,8 +884,8 @@ contains
         accumulations = areas
         itofill = 1
         do while (itofill <= ntofills)
-            ci = flood_ijs(itofill, 1)
-            cj = flood_ijs(itofill, 2)
+            ci = flood_ijs(1, itofill)
+            cj = flood_ijs(2, itofill)
             itofill = itofill + 1
 
             ni = ci + offset_lookup(dirs(ci, cj), 1)
@@ -911,7 +911,7 @@ contains
                 print *, "[FLOW_ACCUMULATION] Error: Flooding buffer overflow (size:", ntofills, ", allocated:", max_queue_size, ")"
                 stop
             end if
-            flood_ijs(ntofills, :) = [ni, nj]
+            flood_ijs(:, ntofills) = [ni, nj]
         end do
         deallocate (offset_lookup)
         deallocate (flood_ijs)
@@ -969,7 +969,7 @@ contains
 
         ! Fill the tofill buffer with all valid cells with zero indegree
         max_queue_size = nrows*ncols
-        allocate (tofill_ijs(max_queue_size, 2))
+        allocate (tofill_ijs(2, max_queue_size))
         allocate (tofill_seeds(nrows, ncols))
         tofill_seeds = valids .and. (indegs == 0)
         call mask2ij(tofill_seeds, nrows, ncols, &
@@ -980,8 +980,8 @@ contains
         dists = 0.0
         itofill = 1
         do while (itofill <= ntofills)
-            ci = tofill_ijs(itofill, 1)
-            cj = tofill_ijs(itofill, 2)
+            ci = tofill_ijs(1, itofill)
+            cj = tofill_ijs(2, itofill)
             itofill = itofill + 1
 
             ni = ci + offset_lookup(dirs(ci, cj), 1)
@@ -1009,7 +1009,7 @@ contains
                     print *, "[DIST2SOURCE_L1] Error: tofill buffer overflow (size:", ntofills, ", allocated:", max_queue_size, ")"
                     stop
                 end if
-                tofill_ijs(ntofills, :) = [ni, nj]
+                tofill_ijs(:, ntofills) = [ni, nj]
             end if
         end do
         deallocate (offset_lookup)
@@ -1066,7 +1066,7 @@ contains
 
         ! Fill the tofill buffer with all valid cells with zero indegree
         max_queue_size = nrows*ncols
-        allocate (tofill_ijs(max_queue_size, 2))
+        allocate (tofill_ijs(2, max_queue_size))
         allocate (seeds(nrows, ncols))
         seeds = valids .and. (indegs == 0)
         call mask2ij(seeds, nrows, ncols, &
@@ -1077,8 +1077,8 @@ contains
         dists = 0.0
         itofill = 1
         do while (itofill <= ntofills)
-            ci = tofill_ijs(itofill, 1)
-            cj = tofill_ijs(itofill, 2)
+            ci = tofill_ijs(1, itofill)
+            cj = tofill_ijs(2, itofill)
             itofill = itofill + 1
 
             ni = ci + offset_lookup(dirs(ci, cj), 1)
@@ -1109,7 +1109,7 @@ contains
                     print *, "[DIST2SOURCE] Error: tofill buffer overflow (size:", ntofills, ", allocated:", max_queue_size, ")"
                     stop
                 end if
-                tofill_ijs(ntofills, :) = [ni, nj]
+                tofill_ijs(:, ntofills) = [ni, nj]
             end if
         end do
         deallocate (offset_lookup)
@@ -1162,7 +1162,7 @@ contains
 
         ! Append all cells with noflow direction to buffer
         max_queue_size = nrows*ncols
-        allocate (seed_ijs(max_queue_size, 2))
+        allocate (seed_ijs(2, max_queue_size))
         allocate (seeds(nrows, ncols))
         seeds = valids .and. (dirs == noflow_code)
         call mask2ij(seeds, nrows, ncols, &
@@ -1171,21 +1171,21 @@ contains
 
         ! Loop through seeds
         !$omp PARALLEL DEFAULT(SHARED) PRIVATE(iseed, si, sj, ci, cj, ifill, nfills, tofill_ijs)
-        allocate (tofill_ijs(max_queue_size, 2))
+        allocate (tofill_ijs(2, max_queue_size))
         !$omp DO SCHEDULE(DYNAMIC)
         do iseed = 1, nseeds
-            si = seed_ijs(iseed, 1)
-            sj = seed_ijs(iseed, 2)
+            si = seed_ijs(1, iseed)
+            sj = seed_ijs(2, iseed)
 
             ! Loop through buffer
             nfills = 1
             ifill = 1
             dists(si, sj) = 0.0
-            tofill_ijs(1, :) = [si, sj]
+            tofill_ijs(:, 1) = [si, sj]
 
             do while (ifill <= nfills)
-                ci = tofill_ijs(ifill, 1)
-                cj = tofill_ijs(ifill, 2)
+                ci = tofill_ijs(1, ifill)
+                cj = tofill_ijs(2, ifill)
                 ifill = ifill + 1
 
                 ! Loop over offsets to find contributing cells
@@ -1210,7 +1210,7 @@ contains
                         print *, "[DIST2SINK] Error: tofill buffer overflow (size:", nfills, ", allocated:", max_queue_size, ")"
                         stop
                     end if
-                    tofill_ijs(nfills, :) = [ui, uj]
+                    tofill_ijs(:, nfills) = [ui, uj]
                     ! Compute distance
                     dists(ui, uj) = dists(ci, cj) + hypot( &
                                     x(ui, uj) - x(ci, cj), &
@@ -1273,7 +1273,7 @@ contains
 
         ! Fill the tofill buffer with all valid cells with zero indegree
         max_queue_size = nrows*ncols
-        allocate (tofill_ijs(max_queue_size, 2))
+        allocate (tofill_ijs(2, max_queue_size))
         allocate (seeds(nrows, ncols))
         seeds = valids .and. (indegs == 0)
         orders = merge(int(1, kind=2), int(0, kind=2), seeds)
@@ -1285,8 +1285,8 @@ contains
 
         ! Push all the seeds' downstream cells to the queue
         do while (itofill <= ntofills)
-            ci = tofill_ijs(itofill, 1)
-            cj = tofill_ijs(itofill, 2)
+            ci = tofill_ijs(1, itofill)
+            cj = tofill_ijs(2, itofill)
             itofill = itofill + 1
 
             if (orders(ci, cj) == 0) then
@@ -1344,7 +1344,7 @@ contains
              print *, "[COMPUTE_STRAHLER_ORDER] Error: tofill buffer overflow (size:", ntofills, ", allocated:", max_queue_size, ")"
                 stop
             end if
-            tofill_ijs(ntofills, :) = [ni, nj]
+            tofill_ijs(:, ntofills) = [ni, nj]
 
         end do
         deallocate (offset_lookup)
@@ -1394,7 +1394,7 @@ contains
 
         ! Append all cells with noflow direction to buffer
         max_queue_size = nrows*ncols
-        allocate (seed_ijs(max_queue_size, 2))
+        allocate (seed_ijs(2, max_queue_size))
         allocate (seeds(nrows, ncols))
         seeds = valids .and. (dirs == noflow_code)
         call mask2ij(seeds, nrows, ncols, &
@@ -1403,21 +1403,21 @@ contains
 
         ! Loop through seeds
         !$omp PARALLEL DEFAULT(SHARED) PRIVATE(iseed, si, sj, ci, cj, ifill, nfills, tofill_ijs)
-        allocate (tofill_ijs(max_queue_size, 2))
+        allocate (tofill_ijs(2, max_queue_size))
         !$omp DO SCHEDULE(DYNAMIC)
         do iseed = 1, nseeds
-            si = seed_ijs(iseed, 1)
-            sj = seed_ijs(iseed, 2)
+            si = seed_ijs(1, iseed)
+            sj = seed_ijs(2, iseed)
 
             ! Loop through buffer
             nfills = 1
             ifill = 1
             labels(si, sj) = iseed
-            tofill_ijs(1, :) = [si, sj]
+            tofill_ijs(:, 1) = [si, sj]
 
             do while (ifill <= nfills)
-                ci = tofill_ijs(ifill, 1)
-                cj = tofill_ijs(ifill, 2)
+                ci = tofill_ijs(1, ifill)
+                cj = tofill_ijs(2, ifill)
                 ifill = ifill + 1
 
                 ! Loop over offsets to find contributing cells
@@ -1442,7 +1442,7 @@ contains
                     print *, "[LABEL_WATERSHEDS] Error: To-fill buffer overflow (size:", nfills, ", allocated:", max_queue_size, ")"
                         stop
                     end if
-                    tofill_ijs(nfills, :) = [ui, uj]
+                    tofill_ijs(:, nfills) = [ui, uj]
                     ! Compute distance
                     labels(ui, uj) = labels(ci, cj)
                 end do
@@ -1493,17 +1493,17 @@ contains
 
         ! Append all cells with noflow direction to buffer
         max_queue_size = nrows*ncols
-        allocate (seed_ijs(max_queue_size, 2))
+        allocate (seed_ijs(2, max_queue_size))
         call mask2ij(seeds, nrows, ncols, &
                      seed_ijs, max_queue_size, nseeds)
 
         ! Loop through seeds
         !$omp PARALLEL DEFAULT(SHARED) PRIVATE(iseed, si, sj, ci, cj, ifill, nfills, tofill_ijs)
-        allocate (tofill_ijs(max_queue_size, 2))
+        allocate (tofill_ijs(2, max_queue_size))
         !$omp DO SCHEDULE(DYNAMIC)
         do iseed = 1, nseeds
-            si = seed_ijs(iseed, 1)
-            sj = seed_ijs(iseed, 2)
+            si = seed_ijs(1, iseed)
+            sj = seed_ijs(2, iseed)
 
             ! Check if is valid
             if (.not. valids(si, sj)) cycle
@@ -1512,11 +1512,11 @@ contains
             nfills = 1
             ifill = 1
             flooded(si, sj) = .true.
-            tofill_ijs(1, :) = [si, sj]
+            tofill_ijs(:, 1) = [si, sj]
 
             do while (ifill <= nfills)
-                ci = tofill_ijs(ifill, 1)
-                cj = tofill_ijs(ifill, 2)
+                ci = tofill_ijs(1, ifill)
+                cj = tofill_ijs(2, ifill)
                 ifill = ifill + 1
 
                 ! Loop over offsets to find contributing cells
@@ -1541,7 +1541,7 @@ contains
                        print *, "[FLOOD_UPSTREAM] Error: tofill buffer overflow (size:", nfills, ", allocated:", max_queue_size, ")"
                         stop
                     end if
-                    tofill_ijs(nfills, :) = [ui, uj]
+                    tofill_ijs(:, nfills) = [ui, uj]
                     ! Compute distance
                     flooded(ui, uj) = .true.
                 end do
@@ -1726,19 +1726,12 @@ contains
         offset_lookup, maxpathlen, path1, path2, visited, id1, id2, check_flag)
         !! Inner routine for computing the confluence distance between two seed cells.
         !!
-        !! The 'visited' grid tracks cell visits. It stores the
-        !! exact path step index: 'id + ipath - 1'. If 'visited(n1i, n1j)' is in the range
-        !! [id2, id2 + npath2 - 1], it means Path 2 has already visited this cell. The index
-        !! at which the confluence occurs in Path 2 is then retrieved instantly via:
-        !! 'iconf2 = visited(n1i, n1j) - id2 + 1'. This avoids an O(N) linear search over the path.
-        !!
-        !! 2. Cache Locality (Column-Major Order):
-        !!    Workspace path arrays are sized (2, maxpathlen) so that the row and column indices
-        !!    for a given path step are adjacent in memory, minimizing cache misses.
-        !!
-        !! 3. Fast Euclidean Distance:
-        !!    Inline 'sqrt(dx*dx + dy*dy)' is used instead of the more expensive 'hypot' function,
-        !!    as coordinates are bounded and do not present underflow/overflow risk here.
+        !! The 'visited' grid tracks cell visits. It stores the exact path step
+        !! index: 'id + ipath - 1'. If 'visited(n1i, n1j)' is in the range
+        !! [id2, id2 + npath2 - 1], it means Path 2 has already visited this
+        !! cell, and the index at which the confluence occurs in Path 2 is then
+        !! retrieved instantly via. This avoids an O(N) linear search over the
+        !! path.
         implicit none
         ! Inputs
         integer, intent(in) :: s1i, s1j, s2i, s2j
@@ -1905,6 +1898,8 @@ contains
         end do tracer_loop
 
         ! Compute distances to confluence
+        ! 'sqrt' is unsed instead of 'hypot' because coordinates are bounded
+        ! and do not present underflow/overflow risk here.
         do ipath1 = 1, min(iconf1, npath1) - 1
             dx = x(path1(1, ipath1 + 1), path1(2, ipath1 + 1)) - x(path1(1, ipath1), path1(2, ipath1))
             dy = y(path1(1, ipath1 + 1), path1(2, ipath1 + 1)) - y(path1(1, ipath1), path1(2, ipath1))
