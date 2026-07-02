@@ -593,17 +593,18 @@ def count_indegree(
 
     Returns
     -------
-    indegs : NDArray[int]
+    indegs : NDArray[int8]
         A 2D integer array representing the indegree (number of upstream cells) for each cell.
     """
+    if valids is None:
+        valids = np.ones(dirs.shape, dtype=bool, order="F")
+
     match backend:
         case "python":
             from .flowdir_py import _count_indegree_py
 
-            indegs = _count_indegree_py(dirs, dir_scheme=dir_scheme)
+            indegs = _count_indegree_py(dirs, dir_scheme=dir_scheme, valids=valids)
         case "fortran":
-            if valids is None:
-                valids = np.ones(dirs.shape, dtype=bool, order="F")
             indegs = flowdir_f.count_indegree(
                 dirs.astype(np.uint8, order="F"),
                 valids.astype(bool, order="F"),

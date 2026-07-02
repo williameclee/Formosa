@@ -260,7 +260,7 @@ def test_indegree_3x3():
     # Config 1
     dirs = np.array([[3, 3, 3], [3, 3, 3], [1, 1, 0]])
 
-    expected_indegree = np.array(
+    expected_indegs = np.array(
         [
             [0, 0, 0],
             [1, 1, 1],
@@ -270,13 +270,13 @@ def test_indegree_3x3():
 
     np.testing.assert_array_equal(
         flowdir.count_indegree(dirs, dir_scheme=dir_scheme, backend="fortran"),
-        expected_indegree,
+        expected_indegs,
     )
 
     # Config 2
     dirs = np.array([[5, 1, 1], [5, 1, 1], [5, 1, 1]])
 
-    expected_indegree = np.array(
+    expected_indegs = np.array(
         [
             [0, 0, 1],
             [0, 0, 1],
@@ -286,7 +286,7 @@ def test_indegree_3x3():
 
     np.testing.assert_array_equal(
         flowdir.count_indegree(dirs, dir_scheme=dir_scheme, backend="fortran"),
-        expected_indegree,
+        expected_indegs,
     )
 
 

@@ -3,6 +3,8 @@
 #     - Moved Python backend implementations to this file
 #     - Removed redundant NaN checks against integer arrays
 #     - Standardised variable, argument, and function names
+#   2026-07-02, En-Chi Lee (williameclee@gmail.com)
+#     - Updated indegree algorithm
 
 import numpy as np
 
@@ -57,22 +59,24 @@ def _compute_masked_flowdir_py(
 
 
 def _count_indegree_py(
-    dirs: npt.NDArray[np.integer], dir_scheme: D8Directions = D8Directions()
-) -> npt.NDArray[np.integer]:
-    indegree = np.zeros(dirs.shape, dtype=np.int32)
-    dsi, dsj, _ = compute_downstream_indices(dirs, dir_scheme=dir_scheme)
+    dirs: npt.NDArray[np.integer],
+    dir_scheme: D8Directions = D8Directions(),
+    valids: Optional[npt.NDArray[np.integer]] = None,
+) -> npt.NDArray[np.int8]:
+    if valids is None:
+        valids = np.ones(dirs.shape, dtype=bool)
+    indegree = np.zeros(dirs.shape, dtype=np.int8)
+    dsi, dsj, _, ds_valids = compute_downstream_indices(
+        dirs, dir_scheme=dir_scheme, valids=valids, check=False
+    )
 
-    for flowdir in np.unique(dirs):
-        if flowdir == 0:
-            continue
-        is_Valid_ds = (
-            (dirs == flowdir)
-            & (dsi >= 0)
-            & (dsi < dirs.shape[0])
-            & (dsj >= 0)
-            & (dsj < dirs.shape[1])
-        )
-        indegree[dsi[is_Valid_ds], dsj[is_Valid_ds]] += 1
+    for i in range(dirs.shape[0]):
+        for j in range(dirs.shape[1]):
+            if not ds_valids[i, j]:
+                continue
+            elif (dsi[i, j] == i) and (dsj[i, j] == j):  # skip self-loop
+                continue
+            indegree[dsi[i, j], dsj[i, j]] += 1
 
     return indegree
 
