@@ -16,6 +16,8 @@
 !     - Optimised confluence lookup algorithm
 !     - Changed index array shape to optimise cache locality
 !     - Allowed specifying validity mask in 'count_indegree'
+!   2026-07-02, En-Chi Lee (williameclee@gmail.com)
+!     - Iterated the array bound instead of starting from 1 in 'mask2ij'
 !!!
 
 module flowdir_utils
@@ -155,8 +157,8 @@ contains
         ! Count number of valid neighbors
         cnt = 0
 
-        do cj = 1, ncols
-            do ci = 1, nrows
+        do cj = lbound(mask, 2), ubound(mask, 2)
+            do ci = lbound(mask, 1), ubound(mask, 1)
                 if (.not. mask(ci, cj)) cycle
                 if (cnt == nij) then
                     print *, "Warning: mask2ij found more valid indices than the maximum allowed (", cnt, "). Only the first ", nij, " indices will be returned."
