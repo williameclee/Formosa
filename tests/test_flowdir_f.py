@@ -3,6 +3,8 @@
 #     - Updated function and argument names to match the standardised names
 #   2026-07-01, En-Chi Lee (williameclee@gmail.com)
 #     - Added test cases for `compute_downstream_indices`, `create_flowgraph`, and `compute_flow_strahler_order`
+#   2026-07-02, En-Chi Lee (williameclee@gmail.com)
+#     - Added test case for `compute_downstream_indices` with validity mask
 
 import pytest
 import numpy as np
@@ -47,7 +49,7 @@ def test_downstreamid_3x3():
             [5, 8, 8],
         ]
     )
-    expected_valids = np.array(
+    expected_inbounds = np.array(
         [
             [T, T, T],
             [T, T, T],
@@ -55,14 +57,14 @@ def test_downstreamid_3x3():
         ]
     )
 
-    dsi, dsj, dsij, ds_valids = flowdir.compute_downstream_indices(
+    dsi, dsj, dsij, ds_inbounds = flowdir.compute_downstream_indices(
         dirs, dir_scheme=dir_scheme
     )
 
     np.testing.assert_array_equal(dsi, expected_dsi)
     np.testing.assert_array_equal(dsj, expected_dsj)
     np.testing.assert_array_equal(dsij, expected_dsij)
-    np.testing.assert_array_equal(ds_valids, expected_valids)
+    np.testing.assert_array_equal(ds_inbounds, expected_inbounds)
 
     # Config 2
     dirs = np.array(
@@ -94,7 +96,7 @@ def test_downstreamid_3x3():
             [-1, 8, 11],
         ]
     )
-    expected_valids = np.array(
+    expected_inbounds = np.array(
         [
             [F, T, F],
             [F, T, F],
@@ -103,14 +105,62 @@ def test_downstreamid_3x3():
     )
 
     with pytest.warns(UserWarning):
-        dsi, dsj, dsij, ds_valids = flowdir.compute_downstream_indices(
+        dsi, dsj, dsij, ds_inbounds = flowdir.compute_downstream_indices(
             dirs, dir_scheme=dir_scheme, check=False
         )
 
     np.testing.assert_array_equal(dsi, expected_dsi)
     np.testing.assert_array_equal(dsj, expected_dsj)
     np.testing.assert_array_equal(dsij, expected_dsij)
-    np.testing.assert_array_equal(ds_valids, expected_valids)
+    np.testing.assert_array_equal(ds_inbounds, expected_inbounds)
+
+    # Config 4 - with validity mask
+    dirs = np.array(
+        [
+            [3, 3, 3],
+            [3, 3, 3],
+            [1, 1, 0],
+        ]
+    )
+    valids = np.array([[F, T, T], [T, T, T], [T, T, T]])
+
+    expected_dsi = np.array(
+        [
+            [-1, 1, 1],
+            [2, 2, 2],
+            [2, 2, 2],
+        ]
+    )
+    expected_dsj = np.array(
+        [
+            [-1, 1, 2],
+            [0, 1, 2],
+            [1, 2, 2],
+        ]
+    )
+    expected_dsij = np.array(
+        [
+            [-1, 4, 7],
+            [2, 5, 8],
+            [5, 8, 8],
+        ]
+    )
+    expected_inbounds = np.array(
+        [
+            [T, T, T],
+            [T, T, T],
+            [T, T, T],
+        ]
+    )
+
+    dsi, dsj, dsij, ds_inbounds = flowdir.compute_downstream_indices(
+        dirs, dir_scheme=dir_scheme, valids=valids
+    )
+
+    np.testing.assert_array_equal(dsi, expected_dsi)
+    np.testing.assert_array_equal(dsj, expected_dsj)
+    np.testing.assert_array_equal(dsij, expected_dsij)
+    np.testing.assert_array_equal(ds_inbounds, expected_inbounds)
 
 
 def test_downstreamid_4x4():
