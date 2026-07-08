@@ -845,6 +845,7 @@ def construct_flowgraph(
     min_order: int = 2,
     orders: Optional[npt.NDArray[np.integer]] = None,
     preserve_junctions: bool = True,
+    sort: bool = True,
     backend: Literal["fortran", "python"] = "fortran",
 ) -> tuple[npt.NDArray[np.int8], npt.NDArray[np.int32], npt.NDArray[np.int32]]:
     """
@@ -870,7 +871,10 @@ def construct_flowgraph(
         Default is `None`.
     preserve_junctions : bool, optional
         Whether to preserve junctions in the flow graph
-        Default is True.
+        Default is `True`.
+    sort : bool, option
+        Whether to sort the flow graph by arc order and then by length
+        Default is `True`.
     backend : {'fortran', 'python'}, optional
         The backend to use for computation
         'fortran' uses the Fortran extension for performance, while 'python' uses a pure Python implementation.
@@ -904,7 +908,7 @@ def construct_flowgraph(
         case "python":
             from .flowdir_py import _construct_flowgraph_py
 
-            narcs, nvertices, arc_orders, vertex_ijs, vertex_startends = (
+            narcs, nvertices, arc_orders, vertex_ijs, arc_endpts = (
                 _construct_flowgraph_py(
                     dirs=dirs,
                     dir_scheme=dir_scheme,
@@ -917,7 +921,7 @@ def construct_flowgraph(
                 )
             )
         case "fortran":
-            narcs, nvertices, arc_orders, vertex_ijs, vertex_startends = (
+            narcs, nvertices, arc_orders, vertex_ijs, arc_endpts = (
                 flowdir_f.construct_flowgraph(
                     dirs.astype(np.uint8, order="F"),
                     valids.astype(bool, order="F"),
@@ -932,13 +936,19 @@ def construct_flowgraph(
             )
             # Convert from 1-based index to 0-based index
             vertex_ijs -= 1
-            vertex_startends -= 1
+            arc_endpts -= 1
 
     arc_orders = arc_orders[:narcs].T.copy(order="C")
-    vertex_startends = vertex_startends[:, :narcs].T.copy(order="C")
+    arc_endpts = arc_endpts[:, :narcs].T.copy(order="C")
     vertex_ijs = vertex_ijs[:, :nvertices].T.copy(order="C")
 
-    return arc_orders, vertex_ijs, vertex_startends
+    if sort:
+        arc_lengths = arc_endpts[:, 1] - arc_endpts[:, 0] + 1
+        id = np.lexsort((arc_lengths, arc_orders))
+        arc_orders = arc_orders[id]
+        arc_endpts = arc_endpts[id, :]
+
+    return arc_orders, vertex_ijs, arc_endpts
 
 
 def compute_dist2source(
