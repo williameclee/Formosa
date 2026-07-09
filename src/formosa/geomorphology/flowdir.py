@@ -18,6 +18,10 @@
 #     - Added functions `compute_ridgedir` and `compute_ridge_strahler_order`
 #   2026-07-01, En-Chi Lee (williameclee@gmail.com)
 #     - Opted out of the out-of-bound check in `compute_downstream_indices` in `create_flowgraph`
+#     - Allowed specifying validity mask in `count_indegree`
+#     - Added function `construct_flowgraph`
+#   2026-07-09, En-Chi Lee (williameclee@gmail.com)
+#     - Specified endpoint index definition for `create_flowgraph`
 
 
 import numpy as np
@@ -568,6 +572,7 @@ def compute_flowdir(
 def count_indegree(
     dirs: npt.NDArray[np.integer],
     dir_scheme: D8Directions = D8Directions(),
+    valids: Optional[npt.NDArray[np.bool_]] = None,
     backend: Literal["fortran", "python"] = "fortran",
 ) -> npt.NDArray[np.int8]:
     """
@@ -576,10 +581,14 @@ def count_indegree(
     Parameters
     ----------
     dirs : NDArray[int]
-        A 2D array representing the flow directions for each cell.
+        2D array representing the flow directions for each cell
     dir_scheme : D8Directions, optional
-        An instance of `D8Directions` defining the flow direction scheme.
+        An instance of `D8Directions` defining the flow direction scheme
         Default is `D8Directions()`.
+    valids : NDArray[int], optional
+        2D array mask indicating whether the cell is valid
+        If not provided, all cells are assumed to be valid.
+        Default is `None`.
     backend : {'fortran', 'python'}, optional
         The backend to use for computation. 'fortran' uses the Fortran extension for performance, while 'python' uses a pure Python implementation.
         Note: the Python implementation is unmaintained.
@@ -587,17 +596,21 @@ def count_indegree(
 
     Returns
     -------
-    indegs : NDArray[int]
+    indegs : NDArray[int8]
         A 2D integer array representing the indegree (number of upstream cells) for each cell.
     """
+    if valids is None:
+        valids = np.ones(dirs.shape, dtype=bool, order="F")
+
     match backend:
         case "python":
             from .flowdir_py import _count_indegree_py
 
-            indegs = _count_indegree_py(dirs, dir_scheme=dir_scheme)
+            indegs = _count_indegree_py(dirs, dir_scheme=dir_scheme, valids=valids)
         case "fortran":
             indegs = flowdir_f.count_indegree(
                 dirs.astype(np.uint8, order="F"),
+                valids.astype(bool, order="F"),
                 dir_scheme.offsets.astype(np.int32, order="F"),
                 dir_scheme.codes.astype(np.uint8, order="F"),
             )
@@ -778,22 +791,27 @@ def compute_flow_strahler_order(
     Parameters
     ----------
     dirs : NDArray[int], optional
-        A 2D array representing the flow directions for each cell.
+        2D array representing the flow directions for each cell.
     dir_scheme : D8Directions, optional
-        An instance of `D8Directions` defining the flow direction scheme.
+        Instance of `D8Directions` defining the flow direction scheme.
         Default is `D8Directions()`.
+    valids : NDArray[bool], optional
+        Boolean mask array indicating valid cells in the flow direction grid.
+        If `None`, all cells are considered valid.
+        Default is `None`.
     indegs : NDArray[int], optional
-        A 2D array representing the number of upstream cells for each cell.
+        2D array representing the number of upstream cells for each cell.
         If `None`, it will be computed from the flow direction grid.
         Default is `None`.
     backend : {'fortran', 'python'}, optional
-        The backend to use for computation. 'fortran' uses the Fortran extension for performance, while 'python' uses a pure Python implementation.
+        Backend to use for computation
+        'fortran' uses the Fortran extension for performance, while 'python' uses a pure Python implementation.
         Default is 'fortran'.
 
     Returns
     -------
     orders : NDArray[uint8]
-        A 2D integer array representing the Strahler order for each cell.
+        2D integer array representing the Strahler order for each cell
     """
     match backend:
         case "python":
@@ -820,6 +838,120 @@ def compute_flow_strahler_order(
             )
             orders[~valids] = 0
     return orders.astype(np.uint8, order="F")
+
+
+def construct_flowgraph(
+    dirs: npt.NDArray[np.integer],
+    dir_scheme: D8Directions = D8Directions(),
+    valids: Optional[npt.NDArray[np.bool_]] = None,
+    min_order: int = 2,
+    orders: Optional[npt.NDArray[np.integer]] = None,
+    preserve_junctions: bool = True,
+    sort: bool = True,
+    backend: Literal["fortran", "python"] = "fortran",
+) -> tuple[npt.NDArray[np.int8], npt.NDArray[np.int32], npt.NDArray[np.int32]]:
+    """
+    Constructs a flow graph from a flow direction grid.
+
+    Parameters
+    ----------
+    dirs : NDArray[int], optional
+        A 2D array representing the flow directions for each cell
+    dir_scheme : D8Directions, optional
+        Instance of `D8Directions` defining the flow direction scheme
+        Default is `D8Directions()`.
+    valids : NDArray[bool], optional
+        Boolean mask array indicating valid cells in the flow direction grid
+        If `None`, all cells are considered valid.
+        Default is `None`.
+    min_order : int, optional
+        Minimum Strahler order to include in the flow graph (see `orders`)
+        Default is 2.
+    orders : NDArray[uint8], optional
+        2D integer array representing the Strahler order for each cell
+        If `None`, it will be computed from the flow direction grid.
+        Default is `None`.
+    preserve_junctions : bool, optional
+        Whether to preserve junctions in the flow graph
+        Default is `True`.
+    sort : bool, option
+        Whether to sort the flow graph by arc order and then by length
+        Default is `True`.
+    backend : {'fortran', 'python'}, optional
+        The backend to use for computation
+        'fortran' uses the Fortran extension for performance, while 'python' uses a pure Python implementation.
+        Default is 'fortran'.
+
+    Returns
+    -------
+    arc_orders : NDArray[int8]
+        1D array representing the Strahler order for each arc in the flow graph
+    vertex_ijs : NDArray[int32]
+        V-by-2 array containing the ordered (i, j) incices of all arcs, concactinated together
+    vertex_startends : NDArray[int32]
+        A-by-2 array containing the indices of where each arc starts and ends in `vertex_ijs`
+        The returned endpoints are inclusive, meaning slicing must be done as `vertex_ijs[start : end + 1]`.
+    """
+    if valids is None:
+        valids = np.ones(dirs.shape, dtype=bool)
+    if orders is None:
+        orders = compute_flow_strahler_order(
+            dirs,
+            dir_scheme=dir_scheme,
+            backend=backend,
+        )
+
+    # Find seed cells to start with
+    valids = valids & (orders >= min_order)
+    ncells = np.sum(valids)
+    indegs = count_indegree(dirs, dir_scheme=dir_scheme, valids=valids, backend=backend)
+    seeds = valids & (indegs == 0)
+
+    match backend:
+        case "python":
+            from .flowdir_py import _construct_flowgraph_py
+
+            narcs, nvertices, arc_orders, vertex_ijs, arc_endpts = (
+                _construct_flowgraph_py(
+                    dirs=dirs,
+                    dir_scheme=dir_scheme,
+                    valids=valids,
+                    orders=orders,
+                    indegs=indegs,
+                    seeds=seeds,
+                    preserve_junctions=preserve_junctions,
+                    ncells=ncells,
+                )
+            )
+        case "fortran":
+            narcs, nvertices, arc_orders, vertex_ijs, arc_endpts = (
+                flowdir_f.construct_flowgraph(
+                    dirs.astype(np.uint8, order="F"),
+                    valids.astype(bool, order="F"),
+                    orders.astype(np.int16, order="F"),
+                    seeds.astype(np.bool_, order="F"),
+                    indegs.astype(np.int8, order="F"),
+                    dir_scheme.offsets.astype(np.int32, order="F"),
+                    dir_scheme.codes.astype(np.uint8, order="F"),
+                    preserve_junctions,
+                    ncells,
+                )
+            )
+            # Convert from 1-based index to 0-based index
+            vertex_ijs -= 1
+            arc_endpts -= 1
+
+    arc_orders = arc_orders[:narcs].T.copy(order="C")
+    arc_endpts = arc_endpts[:, :narcs].T.copy(order="C")
+    vertex_ijs = vertex_ijs[:, :nvertices].T.copy(order="C")
+
+    if sort:
+        arc_lengths = arc_endpts[:, 1] - arc_endpts[:, 0] + 1
+        id = np.lexsort((arc_lengths, arc_orders))
+        arc_orders = arc_orders[id]
+        arc_endpts = arc_endpts[id, :]
+
+    return arc_orders, vertex_ijs, arc_endpts
 
 
 def compute_dist2source(

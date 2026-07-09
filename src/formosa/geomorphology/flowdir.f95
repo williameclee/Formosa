@@ -5,7 +5,7 @@
 !   2026-06-09, En-Chi Lee (williameclee@gmail.com)
 !     - Small refactors and documentation cleanup
 !     - Renamed function: 'compute_masked_flowdir' -> 'compute_synthetic_flowdir'
-!     - Added valids argument to label_flats function
+!     - Added valids argument to 'label_flats' function
 !   2026-06-10, En-Chi Lee (williameclee@gmail.com)
 !     - Small refactors and documentation cleanup
 !   2026-06-11, En-Chi Lee (williameclee@gmail.com)
@@ -15,6 +15,13 @@
 !     - Fixed Strahler order algorithm
 !     - Optimised confluence lookup algorithm
 !     - Changed index array shape to optimise cache locality
+!     - Allowed specifying validity mask in 'count_indegree'
+!   2026-07-02, En-Chi Lee (williameclee@gmail.com)
+!     - Iterated the array bound instead of starting from 1 in 'mask2ij'
+!     - Added function 'construct_flowgraph'
+!   2026-07-09, En-Chi Lee (williameclee@gmail.com)
+!     - Fixed OpenMP data race in 'count_indegree'
+!     - Added overflow check in 'construct_flowgraph'
 !!!
 
 module flowdir_utils
@@ -154,8 +161,8 @@ contains
         ! Count number of valid neighbors
         cnt = 0
 
-        do cj = 1, ncols
-            do ci = 1, nrows
+        do cj = lbound(mask, 2), ubound(mask, 2)
+            do ci = lbound(mask, 1), ubound(mask, 1)
                 if (.not. mask(ci, cj)) cycle
                 if (cnt == nij) then
                     print *, "Warning: mask2ij found more valid indices than the maximum allowed (", cnt, "). Only the first ", nij, " indices will be returned."
@@ -777,7 +784,7 @@ contains
     end subroutine create_pulling_syn_grad
 
     subroutine count_indegree( &
-        dirs, indegs, nrows, ncols, &
+        dirs, valids, indegs, nrows, ncols, &
         offsets, codes, noffsets)
         !! Computes the number of upstream cells (indegs) for each cell
         !! in a flow direction grid.
@@ -787,6 +794,8 @@ contains
             !! Size of the grid
         integer*1, intent(in) :: dirs(nrows, ncols)
             !! Flow direction grid, using the provided codes
+        logical*1, intent(in) :: valids(nrows, ncols)
+            !! Validity mask (true for valid cells, false for no-data)
         integer, intent(in) :: noffsets
             !! Number of flow directions
         integer, intent(in) :: offsets(noffsets, 2)
@@ -805,10 +814,13 @@ contains
         indegs = 0
 
         !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(ci, cj, ni, nj) &
+        !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(ci, cj, ni, nj, iofs) &
         !$omp COLLAPSE(2) &
         !$omp SCHEDULE(STATIC)
         do cj = 1, ncols
             do ci = 1, nrows
+                if (.not. valids(ci, cj)) cycle
+
                 ! Loop over offsets to find neighbours flowing into current cell
                 do iofs = 1, noffsets
                     ! Upstream neighbour indices
@@ -816,6 +828,8 @@ contains
                     nj = cj - offsets(iofs, 2)
                     ! Check bounds
                     if (ni < 1 .or. ni > nrows .or. nj < 1 .or. nj > ncols) cycle
+                    ! Check if neighbour is valid
+                    if (.not. valids(ni, nj)) cycle
                     ! Skip self-loops
                     if (ni == ci .and. nj == cj) cycle
                     ! Check if neighbour flows into current cell
@@ -1350,6 +1364,173 @@ contains
         deallocate (offset_lookup)
         deallocate (tofill_ijs)
     end subroutine compute_flow_strahler_order
+
+    subroutine construct_flowgraph( &
+        dirs, valids, orders, seeds, indegs, nrows, ncols, &
+        offsets, codes, noffsets, preserve_junction, ncells, &
+        narcs, nvertices, arc_orders, vertex_ijs, vertex_startends)
+        implicit none
+        ! Arguments
+        integer, intent(in) :: nrows, ncols
+            !! Size of the grid
+        integer*1, intent(in) :: dirs(nrows, ncols)
+            !! Flow direction grid, using the provided codes
+        logical*1, intent(in) :: valids(nrows, ncols)
+            !! Validity mask (true for valid cells, false for cells that should not be processed, including those with low order)
+        integer*2, intent(in) :: orders(nrows, ncols)
+            !! Grid of Strahler stream order values for each cell
+        logical*1, intent(in) :: seeds(nrows, ncols)
+            !! Mask to identify initial seed cells for the algorithm (valid cells with zero indegree)
+        integer*1, intent(in) :: indegs(nrows, ncols)
+            !! Indegree of the cell
+        integer, intent(in) :: noffsets
+            !! Number of flow directions
+        integer, intent(in) :: offsets(noffsets, 2)
+            !! List of offsets for each flow direction
+        integer*1, intent(in) :: codes(noffsets)
+            !! List of flow direction codes corresponding to the offsets
+        logical, intent(in) :: preserve_junction
+            !! Whether to stop an arc when another arc joins it
+        integer, intent(in) :: ncells
+            !! Number of valid cells
+        ! Outputs
+        integer, intent(out) :: narcs, nvertices
+            !! How many arcs and vertices there are
+        integer*2, intent(out) :: arc_orders(ncells)
+            !! Order of each arc
+            !! Note only the first 'narcs' elements contain the actual data
+        integer, intent(out) :: vertex_ijs(2, 2*ncells)
+            !! Ordered (i, j) indices of cells that each arc contains
+            !! Note only the first 'nvertices' columns contain the actual data
+        integer, intent(out) :: vertex_startends(1:2, ncells)
+            !! Where each arc starts and ends in the 'vertex_ijs' array
+            !! Note only the first 'narcs' columns contain the actual data
+        ! Local variables
+        integer*1 :: noflow_code
+            !! Code corresponding to noflow direction, used to identify sink cells
+        integer, allocatable :: offset_lookup(:, :)
+            !! Lookup table for offsets corresponding to each flow direction code, used to find downstream cell indices
+        integer, allocatable :: seed_ijs(:, :)
+            !! Buffer for storing (i, j) indices of seed cells
+        integer*2 :: order
+            !! Order of the current arc
+        integer :: nseeds, iseed
+            !! Number of seeds and index for iterating through seeds
+        integer :: iarc, ivertex
+            !! index for iterating through arcs and vertices
+        integer :: si, sj, ci, cj, ni, nj
+            !! Rows/columns for seed, current, and neighbour cells
+        logical :: ds_is_valid, is_end_vertex
+            !! Flag of whether the downstream neighbour is a valid cell, and whether we have arrived at the end of the arc
+        logical*1, allocatable :: seens(:, :)
+            !! Mask to identify which cells have already been seen
+
+        ! Create lookup tables for offsets
+        allocate (offset_lookup(0:255, 2))
+        offset_lookup = fill_offset_lookup(offsets, codes, noffsets)
+
+        ! Find index of seeds
+        allocate (seed_ijs(2, ncells))
+        call mask2ij(seeds, nrows, ncols, seed_ijs, ncells, nseeds)
+
+        ! Find noflow code
+        noflow_code = find_noflow_code(offsets, codes, noffsets)
+
+        allocate (seens(nrows, ncols))
+        seens = .false.
+        iseed = 1
+        iarc = 1
+        ivertex = 1
+
+        do while (iseed <= nseeds)
+            si = seed_ijs(1, iseed)
+            sj = seed_ijs(2, iseed)
+            iseed = iseed + 1
+            seens(si, sj) = .true.
+
+            ! Skip isolated point
+            if (dirs(si, sj) == noflow_code) cycle
+
+            ! Initialise the arc
+            order = orders(si, sj)
+            arc_orders(iarc) = order
+            vertex_startends(1, iarc) = ivertex
+            vertex_ijs(:, ivertex) = [si, sj]
+            ivertex = ivertex + 1
+            ci = si
+            cj = sj
+
+            do while (.true.)
+                ! First check the downstream cell
+                ni = ci + offset_lookup(dirs(ci, cj), 1)
+                nj = cj + offset_lookup(dirs(ci, cj), 2)
+
+                ds_is_valid = .true.
+                if (ci == ni .and. cj == nj) then ! Self-loop
+                    ds_is_valid = .false.
+                else if (ni <= 0 .or. ni > nrows .or. nj <= 0 .or. nj > ncols) then ! OOB
+                    ds_is_valid = .false.
+                else if (.not. valids(ni, nj)) then
+                    ds_is_valid = .false.
+                end if
+
+                if (.not. ds_is_valid) then
+                    is_end_vertex = .true.
+                else
+                    is_end_vertex = orders(ni, nj) /= order
+                    if (preserve_junction) is_end_vertex = is_end_vertex .or. (indegs(ni, nj) >= 2)
+                end if
+
+                if (is_end_vertex) then
+                    if (.not. ds_is_valid) then
+                        if (vertex_startends(1, iarc) == ivertex - 1) then
+                            ! Single-length arc, roll back arc and vertex registration
+                            ivertex = ivertex - 1
+                            iarc = iarc - 1
+                            exit
+                        else
+                            vertex_startends(2, iarc) = ivertex - 1
+                            exit
+                        end if
+                    end if
+                    if (ivertex > size(vertex_ijs, 2)) then
+                        print *, "[CONSTRUCT_FLOWGRAPH] Error: vertex buffer overflow "// &
+                            "(size:", ivertex, ", allocated:", size(vertex_ijs, 2), ")"
+                        stop
+                    end if
+                    vertex_ijs(:, ivertex) = [ni, nj]
+                    vertex_startends(2, iarc) = ivertex
+                    ivertex = ivertex + 1
+                    if (ds_is_valid .and. (.not. seens(ni, nj))) then
+                        seens(ni, nj) = .true.
+                        nseeds = nseeds + 1
+                        seed_ijs(:, nseeds) = [ni, nj]
+                    end if
+                    exit
+                end if
+
+                seens(ni, nj) = .true.
+                if (ivertex > size(vertex_ijs, 2)) then
+                    print *, "[CONSTRUCT_FLOWGRAPH] Error: vertex buffer overflow "// &
+                        "(size:", ivertex, ", allocated:", size(vertex_ijs, 2), ")"
+                    stop
+                end if
+                vertex_ijs(:, ivertex) = [ni, nj]
+                ivertex = ivertex + 1
+                ci = ni
+                cj = nj
+            end do
+
+            iarc = iarc + 1
+        end do
+
+        deallocate (offset_lookup)
+        deallocate (seens)
+        deallocate (seed_ijs)
+
+        narcs = iarc - 1
+        nvertices = ivertex - 1
+    end subroutine construct_flowgraph
 
     subroutine label_watersheds( &
         labels, dirs, valids, nrows, ncols, offsets, codes, noffsets)

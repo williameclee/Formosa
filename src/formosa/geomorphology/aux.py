@@ -4,6 +4,8 @@
 #     - Standardised variable and argument names
 #   2026-07-01, En-Chi Lee (williameclee@gmail.com)
 #     - Made out-of-bound check in `compute_downstream_indices` optional
+#   2026-07-02, En-Chi Lee (williameclee@gmail.com)
+#     - Actually implemented validity check in `compute_downstram_indices`
 
 import numpy as np
 
@@ -91,8 +93,8 @@ def compute_downstream_indices(
     valids: Optional[npt.NDArray[np.bool_]] = None,
     check: bool = True,
 ) -> tuple[
-    npt.NDArray[np.integer],
-    npt.NDArray[np.integer],
+    npt.NDArray[np.int32],
+    npt.NDArray[np.int32],
     npt.NDArray[np.int32],
     npt.NDArray[np.bool_] | None,
 ]:
@@ -119,12 +121,15 @@ def compute_downstream_indices(
     -------
     dsi : NDArray[int]
         A 2D array of downstream row indices for each cell.
+        When the cell is invalid, it is set to -1.
     dsj : NDArray[int]
         A 2D array of downstream column indices for each cell.
+        When the cell is invalid, it is set to -1.
     dsij : NDArray[int32]
         A 2D array of flattened downstream indices for each cell.
-    ds_valids : NDArray[bool]
-        A boolean mask array indicating valid downstream cells for each cell.
+        When the cell is invalid, it is set to -1.
+    ds_inbounds : NDArray[bool]
+        A boolean mask array indicating out-of-bound downstream cells for each cell.
 
     Raises
     ------
@@ -149,16 +154,21 @@ def compute_downstream_indices(
         np.arange(I, dtype=np.int32), np.arange(J, dtype=np.int32), indexing="ij"
     )
     di, dj = dir_scheme.code2d8offset(dirs)
-    dsi = (ii.astype(np.int32) + (di).astype(np.int32)).astype(np.int16)
-    dsj = (jj.astype(np.int32) + (dj).astype(np.int32)).astype(np.int16)
+    dsi = ii.astype(np.int32) + (di).astype(np.int32)
+    dsj = jj.astype(np.int32) + (dj).astype(np.int32)
     dsij: npt.NDArray[np.int32] = dsj.astype(np.int32) * I + dsi.astype(np.int32)
 
-    invalid = (dsi < 0) | (dsi >= I) | (dsj < 0) | (dsj >= J)
-    if not np.any(invalid):
+    dsi[~valids] = -1
+    dsj[~valids] = -1
+    dsij[~valids] = -1
+
+    ds_oobs = valids & ((dsi < 0) | (dsi >= I) | (dsj < 0) | (dsj >= J))
+
+    if not np.any(ds_oobs):
         return dsi, dsj, dsij, np.full(dirs.shape, True, dtype=bool)
 
     if check:
         raise ValueError("Some downstream indices out of bounds")
 
     warnings.warn("Some downstream indices out of bounds", UserWarning)
-    return dsi, dsj, dsij, ~invalid
+    return dsi, dsj, dsij, ~ds_oobs

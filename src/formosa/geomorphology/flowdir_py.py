@@ -3,6 +3,11 @@
 #     - Moved Python backend implementations to this file
 #     - Removed redundant NaN checks against integer arrays
 #     - Standardised variable, argument, and function names
+#   2026-07-02, En-Chi Lee (williameclee@gmail.com)
+#     - Updated indegree algorithm
+#     - Added `_compute_flow_strahler_order_py` and `_construct_flowgraph_py`
+#   2026-07-09, En-Chi Lee (williameclee@gmail.com)
+#     - Added better validity check in `_count_indegree_py`
 
 import numpy as np
 
@@ -57,24 +62,28 @@ def _compute_masked_flowdir_py(
 
 
 def _count_indegree_py(
-    dirs: npt.NDArray[np.integer], dir_scheme: D8Directions = D8Directions()
-) -> npt.NDArray[np.integer]:
-    indegree = np.zeros(dirs.shape, dtype=np.int32)
-    dsi, dsj, _ = compute_downstream_indices(dirs, dir_scheme=dir_scheme)
+    dirs: npt.NDArray[np.integer],
+    dir_scheme: D8Directions = D8Directions(),
+    valids: Optional[npt.NDArray[np.integer]] = None,
+) -> npt.NDArray[np.int8]:
+    if valids is None:
+        valids = np.ones(dirs.shape, dtype=bool)
+    indegs = np.zeros(dirs.shape, dtype=np.int8)
+    dsi, dsj, _, ds_valids = compute_downstream_indices(
+        dirs, dir_scheme=dir_scheme, valids=valids, check=False
+    )
 
-    for flowdir in np.unique(dirs):
-        if flowdir == 0:
-            continue
-        is_Valid_ds = (
-            (dirs == flowdir)
-            & (dsi >= 0)
-            & (dsi < dirs.shape[0])
-            & (dsj >= 0)
-            & (dsj < dirs.shape[1])
-        )
-        indegree[dsi[is_Valid_ds], dsj[is_Valid_ds]] += 1
-
-    return indegree
+    for i in range(dirs.shape[0]):
+        for j in range(dirs.shape[1]):
+            if not valids[i, j]:
+                continue
+            if not ds_valids[i, j]:
+                continue
+            elif (dsi[i, j] == i) and (dsj[i, j] == j):  # skip self-loop
+                continue
+            indegs[dsi[i, j], dsj[i, j]] += 1
+    # TODO: Find out why is there overflow here?
+    return indegs
 
 
 def _find_flat_edges_py(
@@ -135,7 +144,7 @@ def _compute_flow_accumulation_py(
         weights = np.where(valids, weights, 0)  # type: ignore
 
     if dsij is None:
-        _, _, dsij = compute_downstream_indices(dirs, dir_scheme=dir_scheme)
+        _, _, dsij, _ = compute_downstream_indices(dirs, dir_scheme=dir_scheme)
     else:
         assert (
             dsij.shape == dirs.shape
@@ -178,7 +187,7 @@ def _compute_flow_strahler_order_py(
 
     if indegs is None:
         indegs = _count_indegree_py(dirs, dir_scheme=dir_scheme)
-    downstream_i, downstreamj, _ = compute_downstream_indices(
+    downstream_i, downstreamj, _, _ = compute_downstream_indices(
         dirs, dir_scheme=dir_scheme
     )
 
@@ -257,3 +266,102 @@ def _label_watersheds_py(
                     to_fill.append((ni, nj))
     watershed = watershed + 1  # make background 0 and watersheds start from 1
     return watershed
+
+
+def _construct_flowgraph_py(
+    dirs: npt.NDArray[np.integer],
+    dir_scheme: D8Directions,
+    valids: npt.NDArray[np.bool_],
+    orders: npt.NDArray[np.integer],
+    indegs: npt.NDArray[np.integer],
+    seeds: npt.NDArray[np.bool_],
+    preserve_junctions: bool = True,
+    ncells: Optional[int] = None,
+):
+    seens = np.zeros_like(dirs, dtype=np.bool_)
+
+    # Hold the cell ijs of the start and end node
+    if ncells is None:
+        ncells = dirs.size
+    arc_orders = np.zeros((ncells,), dtype=np.int8)
+    vertex_ijs = np.empty((2, 2 * ncells), dtype=np.int32)
+    vertex_startends = np.empty((2, ncells), dtype=np.int32)
+
+    # Find seed cells to start with
+    seed_ijs = np.zeros((2, np.sum(valids)), dtype=np.int32, order="F")
+    nseeds: int = np.sum(seeds)
+    seed_i, seed_j = np.nonzero(seeds)
+    seed_ijs[0, :nseeds] = seed_i
+    seed_ijs[1, :nseeds] = seed_j
+
+    iseed: int = 0
+    iarc: int = 0
+    ivertex: int = 0
+
+    while iseed < nseeds:
+        si, sj = seed_ijs[0, iseed], seed_ijs[1, iseed]
+        iseed += 1
+        seens[si, sj] = True
+
+        # Skip isolated point
+        di, dj = dir_scheme.code2d8offset(dirs[si, sj])
+        if (di == 0) and (dj == 0):
+            continue
+
+        # Initialise the arc
+        order = orders[si, sj]
+        arc_orders[iarc] = order
+        vertex_startends[0, iarc] = ivertex
+        vertex_ijs[:, ivertex] = [si, sj]
+        ivertex += 1
+        ci, cj = si, sj
+
+        while True:
+            di, dj = dir_scheme.code2d8offset(dirs[ci, cj])
+            ni = ci + di
+            nj = cj + dj
+
+            ds_is_valid = True
+            if (ci == ni) and (cj == nj):  # Self-loop
+                ds_is_valid = False
+            elif (
+                (ni < 0) or (ni >= dirs.shape[0]) or (nj < 0) or (nj >= dirs.shape[1])
+            ):  # OOB
+                ds_is_valid = False
+            elif not valids[ni, nj]:
+                ds_is_valid = False
+
+            is_end_vertex = (not ds_is_valid) or (orders[ni, nj] != order)
+            if preserve_junctions:
+                is_end_vertex = is_end_vertex or (indegs[ni, nj] >= 2)
+
+            if is_end_vertex:
+                if not ds_is_valid:
+                    if vertex_startends[0, iarc] == ivertex - 1:
+                        # Single-length arc, roll back arc and vertex registration
+                        ivertex -= 1
+                        iarc -= 1
+                        break
+                    else:
+                        vertex_startends[1, iarc] = ivertex - 1
+                        break
+                vertex_ijs[:, ivertex] = [ni, nj]
+                vertex_startends[1, iarc] = ivertex
+                ivertex += 1
+                if (ds_is_valid) and (not seens[ni, nj]):
+                    seens[ni, nj] = True
+                    seed_ijs[:, nseeds] = [ni, nj]
+                    nseeds += 1
+                break
+
+            seens[ni, nj] = True
+
+            vertex_ijs[:, ivertex] = [ni, nj]
+            ivertex += 1
+            ci, cj = ni, nj
+        iarc += 1
+
+    narcs = iarc
+    nvertices = ivertex
+
+    return narcs, nvertices, arc_orders, vertex_ijs, vertex_startends
