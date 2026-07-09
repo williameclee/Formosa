@@ -5,6 +5,7 @@ uv.lock
 __pycache__/
 *_test.py
 
+prs/
 build/
 assets/
 *.egg-info/

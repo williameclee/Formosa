@@ -6,6 +6,8 @@
 #   2026-07-02, En-Chi Lee (williameclee@gmail.com)
 #     - Updated indegree algorithm
 #     - Added `_compute_flow_strahler_order_py` and `_construct_flowgraph_py`
+#   2026-07-09, En-Chi Lee (williameclee@gmail.com)
+#     - Added better validity check in `_count_indegree_py`
 
 import numpy as np
 
@@ -73,6 +75,8 @@ def _count_indegree_py(
 
     for i in range(dirs.shape[0]):
         for j in range(dirs.shape[1]):
+            if not valids[i, j]:
+                continue
             if not ds_valids[i, j]:
                 continue
             elif (dsi[i, j] == i) and (dsj[i, j] == j):  # skip self-loop
@@ -324,7 +328,7 @@ def _construct_flowgraph_py(
                 (ni < 0) or (ni >= dirs.shape[0]) or (nj < 0) or (nj >= dirs.shape[1])
             ):  # OOB
                 ds_is_valid = False
-            elif ~valids[ni, nj]:
+            elif not valids[ni, nj]:
                 ds_is_valid = False
 
             is_end_vertex = (not ds_is_valid) or (orders[ni, nj] != order)

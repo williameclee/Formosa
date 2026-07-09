@@ -19,6 +19,9 @@
 !   2026-07-02, En-Chi Lee (williameclee@gmail.com)
 !     - Iterated the array bound instead of starting from 1 in 'mask2ij'
 !     - Added function 'construct_flowgraph'
+!   2026-07-09, En-Chi Lee (williameclee@gmail.com)
+!     - Fixed OpenMP data race in 'count_indegree'
+!     - Added overflow check in 'construct_flowgraph'
 !!!
 
 module flowdir_utils
@@ -811,6 +814,7 @@ contains
         indegs = 0
 
         !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(ci, cj, ni, nj) &
+        !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(ci, cj, ni, nj, iofs) &
         !$omp COLLAPSE(2) &
         !$omp SCHEDULE(STATIC)
         do cj = 1, ncols
@@ -1489,6 +1493,11 @@ contains
                             exit
                         end if
                     end if
+                    if (ivertex > size(vertex_ijs, 2)) then
+                        print *, "[CONSTRUCT_FLOWGRAPH] Error: vertex buffer overflow "// &
+                            "(size:", ivertex, ", allocated:", size(vertex_ijs, 2), ")"
+                        stop
+                    end if
                     vertex_ijs(:, ivertex) = [ni, nj]
                     vertex_startends(2, iarc) = ivertex
                     ivertex = ivertex + 1
@@ -1501,6 +1510,11 @@ contains
                 end if
 
                 seens(ni, nj) = .true.
+                if (ivertex > size(vertex_ijs, 2)) then
+                    print *, "[CONSTRUCT_FLOWGRAPH] Error: vertex buffer overflow "// &
+                        "(size:", ivertex, ", allocated:", size(vertex_ijs, 2), ")"
+                    stop
+                end if
                 vertex_ijs(:, ivertex) = [ni, nj]
                 ivertex = ivertex + 1
                 ci = ni
