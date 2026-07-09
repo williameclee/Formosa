@@ -20,6 +20,8 @@
 #     - Opted out of the out-of-bound check in `compute_downstream_indices` in `create_flowgraph`
 #     - Allowed specifying validity mask in `count_indegree`
 #     - Added function `construct_flowgraph`
+#   2026-07-09, En-Chi Lee (williameclee@gmail.com)
+#     - Specified endpoint index definition for `create_flowgraph`
 
 
 import numpy as np
@@ -884,10 +886,11 @@ def construct_flowgraph(
     -------
     arc_orders : NDArray[int8]
         1D array representing the Strahler order for each arc in the flow graph
-    vertex_ijs : NDArray[int8]
+    vertex_ijs : NDArray[int32]
         V-by-2 array containing the ordered (i, j) incices of all arcs, concactinated together
     vertex_startends : NDArray[int32]
         A-by-2 array containing the indices of where each arc starts and ends in `vertex_ijs`
+        The returned endpoints are inclusive, meaning slicing must be done as `vertex_ijs[start : end + 1]`.
     """
     if valids is None:
         valids = np.ones(dirs.shape, dtype=bool)
