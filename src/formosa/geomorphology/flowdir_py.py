@@ -6,13 +6,15 @@
 #   2026-07-02, En-Chi Lee (williameclee@gmail.com)
 #     - Updated indegree algorithm
 #     - Added `_compute_flow_strahler_order_py` and `_construct_flowgraph_py`
+#   2026-07-08, En-Chi Lee (williameclee@gmail.com)
+#     - Renamed helper submodule from `aux` to `utils`
 #   2026-07-09, En-Chi Lee (williameclee@gmail.com)
 #     - Added better validity check in `_count_indegree_py`
 
 import numpy as np
 
 from formosa.geomorphology.d8directions import D8Directions
-from .aux import get_neighbour_values, compute_downstream_indices
+from .utils import get_neighbour_values, compute_downstream_indices
 
 import numpy.typing as npt
 from typing import Optional

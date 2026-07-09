@@ -20,6 +20,8 @@
 #     - Opted out of the out-of-bound check in `compute_downstream_indices` in `create_flowgraph`
 #     - Allowed specifying validity mask in `count_indegree`
 #     - Added function `construct_flowgraph`
+#   2026-07-08, En-Chi Lee (williameclee@gmail.com)
+#     - Renamed helper submodule from `aux` to `utils`
 #   2026-07-09, En-Chi Lee (williameclee@gmail.com)
 #     - Specified endpoint index definition for `create_flowgraph`
 
@@ -27,7 +29,7 @@
 import numpy as np
 
 from formosa.geomorphology.d8directions import D8Directions
-from .aux import get_neighbour_values, compute_downstream_indices
+from .utils import get_neighbour_values, compute_downstream_indices
 
 try:
     from formosa.geomorphology.flowdir_f import flowdir as flowdir_f

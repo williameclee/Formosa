@@ -19,6 +19,8 @@
 !   2026-07-02, En-Chi Lee (williameclee@gmail.com)
 !     - Iterated the array bound instead of starting from 1 in 'mask2ij'
 !     - Added function 'construct_flowgraph'
+!   2026-07-08, En-Chi Lee (williameclee@gmail.com)
+!     - Moved 'mask2ij' to separate 'utils' module
 !   2026-07-09, En-Chi Lee (williameclee@gmail.com)
 !     - Fixed OpenMP data race in 'count_indegree'
 !     - Added overflow check in 'construct_flowgraph'
@@ -133,51 +135,12 @@ contains
             diffs(codes(iofs), 2) = offsets(iofs, 2)
         end do
     end function fill_offset_lookup
-
-    subroutine mask2ij( &
-        mask, nrows, ncols, ij, nij, cnt)
-        !! Converts a 2D logical mask to a list of (i, j) indices where
-        !! the mask is true.
-        !! The output list will have a maximum size of 2-by-'nij', and
-        !! the actual number of valid indices found will be returned in
-        !! 'cnt'. If the number of valid indices exceeds nij, the
-        !! remaining will be ignored.
-        implicit none
-        ! Arguments
-        integer, intent(in) :: nrows, ncols
-            !! Size of the input mask
-        logical*1, intent(in) :: mask(nrows, ncols)
-            !! Input logical mask
-        integer, intent(in) :: nij
-            !! Maximum number of indices to return
-        ! Outputs
-        integer, intent(out) :: ij(2, nij)
-            !! Output list of (i, j) indices where mask is true, with a maximum size of 2-by-nij
-        integer, intent(out) :: cnt
-            !! Actual number of valid indices found (up to nij)
-        ! Local variables
-        integer :: ci, cj
-
-        ! Count number of valid neighbors
-        cnt = 0
-
-        do cj = lbound(mask, 2), ubound(mask, 2)
-            do ci = lbound(mask, 1), ubound(mask, 1)
-                if (.not. mask(ci, cj)) cycle
-                if (cnt == nij) then
-                    print *, "Warning: mask2ij found more valid indices than the maximum allowed (", cnt, "). Only the first ", nij, " indices will be returned."
-                    return
-                end if
-                cnt = cnt + 1
-                ij(1, cnt) = ci
-                ij(2, cnt) = cj
-            end do
-        end do
-    end subroutine mask2ij
 end module flowdir_utils
 
 module flowdir
     use omp_lib
+    use utils
+    use distances
     use flowdir_utils
     implicit none
 contains
@@ -813,7 +776,6 @@ contains
 
         indegs = 0
 
-        !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(ci, cj, ni, nj) &
         !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(ci, cj, ni, nj, iofs) &
         !$omp COLLAPSE(2) &
         !$omp SCHEDULE(STATIC)
@@ -962,8 +924,7 @@ contains
         ! Local variables
         integer, allocatable :: offset_lookup(:, :)
             !! Lookup table for offsets corresponding to each flow direction code, used to find downstream cell indices
-        integer, allocatable :: dist_lookup(:)
-            !! Lookup table for distance increments corresponding to each flow direction code, used to calculate distance to downstream cells
+        ! integer :: step_dist
         integer :: itofill, ntofills
             !! Index for iterating through cells to fill and total number of cells to fill
         integer :: ci, cj, ni, nj
@@ -977,9 +938,7 @@ contains
 
         ! Create lookup tables for offsets
         allocate (offset_lookup(0:255, 2))
-        allocate (dist_lookup(0:255))
         offset_lookup = fill_offset_lookup(offsets, codes, noffsets)
-        dist_lookup = sum(abs(offset_lookup), dim=2)
 
         ! Fill the tofill buffer with all valid cells with zero indegree
         max_queue_size = nrows*ncols
@@ -1011,9 +970,7 @@ contains
             if (indegs(ni, nj) <= 0) cycle
 
             ! Update distance of downstream cell
-            if (dists(ci, cj) + 1 > dists(ni, nj)) then
-                dists(ni, nj) = dists(ci, cj) + dist_lookup(dirs(ci, cj))
-            end if
+            dists(ni, nj) = max(dists(ci, cj), dists(ci, cj) + l1dist_xy(ni, nj, ci, cj))
             ! Decrement indegree of downstream cell
             indegs(ni, nj) = indegs(ni, nj) - int(1, kind=1)
             ! If indegree is zero, add to tofill buffer
@@ -1027,7 +984,6 @@ contains
             end if
         end do
         deallocate (offset_lookup)
-        deallocate (dist_lookup)
         deallocate (tofill_ijs)
     end subroutine compute_dist2source_l1
 
@@ -1065,8 +1021,6 @@ contains
             !! Index for iterating through cells to fill and total number of cells to fill
         integer :: ci, cj, ni, nj
             !! Rows/columns for current and neighbour cells
-        real :: step_dist
-            !! Distance between current cell and downstream cell, calculated using x and y coordinates
         logical*1, allocatable :: seeds(:, :)
             !! Mask to identify initial seed cells for the flooding algorithm (valid cells with zero indegree)
         integer, allocatable :: tofill_ijs(:, :)
@@ -1108,12 +1062,7 @@ contains
             if (indegs(ni, nj) <= 0) cycle
 
             ! Update distance of downstream cell
-            step_dist = hypot( &
-                        x(ni, nj) - x(ci, cj), &
-                        y(ni, nj) - y(ci, cj))
-            if (dists(ci, cj) + step_dist > dists(ni, nj)) then
-                dists(ni, nj) = dists(ci, cj) + step_dist
-            end if
+            dists(ni, nj) = max(dists(ci, cj), dists(ci, cj) + l2dist_xy(x(ni, nj), y(ni, nj), x(ci, cj), y(ci, cj)))
             ! Decrement indegree of downstream cell
             indegs(ni, nj) = indegs(ni, nj) - int(1, kind=1)
             ! If indegree is zero, add to tofill buffer
@@ -1226,9 +1175,8 @@ contains
                     end if
                     tofill_ijs(:, nfills) = [ui, uj]
                     ! Compute distance
-                    dists(ui, uj) = dists(ci, cj) + hypot( &
-                                    x(ui, uj) - x(ci, cj), &
-                                    y(ui, uj) - y(ci, cj))
+                    dists(ui, uj) = dists(ci, cj) &
+                                    + l2dist_xy(x(ui, uj), y(ui, uj), x(ci, cj), y(ci, cj))
                 end do
             end do
         end do
@@ -1948,8 +1896,6 @@ contains
             !! Flow direction codes for current cells in paths
         logical*1 :: is_active1, is_active2, local_check_flag
             !! Flags for whether each path is still active (has not reached max length or invalid cell) and local copy of check_flag for performance
-        real :: dx, dy
-            !! Differences in coordinates for distance calculations
 
         !! Initialisation and checks
         local_check_flag = (.not. present(check_flag)) .or. check_flag
@@ -2079,17 +2025,19 @@ contains
         end do tracer_loop
 
         ! Compute distances to confluence
-        ! 'sqrt' is unsed instead of 'hypot' because coordinates are bounded
-        ! and do not present underflow/overflow risk here.
         do ipath1 = 1, min(iconf1, npath1) - 1
-            dx = x(path1(1, ipath1 + 1), path1(2, ipath1 + 1)) - x(path1(1, ipath1), path1(2, ipath1))
-            dy = y(path1(1, ipath1 + 1), path1(2, ipath1 + 1)) - y(path1(1, ipath1), path1(2, ipath1))
-            dists(1) = dists(1) + sqrt(dx*dx + dy*dy)
+            dists(1) = dists(1) + l2dist_xy( &
+                       x(path1(1, ipath1 + 1), path1(2, ipath1 + 1)), &
+                       y(path1(1, ipath1 + 1), path1(2, ipath1 + 1)), &
+                       x(path1(1, ipath1), path1(2, ipath1)), &
+                       y(path1(1, ipath1), path1(2, ipath1)))
         end do
         do ipath2 = 1, min(iconf2, npath2) - 1
-            dx = x(path2(1, ipath2 + 1), path2(2, ipath2 + 1)) - x(path2(1, ipath2), path2(2, ipath2))
-            dy = y(path2(1, ipath2 + 1), path2(2, ipath2 + 1)) - y(path2(1, ipath2), path2(2, ipath2))
-            dists(2) = dists(2) + sqrt(dx*dx + dy*dy)
+            dists(2) = dists(2) + l2dist_xy( &
+                       x(path2(1, ipath2 + 1), path2(2, ipath2 + 1)), &
+                       y(path2(1, ipath2 + 1), path2(2, ipath2 + 1)), &
+                       x(path2(1, ipath2), path2(2, ipath2)), &
+                       y(path2(1, ipath2), path2(2, ipath2)))
         end do
     end subroutine inner_compute_confluence_dist
 
