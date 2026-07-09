@@ -35,4 +35,5 @@ dev = [
     "pytest",
     "pytest-cov",
     "snakeviz",
+    "ninja",
 ]
