@@ -5,6 +5,8 @@
 #     - Added test cases for `compute_downstream_indices`, `create_flowgraph`, and `compute_flow_strahler_order`
 #   2026-07-02, En-Chi Lee (williameclee@gmail.com)
 #     - Added test case for `compute_downstream_indices` with validity mask
+#   2026-07-09, En-Chi Lee (williameclee@gmail.com)
+#     - Added test case for the Fortran implementation of `construct_flowgraph`
 
 import pytest
 import numpy as np
@@ -360,6 +362,34 @@ def test_strahler_order_4x4():
     np.testing.assert_array_equal(order, expected_order)
 
 
+def test_network_graph_3x3():
+    dir_scheme = D8Directions(transform_codes=lambda x: x)
+
+    dirs = np.array([[3, 3, 3], [3, 3, 3], [1, 1, 0]])
+    valids = np.array([[True, False, True], [True, True, True], [True, True, True]])
+
+    exp_orders = np.array([1, 1, 1, 2])
+    exp_lengths = np.array([1, 2, 3, 1])
+    exp_ijs = [
+        np.array([[1, 1], [2, 1]]),
+        np.array([[0, 2], [1, 2], [2, 2]]),
+        np.array([[0, 0], [1, 0], [2, 0], [2, 1]]),
+        np.array([[2, 1], [2, 2]]),
+    ]
+    arc_orders, vertex_ijs, arc_endpts = flowdir.construct_flowgraph(
+        dirs, dir_scheme=dir_scheme, backend="fortran", min_order=1, valids=valids
+    )
+    arc_lengths = arc_endpts[:, 1] - arc_endpts[:, 0]
+
+    np.testing.assert_array_equal(arc_orders, exp_orders)
+    np.testing.assert_array_equal(arc_lengths, exp_lengths)
+
+    for i, exp_ij in enumerate(exp_ijs):
+        np.testing.assert_array_equal(
+            vertex_ijs[arc_endpts[i, 0] : arc_endpts[i, 1] + 1], exp_ij
+        )
+
+
 if __name__ == "__main__":
     test_downstreamid_3x3()
     test_downstreamid_4x4()
@@ -367,3 +397,4 @@ if __name__ == "__main__":
     test_indegree_3x3()
     test_strahler_order_3x3()
     test_strahler_order_4x4()
+    test_network_graph_3x3()
