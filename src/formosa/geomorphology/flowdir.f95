@@ -24,6 +24,7 @@
 !   2026-07-09, En-Chi Lee (williameclee@gmail.com)
 !     - Fixed OpenMP data race in 'count_indegree'
 !     - Added overflow check in 'construct_flowgraph'
+!     - Implemented 'simplify_flowgraph' function
 !!!
 
 module flowdir_utils
@@ -1316,7 +1317,7 @@ contains
     subroutine construct_flowgraph( &
         dirs, valids, orders, seeds, indegs, nrows, ncols, &
         offsets, codes, noffsets, preserve_junction, ncells, &
-        narcs, nvertices, arc_orders, vertex_ijs, vertex_startends)
+        narcs, nvertices, arc_orders, vertex_ijs, arc_endpts)
         implicit none
         ! Arguments
         integer, intent(in) :: nrows, ncols
@@ -1350,7 +1351,7 @@ contains
         integer, intent(out) :: vertex_ijs(2, 2*ncells)
             !! Ordered (i, j) indices of cells that each arc contains
             !! Note only the first 'nvertices' columns contain the actual data
-        integer, intent(out) :: vertex_startends(1:2, ncells)
+        integer, intent(out) :: arc_endpts(2, ncells)
             !! Where each arc starts and ends in the 'vertex_ijs' array
             !! Note only the first 'narcs' columns contain the actual data
         ! Local variables
@@ -1402,7 +1403,7 @@ contains
             ! Initialise the arc
             order = orders(si, sj)
             arc_orders(iarc) = order
-            vertex_startends(1, iarc) = ivertex
+            arc_endpts(1, iarc) = ivertex
             vertex_ijs(:, ivertex) = [si, sj]
             ivertex = ivertex + 1
             ci = si
@@ -1431,13 +1432,13 @@ contains
 
                 if (is_end_vertex) then
                     if (.not. ds_is_valid) then
-                        if (vertex_startends(1, iarc) == ivertex - 1) then
+                        if (arc_endpts(1, iarc) == ivertex - 1) then
                             ! Single-length arc, roll back arc and vertex registration
                             ivertex = ivertex - 1
                             iarc = iarc - 1
                             exit
                         else
-                            vertex_startends(2, iarc) = ivertex - 1
+                            arc_endpts(2, iarc) = ivertex - 1
                             exit
                         end if
                     end if
@@ -1447,7 +1448,7 @@ contains
                         stop
                     end if
                     vertex_ijs(:, ivertex) = [ni, nj]
-                    vertex_startends(2, iarc) = ivertex
+                    arc_endpts(2, iarc) = ivertex
                     ivertex = ivertex + 1
                     if (ds_is_valid .and. (.not. seens(ni, nj))) then
                         seens(ni, nj) = .true.
@@ -1479,6 +1480,78 @@ contains
         narcs = iarc - 1
         nvertices = ivertex - 1
     end subroutine construct_flowgraph
+
+    recursive subroutine simplify_arc_rdp(xys, keeps, istart, iend, tol)
+        ! Simplify a single arc segment recursively using the Ramer-Douglas-Peucker (RDP) algorithm.
+        implicit none
+        ! Arguments
+        real, intent(in) :: xys(:, :)
+            !! x and y coordinates of each vertex
+        integer, intent(in) :: istart, iend
+            !! Where the segment starts and ends in the 'xys' array
+        real, intent(in) :: tol
+            !! Tolerence threshold
+        ! Outputs
+        logical*1, intent(inout) :: keeps(:)
+            !! Boolean mask indicating which vertices should be kept
+        ! Local variables
+        integer :: i
+            !! Index for iterating through vertices
+        real :: err2, max_err2
+            !! Squared error at individual points and the maximum squared error
+        integer :: i_max_err2
+            !! Index of the point with the maximum error
+
+        ! Initialisation
+        keeps(istart) = .true.
+        keeps(iend) = .true.
+
+        if ((iend - istart) <= 1) return ! Noting to do if <= 2 points
+
+        ! Find the point with the maximum perpendicular distance to the segment line
+        max_err2 = 0.
+        i_max_err2 = istart
+        do i = istart + 1, iend - 1
+            err2 = pt2linedist2_xy(xys(1, istart), xys(2, istart), xys(1, iend), xys(2, iend), xys(1, i), xys(2, i))
+            if (err2 <= max_err2) cycle
+            max_err2 = err2
+            i_max_err2 = i
+        end do
+
+        ! If max error is within the tolerance threshold, simplify (keep only endpoints)
+        if (max_err2 <= tol**2) return
+        ! Otherwise, keep the point with maximum error and recursively simplify the two sub-segments
+        keeps(i_max_err2) = .true.
+        call simplify_arc_rdp(xys, keeps, istart, i_max_err2, tol)
+        call simplify_arc_rdp(xys, keeps, i_max_err2, iend, tol)
+    end subroutine simplify_arc_rdp
+
+    subroutine simplify_flowgraph(vertex_xys, arc_endpts, vertex_keeps, nvertices, narcs, tol)
+        ! Simplify all arcs in a flow graph using the Ramer-Douglas-Peucker (RDP) algorithm.
+        implicit none
+        ! Arguments
+        integer, intent(in) :: nvertices, narcs
+            !! Number of vertices and arcs
+        real, intent(in) :: vertex_xys(2, nvertices)
+            !! x and y coordinates of each vertex
+        integer, intent(in) :: arc_endpts(2, narcs)
+            !! Where each arc starts and ends in the 'vertex_xys' array
+        real, intent(in) :: tol
+            !! Tolerence threshold
+        ! Outputs
+        logical*1, intent(out) :: vertex_keeps(nvertices)
+            !! Boolean mask indicating which vertices should be kept across all arcs
+        ! Local variables
+        integer :: iarc
+            !! Index for iterating through arcs
+
+        ! Initialisation
+        vertex_keeps = .false.
+        ! Simplify each arc independently
+        do iarc = 1, narcs
+            call simplify_arc_rdp(vertex_xys, vertex_keeps, arc_endpts(1, iarc), arc_endpts(2, iarc), tol)
+        end do
+    end subroutine simplify_flowgraph
 
     subroutine label_watersheds( &
         labels, dirs, valids, nrows, ncols, offsets, codes, noffsets)

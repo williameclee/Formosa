@@ -24,6 +24,7 @@
 #     - Renamed helper submodule from `aux` to `utils`
 #   2026-07-09, En-Chi Lee (williameclee@gmail.com)
 #     - Specified endpoint index definition for `create_flowgraph`
+#     - Implemented Fortran backend of function `simplify_flowgraph`
 
 
 import numpy as np
@@ -954,6 +955,80 @@ def construct_flowgraph(
         arc_endpts = arc_endpts[id, :]
 
     return arc_orders, vertex_ijs, arc_endpts
+
+
+def simplify_flowgraph(
+    vertex_xys: npt.NDArray[np.number],
+    arc_endpts: npt.NDArray[np.integer],
+    tol: int | float = 1,
+    backend: Literal["fortran", "python"] = "fortran",
+) -> tuple[npt.NDArray[np.number], npt.NDArray[np.int32]]:
+    """
+    Simplify a flow graph using the Ramer-Douglas-Peucker (RDP) algorithm with a fixed tolerance threshold.
+
+    Parameters
+    ----------
+    vertex_xys : NDArray[int | float]
+        V-by-2 (or 2-by-V) array of coordinates representing the vertices in the flow graph
+    arc_endpts : NDArray[int]
+        A-by-2 (or 2-by-A) array of indices indicating where each arc starts and ends in `vertex_xys`
+    tol : int | float, optional
+        Tolerance threshold for simplification
+        Vertices with perpendicular distance to the line segment less than or equal to `tol` will be simplified/removed.
+        Default tolerance is 1.
+    backend : {'fortran', 'python'}, optional
+        Backend to use for computation
+        Default backend and the only one currently available is 'fortran'.
+
+    Returns
+    -------
+    simp_vertex_xys : NDArray[int | float]
+        V'-by-2 array of coordinates representing the simplified vertices
+        This is a subset of the input `vertex_xys` (i.e. no new vertices are created).
+    simp_arc_endpts : NDArray[int32]
+        A-by-2 array of indices indicating the start and end of each simplified arc in `simp_vertex_xys`
+
+    Raises
+    ------
+    NotImplementedError
+        If tries to call the not-yet-implemented Python backend
+    """
+
+    match backend:
+        case "python":
+            raise NotImplementedError(
+                "The Python implementation of `simplify_flowgraph` is not implemented yet."
+            )
+        case "fortran":
+            # Ensure array orientation are correct for the Fortran backend
+            if (vertex_xys.shape[0] != 2) and (vertex_xys.shape[1] == 2):
+                vertex_xys = vertex_xys.T
+            if (arc_endpts.shape[0] != 2) and (arc_endpts.shape[1] == 2):
+                arc_endpts = arc_endpts.T
+
+            # Convert 0-based Python indices to 1-based Fortran indices
+            arc_endpts += 1
+
+            # Call the Fortran routine to get the boolean mask of kept vertices
+            vertex_keeps = flowdir_f.simplify_flowgraph(
+                vertex_xys.astype(np.float32, order="F"),
+                arc_endpts.astype(np.int32, order="F"),
+                tol,
+            )
+            vertex_keeps = vertex_keeps.astype(bool)  # To be summed properly below
+
+            # Revert back to 0-based Python indexing
+            arc_endpts -= 1
+
+    # Squeeze the vertices and map the arc endpoints to the new indices
+    vertex_cumsum = np.cumsum(vertex_keeps) - 1
+    vertex_xys = vertex_xys[:, vertex_keeps]
+    arc_endpts = vertex_cumsum[arc_endpts]
+
+    # Transpose and cast arrays to C-contiguous layout for return
+    vertex_xys = vertex_xys.T.astype(vertex_xys.dtype, order="C")
+    arc_endpts = arc_endpts.T.astype(np.int32, order="C")
+    return vertex_xys, arc_endpts
 
 
 def compute_dist2source(
