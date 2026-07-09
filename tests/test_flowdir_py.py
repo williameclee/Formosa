@@ -53,7 +53,7 @@ def test_network_graph_3x3():
     dir_scheme = D8Directions(transform_codes=lambda x: x)
 
     dirs = np.array([[3, 3, 3], [3, 3, 3], [1, 1, 0]])
-    valids = np.array([[True, False, True], [True, True, True], [True, True, True]])
+    valids = np.array([[T, F, T], [T, T, T], [T, T, T]])
 
     exp_orders = np.array([1, 1, 1, 2])
     exp_lengths = np.array([1, 2, 3, 1])
