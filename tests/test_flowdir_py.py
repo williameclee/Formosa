@@ -2,7 +2,7 @@
 #   2026-07-02, En-Chi Lee (williameclee@gmail.com)
 #     - Added test cases for the Python implementation of `count_indegree`
 #   2026-07-09, En-Chi Lee (williameclee@gmail.com)
-#     - Added test case for the Python implementation of `construct_flowgraph`
+#     - Added test case for the Python implementation of `construct_flowgraph` and function `concat_flowgraph`
 
 import pytest
 import numpy as np
@@ -77,6 +77,28 @@ def test_network_graph_3x3():
         )
 
 
+def test_network_graph_concat_3x3():
+    dir_scheme = D8Directions(transform_codes=lambda x: x)
+
+    dirs = np.array([[3, 3, 3], [3, 3, 3], [1, 1, 0]])
+    valids = np.array([[T, F, T], [T, T, T], [T, T, T]])
+    arc_orders, vertex_ijs, arc_endpts = flowdir.construct_flowgraph(
+        dirs, dir_scheme=dir_scheme, backend="python", min_order=1, valids=valids
+    )
+
+    exp_s_orders = np.array([1, 2])
+    exp_s_endpts = np.array([[0, 10], [12, 13]])
+
+    s_arc_orders, s_vertex_ijs, s_arc_endpts = flowdir.concat_flowgraph(
+        arc_orders, vertex_ijs, arc_endpts
+    )
+    print(s_vertex_ijs)
+    assert s_vertex_ijs.shape[0] == vertex_ijs.shape[0] + arc_orders.shape[0] - 1
+    assert arc_endpts[-1, 1] == vertex_ijs.shape[0] - 1
+    np.testing.assert_array_equal(s_arc_orders, exp_s_orders)
+    np.testing.assert_array_equal(s_arc_endpts, exp_s_endpts)
+
 if __name__ == "__main__":
     test_indegree_3x3()
     test_network_graph_3x3()
+    test_network_graph_concat_3x3()
