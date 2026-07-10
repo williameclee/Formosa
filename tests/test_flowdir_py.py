@@ -98,6 +98,7 @@ def test_network_graph_concat_3x3():
     np.testing.assert_array_equal(s_arc_orders, exp_s_orders)
     np.testing.assert_array_equal(s_arc_endpts, exp_s_endpts)
 
+
 if __name__ == "__main__":
     test_indegree_3x3()
     test_network_graph_3x3()
