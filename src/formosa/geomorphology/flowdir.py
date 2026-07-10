@@ -24,7 +24,7 @@
 #     - Renamed helper submodule from `aux` to `utils`
 #   2026-07-09, En-Chi Lee (williameclee@gmail.com)
 #     - Specified endpoint index definition for `create_flowgraph`
-#     - Implemented Fortran backend of function `simplify_flowgraph`
+#     - Implemented Fortran backend of function `simplify_flowgraph` and function `concat_flowgraph`
 #     - Added vertex mask to output of function `simplify_flowgraph`
 
 
@@ -956,6 +956,63 @@ def construct_flowgraph(
         arc_endpts = arc_endpts[id, :]
 
     return arc_orders, vertex_ijs, arc_endpts
+
+
+def concat_flowgraph(
+    arc_orders: npt.NDArray[np.integer],
+    vertex_ijs: npt.NDArray[np.integer],
+    arc_endpts: npt.NDArray[np.integer],
+) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.integer], npt.NDArray[np.integer]]:
+    """
+    Concactenate arcs of the same order in a flow graph, separated by NaNs.
+    It mainly serves to reduce the number of drawing calls when visualising the graph.
+
+    Parameters
+    ----------
+    arc_orders : NDArray[int]
+        O-by-1 array representing the Strahler order for each arc in the flow graph
+    vertex_ijs : NDArray[int]
+        V-by-2 array containing the ordered (i, j) incices of all arcs, concactinated together
+    vertex_startends : NDArray[int]
+        A-by-2 array containing the indices of where each arc starts and ends in `vertex_ijs`
+        The returned endpoints are inclusive, meaning slicing must be done as `vertex_ijs[start : end + 1]`.
+
+    Returns
+    ----------
+    arc_orders : NDArray[int]
+        O-by-1 array representing the Strahler order for each arc in the flow graph
+    vertex_ijs : NDArray[int]
+        V'-by-2 array containing the ordered (i, j) incices of all arcs, concactinated together
+    vertex_startends : NDArray[int]
+        O-by-2 array containing the indices of where each arc starts and ends in `vertex_ijs`
+        The returned endpoints are inclusive, meaning slicing must be done as `vertex_ijs[start : end + 1]`.
+    """
+
+    # Sort by arc order
+    id = np.argsort(arc_orders)
+    arc_orders = arc_orders[id]
+    arc_endpts = arc_endpts[id, :]
+
+    s_arc_orders = np.unique(arc_orders)
+    s_arc_endpts = np.zeros((s_arc_orders.size, 2), dtype=np.int32)
+    s_vertex_ijs = None
+
+    for iarc in range(arc_orders.size):
+        this_ijs = vertex_ijs[arc_endpts[iarc, 0] : arc_endpts[iarc, 1] + 1, :]
+        if s_vertex_ijs is None:
+            s_vertex_ijs = this_ijs
+        else:
+            s_vertex_ijs = np.concat(
+                [s_vertex_ijs, np.array([[np.nan, np.nan]]), this_ijs], axis=0
+            )
+        if (iarc < arc_orders.size - 1) and (arc_orders[iarc] == arc_orders[iarc + 1]):
+            continue
+        s_arc_endpts[s_arc_orders == arc_orders[iarc], 1] = s_vertex_ijs.shape[0] - 1
+        if arc_orders[iarc] < np.max(s_arc_orders):
+            s_arc_endpts[s_arc_orders == arc_orders[iarc + 1], 0] = (
+                s_vertex_ijs.shape[0] + 1
+            )
+    return s_arc_orders, s_vertex_ijs, s_arc_endpts
 
 
 def simplify_flowgraph(
