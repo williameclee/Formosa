@@ -21,6 +21,7 @@ from formosa.geomorphology.flowdir import (
     compute_flow_accumulation,
     compute_flow_strahler_order,
     construct_flowgraph,
+    concat_flowgraph,
     simplify_flowgraph,
     compute_dist2source,
     compute_dist2sink,
