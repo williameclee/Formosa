@@ -25,6 +25,7 @@
 #   2026-07-09, En-Chi Lee (williameclee@gmail.com)
 #     - Specified endpoint index definition for `create_flowgraph`
 #     - Implemented Fortran backend of function `simplify_flowgraph`
+#     - Added vertex mask to output of function `simplify_flowgraph`
 
 
 import numpy as np
@@ -962,7 +963,7 @@ def simplify_flowgraph(
     arc_endpts: npt.NDArray[np.integer],
     tol: int | float = 1,
     backend: Literal["fortran", "python"] = "fortran",
-) -> tuple[npt.NDArray[np.number], npt.NDArray[np.int32]]:
+) -> tuple[npt.NDArray[np.number], npt.NDArray[np.int32], npt.NDArray[np.bool_]]:
     """
     Simplify a flow graph using the Ramer-Douglas-Peucker (RDP) algorithm with a fixed tolerance threshold.
 
@@ -987,6 +988,8 @@ def simplify_flowgraph(
         This is a subset of the input `vertex_xys` (i.e. no new vertices are created).
     simp_arc_endpts : NDArray[int32]
         A-by-2 array of indices indicating the start and end of each simplified arc in `simp_vertex_xys`
+    keeps : NDArray[bool]
+        V-by-1 mask indicating which of the input vertices are retained in the simplified graph
 
     Raises
     ------
@@ -1028,7 +1031,7 @@ def simplify_flowgraph(
     # Transpose and cast arrays to C-contiguous layout for return
     vertex_xys = vertex_xys.T.astype(vertex_xys.dtype, order="C")
     arc_endpts = arc_endpts.T.astype(np.int32, order="C")
-    return vertex_xys, arc_endpts
+    return vertex_xys, arc_endpts, vertex_keeps
 
 
 def compute_dist2source(
