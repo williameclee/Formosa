@@ -23,6 +23,7 @@ from formosa.geomorphology.flowdir import (
     construct_flowgraph,
     concat_flowgraph,
     simplify_flowgraph,
+    locate_invalid_graph_topology,
     compute_dist2source,
     compute_dist2sink,
     label_watersheds,

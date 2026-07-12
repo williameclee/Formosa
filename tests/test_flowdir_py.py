@@ -99,7 +99,29 @@ def test_network_graph_concat_3x3():
     np.testing.assert_array_equal(s_arc_endpts, exp_s_endpts)
 
 
+def test_locate_invalid_graph_topogtaphy():
+    vs = np.array([[0, 0], [1, 1], [1, 0], [0, 1]])
+    endpts = np.array([[0, 1], [2, 3]])
+    exp_violations = np.array([[0, 1, 0, 2, 1]], dtype=np.int32)
+    violations = flowdir.locate_invalid_graph_topology(vs, endpts)
+    np.testing.assert_array_equal(violations, exp_violations)
+
+    vs = np.array([[0, 0], [1, 1], [2, 0], [1, 0], [0, 1]])
+    endpts = np.array([[0, 2], [3, 4]])
+    exp_violations = np.array([[0, 1, 0, 3, 1]], dtype=np.int32)
+    violations = flowdir.locate_invalid_graph_topology(vs, endpts)
+    np.testing.assert_array_equal(violations, exp_violations)
+
+    # Test self-intersection within a single arc
+    vs = np.array([[0, 0], [2, 2], [2, 0], [0, 2]])
+    endpts = np.array([[0, 3]])
+    exp_violations = np.array([[0, 0, 0, 2, 1]], dtype=np.int32)
+    violations = flowdir.locate_invalid_graph_topology(vs, endpts)
+    np.testing.assert_array_equal(violations, exp_violations)
+
+
 if __name__ == "__main__":
     test_indegree_3x3()
     test_network_graph_3x3()
     test_network_graph_concat_3x3()
+    test_locate_invalid_graph_topogtaphy()

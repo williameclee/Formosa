@@ -26,6 +26,8 @@
 #     - Specified endpoint index definition for `construct_flowgraph`
 #     - Implemented Fortran backend of function `simplify_flowgraph` and function `concat_flowgraph`
 #     - Added vertex mask to output of function `simplify_flowgraph`
+#   2026-07-12, En-Chi Lee (williameclee@gmail.com)
+#     - Implemented Fortran backend of function `locate_invalid_graph_topology`
 
 
 import numpy as np
@@ -47,6 +49,8 @@ except ImportError as err:
             ) from self._err
 
     flowdir_f = _MissingFortranBackend(err)
+
+import warnings
 
 import numpy.typing as npt
 from typing import Literal, Optional
@@ -1089,6 +1093,36 @@ def simplify_flowgraph(
     vertex_xys = vertex_xys.T.astype(vertex_xys.dtype, order="C")
     arc_endpts = arc_endpts.T.astype(np.int32, order="C")
     return vertex_xys, arc_endpts, vertex_keeps
+
+
+def locate_invalid_graph_topology(
+    vertex_ijs: npt.NDArray[np.number],
+    arc_endpts: npt.NDArray[np.integer],
+) -> Optional[npt.NDArray[np.int32]]:
+    vertex_ijs = vertex_ijs.T
+    arc_endpts = arc_endpts.T
+    intxs, nintxs, err_code = flowdir_f.locate_invalid_graph_topology(
+        vertex_ijs.astype(np.float64, order="F"),
+        arc_endpts.astype(np.int32, order="F") + 1,  # Convert to 1-based index
+    )
+    if err_code == 1:
+        raise ValueError("Invalid array shapes passed.")
+    elif err_code == 2:
+        warnings.warn(
+            f"Too many topology violations than the buffer can hold, returning only the first {nintxs}",
+            RuntimeWarning,
+        )
+    if nintxs == 0:
+        return None
+    if intxs.shape[1] > nintxs:
+        intxs = intxs[:, :nintxs]
+    intxs[:-1, :] -= 1  # Convert to 0-based index
+    intxs = intxs.T.astype(np.int32, order="C")
+    if intxs.shape[0] > 1:
+        # Sort lexicographically
+        sort_idx = np.lexsort((intxs[:, 3], intxs[:, 2], intxs[:, 1], intxs[:, 0]))
+        intxs = intxs[sort_idx]
+    return intxs
 
 
 def compute_dist2source(

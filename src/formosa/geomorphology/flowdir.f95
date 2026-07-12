@@ -25,6 +25,8 @@
 !     - Fixed OpenMP data race in 'count_indegree'
 !     - Added overflow check in 'construct_flowgraph'
 !     - Implemented 'simplify_flowgraph' function
+!   2026-07-12, En-Chi Lee (williameclee@gmail.com)
+!     - Implemented 'locate_invalid_graph_topology' function
 !!!
 
 module flowdir_utils
@@ -1552,6 +1554,151 @@ contains
             call simplify_arc_rdp(vertex_xys, vertex_keeps, arc_endpts(1, iarc), arc_endpts(2, iarc), tol)
         end do
     end subroutine simplify_flowgraph
+
+    pure function argsort_arcs(bboxes) result(indices)
+        ! Helper function for 'locate_invalid_graph_topology' to sort the arcs by the left edge of their bounding box.
+        implicit none
+        ! Arguments
+        real, intent(in) :: bboxes(:, :)
+        ! Outputs
+        integer :: indices(size(bboxes, 2))
+        ! Local variables
+        integer :: i, j, h, index
+
+        do i = lbound(bboxes, 2), ubound(bboxes, 2)
+            indices(i) = i
+        end do
+
+        ! Shell sort idx by the left edge
+        h = ubound(bboxes, 2)/2
+        do while (h > 0)
+            do i = h + 1, ubound(bboxes, 2)
+                index = indices(i)
+                j = i
+                do while (j > h)
+                    if (bboxes(1, indices(j - h)) > bboxes(1, index)) then
+                        indices(j) = indices(j - h)
+                        j = j - h
+                    else
+                        exit
+                    end if
+                end do
+                indices(j) = index
+            end do
+            h = h/2
+        end do
+    end function argsort_arcs
+
+    subroutine locate_invalid_graph_topology( &
+        vertex_ijs, arc_endpts, intxs, nintxs, err_code)
+        implicit none
+        ! Arguments
+        real, intent(in) :: vertex_ijs(:, :)
+        integer, intent(in) :: arc_endpts(:, :)
+        ! Outputs
+        integer, intent(out) :: intxs(5, max(size(vertex_ijs, 2)/1000, 3))
+        integer, intent(out) :: nintxs
+        integer, intent(out) :: err_code
+        ! Local variables
+        integer :: narcs, nvertices
+        integer :: i, j, iarc, jarc, iseg, jseg
+        integer :: intx_flag
+        real, allocatable :: arc_bboxes(:, :)
+        integer, allocatable :: idx(:)
+
+        err_code = 0
+
+        if (size(arc_endpts, 1) /= 2) then
+            err_code = 1; 
+            return
+        else if (size(vertex_ijs, 1) /= 2) then
+            err_code = 1; 
+            return
+        end if
+        narcs = size(arc_endpts, 2)
+        nvertices = size(vertex_ijs, 2)
+
+        if (narcs == 0) return
+
+        ! Construct the bounding boxes for each arc
+        allocate (arc_bboxes(4, narcs))
+        do iarc = 1, narcs
+            arc_bboxes(1, iarc) = minval(vertex_ijs(1, arc_endpts(1, iarc):arc_endpts(2, iarc)))
+            arc_bboxes(2, iarc) = minval(vertex_ijs(2, arc_endpts(1, iarc):arc_endpts(2, iarc)))
+            arc_bboxes(3, iarc) = maxval(vertex_ijs(1, arc_endpts(1, iarc):arc_endpts(2, iarc)))
+            arc_bboxes(4, iarc) = maxval(vertex_ijs(2, arc_endpts(1, iarc):arc_endpts(2, iarc)))
+        end do
+
+        nintxs = 0
+        ! Check arcs againt itself first
+        do iarc = 1, narcs
+            if (arc_endpts(2, iarc) - arc_endpts(1, iarc) == 1) cycle ! Skip if arc is just a single segment
+            do iseg = arc_endpts(1, iarc), arc_endpts(2, iarc) - 1
+            do jseg = iseg + 1, arc_endpts(2, iarc) - 1
+                intx_flag = lines_intersect_v2( &
+                            vertex_ijs(:, iseg), vertex_ijs(:, iseg + 1), &
+                            vertex_ijs(:, jseg), vertex_ijs(:, jseg + 1))
+                if (intx_flag > 0) then
+                    nintxs = nintxs + 1
+                    if (nintxs > size(intxs, 2)) then
+                        nintxs = size(intxs, 2)
+                        err_code = 2
+                        deallocate (arc_bboxes)
+                        return
+                    end if
+                    intxs(:, nintxs) = [iarc, iarc, iseg, jseg, intx_flag]
+                end if
+            end do
+            end do
+        end do
+
+        allocate (idx(narcs))
+        idx = argsort_arcs(arc_bboxes)
+
+        ! Check every arc againt each other
+        do i = 1, narcs
+            iarc = idx(i)
+            do j = i + 1, narcs
+                jarc = idx(j)
+
+                ! Skip if min x of right arc is greater than max x of left arc
+                if (arc_bboxes(1, jarc) > arc_bboxes(3, iarc)) exit
+
+                ! Inline fast overlap check (no min/max calls)
+                if (arc_bboxes(1, iarc) > arc_bboxes(3, jarc) .or. &
+                    arc_bboxes(3, iarc) < arc_bboxes(1, jarc) .or. &
+                    arc_bboxes(2, iarc) > arc_bboxes(4, jarc) .or. &
+                    arc_bboxes(4, iarc) < arc_bboxes(2, jarc)) cycle
+
+                do iseg = arc_endpts(1, iarc), arc_endpts(2, iarc) - 1
+                do jseg = arc_endpts(1, jarc), arc_endpts(2, jarc) - 1
+                    intx_flag = lines_intersect_v2( &
+                                vertex_ijs(:, iseg), vertex_ijs(:, iseg + 1), &
+                                vertex_ijs(:, jseg), vertex_ijs(:, jseg + 1))
+                    if (intx_flag > 0) then
+                        nintxs = nintxs + 1
+                        if (nintxs > size(intxs, 2)) then
+                            nintxs = size(intxs, 2)
+                            err_code = 2
+                            deallocate (idx)
+                            deallocate (arc_bboxes)
+                            return
+                        end if
+                        ! Sort by arc ID
+                        if (iarc < jarc) then
+                            intxs(:, nintxs) = [iarc, jarc, iseg, jseg, intx_flag]
+                        else
+                            intxs(:, nintxs) = [jarc, iarc, jseg, iseg, intx_flag]
+                        end if
+                    end if
+                end do
+                end do
+            end do
+        end do
+
+        deallocate (idx)
+        deallocate (arc_bboxes)
+    end subroutine locate_invalid_graph_topology
 
     subroutine label_watersheds( &
         labels, dirs, valids, nrows, ncols, offsets, codes, noffsets)
