@@ -27,7 +27,7 @@
 #     - Implemented Fortran backend of function `simplify_flowgraph` and function `concat_flowgraph`
 #     - Added vertex mask to output of function `simplify_flowgraph`
 #   2026-07-12, En-Chi Lee (williameclee@gmail.com)
-#     - Implemented Fortran backend of function `locate_invalid_graph_topology`
+#     - Implemented Python and Fortran backends of function `locate_invalid_graph_topology`
 
 
 import numpy as np
@@ -1098,26 +1098,44 @@ def simplify_flowgraph(
 def locate_invalid_graph_topology(
     vertex_ijs: npt.NDArray[np.number],
     arc_endpts: npt.NDArray[np.integer],
+    backend: Literal["fortran", "python"] = "fortran",
 ) -> Optional[npt.NDArray[np.int32]]:
-    vertex_ijs = vertex_ijs.T
-    arc_endpts = arc_endpts.T
-    intxs, nintxs, err_code = flowdir_f.locate_invalid_graph_topology(
-        vertex_ijs.astype(np.float64, order="F"),
-        arc_endpts.astype(np.int32, order="F") + 1,  # Convert to 1-based index
-    )
-    if err_code == 1:
-        raise ValueError("Invalid array shapes passed.")
-    elif err_code == 2:
-        warnings.warn(
-            f"Too many topology violations than the buffer can hold, returning only the first {nintxs}",
-            RuntimeWarning,
-        )
-    if nintxs == 0:
-        return None
-    if intxs.shape[1] > nintxs:
-        intxs = intxs[:, :nintxs]
-    intxs[:-1, :] -= 1  # Convert to 0-based index
-    intxs = intxs.T.astype(np.int32, order="C")
+    match backend:
+        case "python":
+            from .flowdir_py import _locate_invalid_graph_topology_py
+
+            if vertex_ijs.ndim != 2 or vertex_ijs.shape[1] != 2:
+                raise ValueError("Invalid array shapes passed.")
+            if arc_endpts.ndim != 2 or arc_endpts.shape[1] != 2:
+                raise ValueError("Invalid array shapes passed.")
+
+            violations = _locate_invalid_graph_topology_py(
+                arc_endpts.astype(np.int32, order="C"),
+                vertex_ijs.astype(np.float64, order="C"),
+            )
+            if not violations:
+                return None
+            intxs = np.array(violations, dtype=np.int32, order="C")
+        case "fortran":
+            vertex_ijs = vertex_ijs.T
+            arc_endpts = arc_endpts.T
+            intxs, nintxs, err_code = flowdir_f.locate_invalid_graph_topology(
+                vertex_ijs.astype(np.float64, order="F"),
+                arc_endpts.astype(np.int32, order="F") + 1,  # Convert to 1-based index
+            )
+            if err_code == 1:
+                raise ValueError("Invalid array shapes passed.")
+            elif err_code == 2:
+                warnings.warn(
+                    f"Too many topology violations than the buffer can hold, returning only the first {nintxs}",
+                    RuntimeWarning,
+                )
+            if nintxs == 0:
+                return None
+            if intxs.shape[1] > nintxs:
+                intxs = intxs[:, :nintxs]
+            intxs[:-1, :] -= 1  # Convert to 0-based index
+            intxs = intxs.T.astype(np.int32, order="C")
     if intxs.shape[0] > 1:
         # Sort lexicographically
         sort_idx = np.lexsort((intxs[:, 3], intxs[:, 2], intxs[:, 1], intxs[:, 0]))

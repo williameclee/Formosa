@@ -7,6 +7,8 @@
 #     - Added test case for `compute_downstream_indices` with validity mask
 #   2026-07-09, En-Chi Lee (williameclee@gmail.com)
 #     - Added test case for the Fortran implementation of `construct_flowgraph`
+#   2026-07-12, En-Chi Lee (williameclee@gmail.com)
+#     - Added test cases for function `test_locate_invalid_graph_topogtaphy`
 
 import pytest
 import numpy as np
@@ -387,6 +389,38 @@ def test_network_graph_3x3():
     for i, exp_ij in enumerate(exp_ijs):
         np.testing.assert_array_equal(
             vertex_ijs[arc_endpts[i, 0] : arc_endpts[i, 1] + 1], exp_ij
+        )
+
+
+def test_locate_invalid_graph_topogtaphy():
+    vs = np.array([[0, 0], [1, 1], [1, 0], [0, 1]])
+    endpts = np.array([[0, 1], [2, 3]])
+    exp_intxs = np.array([[0, 1, 0, 2, 1]], dtype=np.int32)
+    intxs = flowdir.locate_invalid_graph_topology(vs, endpts, backend="fortran")
+    np.testing.assert_array_equal(intxs, exp_intxs)
+
+    vs = np.array([[0, 0], [1, 1], [2, 0], [1, 0], [0, 1]])
+    endpts = np.array([[0, 2], [3, 4]])
+    exp_intxs = np.array([[0, 1, 0, 3, 1]], dtype=np.int32)
+    intxs = flowdir.locate_invalid_graph_topology(vs, endpts, backend="fortran")
+    np.testing.assert_array_equal(intxs, exp_intxs)
+
+    # Test self-intersection within a single arc
+    vs = np.array([[0, 0], [2, 2], [2, 0], [0, 2]])
+    endpts = np.array([[0, 3]])
+    exp_intxs = np.array([[0, 0, 0, 2, 1]], dtype=np.int32)
+    intxs = flowdir.locate_invalid_graph_topology(vs, endpts, backend="fortran")
+    np.testing.assert_array_equal(intxs, exp_intxs)
+
+    # Test no violations
+    vs = np.array([[0, 0], [1, 1], [2, 2]])
+    endpts = np.array([[0, 2]])
+    assert flowdir.locate_invalid_graph_topology(vs, endpts, backend="fortran") is None
+
+    # Test error handling on invalid shapes
+    with pytest.raises(ValueError, match="Invalid array shapes passed"):
+        flowdir.locate_invalid_graph_topology(
+            np.array([1, 2, 3]), endpts, backend="fortran"
         )
 
 
