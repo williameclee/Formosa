@@ -1100,6 +1100,42 @@ def locate_invalid_graph_topology(
     arc_endpts: npt.NDArray[np.integer],
     backend: Literal["fortran", "python"] = "fortran",
 ) -> Optional[npt.NDArray[np.int32]]:
+    """
+    Locates invalid topologies (segment intersections) within and between arcs in a graph.
+
+    This function checks for self-intersections within individual arcs, as well as intersections between segments of different arcs. The intersection checks are performed using a 2D line segment intersection algorithm.
+
+    Parameters
+    ----------
+    vertex_ijs : NDArray[number]
+        2D array of shape `(nvertices, 2)` representing the grid coordinates (i, j) of each vertex
+    arc_endpts : NDArray[integer]
+        2D array of shape `(narcs, 2)` containing the start and end vertex indices for each arc in `vertex_ijs`
+    backend : {'fortran', 'python'}, optional
+        Computational backend to use
+        The default option is `'fortran'`.
+
+    Returns
+    -------
+    NDArray[int32] or None
+        2D array of shape `(nintxs, 5)` representing the detected intersections, or `None` if no intersections are found
+        The rows are sorted lexicographically and each row contains:
+        - `iarc`: Index of the first arc (0-based)
+        - `jarc`: Index of the second arc (0-based)
+        - `iseg`: Start vertex index of the first intersecting segment (0-based)
+        - `jseg`: Start vertex index of the second intersecting segment (0-based)
+        - `intx_flag`: Flag indicating the type of intersection:
+            - 1 : interior-interior crossing (X)
+            - 2 : collinear overlap, not identical
+            - 3 : identical segment
+            - 4 : endpoint-on-interior (T-junction)
+            - 5 : degenerate segment (some line is actually a point)
+
+    Raises
+    ------
+    ValueError
+        If the shape of `vertex_ijs` or `arc_endpts` is invalid.
+    """
     match backend:
         case "python":
             from .flowdir_py import _locate_invalid_graph_topology_py

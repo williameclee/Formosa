@@ -373,7 +373,9 @@ def _construct_flowgraph_py(
     return narcs, nvertices, arc_orders, vertex_ijs, vertex_startends
 
 
-def _locate_invalid_graph_topology_py(arc_endpts, vertex_ijs):
+def _locate_invalid_graph_topology_py(
+    arc_endpts: npt.NDArray[np.integer], vertex_ijs: npt.NDArray[np.number]
+) -> list[tuple[int, int, int, int, int]]:
     narcs = arc_endpts.shape[0]
 
     # Construct bounding box for each arc: [min_x, min_y, max_x, max_y]
