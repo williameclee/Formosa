@@ -28,6 +28,8 @@
 #     - Added vertex mask to output of function `simplify_flowgraph`
 #   2026-07-12, En-Chi Lee (williameclee@gmail.com)
 #     - Implemented Python and Fortran backends of function `locate_invalid_graph_topology`
+#   2026-07-13, En-Chi Lee (williameclee@gmail.com)
+#     - Added default topology check to `simplify_flowgraph`
 
 
 import numpy as np
