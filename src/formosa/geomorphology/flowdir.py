@@ -1023,6 +1023,7 @@ def simplify_flowgraph(
     vertex_xys: npt.NDArray[np.number],
     arc_endpts: npt.NDArray[np.integer],
     tol: int | float = 1,
+    check_topology: bool = True,
     backend: Literal["fortran", "python"] = "fortran",
 ) -> tuple[npt.NDArray[np.number], npt.NDArray[np.int32], npt.NDArray[np.bool_]]:
     """
@@ -1030,7 +1031,7 @@ def simplify_flowgraph(
 
     Parameters
     ----------
-    vertex_xys : NDArray[int | float]
+    vertex_xys : NDArray[number]
         V-by-2 (or 2-by-V) array of coordinates representing the vertices in the flow graph
     arc_endpts : NDArray[int]
         A-by-2 (or 2-by-A) array of indices indicating where each arc starts and ends in `vertex_xys`
@@ -1038,13 +1039,16 @@ def simplify_flowgraph(
         Tolerance threshold for simplification
         Vertices with perpendicular distance to the line segment less than or equal to `tol` will be simplified/removed.
         Default tolerance is 1.
+    check_topology : bool, optional
+        Whether to check for invalid topography in the simplified graph
+        Default option is `True`.
     backend : {'fortran', 'python'}, optional
         Backend to use for computation
-        Default backend and the only one currently available is 'fortran'.
+        Default backend and the only one currently available is `'fortran'`.
 
     Returns
     -------
-    simp_vertex_xys : NDArray[int | float]
+    simp_vertex_xys : NDArray[number]
         V'-by-2 array of coordinates representing the simplified vertices
         This is a subset of the input `vertex_xys` (i.e. no new vertices are created).
     simp_arc_endpts : NDArray[int32]
@@ -1078,11 +1082,58 @@ def simplify_flowgraph(
                 vertex_xys.astype(np.float32, order="F"),
                 arc_endpts.astype(np.int32, order="F"),
                 tol,
-            )
-            vertex_keeps = vertex_keeps.astype(bool)  # To be summed properly below
+            ).astype(bool)
 
             # Revert back to 0-based Python indexing
             arc_endpts -= 1
+
+            if check_topology:
+                # Squeeze the vertices and map the arc endpoints to the new indices
+                vertex_cumsum = np.cumsum(vertex_keeps) - 1
+                vertex_xys_aux = vertex_xys[:, vertex_keeps]
+                arc_endpts_aux = vertex_cumsum[arc_endpts]
+
+                intxs = locate_invalid_graph_topology(
+                    vertex_xys_aux.T, arc_endpts_aux.T
+                )
+                while intxs is not None and tol > 1e-3:
+                    tol = float(tol) / 2
+                    print(f"Reducing tolerance to {tol}...")
+                    for iarc, jarc, _, _, _ in intxs:
+                        start_i = arc_endpts[0, iarc]
+                        end_i = arc_endpts[1, iarc]
+                        len_i = end_i - start_i + 1
+                        vertex_keeps[start_i : end_i + 1] = (
+                            flowdir_f.simplify_flowgraph(
+                                vertex_xys[:, start_i : end_i + 1].astype(
+                                    np.float32, order="F"
+                                ),
+                                np.array([[1], [len_i]], dtype=np.int32, order="F"),
+                                tol,
+                            ).astype(bool)
+                        )
+
+                        start_j = arc_endpts[0, jarc]
+                        end_j = arc_endpts[1, jarc]
+                        len_j = end_j - start_j + 1
+                        vertex_keeps[start_j : end_j + 1] = (
+                            flowdir_f.simplify_flowgraph(
+                                vertex_xys[:, start_j : end_j + 1].astype(
+                                    np.float32, order="F"
+                                ),
+                                np.array([[1], [len_j]], dtype=np.int32, order="F"),
+                                tol,
+                            ).astype(bool)
+                        )
+                    # Squeeze the vertices and map the arc endpoints to the new indices
+                    vertex_cumsum = np.cumsum(vertex_keeps) - 1
+                    vertex_xys_aux = vertex_xys[:, vertex_keeps]
+                    arc_endpts_aux = vertex_cumsum[arc_endpts]
+
+                    intxs = locate_invalid_graph_topology(
+                        vertex_xys_aux.T, arc_endpts_aux.T
+                    )
+            vertex_keeps = vertex_keeps.astype(bool)  # To be summed properly below
 
     # Squeeze the vertices and map the arc endpoints to the new indices
     vertex_cumsum = np.cumsum(vertex_keeps) - 1
