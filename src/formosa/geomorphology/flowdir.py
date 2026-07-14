@@ -32,6 +32,7 @@
 #     - Added default topology check to `simplify_flowgraph`
 #   2026-07-14, En-Chi Lee (williameclee@gmail.com)
 #     - Added simultaneous multi-graph checks to `simplify_flowgraph`
+#     - Updated variable names in `locate_invalid_graph_topology`
 
 
 import numpy as np
@@ -1398,7 +1399,7 @@ def simplify_flowgraph(
 
 
 def locate_invalid_graph_topology(
-    vertex_ijs: npt.NDArray[np.number],
+    vertex_xys: npt.NDArray[np.number],
     arc_endpts: npt.NDArray[np.integer],
     backend: Literal["fortran", "python"] = "fortran",
 ) -> Optional[npt.NDArray[np.int32]]:
@@ -1409,7 +1410,7 @@ def locate_invalid_graph_topology(
 
     Parameters
     ----------
-    vertex_ijs : NDArray[number]
+    vertex_xys : NDArray[number]
         2D array of shape `(nvertices, 2)` representing the grid coordinates (i, j) of each vertex
     arc_endpts : NDArray[integer]
         2D array of shape `(narcs, 2)` containing the start and end vertex indices for each arc in `vertex_ijs`
@@ -1442,23 +1443,23 @@ def locate_invalid_graph_topology(
         case "python":
             from .flowdir_py import _locate_invalid_graph_topology_py
 
-            if vertex_ijs.ndim != 2 or vertex_ijs.shape[1] != 2:
+            if vertex_xys.ndim != 2 or vertex_xys.shape[1] != 2:
                 raise ValueError("Invalid array shapes passed.")
             if arc_endpts.ndim != 2 or arc_endpts.shape[1] != 2:
                 raise ValueError("Invalid array shapes passed.")
 
-            violations = _locate_invalid_graph_topology_py(
+            intxs = _locate_invalid_graph_topology_py(
                 arc_endpts.astype(np.int32, order="C"),
-                vertex_ijs.astype(np.float64, order="C"),
+                vertex_xys.astype(np.float64, order="C"),
             )
-            if not violations:
+            if not intxs:
                 return None
-            intxs = np.array(violations, dtype=np.int32, order="C")
+            intxs = np.array(intxs, dtype=np.int32, order="C")
         case "fortran":
-            vertex_ijs = vertex_ijs.T
+            vertex_xys = vertex_xys.T
             arc_endpts = arc_endpts.T
             intxs, nintxs, err_code = flowdir_f.locate_invalid_graph_topology(
-                vertex_ijs.astype(np.float64, order="F"),
+                vertex_xys.astype(np.float64, order="F"),
                 arc_endpts.astype(np.int32, order="F") + 1,  # Convert to 1-based index
             )
             if err_code == 1:
