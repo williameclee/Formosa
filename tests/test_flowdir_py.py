@@ -94,7 +94,6 @@ def test_network_graph_concat_3x3():
     s_arc_orders, s_vertex_ijs, s_arc_endpts = flowdir.concat_flowgraph(
         arc_orders, vertex_ijs, arc_endpts
     )
-    print(s_vertex_ijs)
     assert s_vertex_ijs.shape[0] == vertex_ijs.shape[0] + arc_orders.shape[0] - 1
     assert arc_endpts[-1, 1] == vertex_ijs.shape[0] - 1
     np.testing.assert_array_equal(s_arc_orders, exp_s_orders)
