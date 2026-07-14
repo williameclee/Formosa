@@ -424,6 +424,70 @@ def test_locate_invalid_graph_topogtaphy():
         )
 
 
+def test_simplify_flowgraph():
+    # 1. Single graph test
+    vs = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]])
+    endpts = np.array([[0, 2]])
+    simp_vs, simp_endpts, keeps = flowdir.simplify_flowgraph(
+        vs, endpts, tol=1.0, check_topology=False, backend="fortran"
+    )
+    np.testing.assert_array_equal(keeps, [True, False, True])
+    np.testing.assert_array_equal(simp_vs, [[0.0, 0.0], [2.0, 2.0]])
+    np.testing.assert_array_equal(simp_endpts, [[0, 1]])
+
+    # 2. Multiple graph test (list of standard arrays)
+    vs0 = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]])
+    endpts0 = np.array([[0, 2]])
+    vs1 = np.array([[3.0, 3.0], [4.0, 4.0], [5.0, 5.0]])
+    endpts1 = np.array([[0, 2]])
+
+    simp_vs_list, simp_endpts_list, keeps_list = flowdir.simplify_flowgraph(
+        [vs0, vs1], [endpts0, endpts1], tol=1.0, check_topology=False, backend="fortran"
+    )
+    assert isinstance(simp_vs_list, list)
+    np.testing.assert_array_equal(keeps_list[0], [True, False, True])
+    np.testing.assert_array_equal(keeps_list[1], [True, False, True])
+    np.testing.assert_array_equal(simp_vs_list[0], [[0.0, 0.0], [2.0, 2.0]])
+    np.testing.assert_array_equal(simp_vs_list[1], [[3.0, 3.0], [5.0, 5.0]])
+    np.testing.assert_array_equal(simp_endpts_list[0], [[0, 1]])
+    np.testing.assert_array_equal(simp_endpts_list[1], [[0, 1]])
+
+    # 3. Multiple graph test (tuple of transposed/differing shapes)
+    vs0_t = vs0.T  # shape (2, 3)
+    endpts0_t = endpts0.T  # shape (2, 1)
+
+    simp_vs_tuple, simp_endpts_tuple, keeps_tuple = flowdir.simplify_flowgraph(
+        (vs0_t, vs1), (endpts0_t, endpts1), tol=1.0, check_topology=False, backend="fortran"
+    )
+    assert isinstance(simp_vs_tuple, tuple)
+    np.testing.assert_array_equal(keeps_tuple[0], [True, False, True])
+    np.testing.assert_array_equal(keeps_tuple[1], [True, False, True])
+    # Verify orientation restoration
+    assert simp_vs_tuple[0].shape == (2, 2)
+    assert simp_endpts_tuple[0].shape == (2, 1)
+    assert simp_vs_tuple[1].shape == (2, 2)
+    assert simp_endpts_tuple[1].shape == (1, 2)
+
+    # 4. Test topology correction (single graph)
+    vs_topo = np.array([[0.0, 0.8], [1.0, 2.0], [2.0, 0.2], [0.5, 0.5], [1.5, 0.5]])
+    endpts_topo = np.array([[0, 2], [3, 4]])
+
+    # Under tol = 1.5 and check_topology = False, simplification occurs and causes intersection
+    _, _, keeps_no_check = flowdir.simplify_flowgraph(
+        vs_topo, endpts_topo, tol=1.5, check_topology=False, backend="fortran"
+    )
+    # Vertex 1 should be removed
+    np.testing.assert_array_equal(keeps_no_check, [True, False, True, True, True])
+
+    # Under tol = 1.5 and check_topology = True, it detects intersection, reduces tolerance,
+    # and keeps Vertex 1 to avoid intersection
+    _, _, keeps_with_check = flowdir.simplify_flowgraph(
+        vs_topo, endpts_topo, tol=1.5, check_topology=True, backend="fortran"
+    )
+    # Vertex 1 should be kept
+    np.testing.assert_array_equal(keeps_with_check, [True, True, True, True, True])
+
+
 if __name__ == "__main__":
     test_downstreamid_3x3()
     test_downstreamid_4x4()
@@ -432,3 +496,5 @@ if __name__ == "__main__":
     test_strahler_order_3x3()
     test_strahler_order_4x4()
     test_network_graph_3x3()
+    test_locate_invalid_graph_topogtaphy()
+    test_simplify_flowgraph()

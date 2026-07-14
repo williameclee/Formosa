@@ -30,6 +30,8 @@
 #     - Implemented Python and Fortran backends of function `locate_invalid_graph_topology`
 #   2026-07-13, En-Chi Lee (williameclee@gmail.com)
 #     - Added default topology check to `simplify_flowgraph`
+#   2026-07-14, En-Chi Lee (williameclee@gmail.com)
+#     - Added simultaneous multi-graph checks to `simplify_flowgraph`
 
 
 import numpy as np
@@ -55,7 +57,7 @@ except ImportError as err:
 import warnings
 
 import numpy.typing as npt
-from typing import Literal, Optional
+from typing import Literal, Iterable, Optional, overload
 
 
 def fill_depressions(
@@ -1021,22 +1023,330 @@ def concat_flowgraph(
     return s_arc_orders, s_vertex_ijs, s_arc_endpts
 
 
+def _convert_index_array_to_F_fmt(vertices: npt.NDArray) -> npt.NDArray:
+    if vertices.shape[1] == 2 and vertices.shape[0] != 2:
+        vertices = vertices
+    elif vertices.shape[0] == 2 and vertices.shape[1] != 2:
+        vertices = vertices.T
+    elif vertices.shape == (2, 2):
+        vertices = vertices
+    else:
+        raise ValueError("Array cannot be parsed as indices.")
+    return vertices
+
+
+def _simplify_multiple_flowgraphs(
+    vertices_list: list[npt.NDArray[np.number]] | tuple[npt.NDArray[np.number], ...],
+    endpts_list: list[npt.NDArray[np.integer]] | tuple[npt.NDArray[np.integer], ...],
+    tol: int | float,
+    check_topology: bool,
+    backend: str,
+) -> tuple[
+    npt.NDArray[np.number]
+    | list[npt.NDArray[np.number]]
+    | tuple[npt.NDArray[np.number], ...],
+    npt.NDArray[np.int32]
+    | list[npt.NDArray[np.int32]]
+    | tuple[npt.NDArray[np.int32], ...],
+    npt.NDArray[np.bool_]
+    | list[npt.NDArray[np.bool_]]
+    | tuple[npt.NDArray[np.bool_], ...],
+]:
+    vertices_shps: list[tuple] = []
+    endpts_shps: list[tuple] = []
+
+    all_vertices_list: list[npt.NDArray[np.number]] = []
+    all_endpts_list: list[npt.NDArray[np.integer]] = []
+    all_graph_ids_list: list[npt.NDArray[np.uint8]] = []
+
+    offset: int = 0
+    for i, (vertices, endpts) in enumerate(zip(vertices_list, endpts_list)):
+        vertices_shps.append(vertices.shape)
+        endpts_shps.append(endpts.shape)
+
+        if vertices.ndim != 2 or endpts.ndim != 2:
+            raise ValueError(
+                f"Graph at index {i} has invalid dimension (must be 2D arrays)."
+            )
+        # Standardise vertices and endpoints arrays
+        try:
+            vertices = _convert_index_array_to_F_fmt(vertices)
+        except ValueError:
+            raise ValueError(
+                f"Vertex array at index {i} shape {vertices.shape} is not V-by-2 or 2-by-V."
+            )
+        try:
+            endpts = _convert_index_array_to_F_fmt(endpts)
+        except ValueError:
+            raise ValueError(
+                f"Endpoint array at index {i} shape {endpts.shape} is not A-by-2 or 2-by-A."
+            )
+
+        nvertices_i: int = vertices.shape[0]
+        all_vertices_list.append(vertices)
+        all_endpts_list.append(endpts + offset)
+        all_graph_ids_list.append(np.ones((endpts.shape[0]), dtype=np.uint8) * i)
+        offset += nvertices_i
+
+    all_vertices = np.concatenate(all_vertices_list, axis=0)
+    all_endpts = np.concatenate(all_endpts_list, axis=0)
+    all_graph_ids = np.concatenate(all_graph_ids_list, axis=0)
+
+    # Call the core single flowgraph simplifier
+    _, _, keeps_concat = _simplify_single_flowgraph(
+        all_vertices,
+        all_endpts,
+        tol=tol,
+        check_topology=check_topology,
+        backend=backend,
+    )
+
+    # Separate the simplified graph back into multiple graphs
+    s_vertices_list = []
+    s_endpts_list = []
+    keeps_list = []
+
+    offset = 0
+    for i in range(len(all_vertices_list)):
+        vertex_shp = vertices_shps[i]
+        endpts_shp = endpts_shps[i]
+
+        nvertices_i = (
+            vertex_shp[0]
+            if (vertex_shp[0] != 2 or vertex_shp[1] == 2)
+            else vertex_shp[1]
+        )
+        keeps_i = keeps_concat[offset : offset + nvertices_i]
+
+        vertices = all_vertices_list[i]
+        simp_v_i = vertices[keeps_i, :]
+
+        vertex_cumsum_i = np.cumsum(keeps_i) - 1
+        local_e_std = all_endpts_list[i] - offset
+        simp_e_i = vertex_cumsum_i[local_e_std]
+
+        # Restore original orientation
+        if vertex_shp[0] == 2 and vertex_shp[1] != 2:
+            simp_v_i = simp_v_i.T
+        if endpts_shp[0] == 2 and endpts_shp[1] != 2:
+            simp_e_i = simp_e_i.T
+
+        s_vertices_list.append(simp_v_i)
+        s_endpts_list.append(simp_e_i)
+        keeps_list.append(keeps_i)
+
+        offset += nvertices_i
+
+    if isinstance(vertices_list, tuple):
+        return (
+            tuple(s_vertices_list),
+            tuple(s_endpts_list),
+            tuple(keeps_list),
+        )
+    else:
+        return s_vertices_list, s_endpts_list, keeps_list
+
+
+def _skip_intergraph_intxs(
+    intxs: Optional[npt.NDArray[np.int32]],
+    graph_ids: Optional[npt.NDArray[np.uint8]],
+) -> Optional[npt.NDArray[np.int32]]:
+    if intxs is None:
+        return None
+    can_skip_intxs = (graph_ids[intxs[0, :]] != graph_ids[intxs[1, :]]) & (
+        (intxs[-1, :] == 2) | (intxs[-1, :] == 3)
+    )
+    if np.sum(can_skip_intxs) == 0:
+        return None
+    intxs = intxs[:, can_skip_intxs]
+    return intxs
+
+
+def _resolve_topology_intersections(
+    vertices: npt.NDArray[np.number],
+    endpts: npt.NDArray[np.integer],
+    vertex_keeps: npt.NDArray[np.bool_],
+    tol: float,
+    graph_ids: Optional[npt.NDArray[np.integer]] = None,
+    max_iters: int = 4,
+) -> npt.NDArray[np.bool_]:
+    """
+    Checks for topology violations and resolves them by iteratively reducing
+    the tolerance for conflicting arcs and re-simplifying them.
+    """
+    vertex_cumsum = np.cumsum(vertex_keeps) - 1
+    vertices_aux = vertices[:, vertex_keeps]
+    endpts_aux = vertex_cumsum[endpts]
+
+    warnings.filterwarnings("error")
+    intxs = locate_invalid_graph_topology(vertices_aux.T, endpts_aux.T)
+    if graph_ids is not None:
+        intxs = _skip_intergraph_intxs(intxs, graph_ids)
+
+    niters = 0
+    while (intxs is not None) and (niters <= max_iters):
+        tol = float(tol) / 2
+        niters += 1
+        for iarc, jarc, _, _, intx_code in intxs:
+            if (
+                graph_ids
+                and (graph_ids[iarc] != graph_ids[jarc])
+                and ((intx_code == 2) or (intx_code == 3))
+            ):
+                # Colinear segments are allowed across graphs
+                continue
+            start_i = endpts[0, iarc]
+            end_i = endpts[1, iarc]
+            len_i = end_i - start_i + 1
+            vertex_keeps[start_i : end_i + 1] = flowdir_f.simplify_flowgraph(
+                vertices[:, start_i : end_i + 1].astype(np.float32, order="F"),
+                np.array([[1], [len_i]], dtype=np.int32, order="F"),
+                tol,
+            ).astype(bool)
+
+            start_j = endpts[0, jarc]
+            end_j = endpts[1, jarc]
+            len_j = end_j - start_j + 1
+            vertex_keeps[start_j : end_j + 1] = flowdir_f.simplify_flowgraph(
+                vertices[:, start_j : end_j + 1].astype(np.float32, order="F"),
+                np.array([[1], [len_j]], dtype=np.int32, order="F"),
+                tol,
+            ).astype(bool)
+        # Squeeze the vertices and map the arc endpoints to the new indices
+        vertex_cumsum = np.cumsum(vertex_keeps) - 1
+        vertices_aux = vertices[:, vertex_keeps]
+        endpts_aux = vertex_cumsum[endpts]
+
+        intxs = locate_invalid_graph_topology(vertices_aux.T, endpts_aux.T)
+        if graph_ids is not None:
+            intxs = _skip_intergraph_intxs(intxs, graph_ids)
+    # If there are still intersections after that many iteratsions, don't simplify those arc
+    if intxs is not None:
+        for iarc, jarc, _, _, _ in intxs:
+            vertex_keeps[endpts[0, iarc] : endpts[1, iarc] + 1] = True
+            vertex_keeps[endpts[0, jarc] : endpts[1, jarc] + 1] = True
+    return vertex_keeps.astype(bool)
+
+
+def _simplify_single_flowgraph(
+    vertices: npt.NDArray[np.number],
+    endpts: npt.NDArray[np.integer],
+    tol: float,
+    check_topology: bool,
+    backend: str,
+    graph_ids: Optional[npt.NDArray[np.integer]] = None,
+) -> tuple[npt.NDArray[np.number], npt.NDArray[np.integer], npt.NDArray[np.bool_]]:
+    """
+    Core function to simplify a single flow graph using RDP algorithm.
+    """
+    match backend:
+        case "python":
+            raise NotImplementedError(
+                "The Python implementation of `simplify_flowgraph` is not implemented yet."
+            )
+        case "fortran":
+            # Standardise inputs to Fortran layout (2, N) and (2, A)
+            if not (vertices.shape[0] == 2 and vertices.shape[1] != 2):
+                vertices = vertices.T
+            if not (endpts.shape[0] == 2 and endpts.shape[1] != 2):
+                endpts = endpts.T
+
+            # Make a copy of arc_endpts to avoid modifying the input array in-place
+            endpts = endpts.copy()
+
+            # Convert 0-based Python indices to 1-based Fortran indices
+            endpts += 1
+
+            # Call the Fortran routine to get the boolean mask of kept vertices
+            vertex_keeps = flowdir_f.simplify_flowgraph(
+                vertices.astype(np.float32, order="F"),
+                endpts.astype(np.int32, order="F"),
+                tol,
+            ).astype(bool)
+
+            # Revert back to 0-based Python indexing
+            endpts -= 1
+
+            if check_topology:
+                vertex_keeps = _resolve_topology_intersections(
+                    vertices, endpts, vertex_keeps, tol, graph_ids=graph_ids
+                )
+
+    # Squeeze the vertices and map the arc endpoints to the new indices
+    vertex_cumsum = np.cumsum(vertex_keeps) - 1
+    vertices = vertices[:, vertex_keeps]
+    endpts = vertex_cumsum[endpts]
+
+    # Transpose and cast arrays to C-contiguous layout for return
+    vertices = vertices.T.astype(vertices.dtype, order="C")
+    endpts = endpts.T.astype(np.int32, order="C")
+    return vertices, endpts, vertex_keeps
+
+
+@overload
 def simplify_flowgraph(
     vertex_xys: npt.NDArray[np.number],
     arc_endpts: npt.NDArray[np.integer],
     tol: int | float = 1,
     check_topology: bool = True,
     backend: Literal["fortran", "python"] = "fortran",
-) -> tuple[npt.NDArray[np.number], npt.NDArray[np.int32], npt.NDArray[np.bool_]]:
+) -> tuple[npt.NDArray[np.number], npt.NDArray[np.int32], npt.NDArray[np.bool_]]: ...
+
+
+@overload
+def simplify_flowgraph(
+    vertex_xys: npt.NDArray[np.number],
+    arc_endpts: npt.NDArray[np.integer],
+    tol: int | float = 1,
+    check_topology: bool = True,
+    backend: Literal["fortran", "python"] = "fortran",
+) -> tuple[npt.NDArray[np.number], npt.NDArray[np.int32], npt.NDArray[np.bool_]]: ...
+
+
+@overload
+def simplify_flowgraph(
+    vertex_xys: list[npt.NDArray[np.number]],
+    arc_endpts: list[npt.NDArray[np.integer]],
+    tol: int | float = 1,
+    check_topology: bool = True,
+    backend: Literal["fortran", "python"] = "fortran",
+) -> tuple[
+    list[npt.NDArray[np.number]],
+    list[npt.NDArray[np.int32]],
+    list[npt.NDArray[np.bool_]],
+]: ...
+
+
+@overload
+def simplify_flowgraph(
+    vertex_xys: tuple[npt.NDArray[np.number]],
+    arc_endpts: tuple[npt.NDArray[np.integer]],
+    tol: int | float = 1,
+    check_topology: bool = True,
+    backend: Literal["fortran", "python"] = "fortran",
+) -> tuple[
+    tuple[npt.NDArray[np.number]],
+    tuple[npt.NDArray[np.int32]],
+    tuple[npt.NDArray[np.bool_]],
+]: ...
+
+
+def simplify_flowgraph(
+    vertex_xys,
+    arc_endpts,
+    tol: int | float = 1,
+    check_topology: bool = True,
+    backend: Literal["fortran", "python"] = "fortran",
+):
     """
     Simplify a flow graph using the Ramer-Douglas-Peucker (RDP) algorithm with a fixed tolerance threshold.
 
     Parameters
     ----------
-    vertex_xys : NDArray[number]
-        V-by-2 (or 2-by-V) array of coordinates representing the vertices in the flow graph
-    arc_endpts : NDArray[int]
-        A-by-2 (or 2-by-A) array of indices indicating where each arc starts and ends in `vertex_xys`
+    vertex_xys : NDArray[number] or Iterable[NDArray[number]]
+        V-by-2 (or 2-by-V) array of coordinates representing the vertices in the flow graph, or an iterable of such arrays
+    arc_endpts : NDArray[int] or Iterable[NDArray[int]]
+        A-by-2 (or 2-by-A) array of indices indicating where each arc starts and ends in `vertex_xys`, or an iterable of such arrays
     tol : int | float, optional
         Tolerance threshold for simplification
         Vertices with perpendicular distance to the line segment less than or equal to `tol` will be simplified/removed.
@@ -1050,13 +1360,12 @@ def simplify_flowgraph(
 
     Returns
     -------
-    simp_vertex_xys : NDArray[number]
-        V'-by-2 array of coordinates representing the simplified vertices
-        This is a subset of the input `vertex_xys` (i.e. no new vertices are created).
-    simp_arc_endpts : NDArray[int32]
-        A-by-2 array of indices indicating the start and end of each simplified arc in `simp_vertex_xys`
-    keeps : NDArray[bool]
-        V-by-1 mask indicating which of the input vertices are retained in the simplified graph
+    simp_vertex_xys : NDArray[number] or list/tuple of NDArray[number]
+        V'-by-2 array of coordinates representing the simplified vertices, or a list/tuple of such arrays
+    simp_arc_endpts : NDArray[int32] or list/tuple of NDArray[int32]
+        A-by-2 array of indices indicating the start and end of each simplified arc, or a list/tuple of such arrays
+    keeps : NDArray[bool] or list/tuple of NDArray[bool]
+        V-by-1 mask indicating which of the input vertices are retained in the simplified graph, or a list/tuple of such masks
 
     Raises
     ------
@@ -1064,88 +1373,28 @@ def simplify_flowgraph(
         If tries to call the not-yet-implemented Python backend
     """
 
-    match backend:
-        case "python":
-            raise NotImplementedError(
-                "The Python implementation of `simplify_flowgraph` is not implemented yet."
+    if isinstance(vertex_xys, (list, tuple)) or isinstance(arc_endpts, (list, tuple)):
+        if (not isinstance(vertex_xys, (list, tuple))) or (
+            not isinstance(arc_endpts, (list, tuple))
+        ):
+            raise ValueError(
+                "Arguments 'vertex_xys' and 'arc_endpts' must both be iterables (or neither)."
             )
-        case "fortran":
-            # Ensure array orientation are correct for the Fortran backend
-            if (vertex_xys.shape[0] != 2) and (vertex_xys.shape[1] == 2):
-                vertex_xys = vertex_xys.T
-            if (arc_endpts.shape[0] != 2) and (arc_endpts.shape[1] == 2):
-                arc_endpts = arc_endpts.T
+        if len(vertex_xys) != len(arc_endpts):
+            raise ValueError(
+                f"Arguments 'vertex_xys' and 'arc_endpts' must have the same length, but got {len(vertex_xys)} and {len(arc_endpts)}, respectively, instead."
+            )
+        return _simplify_multiple_flowgraphs(
+            vertex_xys,
+            arc_endpts,
+            tol=tol,
+            check_topology=check_topology,
+            backend=backend,
+        )
 
-            # Convert 0-based Python indices to 1-based Fortran indices
-            arc_endpts += 1
-
-            # Call the Fortran routine to get the boolean mask of kept vertices
-            vertex_keeps = flowdir_f.simplify_flowgraph(
-                vertex_xys.astype(np.float32, order="F"),
-                arc_endpts.astype(np.int32, order="F"),
-                tol,
-            ).astype(bool)
-
-            # Revert back to 0-based Python indexing
-            arc_endpts -= 1
-
-            if check_topology:
-                # Squeeze the vertices and map the arc endpoints to the new indices
-                vertex_cumsum = np.cumsum(vertex_keeps) - 1
-                vertex_xys_aux = vertex_xys[:, vertex_keeps]
-                arc_endpts_aux = vertex_cumsum[arc_endpts]
-
-                intxs = locate_invalid_graph_topology(
-                    vertex_xys_aux.T, arc_endpts_aux.T
-                )
-                while intxs is not None and tol > 1e-3:
-                    tol = float(tol) / 2
-                    print(f"Reducing tolerance to {tol}...")
-                    for iarc, jarc, _, _, _ in intxs:
-                        start_i = arc_endpts[0, iarc]
-                        end_i = arc_endpts[1, iarc]
-                        len_i = end_i - start_i + 1
-                        vertex_keeps[start_i : end_i + 1] = (
-                            flowdir_f.simplify_flowgraph(
-                                vertex_xys[:, start_i : end_i + 1].astype(
-                                    np.float32, order="F"
-                                ),
-                                np.array([[1], [len_i]], dtype=np.int32, order="F"),
-                                tol,
-                            ).astype(bool)
-                        )
-
-                        start_j = arc_endpts[0, jarc]
-                        end_j = arc_endpts[1, jarc]
-                        len_j = end_j - start_j + 1
-                        vertex_keeps[start_j : end_j + 1] = (
-                            flowdir_f.simplify_flowgraph(
-                                vertex_xys[:, start_j : end_j + 1].astype(
-                                    np.float32, order="F"
-                                ),
-                                np.array([[1], [len_j]], dtype=np.int32, order="F"),
-                                tol,
-                            ).astype(bool)
-                        )
-                    # Squeeze the vertices and map the arc endpoints to the new indices
-                    vertex_cumsum = np.cumsum(vertex_keeps) - 1
-                    vertex_xys_aux = vertex_xys[:, vertex_keeps]
-                    arc_endpts_aux = vertex_cumsum[arc_endpts]
-
-                    intxs = locate_invalid_graph_topology(
-                        vertex_xys_aux.T, arc_endpts_aux.T
-                    )
-            vertex_keeps = vertex_keeps.astype(bool)  # To be summed properly below
-
-    # Squeeze the vertices and map the arc endpoints to the new indices
-    vertex_cumsum = np.cumsum(vertex_keeps) - 1
-    vertex_xys = vertex_xys[:, vertex_keeps]
-    arc_endpts = vertex_cumsum[arc_endpts]
-
-    # Transpose and cast arrays to C-contiguous layout for return
-    vertex_xys = vertex_xys.T.astype(vertex_xys.dtype, order="C")
-    arc_endpts = arc_endpts.T.astype(np.int32, order="C")
-    return vertex_xys, arc_endpts, vertex_keeps
+    return _simplify_single_flowgraph(
+        vertex_xys, arc_endpts, tol=tol, check_topology=check_topology, backend=backend
+    )
 
 
 def locate_invalid_graph_topology(
