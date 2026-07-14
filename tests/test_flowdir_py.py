@@ -5,12 +5,15 @@
 #     - Added test case for the Python implementation of `construct_flowgraph` and function `concat_flowgraph`
 #   2026-07-12, En-Chi Lee (williameclee@gmail.com)
 #     - Added test cases for function `test_locate_invalid_graph_topogtaphy`
+#   2026-07-14, En-Chi Lee (williameclee@gmail.com)
+#     - Updated `geomorphology.flowdir` to the new submodule name
+
 
 import pytest
 import numpy as np
 
 from formosa import D8Directions
-from formosa.geomorphology import flowdir
+import formosa.geomorphology.flowdir as flowdir
 
 T = True
 F = False

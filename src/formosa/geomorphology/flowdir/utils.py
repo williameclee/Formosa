@@ -6,10 +6,11 @@
 #     - Made out-of-bound check in `compute_downstream_indices` optional
 #   2026-07-02, En-Chi Lee (williameclee@gmail.com)
 #     - Actually implemented validity check in `compute_downstram_indices`
+#     - Updated `geomorphology.flowdir` submodule path
 
 import numpy as np
 
-from formosa.geomorphology.d8directions import D8Directions
+from formosa.geomorphology.flowdir.d8directions import D8Directions
 
 import warnings
 

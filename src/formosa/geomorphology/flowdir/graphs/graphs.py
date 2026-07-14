@@ -1,0 +1,756 @@
+# Last modified
+#   2026-07-01, En-Chi Lee (williameclee@gmail.com)
+#     - Opted out of the out-of-bound check in `compute_downstream_indices` in `create_flowgraph`
+#     - Added function `construct_flowgraph`
+#   2026-07-09, En-Chi Lee (williameclee@gmail.com)
+#     - Specified endpoint index definition for `construct_flowgraph`
+#     - Implemented Fortran backend of function `simplify_flowgraph` and function `concat_flowgraph`
+#     - Added vertex mask to output of function `simplify_flowgraph`
+#   2026-07-12, En-Chi Lee (williameclee@gmail.com)
+#     - Implemented Python and Fortran backends of function `locate_invalid_graph_topology`
+#   2026-07-13, En-Chi Lee (williameclee@gmail.com)
+#     - Added default topology check to `simplify_flowgraph`
+#   2026-07-14, En-Chi Lee (williameclee@gmail.com)
+#     - Added simultaneous multi-graph checks to `simplify_flowgraph`
+#     - Updated variable names in `locate_invalid_graph_topology`
+#     - Splitted `geomorphology.flowdir` into submodules
+
+
+import numpy as np
+
+from formosa.geomorphology.flowdir.d8directions import D8Directions
+import formosa.geomorphology.flowdir.raster as raster
+from formosa.geomorphology.flowdir.utils import compute_downstream_indices
+
+try:
+    from formosa.geomorphology.flowdir_f import flowdir_graphs as graphs_f
+except ImportError as err:
+
+    class _MissingFortranBackend:
+        def __init__(self, err: ImportError):
+            self._err = err
+
+        def __getattr__(self, name):
+            raise ImportError(
+                "formosa.geomorphology.graphs_f is required for backend='fortran' but is not available."
+            ) from self._err
+
+    graphs_f = _MissingFortranBackend(err)
+
+import warnings
+
+import numpy.typing as npt
+from typing import Literal, Optional, overload
+
+
+def create_flowgraph(
+    dirs: npt.NDArray[np.integer],
+    valids: Optional[npt.NDArray[np.bool_]] = None,
+    dir_scheme: D8Directions = D8Directions(),
+    x: Optional[npt.NDArray[np.number]] = None,
+    y: Optional[npt.NDArray[np.number]] = None,
+) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.integer]]:
+    """
+    Computes a graph representation of the flow directions in a flow direction grid.
+
+    Parameters
+    ----------
+    dirs : NDArray[int]
+        A 2D array representing the flow directions for each cell.
+    valids : NDArray[bool], optional
+        A boolean mask array indicating valid cells in the flow direction grid.
+        If `None`, all cells are considered valid.
+        Default is `None`.
+    directions : D8Directions, optional
+        An instance of `D8Directions` defining the flow direction scheme.
+        Default is `D8Directions()`.
+    x : NDArray[number], optional
+        A 2D array representing the x-coordinates of each cell.
+        If provided, the graph will use these coordinates instead of grid indices.
+        Default is `None`.
+    y : NDArray[number], optional
+        A 2D array representing the y-coordinates of each cell.
+        If provided, the graph will use these coordinates instead of grid indices.
+        Default is `None`.
+
+    Returns
+    -------
+    graphi : NDArray[int]
+        A 1D array representing the row indices of the graph edges.
+    graphj : NDArray[int]
+        A 1D array representing the column indices of the graph edges.
+    """
+    if valids is not None:
+        assert (
+            valids.shape == dirs.shape
+        ), f"Shape for dlowdirs and valids mask must match, but got valid shape {dirs.shape} and flowdirs shape {valids.shape} instead"
+    else:
+        valids = np.full(dirs.shape, True, dtype=bool)
+
+    i, j = np.meshgrid(
+        np.arange(dirs.shape[0], dtype=np.int32),
+        np.arange(dirs.shape[1], dtype=np.int32),
+        indexing="ij",
+    )
+    dsi, dsj, _, ds_valids = compute_downstream_indices(
+        dirs, dir_scheme=dir_scheme, check=False
+    )
+
+    if x is not None and y is not None:
+        j, i = x, y
+
+        # Map i,j to actual coordinates
+        dsx = np.full_like(dsj, np.nan, dtype=np.float64)
+        dsy = np.full_like(dsj, np.nan, dtype=np.float64)
+        dsx[ds_valids] = x[dsi[ds_valids], dsj[ds_valids]]
+        dsy[ds_valids] = y[dsi[ds_valids], dsj[ds_valids]]
+        dsi, dsj = dsy, dsx
+
+    graphi = np.stack(
+        (
+            i[valids & ds_valids],
+            dsi[valids & ds_valids],
+            np.full(i[valids & ds_valids].size, np.nan),
+        ),
+        axis=1,
+    ).ravel(order="C")
+    graphj = np.stack(
+        (
+            j[valids & ds_valids],
+            dsj[valids & ds_valids],
+            np.full(j[valids & ds_valids].size, np.nan),
+        ),
+        axis=1,
+    ).ravel(order="C")
+    return graphi, graphj
+
+
+def construct_flowgraph(
+    dirs: npt.NDArray[np.integer],
+    dir_scheme: D8Directions = D8Directions(),
+    valids: Optional[npt.NDArray[np.bool_]] = None,
+    min_order: int = 2,
+    orders: Optional[npt.NDArray[np.integer]] = None,
+    preserve_junctions: bool = True,
+    sort: bool = True,
+    backend: Literal["fortran", "python"] = "fortran",
+) -> tuple[npt.NDArray[np.int8], npt.NDArray[np.int32], npt.NDArray[np.int32]]:
+    """
+    Constructs a flow graph from a flow direction grid.
+
+    Parameters
+    ----------
+    dirs : NDArray[int], optional
+        A 2D array representing the flow directions for each cell
+    dir_scheme : D8Directions, optional
+        Instance of `D8Directions` defining the flow direction scheme
+        Default is `D8Directions()`.
+    valids : NDArray[bool], optional
+        Boolean mask array indicating valid cells in the flow direction grid
+        If `None`, all cells are considered valid.
+        Default is `None`.
+    min_order : int, optional
+        Minimum Strahler order to include in the flow graph (see `orders`)
+        Default is 2.
+    orders : NDArray[uint8], optional
+        2D integer array representing the Strahler order for each cell
+        If `None`, it will be computed from the flow direction grid.
+        Default is `None`.
+    preserve_junctions : bool, optional
+        Whether to preserve junctions in the flow graph
+        Default is `True`.
+    sort : bool, option
+        Whether to sort the flow graph by arc order and then by length
+        Default is `True`.
+    backend : {'fortran', 'python'}, optional
+        The backend to use for computation
+        'fortran' uses the Fortran extension for performance, while 'python' uses a pure Python implementation.
+        Default is 'fortran'.
+
+    Returns
+    -------
+    arc_orders : NDArray[int8]
+        1D array representing the Strahler order for each arc in the flow graph
+    vertex_ijs : NDArray[int32]
+        V-by-2 array containing the ordered (i, j) incices of all arcs, concactinated together
+    vertex_endpts : NDArray[int32]
+        A-by-2 array containing the indices of where each arc starts and ends in `vertex_ijs`
+        The returned endpoints are inclusive, meaning slicing must be done as `vertex_ijs[start : end + 1]`.
+    """
+    if valids is None:
+        valids = np.ones(dirs.shape, dtype=bool)
+    if orders is None:
+        orders = raster.compute_flow_strahler_order(
+            dirs,
+            dir_scheme=dir_scheme,
+            backend=backend,
+        )
+
+    # Find seed cells to start with
+    valids = valids & (orders >= min_order)
+    ncells = np.sum(valids)
+    indegs = raster.count_indegree(
+        dirs, dir_scheme=dir_scheme, valids=valids, backend=backend
+    )
+    seeds = valids & (indegs == 0)
+
+    match backend:
+        case "python":
+            from .graphs_py import _construct_flowgraph_py
+
+            narcs, nvertices, arc_orders, vertex_ijs, arc_endpts = (
+                _construct_flowgraph_py(
+                    dirs=dirs,
+                    dir_scheme=dir_scheme,
+                    valids=valids,
+                    orders=orders,
+                    indegs=indegs,
+                    seeds=seeds,
+                    preserve_junctions=preserve_junctions,
+                    ncells=ncells,
+                )
+            )
+        case "fortran":
+            narcs, nvertices, arc_orders, vertex_ijs, arc_endpts = (
+                graphs_f.construct_flowgraph(
+                    dirs.astype(np.uint8, order="F"),
+                    valids.astype(bool, order="F"),
+                    orders.astype(np.int16, order="F"),
+                    seeds.astype(np.bool_, order="F"),
+                    indegs.astype(np.int8, order="F"),
+                    dir_scheme.offsets.astype(np.int32, order="F"),
+                    dir_scheme.codes.astype(np.uint8, order="F"),
+                    preserve_junctions,
+                    ncells,
+                )
+            )
+            # Convert from 1-based index to 0-based index
+            vertex_ijs -= 1
+            arc_endpts -= 1
+
+    arc_orders = arc_orders[:narcs].T.copy(order="C")
+    arc_endpts = arc_endpts[:, :narcs].T.copy(order="C")
+    vertex_ijs = vertex_ijs[:, :nvertices].T.copy(order="C")
+
+    if sort:
+        arc_lengths = arc_endpts[:, 1] - arc_endpts[:, 0] + 1
+        id = np.lexsort((arc_lengths, arc_orders))
+        arc_orders = arc_orders[id]
+        arc_endpts = arc_endpts[id, :]
+
+    return arc_orders, vertex_ijs, arc_endpts
+
+
+def concat_flowgraph(
+    arc_orders: npt.NDArray[np.integer],
+    vertex_ijs: npt.NDArray[np.integer],
+    arc_endpts: npt.NDArray[np.integer],
+) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.integer], npt.NDArray[np.integer]]:
+    """
+    Concactenate arcs of the same order in a flow graph, separated by NaNs.
+    It mainly serves to reduce the number of drawing calls when visualising the graph.
+
+    Parameters
+    ----------
+    arc_orders : NDArray[int]
+        O-by-1 array representing the Strahler order for each arc in the flow graph
+    vertex_ijs : NDArray[int]
+        V-by-2 array containing the ordered (i, j) incices of all arcs, concactinated together
+    vertex_startends : NDArray[int]
+        A-by-2 array containing the indices of where each arc starts and ends in `vertex_ijs`
+        The returned endpoints are inclusive, meaning slicing must be done as `vertex_ijs[start : end + 1]`.
+
+    Returns
+    ----------
+    arc_orders : NDArray[int]
+        O-by-1 array representing the Strahler order for each arc in the flow graph
+    vertex_ijs : NDArray[int]
+        V'-by-2 array containing the ordered (i, j) incices of all arcs, concactinated together
+    vertex_startends : NDArray[int]
+        O-by-2 array containing the indices of where each arc starts and ends in `vertex_ijs`
+        The returned endpoints are inclusive, meaning slicing must be done as `vertex_ijs[start : end + 1]`.
+    """
+
+    # Sort by arc order
+    id = np.argsort(arc_orders)
+    arc_orders = arc_orders[id]
+    arc_endpts = arc_endpts[id, :]
+
+    s_arc_orders = np.unique(arc_orders)
+    s_arc_endpts = np.zeros((s_arc_orders.size, 2), dtype=np.int32)
+    s_vertex_ijs = None
+
+    for iarc in range(arc_orders.size):
+        this_ijs = vertex_ijs[arc_endpts[iarc, 0] : arc_endpts[iarc, 1] + 1, :]
+        if s_vertex_ijs is None:
+            s_vertex_ijs = this_ijs
+        else:
+            s_vertex_ijs = np.concat(
+                [s_vertex_ijs, np.array([[np.nan, np.nan]]), this_ijs], axis=0
+            )
+        if (iarc < arc_orders.size - 1) and (arc_orders[iarc] == arc_orders[iarc + 1]):
+            continue
+        s_arc_endpts[s_arc_orders == arc_orders[iarc], 1] = s_vertex_ijs.shape[0] - 1
+        if arc_orders[iarc] < np.max(s_arc_orders):
+            s_arc_endpts[s_arc_orders == arc_orders[iarc + 1], 0] = (
+                s_vertex_ijs.shape[0] + 1
+            )
+    return s_arc_orders, s_vertex_ijs, s_arc_endpts
+
+
+def _convert_index_array_to_F_fmt(vertices: npt.NDArray) -> npt.NDArray:
+    if vertices.shape[1] == 2 and vertices.shape[0] != 2:
+        vertices = vertices
+    elif vertices.shape[0] == 2 and vertices.shape[1] != 2:
+        vertices = vertices.T
+    elif vertices.shape == (2, 2):
+        vertices = vertices
+    else:
+        raise ValueError("Array cannot be parsed as indices.")
+    return vertices
+
+
+def _simplify_multiple_flowgraphs(
+    vertices_list: list[npt.NDArray[np.number]] | tuple[npt.NDArray[np.number], ...],
+    endpts_list: list[npt.NDArray[np.integer]] | tuple[npt.NDArray[np.integer], ...],
+    tol: int | float,
+    check_topology: bool,
+    backend: str,
+) -> tuple[
+    npt.NDArray[np.number]
+    | list[npt.NDArray[np.number]]
+    | tuple[npt.NDArray[np.number], ...],
+    npt.NDArray[np.int32]
+    | list[npt.NDArray[np.int32]]
+    | tuple[npt.NDArray[np.int32], ...],
+    npt.NDArray[np.bool_]
+    | list[npt.NDArray[np.bool_]]
+    | tuple[npt.NDArray[np.bool_], ...],
+]:
+    vertices_shps: list[tuple] = []
+    endpts_shps: list[tuple] = []
+
+    all_vertices_list: list[npt.NDArray[np.number]] = []
+    all_endpts_list: list[npt.NDArray[np.integer]] = []
+    all_graph_ids_list: list[npt.NDArray[np.uint8]] = []
+
+    offset: int = 0
+    for i, (vertices, endpts) in enumerate(zip(vertices_list, endpts_list)):
+        vertices_shps.append(vertices.shape)
+        endpts_shps.append(endpts.shape)
+
+        if vertices.ndim != 2 or endpts.ndim != 2:
+            raise ValueError(
+                f"Graph at index {i} has invalid dimension (must be 2D arrays)."
+            )
+        # Standardise vertices and endpoints arrays
+        try:
+            vertices = _convert_index_array_to_F_fmt(vertices)
+        except ValueError:
+            raise ValueError(
+                f"Vertex array at index {i} shape {vertices.shape} is not V-by-2 or 2-by-V."
+            )
+        try:
+            endpts = _convert_index_array_to_F_fmt(endpts)
+        except ValueError:
+            raise ValueError(
+                f"Endpoint array at index {i} shape {endpts.shape} is not A-by-2 or 2-by-A."
+            )
+
+        nvertices_i: int = vertices.shape[0]
+        all_vertices_list.append(vertices)
+        all_endpts_list.append(endpts + offset)
+        all_graph_ids_list.append(np.ones((endpts.shape[0]), dtype=np.uint8) * i)
+        offset += nvertices_i
+
+    all_vertices = np.concatenate(all_vertices_list, axis=0)
+    all_endpts = np.concatenate(all_endpts_list, axis=0)
+    all_graph_ids = np.concatenate(all_graph_ids_list, axis=0)
+
+    # Call the core single flowgraph simplifier
+    _, _, keeps_concat = _simplify_single_flowgraph(
+        all_vertices,
+        all_endpts,
+        tol=tol,
+        check_topology=check_topology,
+        backend=backend,
+    )
+
+    # Separate the simplified graph back into multiple graphs
+    s_vertices_list = []
+    s_endpts_list = []
+    keeps_list = []
+
+    offset = 0
+    for i in range(len(all_vertices_list)):
+        vertex_shp = vertices_shps[i]
+        endpts_shp = endpts_shps[i]
+
+        nvertices_i = (
+            vertex_shp[0]
+            if (vertex_shp[0] != 2 or vertex_shp[1] == 2)
+            else vertex_shp[1]
+        )
+        keeps_i = keeps_concat[offset : offset + nvertices_i]
+
+        vertices = all_vertices_list[i]
+        simp_v_i = vertices[keeps_i, :]
+
+        vertex_cumsum_i = np.cumsum(keeps_i) - 1
+        local_e_std = all_endpts_list[i] - offset
+        simp_e_i = vertex_cumsum_i[local_e_std]
+
+        # Restore original orientation
+        if vertex_shp[0] == 2 and vertex_shp[1] != 2:
+            simp_v_i = simp_v_i.T
+        if endpts_shp[0] == 2 and endpts_shp[1] != 2:
+            simp_e_i = simp_e_i.T
+
+        s_vertices_list.append(simp_v_i)
+        s_endpts_list.append(simp_e_i)
+        keeps_list.append(keeps_i)
+
+        offset += nvertices_i
+
+    if isinstance(vertices_list, tuple):
+        return (
+            tuple(s_vertices_list),
+            tuple(s_endpts_list),
+            tuple(keeps_list),
+        )
+    else:
+        return s_vertices_list, s_endpts_list, keeps_list
+
+
+def _skip_intergraph_intxs(
+    intxs: Optional[npt.NDArray[np.int32]],
+    graph_ids: Optional[npt.NDArray[np.uint8]],
+) -> Optional[npt.NDArray[np.int32]]:
+    if intxs is None:
+        return None
+    can_skip_intxs = (graph_ids[intxs[0, :]] != graph_ids[intxs[1, :]]) & (
+        (intxs[-1, :] == 2) | (intxs[-1, :] == 3)
+    )
+    if np.sum(can_skip_intxs) == 0:
+        return None
+    intxs = intxs[:, can_skip_intxs]
+    return intxs
+
+
+def _resolve_topology_intersections(
+    vertices: npt.NDArray[np.number],
+    endpts: npt.NDArray[np.integer],
+    vertex_keeps: npt.NDArray[np.bool_],
+    tol: float,
+    graph_ids: Optional[npt.NDArray[np.integer]] = None,
+    max_iters: int = 4,
+) -> npt.NDArray[np.bool_]:
+    """
+    Checks for topology violations and resolves them by iteratively reducing
+    the tolerance for conflicting arcs and re-simplifying them.
+    """
+    vertex_cumsum = np.cumsum(vertex_keeps) - 1
+    vertices_aux = vertices[:, vertex_keeps]
+    endpts_aux = vertex_cumsum[endpts]
+
+    warnings.filterwarnings("error")
+    intxs = locate_invalid_graph_topology(vertices_aux.T, endpts_aux.T)
+    if graph_ids is not None:
+        intxs = _skip_intergraph_intxs(intxs, graph_ids)
+
+    niters = 0
+    while (intxs is not None) and (niters <= max_iters):
+        tol = float(tol) / 2
+        niters += 1
+        for iarc, jarc, _, _, intx_code in intxs:
+            if (
+                graph_ids
+                and (graph_ids[iarc] != graph_ids[jarc])
+                and ((intx_code == 2) or (intx_code == 3))
+            ):
+                # Colinear segments are allowed across graphs
+                continue
+            start_i = endpts[0, iarc]
+            end_i = endpts[1, iarc]
+            len_i = end_i - start_i + 1
+            vertex_keeps[start_i : end_i + 1] = graphs_f.simplify_flowgraph(
+                vertices[:, start_i : end_i + 1].astype(np.float32, order="F"),
+                np.array([[1], [len_i]], dtype=np.int32, order="F"),
+                tol,
+            ).astype(bool)
+
+            start_j = endpts[0, jarc]
+            end_j = endpts[1, jarc]
+            len_j = end_j - start_j + 1
+            vertex_keeps[start_j : end_j + 1] = graphs_f.simplify_flowgraph(
+                vertices[:, start_j : end_j + 1].astype(np.float32, order="F"),
+                np.array([[1], [len_j]], dtype=np.int32, order="F"),
+                tol,
+            ).astype(bool)
+        # Squeeze the vertices and map the arc endpoints to the new indices
+        vertex_cumsum = np.cumsum(vertex_keeps) - 1
+        vertices_aux = vertices[:, vertex_keeps]
+        endpts_aux = vertex_cumsum[endpts]
+
+        intxs = locate_invalid_graph_topology(vertices_aux.T, endpts_aux.T)
+        if graph_ids is not None:
+            intxs = _skip_intergraph_intxs(intxs, graph_ids)
+    # If there are still intersections after that many iteratsions, don't simplify those arc
+    if intxs is not None:
+        for iarc, jarc, _, _, _ in intxs:
+            vertex_keeps[endpts[0, iarc] : endpts[1, iarc] + 1] = True
+            vertex_keeps[endpts[0, jarc] : endpts[1, jarc] + 1] = True
+    return vertex_keeps.astype(bool)
+
+
+def _simplify_single_flowgraph(
+    vertices: npt.NDArray[np.number],
+    endpts: npt.NDArray[np.integer],
+    tol: float,
+    check_topology: bool,
+    backend: str,
+    graph_ids: Optional[npt.NDArray[np.integer]] = None,
+) -> tuple[npt.NDArray[np.number], npt.NDArray[np.integer], npt.NDArray[np.bool_]]:
+    """
+    Core function to simplify a single flow graph using RDP algorithm.
+    """
+    match backend:
+        case "python":
+            raise NotImplementedError(
+                "The Python implementation of `simplify_flowgraph` is not implemented yet."
+            )
+        case "fortran":
+            # Standardise inputs to Fortran layout (2, N) and (2, A)
+            if not (vertices.shape[0] == 2 and vertices.shape[1] != 2):
+                vertices = vertices.T
+            if not (endpts.shape[0] == 2 and endpts.shape[1] != 2):
+                endpts = endpts.T
+
+            # Make a copy of arc_endpts to avoid modifying the input array in-place
+            endpts = endpts.copy()
+
+            # Convert 0-based Python indices to 1-based Fortran indices
+            endpts += 1
+
+            # Call the Fortran routine to get the boolean mask of kept vertices
+            vertex_keeps = graphs_f.simplify_flowgraph(
+                vertices.astype(np.float32, order="F"),
+                endpts.astype(np.int32, order="F"),
+                tol,
+            ).astype(bool)
+
+            # Revert back to 0-based Python indexing
+            endpts -= 1
+
+            if check_topology:
+                vertex_keeps = _resolve_topology_intersections(
+                    vertices, endpts, vertex_keeps, tol, graph_ids=graph_ids
+                )
+
+    # Squeeze the vertices and map the arc endpoints to the new indices
+    vertex_cumsum = np.cumsum(vertex_keeps) - 1
+    vertices = vertices[:, vertex_keeps]
+    endpts = vertex_cumsum[endpts]
+
+    # Transpose and cast arrays to C-contiguous layout for return
+    vertices = vertices.T.astype(vertices.dtype, order="C")
+    endpts = endpts.T.astype(np.int32, order="C")
+    return vertices, endpts, vertex_keeps
+
+
+@overload
+def simplify_flowgraph(
+    vertex_xys: npt.NDArray[np.number],
+    arc_endpts: npt.NDArray[np.integer],
+    tol: int | float = 1,
+    check_topology: bool = True,
+    backend: Literal["fortran", "python"] = "fortran",
+) -> tuple[npt.NDArray[np.number], npt.NDArray[np.int32], npt.NDArray[np.bool_]]: ...
+
+
+@overload
+def simplify_flowgraph(
+    vertex_xys: npt.NDArray[np.number],
+    arc_endpts: npt.NDArray[np.integer],
+    tol: int | float = 1,
+    check_topology: bool = True,
+    backend: Literal["fortran", "python"] = "fortran",
+) -> tuple[npt.NDArray[np.number], npt.NDArray[np.int32], npt.NDArray[np.bool_]]: ...
+
+
+@overload
+def simplify_flowgraph(
+    vertex_xys: list[npt.NDArray[np.number]],
+    arc_endpts: list[npt.NDArray[np.integer]],
+    tol: int | float = 1,
+    check_topology: bool = True,
+    backend: Literal["fortran", "python"] = "fortran",
+) -> tuple[
+    list[npt.NDArray[np.number]],
+    list[npt.NDArray[np.int32]],
+    list[npt.NDArray[np.bool_]],
+]: ...
+
+
+@overload
+def simplify_flowgraph(
+    vertex_xys: tuple[npt.NDArray[np.number]],
+    arc_endpts: tuple[npt.NDArray[np.integer]],
+    tol: int | float = 1,
+    check_topology: bool = True,
+    backend: Literal["fortran", "python"] = "fortran",
+) -> tuple[
+    tuple[npt.NDArray[np.number]],
+    tuple[npt.NDArray[np.int32]],
+    tuple[npt.NDArray[np.bool_]],
+]: ...
+
+
+def simplify_flowgraph(
+    vertex_xys,
+    arc_endpts,
+    tol: int | float = 1,
+    check_topology: bool = True,
+    backend: Literal["fortran", "python"] = "fortran",
+):
+    """
+    Simplify a flow graph using the Ramer-Douglas-Peucker (RDP) algorithm with a fixed tolerance threshold.
+
+    Parameters
+    ----------
+    vertex_xys : NDArray[number] or Iterable[NDArray[number]]
+        V-by-2 (or 2-by-V) array of coordinates representing the vertices in the flow graph, or an iterable of such arrays
+    arc_endpts : NDArray[int] or Iterable[NDArray[int]]
+        A-by-2 (or 2-by-A) array of indices indicating where each arc starts and ends in `vertex_xys`, or an iterable of such arrays
+    tol : int | float, optional
+        Tolerance threshold for simplification
+        Vertices with perpendicular distance to the line segment less than or equal to `tol` will be simplified/removed.
+        Default tolerance is 1.
+    check_topology : bool, optional
+        Whether to check for invalid topography in the simplified graph
+        Default option is `True`.
+    backend : {'fortran', 'python'}, optional
+        Backend to use for computation
+        Default backend and the only one currently available is `'fortran'`.
+
+    Returns
+    -------
+    simp_vertex_xys : NDArray[number] or list/tuple of NDArray[number]
+        V'-by-2 array of coordinates representing the simplified vertices, or a list/tuple of such arrays
+    simp_arc_endpts : NDArray[int32] or list/tuple of NDArray[int32]
+        A-by-2 array of indices indicating the start and end of each simplified arc, or a list/tuple of such arrays
+    keeps : NDArray[bool] or list/tuple of NDArray[bool]
+        V-by-1 mask indicating which of the input vertices are retained in the simplified graph, or a list/tuple of such masks
+
+    Raises
+    ------
+    NotImplementedError
+        If tries to call the not-yet-implemented Python backend
+    """
+
+    if isinstance(vertex_xys, (list, tuple)) or isinstance(arc_endpts, (list, tuple)):
+        if (not isinstance(vertex_xys, (list, tuple))) or (
+            not isinstance(arc_endpts, (list, tuple))
+        ):
+            raise ValueError(
+                "Arguments 'vertex_xys' and 'arc_endpts' must both be iterables (or neither)."
+            )
+        if len(vertex_xys) != len(arc_endpts):
+            raise ValueError(
+                f"Arguments 'vertex_xys' and 'arc_endpts' must have the same length, but got {len(vertex_xys)} and {len(arc_endpts)}, respectively, instead."
+            )
+        return _simplify_multiple_flowgraphs(
+            vertex_xys,
+            arc_endpts,
+            tol=tol,
+            check_topology=check_topology,
+            backend=backend,
+        )
+
+    return _simplify_single_flowgraph(
+        vertex_xys, arc_endpts, tol=tol, check_topology=check_topology, backend=backend
+    )
+
+
+def locate_invalid_graph_topology(
+    vertex_xys: npt.NDArray[np.number],
+    arc_endpts: npt.NDArray[np.integer],
+    backend: Literal["fortran", "python"] = "fortran",
+) -> Optional[npt.NDArray[np.int32]]:
+    """
+    Locates invalid topologies (segment intersections) within and between arcs in a graph.
+
+    This function checks for self-intersections within individual arcs, as well as intersections between segments of different arcs. The intersection checks are performed using a 2D line segment intersection algorithm.
+
+    Parameters
+    ----------
+    vertex_xys : NDArray[number]
+        2D array of shape `(nvertices, 2)` representing the grid coordinates (i, j) of each vertex
+    arc_endpts : NDArray[integer]
+        2D array of shape `(narcs, 2)` containing the start and end vertex indices for each arc in `vertex_ijs`
+    backend : {'fortran', 'python'}, optional
+        Computational backend to use
+        The default option is `'fortran'`.
+
+    Returns
+    -------
+    NDArray[int32] or None
+        2D array of shape `(nintxs, 5)` representing the detected intersections, or `None` if no intersections are found
+        The rows are sorted lexicographically and each row contains:
+        - `iarc`: Index of the first arc (0-based)
+        - `jarc`: Index of the second arc (0-based)
+        - `iseg`: Start vertex index of the first intersecting segment (0-based)
+        - `jseg`: Start vertex index of the second intersecting segment (0-based)
+        - `intx_flag`: Flag indicating the type of intersection:
+            - 1 : interior-interior crossing (X)
+            - 2 : collinear overlap, not identical
+            - 3 : identical segment
+            - 4 : endpoint-on-interior (T-junction)
+            - 5 : degenerate segment (some line is actually a point)
+
+    Raises
+    ------
+    ValueError
+        If the shape of `vertex_ijs` or `arc_endpts` is invalid.
+    """
+    match backend:
+        case "python":
+            from .graphs_py import _locate_invalid_graph_topology_py
+
+            if vertex_xys.ndim != 2 or vertex_xys.shape[1] != 2:
+                raise ValueError("Invalid array shapes passed.")
+            if arc_endpts.ndim != 2 or arc_endpts.shape[1] != 2:
+                raise ValueError("Invalid array shapes passed.")
+
+            intxs = _locate_invalid_graph_topology_py(
+                arc_endpts.astype(np.int32, order="C"),
+                vertex_xys.astype(np.float64, order="C"),
+            )
+            if not intxs:
+                return None
+            intxs = np.array(intxs, dtype=np.int32, order="C")
+        case "fortran":
+            vertex_xys = vertex_xys.T
+            arc_endpts = arc_endpts.T
+            intxs, nintxs, err_code = graphs_f.locate_invalid_graph_topology(
+                vertex_xys.astype(np.float64, order="F"),
+                arc_endpts.astype(np.int32, order="F") + 1,  # Convert to 1-based index
+            )
+            if err_code == 1:
+                raise ValueError("Invalid array shapes passed.")
+            elif err_code == 2:
+                warnings.warn(
+                    f"Too many topology violations than the buffer can hold, returning only the first {nintxs}",
+                    RuntimeWarning,
+                )
+            if nintxs == 0:
+                return None
+            if intxs.shape[1] > nintxs:
+                intxs = intxs[:, :nintxs]
+            intxs[:-1, :] -= 1  # Convert to 0-based index
+            intxs = intxs.T.astype(np.int32, order="C")
+    if intxs.shape[0] > 1:
+        # Sort lexicographically
+        sort_idx = np.lexsort((intxs[:, 3], intxs[:, 2], intxs[:, 1], intxs[:, 0]))
+        intxs = intxs[sort_idx]
+    return intxs

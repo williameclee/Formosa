@@ -1,3 +1,6 @@
+# Last modified
+#  - Moved from `geomorphology.flowdir` to `geomorphology.flowdir.flowdir`
+
 import numpy as np
 
 from typing import TypeVar, Tuple, Callable
