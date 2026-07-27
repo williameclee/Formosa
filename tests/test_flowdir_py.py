@@ -4,9 +4,11 @@
 #   2026-07-09, En-Chi Lee (williameclee@gmail.com)
 #     - Added test case for the Python implementation of `construct_flowgraph` and function `concat_flowgraph`
 #   2026-07-12, En-Chi Lee (williameclee@gmail.com)
-#     - Added test cases for function `test_locate_invalid_graph_topogtaphy`
+#     - Added test cases for function `locate_invalid_graph_topogtaphy`
 #   2026-07-14, En-Chi Lee (williameclee@gmail.com)
 #     - Updated `geomorphology.flowdir` to the new submodule name
+#   2026-07-27, En-Chi Lee (williameclee@gmail.com)
+#     - Added test cases for function `insert_endpt`
 
 
 import pytest
@@ -135,8 +137,76 @@ def test_locate_invalid_graph_topogtaphy():
         )
 
 
+def test_graph_insert_endpt():
+    from formosa.geomorphology.flowdir.graphs import insert_endpt
+
+    ijs = np.array([[0, 1], [2, 3], [4, 5], [6, 7], [8, 9]])
+    endpts = np.array([[0, 2], [3, 4]])
+    orders = np.array([1, 2])
+
+    # Non-existent additional endpoint
+    with pytest.warns():
+        o_orders, o_ijs, o_endpts = insert_endpt(orders, ijs, endpts, np.array([1, 0]))
+    np.testing.assert_array_equal(ijs, o_ijs)
+    np.testing.assert_array_equal(endpts, o_endpts)
+    np.testing.assert_array_equal(orders, o_orders)
+
+    # Additional endpoint is already an endpoint
+    o_orders, o_ijs, o_endpts = insert_endpt(orders, ijs, endpts, np.array([0, 1]))
+    np.testing.assert_array_equal(ijs, o_ijs)
+    np.testing.assert_array_equal(endpts, o_endpts)
+    np.testing.assert_array_equal(orders, o_orders)
+    o_orders, o_ijs, o_endpts = insert_endpt(orders, ijs, endpts, np.array([4, 5]))
+    np.testing.assert_array_equal(ijs, o_ijs)
+    np.testing.assert_array_equal(endpts, o_endpts)
+    np.testing.assert_array_equal(orders, o_orders)
+    o_orders, o_ijs, o_endpts = insert_endpt(orders, ijs, endpts, np.array([6, 7]))
+    np.testing.assert_array_equal(ijs, o_ijs)
+    np.testing.assert_array_equal(endpts, o_endpts)
+    np.testing.assert_array_equal(orders, o_orders)
+    o_orders, o_ijs, o_endpts = insert_endpt(orders, ijs, endpts, np.array([8, 9]))
+    np.testing.assert_array_equal(ijs, o_ijs)
+    np.testing.assert_array_equal(endpts, o_endpts)
+    np.testing.assert_array_equal(orders, o_orders)
+
+    # Additional endpoint is already an endpoint, specified as index
+    o_orders, o_ijs, o_endpts = insert_endpt(orders, ijs, endpts, 0)
+    np.testing.assert_array_equal(ijs, o_ijs)
+    np.testing.assert_array_equal(endpts, o_endpts)
+    np.testing.assert_array_equal(orders, o_orders)
+    o_orders, o_ijs, o_endpts = insert_endpt(orders, ijs, endpts, 2)
+    np.testing.assert_array_equal(ijs, o_ijs)
+    np.testing.assert_array_equal(endpts, o_endpts)
+    np.testing.assert_array_equal(orders, o_orders)
+
+    # Insert endpoint
+    o_orders, o_ijs, o_endpts = insert_endpt(orders, ijs, endpts, np.array([2, 3]))
+    exp_ijs = np.array([[0, 1], [2, 3], [4, 5], [6, 7], [8, 9], [2, 3], [4, 5]])
+    exp_endpts = np.array([[0, 1], [3, 4], [5, 6]])
+    exp_orders = np.array([1, 2, 1])
+    np.testing.assert_array_equal(o_ijs, exp_ijs)
+    np.testing.assert_array_equal(o_endpts, exp_endpts)
+    np.testing.assert_array_equal(o_orders, exp_orders)
+
+    # Insert endpoint, specified as index
+    o_orders, o_ijs, o_endpts = insert_endpt(orders, ijs, endpts, 1)
+    exp_ijs = np.array([[0, 1], [2, 3], [4, 5], [6, 7], [8, 9], [2, 3], [4, 5]])
+    exp_endpts = np.array([[0, 1], [3, 4], [5, 6]])
+    exp_orders = np.array([1, 2, 1])
+    np.testing.assert_array_equal(o_ijs, exp_ijs)
+    np.testing.assert_array_equal(o_endpts, exp_endpts)
+    np.testing.assert_array_equal(o_orders, exp_orders)
+
+    # Invalid input shapes
+    with pytest.raises(AssertionError):
+        o_orders, o_ijs, o_endpts = insert_endpt(
+            orders, ijs, endpts[:-1, :], np.array([2, 3])
+        )
+
+
 if __name__ == "__main__":
     test_indegree_3x3()
     test_network_graph_3x3()
     test_network_graph_concat_3x3()
     test_locate_invalid_graph_topogtaphy()
+    test_graph_insert_endpt()

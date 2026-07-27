@@ -13,7 +13,9 @@
 #   2026-07-14, En-Chi Lee (williameclee@gmail.com)
 #     - Added simultaneous multi-graph checks to `simplify_flowgraph`
 #     - Updated variable names in `locate_invalid_graph_topology`
-#     - Splitted `geomorphology.flowdir` into submodules
+#     - Split `geomorphology.flowdir` into submodules
+#   2026-07-27, En-Chi Lee (williameclee@gmail.com)
+#     - Implemented `insert_endpt`
 
 
 import numpy as np
@@ -239,6 +241,83 @@ def construct_flowgraph(
         arc_endpts = arc_endpts[id, :]
 
     return arc_orders, vertex_ijs, arc_endpts
+
+
+def insert_endpt(
+    orders: npt.NDArray[np.integer],
+    ijs: npt.NDArray[np.number],
+    endpts: npt.NDArray[np.integer],
+    add_endpt: npt.NDArray[np.number] | int,
+) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.number], npt.NDArray[np.integer]]:
+    """
+    Turns an interior vertex of a flow graph in to an endpoint.
+
+    Parameters
+    ----------
+    orders : NDArray[int]
+        O-by-1 array representing the Strahler order for each arc
+    ijs : NDArray[int | float]
+        V-by-n array representing the coordinates of the vertices
+    endpts : NDArray[int]
+        A-by-2 array representing the indices of the starting and ending endpoint of each arc in the `ijs` array
+        The endpoints should be inclusive.
+    add_endpt : NDArray[int | float] | int
+        Either:
+        1.  n-by-1 array representing the coordinate of the vertex to turn to an endpoint
+        2.  Integer specifying the index of the vertex in the `ijs` array to turn to an endpoint
+
+    Returns
+    -------
+    orders : NDArray[int]
+        Strahler order for each arc in the updated flow graph
+    ijs : NDArray[int | float]
+        Coordinates of the vertices in the updated flow graph
+    endpts : NDArray[int]
+        Inclusive starting and ending vertex indices for each arc in the updated flow graph
+
+    Raises
+    ------
+    AssertionError
+        If `orders` and `endpts` do not contain the same number of arcs, or if a
+        coordinate supplied as `add_endpt` does not have the same dimensionality
+        as the vertices in `ijs`
+    """
+
+    assert np.size(orders, 0) == np.size(endpts, 0), (
+        "The orders array must have the same length as the endpoints array, "
+        + f"but got {np.size(orders, 0)} and {np.size(endpts, 0)}, respectively, instead."
+    )
+
+    if isinstance(add_endpt, int):
+        ivert = add_endpt
+    else:
+        assert np.size(add_endpt, 0) == np.size(endpts, 1), (
+            "The additional endpoint must have the same shape as the endpoints array, "
+            + f"but got {np.size(add_endpt, 0)} and {np.size(endpts, 1)}, respectively, instead."
+        )
+        ivert = np.squeeze(np.where(np.all(ijs == add_endpt, axis=1)))
+        if np.size(ivert) == 0:
+            warnings.warn(
+                "Provided endpoint is not found in the list of vertices. Returning the original graph"
+            )
+            return orders, ijs, endpts
+    iseg = np.where(np.squeeze((ivert >= endpts[:, 0]) & (ivert <= endpts[:, 1])))
+
+    # Skip if the additional endpoint is already an endpoint
+    if (endpts[iseg, 0] == ivert) or (endpts[iseg, 1] == ivert):
+        return orders, ijs, endpts
+
+    # Append the second half of the segment
+    start_vert = np.size(ijs, 0)
+    ijs = np.concat([ijs, ijs[ivert : np.squeeze(endpts[iseg, 1] + 1), :]])
+    end_vert = np.size(ijs, 0) - 1
+    endpts = np.concat([endpts, np.array([[start_vert, end_vert]])])
+    orders = np.concat([orders, orders[iseg]])
+
+    # Truncate the current segment to the first half
+    endpts[iseg, 1] = ivert
+
+    return orders, ijs, endpts
 
 
 def concat_flowgraph(
