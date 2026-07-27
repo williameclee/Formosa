@@ -15,7 +15,7 @@
 #     - Updated variable names in `locate_invalid_graph_topology`
 #     - Split `geomorphology.flowdir` into submodules
 #   2026-07-27, En-Chi Lee (williameclee@gmail.com)
-#     - Implemented `insert_endpt`
+#     - Implemented `insert_endpt` and relevant helper functions
 
 
 import numpy as np
@@ -42,7 +42,7 @@ except ImportError as err:
 import warnings
 
 import numpy.typing as npt
-from typing import Literal, Optional, overload
+from typing import Literal, Iterable, Optional, overload
 
 
 def create_flowgraph(
@@ -243,6 +243,127 @@ def construct_flowgraph(
     return arc_orders, vertex_ijs, arc_endpts
 
 
+def find_vertex_id(
+    verts: npt.NDArray[np.number],
+    vert: npt.NDArray[np.number],
+    n: Optional[int] = None,
+) -> int | list[int]:
+    """
+    Finds the index (or indices) of a vertex in a list of vertices.
+
+    Parameters
+    ----------
+    verts : NDArray[int | float]
+        V-by-m array representing the m-dimensional coordinates of the vertices.
+    vert :  NDArray[int | float]
+        m-by-(1) array representing the m-dimensional coordinate of the vertex to find.
+    n : int, optional
+        Maximum number of indices to return, if the vertex appears multiple times in the array.
+        When not specified, all occurences are returned.
+        Default value is `None`.
+
+    Returns
+    -------
+    ivert : int | list[int]
+        Index (or indices) of the vertex in the list of vertices
+
+    Raises
+    ------
+    AssertionError
+        If the dimension of the provided vertex does not match the dimension of the array of vertices
+    ValueError
+        If the provided vertex is not found in the list of vertices
+    """
+
+    assert np.size(vert, 0) == np.size(verts, 1), (
+        "The vertex and vertex array must have the same number of dimensions, "
+        + f"but got {np.size(vert, 0)} and {np.size(verts, 1)}, respectively, instead."
+    )
+
+    ivert = np.squeeze(np.where(np.all(verts == vert, axis=1)))
+    if np.size(ivert) == 0:
+        raise ValueError("Provided vertex is not found in the list of vertices.")
+    elif np.size(ivert) > 1:
+        if (n is not None) and (np.size(ivert) > n):
+            return ivert[:n].tolist()
+        return ivert.tolist()
+    return int(ivert)
+
+
+@overload
+def find_arc_id_of_vertex(
+    endpts: npt.NDArray[np.integer], ivert: int, is_inclusive: bool = True
+) -> int:
+    """
+    Finds the index of the arc that contains the vertex of a given index.
+
+    Parameters
+    ----------
+    endpts : NDArray[int]
+        A-by-2 array containing the indices of the starting and ending endpoint of each arc in a vertex array.
+    ivert : int
+        Index of the vertex in a vertex array to find the arc for.
+    is_inclusive : bool
+        Whether the `endpts` array is inclusive or half-open.
+        If it is inclusive, the corresponding vertices in the arc are start_id ... end_id; if half-open, the vertices are start_id ... end_id - 1 instead.
+        Default is `True`.
+
+    Returns
+    -------
+    iarc : int
+        Index of the arc that contains the vertex of a given index.
+    """
+    ...
+
+
+@overload
+def find_arc_id_of_vertex(
+    endpts: npt.NDArray[np.integer], ivert: Iterable[int], is_inclusive: bool = True
+) -> list[int]:
+    """
+    Finds the indices of the arcs that contain the vertices of a list of given indices.
+
+    Parameters
+    ----------
+    endpts : NDArray[int]
+        A-by-2 array containing the indices of the starting and ending endpoint of each arc in a vertex array.
+    ivert : Iterable[int]
+        Indices of the vertices in a vertex array to find the arcs for.
+    is_inclusive : bool
+        Whether the `endpts` array is inclusive or half-open.
+        If it is inclusive, the corresponding vertices in the arc are start_id ... end_id; if half-open, the vertices are start_id ... end_id - 1 instead.
+        Default is `True`.
+
+    Returns
+    -------
+    iarc : list[int]
+        Indices of the arcs that contain the vertices of the given indices.
+    """
+    ...
+
+
+def find_arc_id_of_vertex(
+    endpts: npt.NDArray[np.integer],
+    ivert: int | Iterable[int],
+    is_inclusive: bool = True,
+) -> int | list[int]:
+    def _find_arc_of_vertex(
+        endpts: npt.NDArray[np.integer], ivert: int, is_inclusive: bool = True
+    ) -> int:
+        iarc = np.where(
+            np.squeeze(
+                (ivert >= endpts[:, 0]) & (ivert <= (endpts[:, 1] + (not is_inclusive)))
+            )
+        )[0]
+        return iarc
+
+    if isinstance(ivert, int) or (np.size(ivert) == 1):
+        iarc = _find_arc_of_vertex(endpts, ivert, is_inclusive)
+        return iarc
+    iarc = [_find_arc_of_vertex(endpts, ivert, is_inclusive) for ivert in ivert]
+    return iarc
+
+
 def insert_endpt(
     orders: npt.NDArray[np.integer],
     ijs: npt.NDArray[np.number],
@@ -255,32 +376,32 @@ def insert_endpt(
     Parameters
     ----------
     orders : NDArray[int]
-        O-by-1 array representing the Strahler order for each arc
+        O-by-(1) array representing the Strahler order for each arc.
     ijs : NDArray[int | float]
-        V-by-n array representing the coordinates of the vertices
+        V-by-n array representing the coordinates of the vertices.
     endpts : NDArray[int]
-        A-by-2 array representing the indices of the starting and ending endpoint of each arc in the `ijs` array
+        A-by-2 array representing the indices of the starting and ending endpoint of each arc in the `ijs` array.
         The endpoints should be inclusive.
     add_endpt : NDArray[int | float] | int
         Either:
-        1.  n-by-1 array representing the coordinate of the vertex to turn to an endpoint
-        2.  Integer specifying the index of the vertex in the `ijs` array to turn to an endpoint
+         1. n-by-(1) array representing the coordinate of the vertex to turn to an endpoint
+         2. Integer specifying the index of the vertex in the `ijs` array to turn to an endpoint
 
     Returns
     -------
     orders : NDArray[int]
-        Strahler order for each arc in the updated flow graph
+        Strahler order for each arc in the updated flow graph.
     ijs : NDArray[int | float]
-        Coordinates of the vertices in the updated flow graph
+        Coordinates of the vertices in the updated flow graph.
     endpts : NDArray[int]
-        Inclusive starting and ending vertex indices for each arc in the updated flow graph
+        Inclusive starting and ending vertex indices for each arc in the updated flow graph.
 
     Raises
     ------
     AssertionError
         If `orders` and `endpts` do not contain the same number of arcs, or if a
         coordinate supplied as `add_endpt` does not have the same dimensionality
-        as the vertices in `ijs`
+        as the vertices in `ijs`.
     """
 
     assert np.size(orders, 0) == np.size(endpts, 0), (
@@ -291,32 +412,39 @@ def insert_endpt(
     if isinstance(add_endpt, int):
         ivert = add_endpt
     else:
-        assert np.size(add_endpt, 0) == np.size(endpts, 1), (
-            "The additional endpoint must have the same shape as the endpoints array, "
-            + f"but got {np.size(add_endpt, 0)} and {np.size(endpts, 1)}, respectively, instead."
-        )
-        ivert = np.squeeze(np.where(np.all(ijs == add_endpt, axis=1)))
-        if np.size(ivert) == 0:
+        try:
+            ivert = find_vertex_id(ijs, add_endpt)
+        except (AssertionError, ValueError):
             warnings.warn(
-                "Provided endpoint is not found in the list of vertices. Returning the original graph"
+                "Provided endpoint is not found in the list of vertices. "
+                + "Returning the original graph."
             )
             return orders, ijs, endpts
-    iseg = np.where(np.squeeze((ivert >= endpts[:, 0]) & (ivert <= endpts[:, 1])))
+    iarc = find_arc_id_of_vertex(endpts, ivert)
 
-    # Skip if the additional endpoint is already an endpoint
-    if (endpts[iseg, 0] == ivert) or (endpts[iseg, 1] == ivert):
+    def _insert_endpt(orders, ijs, endpts, iarc, ivert):
+        # Skip if the additional endpoint is already an endpoint
+        if (endpts[iarc, 0] == ivert) or (endpts[iarc, 1] == ivert):
+            return orders, ijs, endpts
+
+        # Append the second half of the segment
+        start_vert = np.size(ijs, 0)
+        ijs = np.concat([ijs, ijs[ivert : np.squeeze(endpts[iarc, 1] + 1), :]])
+        end_vert = np.size(ijs, 0) - 1
+        endpts = np.concat([endpts, np.array([[start_vert, end_vert]])])
+        orders = np.concat([orders, orders[iarc]])
+
+        # Truncate the current segment to the first half
+        endpts[iarc, 1] = ivert
+
         return orders, ijs, endpts
 
-    # Append the second half of the segment
-    start_vert = np.size(ijs, 0)
-    ijs = np.concat([ijs, ijs[ivert : np.squeeze(endpts[iseg, 1] + 1), :]])
-    end_vert = np.size(ijs, 0) - 1
-    endpts = np.concat([endpts, np.array([[start_vert, end_vert]])])
-    orders = np.concat([orders, orders[iseg]])
+    if isinstance(ivert, int):
+        orders, ijs, endpts = _insert_endpt(orders, ijs, endpts, iarc, ivert)
+        return orders, ijs, endpts
 
-    # Truncate the current segment to the first half
-    endpts[iseg, 1] = ivert
-
+    for jvert, jarc in zip(ivert, iarc):
+        orders, ijs, endpts = _insert_endpt(orders, ijs, endpts, jarc, jvert)
     return orders, ijs, endpts
 
 

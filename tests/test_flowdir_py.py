@@ -203,6 +203,53 @@ def test_graph_insert_endpt():
             orders, ijs, endpts[:-1, :], np.array([2, 3])
         )
 
+    # Multiple occurrences of a same vertex - is an endpoint
+    ijs = np.array([[0, 1], [2, 3], [4, 5], [6, 7], [8, 9], [4, 5], [10, 11]])
+    endpts = np.array([[0, 2], [3, 4], [5, 6]])
+    orders = np.array([1, 2, 3])
+    o_orders, o_ijs, o_endpts = insert_endpt(orders, ijs, endpts, np.array([4, 5]))
+    np.testing.assert_array_equal(ijs, o_ijs)
+    np.testing.assert_array_equal(endpts, o_endpts)
+    np.testing.assert_array_equal(orders, o_orders)
+
+    # Multiple occurrences of a same vertex - is both an endpoint and an interior vertex (should not actually happen normally)
+    ijs = np.array([[0, 1], [2, 3], [4, 5], [6, 7], [8, 9], [2, 3], [10, 11]])
+    endpts = np.array([[0, 2], [3, 4], [5, 6]])
+    orders = np.array([1, 2, 3])
+
+    o_orders, o_ijs, o_endpts = insert_endpt(orders, ijs, endpts, np.array([2, 3]))
+    exp_ijs = np.array(
+        [[0, 1], [2, 3], [4, 5], [6, 7], [8, 9], [2, 3], [10, 11], [2, 3], [4, 5]]
+    )
+    exp_endpts = np.array([[0, 1], [3, 4], [5, 6], [7, 8]])
+    exp_orders = np.array([1, 2, 3, 1])
+
+    np.testing.assert_array_equal(o_ijs, exp_ijs)
+    np.testing.assert_array_equal(o_endpts, exp_endpts)
+    np.testing.assert_array_equal(o_orders, exp_orders)
+
+    # Multiple occurrences of a same vertex - is an interior vertex (should not actually happen normally)
+    ijs = np.array([[0, 1], [2, 3], [4, 5], [6, 7], [8, 9], [10, 11], [2, 3], [12, 13]])
+    endpts = np.array([[0, 2], [3, 4], [5, 7]])
+    orders = np.array([1, 2, 3])
+
+    o_orders, o_ijs, o_endpts = insert_endpt(orders, ijs, endpts, np.array([2, 3]))
+    exp_ijs = np.array(
+        [
+            *([0, 1], [2, 3], [4, 5]),
+            *([6, 7], [8, 9]),
+            *([10, 11], [2, 3], [12, 13]),
+            *([2, 3], [4, 5]),
+            *([2, 3], [12, 13]),
+        ]
+    )
+    exp_endpts = np.array([[0, 1], [3, 4], [5, 6], [8, 9], [10, 11]])
+    exp_orders = np.array([1, 2, 3, 1, 3])
+
+    np.testing.assert_array_equal(o_ijs, exp_ijs)
+    np.testing.assert_array_equal(o_endpts, exp_endpts)
+    np.testing.assert_array_equal(o_orders, exp_orders)
+
 
 if __name__ == "__main__":
     test_indegree_3x3()
