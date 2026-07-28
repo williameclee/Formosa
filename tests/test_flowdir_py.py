@@ -9,6 +9,8 @@
 #     - Updated `geomorphology.flowdir` to the new submodule name
 #   2026-07-27, En-Chi Lee (williameclee@gmail.com)
 #     - Added test cases for function `insert_endpt`
+#   2026-07-28, En-Chi Lee (williameclee@gmail.com)
+#     - Added test cases for functions `find_graph_overlaps` and `solve_graph_overlaps`
 
 
 import pytest
@@ -251,9 +253,122 @@ def test_graph_insert_endpt():
     np.testing.assert_array_equal(o_orders, exp_orders)
 
 
+def test_find_graph_overlaps():
+    from formosa.geomorphology.flowdir.graphs.graphs import find_graph_overlaps
+
+    # Include matching stored vertices outside the ranges referenced by the arcs
+    g1_ijs = np.array(
+        [
+            [99, 99],
+            *([0, 0], [1, 0], [2, 0]),
+            *([3, 0], [4, 0], [5, 0]),
+            [98, 98],
+        ]
+    )
+    g1_endpts = np.array([[1, 3], [4, 6]])
+    g2_ijs = np.array(
+        [
+            *([0, 0], [2, 0], [8, 8]),
+            *([1, 0], [4, 0], [9, 9]),
+            [99, 99],
+        ]
+    )
+    g2_endpts = np.array([[0, 2], [3, 5]])
+
+    vert_vert, intr_intr, g1_intr_g2_vert, g1_vert_g2_intr = find_graph_overlaps(
+        g1_ijs, g1_endpts, g2_ijs, g2_endpts
+    )
+
+    np.testing.assert_array_equal(vert_vert, np.array([[0, 0]]))
+    np.testing.assert_array_equal(intr_intr, np.array([[4, 0]]))
+    np.testing.assert_array_equal(g1_intr_g2_vert, np.array([[1, 0]]))
+    np.testing.assert_array_equal(g1_vert_g2_intr, np.array([[2, 0]]))
+
+    # The matching unused coordinate must not be reported as an overlap
+    for overlap_type in (
+        vert_vert,
+        intr_intr,
+        g1_intr_g2_vert,
+        g1_vert_g2_intr,
+    ):
+        assert not np.any(np.all(overlap_type == [99, 99], axis=1))
+
+
+@pytest.mark.parametrize(
+    (
+        "allows_arcs_overlap",
+        "expected_narcs",
+        "expected_vert_vert",
+        "expected_intr_intr",
+    ),
+    [
+        (True, 4, np.array([[1, 0], [3, 0]]), np.array([[2, 0]])),
+        (
+            False,
+            5,
+            np.array([[1, 0], [2, 0], [3, 0]]),
+            np.empty((0, 2), dtype=int),
+        ),
+    ],
+)
+def test_solve_graph_overlaps(
+    allows_arcs_overlap,
+    expected_narcs,
+    expected_vert_vert,
+    expected_intr_intr,
+):
+    from formosa.geomorphology.flowdir.graphs.graphs import (
+        find_graph_overlaps,
+        solve_graph_overlaps,
+    )
+
+    # The graphs share three consecutive interior vertices in opposite directions
+    g1_orders = np.array([1, 9])
+    g1_ijs = np.array([[0, 0], [1, 0], [2, 0], [3, 0], [4, 0], [10, 0], [11, 0]])
+    g1_endpts = np.array([[0, 4], [5, 6]])
+    g2_orders = np.array([2, 9])
+    g2_ijs = np.array([[5, 0], [3, 0], [2, 0], [1, 0], [6, 0], [10, 1], [11, 1]])
+    g2_endpts = np.array([[0, 4], [5, 6]])
+
+    with pytest.warns(UserWarning, match="Provided vertex is not a part of any arc"):
+        (
+            solved_g1_orders,
+            solved_g1_ijs,
+            solved_g1_endpts,
+            solved_g2_orders,
+            solved_g2_ijs,
+            solved_g2_endpts,
+        ) = solve_graph_overlaps(
+            g1_orders,
+            g1_ijs,
+            g1_endpts,
+            g2_orders,
+            g2_ijs,
+            g2_endpts,
+            allows_arcs_overlap=allows_arcs_overlap,
+        )
+
+    assert solved_g1_orders.size == expected_narcs
+    assert solved_g2_orders.size == expected_narcs
+    assert solved_g1_endpts.shape == (expected_narcs, 2)
+    assert solved_g2_endpts.shape == (expected_narcs, 2)
+
+    vert_vert, intr_intr, g1_intr_g2_vert, g1_vert_g2_intr = find_graph_overlaps(
+        solved_g1_ijs,
+        solved_g1_endpts,
+        solved_g2_ijs,
+        solved_g2_endpts,
+    )
+    np.testing.assert_array_equal(vert_vert, expected_vert_vert)
+    np.testing.assert_array_equal(intr_intr, expected_intr_intr)
+    assert g1_intr_g2_vert.size == 0
+    assert g1_vert_g2_intr.size == 0
+
+
 if __name__ == "__main__":
     test_indegree_3x3()
     test_network_graph_3x3()
     test_network_graph_concat_3x3()
     test_locate_invalid_graph_topogtaphy()
     test_graph_insert_endpt()
+    test_find_graph_overlaps()
