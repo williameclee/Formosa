@@ -348,7 +348,7 @@ def find_arc_id_of_vertex(
     endpts: npt.NDArray[np.integer],
     ivert: int | Iterable[int],
     is_inclusive: bool = True,
-) -> int | list[int]:
+) -> Optional[int] | list[Optional[int]]:
     def _find_arc_of_vertex(
         endpts: npt.NDArray[np.integer], ivert: int, is_inclusive: bool = True
     ) -> int:
@@ -356,8 +356,13 @@ def find_arc_id_of_vertex(
             np.squeeze(
                 (ivert >= endpts[:, 0]) & (ivert <= (endpts[:, 1] + (not is_inclusive)))
             )
-        )[0]
-        return iarc
+        )
+        if np.size(iarc) == 0:
+            warnings.warn("Provided vertex is not a part of any arc.")
+            return None
+        elif np.size(iarc) > 1:
+            raise ValueError("Provided vertex is found in multiple arcs.")
+        return iarc[0]
 
     if isinstance(ivert, int) or (np.size(ivert) == 1):
         iarc = _find_arc_of_vertex(endpts, ivert, is_inclusive)
@@ -446,6 +451,8 @@ def insert_endpt(
         return orders, ijs, endpts
 
     for jvert, jarc in zip(ivert, iarc):
+        if jarc is None:
+            continue
         orders, ijs, endpts = _insert_endpt(orders, ijs, endpts, jarc, jvert)
     return orders, ijs, endpts
 
