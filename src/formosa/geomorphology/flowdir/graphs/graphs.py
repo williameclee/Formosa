@@ -619,6 +619,37 @@ def find_graph_overlaps(
     return (vert_vert, intr_intr, g1_intr_g2_vert, g1_vert_g2_intr)
 
 
+def _find_overlap_neighbours(
+    ijs: npt.NDArray[np.number],
+    endpts: npt.NDArray[np.integer],
+    overlaps: npt.NDArray[np.number],
+) -> tuple[npt.NDArray[np.bool_], npt.NDArray[np.bool_]]:
+    """Finds overlaps preceded or followed by another overlap within an arc."""
+    prev_alsos = np.zeros(overlaps.shape[0], dtype=bool)
+    after_alsos = np.zeros(overlaps.shape[0], dtype=bool)
+    if overlaps.shape[0] == 0:
+        return prev_alsos, after_alsos
+
+    dtype = np.result_type(ijs.dtype, overlaps.dtype)
+    overlap_coords = np.ascontiguousarray(overlaps, dtype=dtype)
+    row_dtype = np.dtype((np.void, dtype.itemsize * overlaps.shape[1]))
+    overlap_keys = overlap_coords.view(row_dtype).ravel()
+
+    for start, end in endpts:
+        arc_coords = np.ascontiguousarray(ijs[start : end + 1], dtype=dtype)
+        arc_keys = arc_coords.view(row_dtype).ravel()
+        overlap_ids = np.searchsorted(overlap_keys, arc_keys)
+        matches = overlap_ids < overlap_keys.size
+        matches[matches] &= overlap_keys[overlap_ids[matches]] == arc_keys[matches]
+
+        # Record adjacency only between consecutive vertices of the same arc
+        prev_matches = matches[1:] & matches[:-1]
+        np.logical_or.at(prev_alsos, overlap_ids[1:][prev_matches], True)
+        np.logical_or.at(after_alsos, overlap_ids[:-1][prev_matches], True)
+
+    return prev_alsos, after_alsos
+
+
 def solve_graph_overlaps(
     g1_orders: npt.NDArray[np.integer],
     g1_ijs: npt.NDArray[np.number],
@@ -693,36 +724,13 @@ def solve_graph_overlaps(
         )
 
     if allows_arcs_overlap:
-        # Locate interior overlaps whose neighbours are also shared by both graphs
-        v_prev_alsos = np.full((np.size(overlaps, 0)), 0, dtype=bool)
-        v_after_alsos = np.full((np.size(overlaps, 0)), 0, dtype=bool)
-        for ivert in range(np.size(overlaps, 0)):
-            vert_id = find_vertex_id(g1_ijs, overlaps[ivert])
-            if np.any(
-                (g1_ijs[vert_id - 1, 0] == overlaps[:, 0])
-                & (g1_ijs[vert_id - 1, 1] == overlaps[:, 1])
-            ):
-                v_prev_alsos[ivert] = True
-            if np.any(
-                (g1_ijs[vert_id + 1, 0] == overlaps[:, 0])
-                & (g1_ijs[vert_id + 1, 1] == overlaps[:, 1])
-            ):
-                v_after_alsos[ivert] = True
-
-        r_prev_alsos = np.full((np.size(overlaps, 0)), 0, dtype=bool)
-        r_after_alsos = np.full((np.size(overlaps, 0)), 0, dtype=bool)
-        for ivert in range(np.size(overlaps, 0)):
-            vert_id = find_vertex_id(g2_ijs, overlaps[ivert])
-            if np.any(
-                (g2_ijs[vert_id - 1, 0] == overlaps[:, 0])
-                & (g2_ijs[vert_id - 1, 1] == overlaps[:, 1])
-            ):
-                r_prev_alsos[ivert] = True
-            if np.any(
-                (g2_ijs[vert_id + 1, 0] == overlaps[:, 0])
-                & (g2_ijs[vert_id + 1, 1] == overlaps[:, 1])
-            ):
-                r_after_alsos[ivert] = True
+        # Locate shared runs without assuming coordinates occur only once
+        v_prev_alsos, v_after_alsos = _find_overlap_neighbours(
+            g1_ijs, g1_endpts, overlaps
+        )
+        r_prev_alsos, r_after_alsos = _find_overlap_neighbours(
+            g2_ijs, g2_endpts, overlaps
+        )
 
         need_endpts = ~(v_prev_alsos & v_after_alsos & r_prev_alsos & r_after_alsos)
 
