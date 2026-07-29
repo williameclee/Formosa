@@ -9,6 +9,8 @@
 !     - Implemented 'locate_invalid_graph_topology' function
 !   2026-07-14, En-Chi Lee (williameclee@gmail.com)
 !     - Splitted 'flowdir_f' into submodules
+!   2026-07-29, En-Chi Lee (williameclee@gmail.com)
+!     - Made topology intersection scans count all violations past output capacity
 !!!
 
 module flowdir_graphs
@@ -16,6 +18,7 @@ module flowdir_graphs
     use utils
     use distances
     implicit none
+    private :: argsort_arcs, record_topology_intersection
 contains
     subroutine construct_flowgraph( &
         dirs, valids, orders, seeds, indegs, nrows, ncols, &
@@ -292,39 +295,63 @@ contains
         end do
     end function argsort_arcs
 
-    subroutine locate_invalid_graph_topology( &
-        vertex_ijs, arc_endpts, intxs, nintxs, err_code)
+    subroutine record_topology_intersection(record, intxs, nintxs)
+        implicit none
+        integer, intent(in) :: record(5)
+        integer, intent(inout) :: intxs(:, :)
+        integer, intent(inout) :: nintxs
+
+        nintxs = nintxs + 1
+        if (nintxs <= size(intxs, 2)) intxs(:, nintxs) = record
+    end subroutine record_topology_intersection
+
+    subroutine scan_invalid_graph_topology( &
+        vertex_ijs, arc_endpts, capacity, intxs, nintxs, err_code)
+        !! Scans all candidate segment pairs and returns the total violation count.
+        !! Only the first 'capacity' violations are stored in 'intxs'.
         implicit none
         ! Arguments
         real, intent(in) :: vertex_ijs(:, :)
         integer, intent(in) :: arc_endpts(:, :)
+        integer, intent(in) :: capacity
         ! Outputs
-        integer, intent(out) :: intxs(5, max(size(vertex_ijs, 2)/100, 3))
+        integer, intent(out) :: intxs(5, capacity)
         integer, intent(out) :: nintxs
         integer, intent(out) :: err_code
+            !! Code indicating the status of the result
+            !!   - 0: Programme executed properly
+            !!   - 1: Input dimensions are incorrect, or input capacity is invalid
+            !!   - 2: Memory allocation failed
         ! Local variables
-        integer :: narcs, nvertices
+        integer :: narcs
         integer :: i, j, iarc, jarc, iseg, jseg
-        integer :: intx_flag
+        integer :: intx_flag, alloc_stat
         real, allocatable :: arc_bboxes(:, :)
         integer, allocatable :: idx(:)
 
+        nintxs = 0
         err_code = 0
 
         if (size(arc_endpts, 1) /= 2) then
-            err_code = 1; 
+            err_code = 1
             return
         else if (size(vertex_ijs, 1) /= 2) then
-            err_code = 1; 
+            err_code = 1
+            return
+        else if (capacity < 1) then
+            err_code = 1
             return
         end if
         narcs = size(arc_endpts, 2)
-        nvertices = size(vertex_ijs, 2)
 
         if (narcs == 0) return
 
         ! Construct the bounding boxes for each arc
-        allocate (arc_bboxes(4, narcs))
+        allocate (arc_bboxes(4, narcs), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = 2
+            return
+        end if
         do iarc = 1, narcs
             arc_bboxes(1, iarc) = minval(vertex_ijs(1, arc_endpts(1, iarc):arc_endpts(2, iarc)))
             arc_bboxes(2, iarc) = minval(vertex_ijs(2, arc_endpts(1, iarc):arc_endpts(2, iarc)))
@@ -332,8 +359,7 @@ contains
             arc_bboxes(4, iarc) = maxval(vertex_ijs(2, arc_endpts(1, iarc):arc_endpts(2, iarc)))
         end do
 
-        nintxs = 0
-        ! Check arcs againt itself first
+        ! Check arcs against themselves first
         do iarc = 1, narcs
             if (arc_endpts(2, iarc) - arc_endpts(1, iarc) == 1) cycle ! Skip if arc is just a single segment
             do iseg = arc_endpts(1, iarc), arc_endpts(2, iarc) - 1
@@ -342,23 +368,22 @@ contains
                             vertex_ijs(:, iseg), vertex_ijs(:, iseg + 1), &
                             vertex_ijs(:, jseg), vertex_ijs(:, jseg + 1))
                 if (intx_flag > 0) then
-                    nintxs = nintxs + 1
-                    if (nintxs > size(intxs, 2)) then
-                        nintxs = size(intxs, 2)
-                        err_code = 2
-                        deallocate (arc_bboxes)
-                        return
-                    end if
-                    intxs(:, nintxs) = [iarc, iarc, iseg, jseg, intx_flag]
+                    call record_topology_intersection( &
+                        [iarc, iarc, iseg, jseg, intx_flag], intxs, nintxs)
                 end if
             end do
             end do
         end do
 
-        allocate (idx(narcs))
+        allocate (idx(narcs), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = 2
+            deallocate (arc_bboxes)
+            return
+        end if
         idx = argsort_arcs(arc_bboxes)
 
-        ! Check every arc againt each other
+        ! Check every arc against each other
         do i = 1, narcs
             iarc = idx(i)
             do j = i + 1, narcs
@@ -379,19 +404,13 @@ contains
                                 vertex_ijs(:, iseg), vertex_ijs(:, iseg + 1), &
                                 vertex_ijs(:, jseg), vertex_ijs(:, jseg + 1))
                     if (intx_flag > 0) then
-                        nintxs = nintxs + 1
-                        if (nintxs > size(intxs, 2)) then
-                            nintxs = size(intxs, 2)
-                            err_code = 2
-                            deallocate (idx)
-                            deallocate (arc_bboxes)
-                            return
-                        end if
                         ! Sort by arc ID
                         if (iarc < jarc) then
-                            intxs(:, nintxs) = [iarc, jarc, iseg, jseg, intx_flag]
+                            call record_topology_intersection( &
+                                [iarc, jarc, iseg, jseg, intx_flag], intxs, nintxs)
                         else
-                            intxs(:, nintxs) = [jarc, iarc, jseg, iseg, intx_flag]
+                            call record_topology_intersection( &
+                                [jarc, iarc, jseg, iseg, intx_flag], intxs, nintxs)
                         end if
                     end if
                 end do
@@ -401,5 +420,5 @@ contains
 
         deallocate (idx)
         deallocate (arc_bboxes)
-    end subroutine locate_invalid_graph_topology
+    end subroutine scan_invalid_graph_topology
 end module flowdir_graphs
