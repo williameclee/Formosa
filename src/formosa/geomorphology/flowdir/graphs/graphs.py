@@ -352,10 +352,8 @@ def find_arc_id_of_vertex(
     def _find_arc_of_vertex(
         endpts: npt.NDArray[np.integer], ivert: int, is_inclusive: bool = True
     ) -> int:
-        iarc = np.where(
-            np.squeeze(
-                (ivert >= endpts[:, 0]) & (ivert <= (endpts[:, 1] + (not is_inclusive)))
-            )
+        iarc = np.flatnonzero(
+            (ivert >= endpts[:, 0]) & (ivert <= (endpts[:, 1] - (not is_inclusive)))
         )
         if np.size(iarc) == 0:
             warnings.warn("Provided vertex is not a part of any arc.")
@@ -427,6 +425,22 @@ def insert_endpt(
                 + "Returning the original graph."
             )
             return orders, ijs, endpts
+
+        # Exclude matching coordinates stored outside the ranges used by any arc
+        iverts = np.atleast_1d(ivert)
+        useds = np.any(
+            (iverts[:, np.newaxis] >= endpts[np.newaxis, :, 0])
+            & (iverts[:, np.newaxis] <= endpts[np.newaxis, :, 1]),
+            axis=1,
+        )
+        iverts = iverts[useds]
+        if iverts.size == 0:
+            warnings.warn(
+                "Provided endpoint is not a part of any arc. "
+                + "Returning the original graph."
+            )
+            return orders, ijs, endpts
+        ivert = int(iverts[0]) if iverts.size == 1 else iverts.tolist()
     iarc = find_arc_id_of_vertex(endpts, ivert)
 
     def _insert_endpt(orders, ijs, endpts, iarc, ivert):
@@ -439,7 +453,7 @@ def insert_endpt(
         ijs = np.concat([ijs, ijs[ivert : np.squeeze(endpts[iarc, 1] + 1), :]])
         end_vert = np.size(ijs, 0) - 1
         endpts = np.concat([endpts, np.array([[start_vert, end_vert]])])
-        orders = np.concat([orders, orders[iarc]])
+        orders = np.concat([orders, orders[iarc : iarc + 1]])
 
         # Truncate the current segment to the first half
         endpts[iarc, 1] = ivert
