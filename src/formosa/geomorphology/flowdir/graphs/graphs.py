@@ -1187,8 +1187,14 @@ def simplify_flowgraph(
 
     Raises
     ------
+    InvalidOriginalGraphTopology
+        If the final result is invalid and the normalised input graph already
+        contains disallowed topology violations.
+    UnresolvedSimplificationTopology
+        If the normalised input is valid but the final simplified graph
+        contains disallowed topology violations.
     NotImplementedError
-        If tries to call the not-yet-implemented Python backend
+        If tries to call the not-yet-implemented Python backend.
     """
 
     if isinstance(vertex_xys, (list, tuple)) or isinstance(arc_endpts, (list, tuple)):
