@@ -86,7 +86,19 @@ contains
         dist = sqrt(pt2linedist2_xy(x1, y1, x2, y2, x3, y3))
     end function pt2linedist_xy
 
-    function lines_intersect_v2(l1a, l1b, l2a, l2b) result(flag)
+    pure function bboxes_overlap(p1, p2, p3, p4) result(flag_overlap)
+        implicit none
+        ! Arguments
+        real, intent(in) :: p1(2), p2(2), p3(2), p4(2)
+        ! Outputs
+        logical*1 :: flag_overlap
+
+        flag_overlap = &
+            (max(min(p1(1), p2(1)), min(p3(1), p4(1))) <= min(max(p1(1), p2(1)), max(p3(1), p4(1)))) .and. &
+            (max(min(p1(2), p2(2)), min(p3(2), p4(2))) <= min(max(p1(2), p2(2)), max(p3(2), p4(2))))
+    end function bboxes_overlap
+
+    pure function lines_intersect_v2(l1a, l1b, l2a, l2b) result(flag)
         !! Flags:
         !! -1 : disjoint
         !!  0 : endpoint-to-endpoint touch
@@ -97,7 +109,7 @@ contains
         !!  5 : degenerate segment (some line is actually a point)
         implicit none
         ! Arguments
-        real :: l1a(2), l1b(2), l2a(2), l2b(2)
+        real, intent(in) :: l1a(2), l1b(2), l2a(2), l2b(2)
         ! Outputs
         integer*1 :: flag
         ! Local variables
@@ -186,18 +198,6 @@ contains
             flag = 4
         end if
     contains
-        pure function bboxes_overlap(p1, p2, p3, p4) result(flag_overlap)
-            implicit none
-            ! Arguments
-            real, intent(in) :: p1(2), p2(2), p3(2), p4(2)
-            ! Outputs
-            logical*1 :: flag_overlap
-
-            flag_overlap = &
-                (max(min(p1(1), p2(1)), min(p3(1), p4(1))) <= min(max(p1(1), p2(1)), max(p3(1), p4(1)))) .and. &
-                (max(min(p1(2), p2(2)), min(p3(2), p4(2))) <= min(max(p1(2), p2(2)), max(p3(2), p4(2))))
-        end function bboxes_overlap
-
         pure function orient_v2(p1, p2, p3) result(o)
             implicit none
             ! Arguments

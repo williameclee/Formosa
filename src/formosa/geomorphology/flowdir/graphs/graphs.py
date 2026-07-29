@@ -19,6 +19,8 @@
 #   2026-07-28, En-Chi Lee (williameclee@gmail.com)
 #     - Implemented `solve_graph_overlaps` and relevant helper functions
 #     - Integrated overlap resolution into simultaneous multi-graph simplification
+#   2026-07-29, En-Chi Lee (williameclee@gmail.com)
+#     - Made topology intersection results complete using scan-and-retry
 
 
 import numpy as np
@@ -956,7 +958,6 @@ def _resolve_topology_intersections(
     vertices_aux = vertices[:, vertex_keeps]
     endpts_aux = vertex_cumsum[endpts]
 
-    warnings.filterwarnings("error")
     intxs = locate_invalid_graph_topology(vertices_aux.T, endpts_aux.T)
     if graph_ids is not None:
         intxs = _ignore_identical_intergraph_arcs(
@@ -967,22 +968,13 @@ def _resolve_topology_intersections(
     while (intxs is not None) and (niters <= max_iters):
         tol = float(tol) / 2
         niters += 1
-        for iarc, jarc, _, _, intx_code in intxs:
-            start_i = endpts[0, iarc]
-            end_i = endpts[1, iarc]
-            len_i = end_i - start_i + 1
-            vertex_keeps[start_i : end_i + 1] = graphs_f.simplify_flowgraph(
-                vertices[:, start_i : end_i + 1].astype(np.float32, order="F"),
-                np.array([[1], [len_i]], dtype=np.int32, order="F"),
-                tol,
-            ).astype(bool)
-
-            start_j = endpts[0, jarc]
-            end_j = endpts[1, jarc]
-            len_j = end_j - start_j + 1
-            vertex_keeps[start_j : end_j + 1] = graphs_f.simplify_flowgraph(
-                vertices[:, start_j : end_j + 1].astype(np.float32, order="F"),
-                np.array([[1], [len_j]], dtype=np.int32, order="F"),
+        for iarc in np.unique(intxs[:, :2]):
+            start = endpts[0, iarc]
+            end = endpts[1, iarc]
+            arc_length = end - start + 1
+            vertex_keeps[start : end + 1] = graphs_f.simplify_flowgraph(
+                vertices[:, start : end + 1].astype(np.float32, order="F"),
+                np.array([[1], [arc_length]], dtype=np.int32, order="F"),
                 tol,
             ).astype(bool)
         # Squeeze the vertices and map the arc endpoints to the new indices
@@ -997,9 +989,8 @@ def _resolve_topology_intersections(
             )
     # If there are still intersections after that many iterations, don't simplify those arc
     if intxs is not None:
-        for iarc, jarc, _, _, _ in intxs:
+        for iarc in np.unique(intxs[:, :2]):
             vertex_keeps[endpts[0, iarc] : endpts[1, iarc] + 1] = True
-            vertex_keeps[endpts[0, jarc] : endpts[1, jarc] + 1] = True
     return vertex_keeps.astype(bool)
 
 
@@ -1020,7 +1011,7 @@ def _simplify_single_flowgraph(
                 "The Python implementation of `simplify_flowgraph` is not implemented yet."
             )
         case "fortran":
-            # Standardise inputs to Fortran layout (2, N) and (2, A)
+            # Standardise inputs to FORTRAN layout (2, N) and (2, A)
             if not (vertices.shape[0] == 2 and vertices.shape[1] != 2):
                 vertices = vertices.T
             if not (endpts.shape[0] == 2 and endpts.shape[1] != 2):
@@ -1029,10 +1020,10 @@ def _simplify_single_flowgraph(
             # Make a copy of arc_endpts to avoid modifying the input array in-place
             endpts = endpts.copy()
 
-            # Convert 0-based Python indices to 1-based Fortran indices
+            # Convert 0-based Python indices to 1-based FORTRAN indices
             endpts += 1
 
-            # Call the Fortran routine to get the boolean mask of kept vertices
+            # Call the FORTRAN routine to get the boolean mask of kept vertices
             vertex_keeps = graphs_f.simplify_flowgraph(
                 vertices.astype(np.float32, order="F"),
                 endpts.astype(np.int32, order="F"),
@@ -1175,6 +1166,97 @@ def simplify_flowgraph(
     )
 
 
+def _raise_topology_scan_error(err_code: int) -> None:
+    """Translates a FORTRAN topology-scanner status into a Python exception.
+
+    Parameters
+    ----------
+    err_code : int
+        Scanner status code. Zero indicates success, one invalid inputs, and
+        two a workspace-allocation failure.
+
+    Raises
+    ------
+    ValueError
+        If the scanner rejected its array shapes or output capacity.
+    MemoryError
+        If the scanner could not allocate its internal workspace.
+    RuntimeError
+        If the scanner returned an unknown nonzero status.
+    """
+    if err_code == 1:
+        raise ValueError("Invalid array shapes or output capacity passed.")
+    elif err_code == 2:
+        raise MemoryError("Unable to allocate topology-intersection workspace.")
+    elif err_code != 0:
+        raise RuntimeError(
+            f"Unexpected topology-intersection scanner error code: {err_code}."
+        )
+
+
+def _locate_invalid_graph_topology_fortran(
+    vertex_xys: npt.NDArray[np.number],
+    arc_endpts: npt.NDArray[np.integer],
+) -> Optional[npt.NDArray[np.int32]]:
+    """
+    Returns every topology violation using the capacity-aware FORTRAN scanner.
+
+    The first scan uses a small provisional output buffer. If the exact count
+    reported by that scan exceeds the buffer, the scan is repeated with a
+    buffer of exactly the required size. Incomplete provisional results are
+    never returned.
+
+    Parameters
+    ----------
+    vertex_xys : NDArray[number]
+        Vertex coordinates with shape `(nvertices, 2)`.
+    arc_endpts : NDArray[integer]
+        Inclusive, zero-based arc endpoint indices with shape `(narcs, 2)`.
+
+    Returns
+    -------
+    NDArray[int32] or None
+        Complete `(nintxs, 5)` intersection records using zero-based indices,
+        or `None` when no violations are found.
+
+    Raises
+    ------
+    ValueError
+        If the low-level scanner rejects its inputs.
+    MemoryError
+        If scanner workspace or result allocation fails.
+    RuntimeError
+        If the scanner returns an unexpected status or the exact count changes
+        during the retry.
+    """
+    vertices_f = np.asfortranarray(vertex_xys.T, dtype=np.float32)
+    endpts_f = np.asfortranarray(arc_endpts.T, dtype=np.int32) + 1
+    capacity = max(vertices_f.shape[1] // 100, 3) # Arbitrary capacity that seems to work
+
+    intxs, nintxs, err_code = graphs_f.scan_invalid_graph_topology(
+        vertices_f, endpts_f, capacity
+    )
+    _raise_topology_scan_error(err_code)
+
+    if nintxs == 0:
+        return None
+
+    if nintxs > capacity:
+        expected_nintxs = nintxs
+        intxs, nintxs, err_code = graphs_f.scan_invalid_graph_topology(
+            vertices_f, endpts_f, expected_nintxs
+        )
+        _raise_topology_scan_error(err_code)
+        if nintxs != expected_nintxs:
+            raise RuntimeError(
+                "Topology-intersection count changed during exact-size retry."
+            )
+
+    intxs = intxs[:, :nintxs]
+    intxs[:-1, :] -= 1  # Convert to 0-based indexing, except the intersection flag
+    return intxs.T.astype(np.int32, order="C")
+
+
 def locate_invalid_graph_topology(
     vertex_xys: npt.NDArray[np.number],
     arc_endpts: npt.NDArray[np.integer],
@@ -1188,42 +1270,47 @@ def locate_invalid_graph_topology(
     Parameters
     ----------
     vertex_xys : NDArray[number]
-        2D array of shape `(nvertices, 2)` representing the grid coordinates (i, j) of each vertex
+        2D array of shape `(nvertices, 2)` representing the grid coordinates (i, j) of each vertex.
     arc_endpts : NDArray[integer]
-        2D array of shape `(narcs, 2)` containing the start and end vertex indices for each arc in `vertex_ijs`
+        2D array of shape `(narcs, 2)` containing the start and end vertex indices for each arc in `vertex_ijs`.
     backend : {'fortran', 'python'}, optional
-        Computational backend to use
+        Computational backend to use.
         The default option is `'fortran'`.
 
     Returns
     -------
     NDArray[int32] or None
-        2D array of shape `(nintxs, 5)` representing the detected intersections, or `None` if no intersections are found
+        2D array of shape `(nintxs, 5)` representing the detected intersections, or `None` if no intersections are found.
         The rows are sorted lexicographically and each row contains:
-        - `iarc`: Index of the first arc (0-based)
-        - `jarc`: Index of the second arc (0-based)
-        - `iseg`: Start vertex index of the first intersecting segment (0-based)
-        - `jseg`: Start vertex index of the second intersecting segment (0-based)
+        - `iarc`: Index of the first arc (0-based).
+        - `jarc`: Index of the second arc (0-based).
+        - `iseg`: Start vertex index of the first intersecting segment (0-based).
+        - `jseg`: Start vertex index of the second intersecting segment (0-based).
         - `intx_flag`: Flag indicating the type of intersection:
-            - 1 : interior-interior crossing (X)
-            - 2 : collinear overlap, not identical
-            - 3 : identical segment
-            - 4 : endpoint-on-interior (T-junction)
-            - 5 : degenerate segment (some line is actually a point)
+            - 1 : Interior-interior crossing (X).
+            - 2 : Collinear overlap, not identical.
+            - 3 : Identical segment.
+            - 4 : Endpoint-on-interior (T-junction).
+            - 5 : Degenerate segment (some line is actually a point).
 
     Raises
     ------
     ValueError
         If the shape of `vertex_ijs` or `arc_endpts` is invalid.
+    MemoryError
+        If the FORTRAN backend cannot allocate its scan workspace or result.
+    RuntimeError
+        If the FORTRAN scanner returns an unexpected error or an inconsistent
+        count during the exact-size retry.
     """
+    if vertex_xys.ndim != 2 or vertex_xys.shape[1] != 2:
+        raise ValueError("Invalid array shapes passed.")
+    elif arc_endpts.ndim != 2 or arc_endpts.shape[1] != 2:
+        raise ValueError("Invalid array shapes passed.")
+
     match backend:
         case "python":
             from .graphs_py import _locate_invalid_graph_topology_py
-
-            if vertex_xys.ndim != 2 or vertex_xys.shape[1] != 2:
-                raise ValueError("Invalid array shapes passed.")
-            if arc_endpts.ndim != 2 or arc_endpts.shape[1] != 2:
-                raise ValueError("Invalid array shapes passed.")
 
             intxs = _locate_invalid_graph_topology_py(
                 arc_endpts.astype(np.int32, order="C"),
@@ -1233,25 +1320,9 @@ def locate_invalid_graph_topology(
                 return None
             intxs = np.array(intxs, dtype=np.int32, order="C")
         case "fortran":
-            vertex_xys = vertex_xys.T
-            arc_endpts = arc_endpts.T
-            intxs, nintxs, err_code = graphs_f.locate_invalid_graph_topology(
-                vertex_xys.astype(np.float64, order="F"),
-                arc_endpts.astype(np.int32, order="F") + 1,  # Convert to 1-based index
-            )
-            if err_code == 1:
-                raise ValueError("Invalid array shapes passed.")
-            elif err_code == 2:
-                warnings.warn(
-                    f"Too many topology violations than the buffer can hold, returning only the first {nintxs}",
-                    RuntimeWarning,
-                )
-            if nintxs == 0:
+            intxs = _locate_invalid_graph_topology_fortran(vertex_xys, arc_endpts)
+            if intxs is None:
                 return None
-            if intxs.shape[1] > nintxs:
-                intxs = intxs[:, :nintxs]
-            intxs[:-1, :] -= 1  # Convert to 0-based index
-            intxs = intxs.T.astype(np.int32, order="C")
     if intxs.shape[0] > 1:
         # Sort lexicographically
         sort_idx = np.lexsort((intxs[:, 3], intxs[:, 2], intxs[:, 1], intxs[:, 0]))
