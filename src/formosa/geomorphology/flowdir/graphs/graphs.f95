@@ -296,10 +296,18 @@ contains
     end function argsort_arcs
 
     subroutine record_topology_intersection(record, intxs, nintxs)
+        !! Counts one detected topology violation and stores it if capacity remains.
+        !!
+        !! The total count is incremented even after 'intxs' is full. This lets
+        !! the caller distinguish the number stored from the exact number found
+        !! and retry with an exactly sized buffer when necessary.
         implicit none
         integer, intent(in) :: record(5)
+            !! Intersection record: arc IDs, segment IDs, and intersection flag
         integer, intent(inout) :: intxs(:, :)
+            !! Output buffer containing up to 'size(intxs, 2)' records
         integer, intent(inout) :: nintxs
+            !! Total number of violations encountered, including unstored ones
 
         nintxs = nintxs + 1
         if (nintxs <= size(intxs, 2)) intxs(:, nintxs) = record
@@ -308,15 +316,22 @@ contains
     subroutine scan_invalid_graph_topology( &
         vertex_ijs, arc_endpts, capacity, intxs, nintxs, err_code)
         !! Scans all candidate segment pairs and returns the total violation count.
+        !!
         !! Only the first 'capacity' violations are stored in 'intxs'.
         implicit none
         ! Arguments
         real, intent(in) :: vertex_ijs(:, :)
+            !! Vertex coordinates arranged as '(2, nvertices)'
         integer, intent(in) :: arc_endpts(:, :)
+            !! Inclusive, one-based arc endpoint indices arranged as '(2, narcs)'
         integer, intent(in) :: capacity
+            !! Maximum number of intersection records that can be stored
         ! Outputs
         integer, intent(out) :: intxs(5, capacity)
+            !! Stored intersection records; only the first
+            !! 'min(nintxs, capacity)' columns are defined
         integer, intent(out) :: nintxs
+            !! Exact number of violations found, which may exceed 'capacity'
         integer, intent(out) :: err_code
             !! Code indicating the status of the result
             !!   - 0: Programme executed properly

@@ -1167,6 +1167,23 @@ def simplify_flowgraph(
 
 
 def _raise_topology_scan_error(err_code: int) -> None:
+    """Translates a FORTRAN topology-scanner status into a Python exception.
+
+    Parameters
+    ----------
+    err_code : int
+        Scanner status code. Zero indicates success, one invalid inputs, and
+        two a workspace-allocation failure.
+
+    Raises
+    ------
+    ValueError
+        If the scanner rejected its array shapes or output capacity.
+    MemoryError
+        If the scanner could not allocate its internal workspace.
+    RuntimeError
+        If the scanner returned an unknown nonzero status.
+    """
     if err_code == 1:
         raise ValueError("Invalid array shapes or output capacity passed.")
     elif err_code == 2:
@@ -1181,6 +1198,37 @@ def _locate_invalid_graph_topology_fortran(
     vertex_xys: npt.NDArray[np.number],
     arc_endpts: npt.NDArray[np.integer],
 ) -> Optional[npt.NDArray[np.int32]]:
+    """
+    Returns every topology violation using the capacity-aware FORTRAN scanner.
+
+    The first scan uses a small provisional output buffer. If the exact count
+    reported by that scan exceeds the buffer, the scan is repeated with a
+    buffer of exactly the required size. Incomplete provisional results are
+    never returned.
+
+    Parameters
+    ----------
+    vertex_xys : NDArray[number]
+        Vertex coordinates with shape `(nvertices, 2)`.
+    arc_endpts : NDArray[integer]
+        Inclusive, zero-based arc endpoint indices with shape `(narcs, 2)`.
+
+    Returns
+    -------
+    NDArray[int32] or None
+        Complete `(nintxs, 5)` intersection records using zero-based indices,
+        or `None` when no violations are found.
+
+    Raises
+    ------
+    ValueError
+        If the low-level scanner rejects its inputs.
+    MemoryError
+        If scanner workspace or result allocation fails.
+    RuntimeError
+        If the scanner returns an unexpected status or the exact count changes
+        during the retry.
+    """
     vertices_f = np.asfortranarray(vertex_xys.T, dtype=np.float32)
     endpts_f = np.asfortranarray(arc_endpts.T, dtype=np.int32) + 1
     capacity = max(vertices_f.shape[1] // 100, 3) # Arbitrary capacity that seems to work
@@ -1222,28 +1270,28 @@ def locate_invalid_graph_topology(
     Parameters
     ----------
     vertex_xys : NDArray[number]
-        2D array of shape `(nvertices, 2)` representing the grid coordinates (i, j) of each vertex
+        2D array of shape `(nvertices, 2)` representing the grid coordinates (i, j) of each vertex.
     arc_endpts : NDArray[integer]
-        2D array of shape `(narcs, 2)` containing the start and end vertex indices for each arc in `vertex_ijs`
+        2D array of shape `(narcs, 2)` containing the start and end vertex indices for each arc in `vertex_ijs`.
     backend : {'fortran', 'python'}, optional
-        Computational backend to use
+        Computational backend to use.
         The default option is `'fortran'`.
 
     Returns
     -------
     NDArray[int32] or None
-        2D array of shape `(nintxs, 5)` representing the detected intersections, or `None` if no intersections are found
+        2D array of shape `(nintxs, 5)` representing the detected intersections, or `None` if no intersections are found.
         The rows are sorted lexicographically and each row contains:
-        - `iarc`: Index of the first arc (0-based)
-        - `jarc`: Index of the second arc (0-based)
-        - `iseg`: Start vertex index of the first intersecting segment (0-based)
-        - `jseg`: Start vertex index of the second intersecting segment (0-based)
+        - `iarc`: Index of the first arc (0-based).
+        - `jarc`: Index of the second arc (0-based).
+        - `iseg`: Start vertex index of the first intersecting segment (0-based).
+        - `jseg`: Start vertex index of the second intersecting segment (0-based).
         - `intx_flag`: Flag indicating the type of intersection:
-            - 1 : interior-interior crossing (X)
-            - 2 : collinear overlap, not identical
-            - 3 : identical segment
-            - 4 : endpoint-on-interior (T-junction)
-            - 5 : degenerate segment (some line is actually a point)
+            - 1 : Interior-interior crossing (X).
+            - 2 : Collinear overlap, not identical.
+            - 3 : Identical segment.
+            - 4 : Endpoint-on-interior (T-junction).
+            - 5 : Degenerate segment (some line is actually a point).
 
     Raises
     ------
