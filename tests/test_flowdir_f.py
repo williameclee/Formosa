@@ -11,6 +11,8 @@
 #     - Added test cases for function `test_locate_invalid_graph_topogtaphy`
 #   2026-07-14, En-Chi Lee (williameclee@gmail.com)
 #     - Updated `geomorphology.flowdir` to the new submodule name
+#   2026-07-29, En-Chi Lee (williameclee@gmail.com)
+#     - Added test cases for function `simplify_flowgraph`
 
 
 import pytest
@@ -495,6 +497,65 @@ def test_simplify_flowgraph():
     np.testing.assert_array_equal(keeps_with_check, [True, True, True, True, True])
 
 
+def test_simplify_multiple_flowgraphs_inserts_overlap_endpoints():
+    vertices = [
+        np.array([[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]]),
+        np.array([[1.0, -1.0], [1.0, 0.0], [1.0, 1.0]]),
+    ]
+    endpts = [np.array([[0, 2]]), np.array([[0, 2]])]
+
+    simp_vertices, simp_endpts, keeps = flowdir.simplify_flowgraph(
+        vertices,
+        endpts,
+        tol=0.0,
+        check_topology=True,
+        backend="fortran",
+    )
+
+    expected_start_vertices = [
+        np.array([[0.0, 0.0], [1.0, 0.0]]),
+        np.array([[1.0, -1.0], [1.0, 0.0]]),
+    ]
+    for graph_vertices, graph_endpts, graph_keeps, expected_starts in zip(
+        simp_vertices, simp_endpts, keeps, expected_start_vertices
+    ):
+        assert graph_endpts.shape == (2, 2)
+        np.testing.assert_array_equal(graph_endpts, np.array([[0, 1], [2, 3]]))
+        np.testing.assert_array_equal(
+            graph_vertices[graph_endpts[:, 0]], expected_starts
+        )
+        assert graph_keeps.size == 5
+
+    # Both occurrences of the crossing are endpoints after each graph is split
+    for graph_vertices, graph_endpts in zip(simp_vertices, simp_endpts):
+        endpoint_vertices = graph_vertices[graph_endpts.ravel()]
+        assert np.sum(np.all(endpoint_vertices == [1.0, 0.0], axis=1)) == 2
+
+
+def test_simplify_multiple_flowgraphs_ignores_identical_arcs():
+    vertices = [
+        np.array(
+            [[0.0, 0.0], [1.0, 0.2], [2.0, 0.4], [3.0, 0.2], [4.0, 0.0]]
+        ),
+        np.array(
+            [[4.0, 0.0], [3.0, 0.2], [2.0, 0.4], [1.0, 0.2], [0.0, 0.0]]
+        ),
+    ]
+    endpts = [np.array([[0, 4]]), np.array([[0, 4]])]
+
+    simp_vertices, _, _ = flowdir.simplify_flowgraph(
+        vertices,
+        endpts,
+        tol=0.25,
+        check_topology=True,
+        backend="fortran",
+    )
+
+    # The identical central arcs may simplify despite having opposite directions
+    for graph_vertices in simp_vertices:
+        assert not np.any(np.all(graph_vertices == [2.0, 0.4], axis=1))
+
+
 if __name__ == "__main__":
     test_downstreamid_3x3()
     test_downstreamid_4x4()
@@ -505,3 +566,5 @@ if __name__ == "__main__":
     test_network_graph_3x3()
     test_locate_invalid_graph_topogtaphy()
     test_simplify_flowgraph()
+    test_simplify_multiple_flowgraphs_inserts_overlap_endpoints()
+    test_simplify_multiple_flowgraphs_ignores_identical_arcs()
