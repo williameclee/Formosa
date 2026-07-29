@@ -13,16 +13,56 @@
 #     - Updated `geomorphology.flowdir` to the new submodule name
 #   2026-07-29, En-Chi Lee (williameclee@gmail.com)
 #     - Added test cases for function `simplify_flowgraph`
+#     - Added complete topology-intersection scan-and-retry regression tests
 
+
+import warnings
+from types import SimpleNamespace
 
 import pytest
 import numpy as np
 
 from formosa import D8Directions
 import formosa.geomorphology.flowdir as flowdir
+from formosa.geomorphology.flowdir.graphs import graphs as graphs_module
+from formosa.geomorphology.flowdir_f import flowdir_graphs as graphs_f
 
 T = True
 F = False
+
+
+def _make_separated_x_pairs(
+    npairs: int = 5,
+) -> tuple[np.ndarray, np.ndarray]:
+    vertices = []
+    endpts = []
+    for ipair in range(npairs):
+        x = 3 * ipair
+        start = len(vertices)
+        vertices.extend(
+            [
+                [x, 0],
+                [x + 1, 1],
+                [x, 1],
+                [x + 1, 0],
+            ]
+        )
+        endpts.extend([[start, start + 1], [start + 2, start + 3]])
+
+    return (
+        np.asarray(vertices, dtype=np.float32),
+        np.asarray(endpts, dtype=np.int32),
+    )
+
+
+def _scan_topology_with_capacity(
+    vertices: np.ndarray,
+    endpts: np.ndarray,
+    capacity: int,
+) -> tuple[np.ndarray, int, int]:
+    vertices_f = np.asfortranarray(vertices.T, dtype=np.float32)
+    endpts_f = np.asfortranarray(endpts.T + 1, dtype=np.int32)
+    return graphs_f.scan_invalid_graph_topology(vertices_f, endpts_f, capacity)
 
 
 def test_downstreamid_3x3():
@@ -431,6 +471,266 @@ def test_locate_invalid_graph_topogtaphy():
 
 def test_simplify_flowgraph():
     # 1. Single graph test
+def test_locate_invalid_graph_topology_retries_after_buffer_overflow():
+    vertices, endpts = _make_separated_x_pairs()
+
+    with warnings.catch_warnings(record=True) as caught:
+        warnings.simplefilter("always")
+        intxs_f = flowdir.locate_invalid_graph_topology(
+            vertices, endpts, backend="fortran"
+        )
+
+    intxs_py = flowdir.locate_invalid_graph_topology(vertices, endpts, backend="python")
+    assert not caught
+    assert intxs_f is not None
+    assert intxs_f.shape == (5, 5)
+    assert intxs_f.dtype == np.int32
+    assert intxs_f.flags.c_contiguous
+    np.testing.assert_array_equal(intxs_f, intxs_py)
+
+
+def test_topology_scanner_counts_past_capacity():
+    vertices, endpts = _make_separated_x_pairs()
+    intxs, nintxs, err_code = _scan_topology_with_capacity(vertices, endpts, capacity=1)
+
+    assert err_code == 0
+    assert nintxs == 5
+    assert intxs.shape == (5, 1)
+    np.testing.assert_array_equal(intxs[:, 0], [1, 2, 1, 3, 1])
+
+
+@pytest.mark.parametrize("capacity", [4, 5, 8])
+def test_topology_scanner_capacity_boundaries(capacity):
+    vertices, endpts = _make_separated_x_pairs()
+    intxs, nintxs, err_code = _scan_topology_with_capacity(vertices, endpts, capacity)
+
+    assert err_code == 0
+    assert nintxs == 5
+    assert intxs.shape == (5, capacity)
+
+    nstored = min(nintxs, capacity)
+    public_intxs = flowdir.locate_invalid_graph_topology(
+        vertices, endpts, backend="fortran"
+    )
+    expected_stored = public_intxs[:nstored].T.copy()
+    expected_stored[:-1] += 1
+    np.testing.assert_array_equal(intxs[:, :nstored], expected_stored)
+
+
+def test_topology_scanner_empty_input_initialises_outputs():
+    vertices = np.empty((0, 2), dtype=np.float32)
+    endpts = np.empty((0, 2), dtype=np.int32)
+    intxs, nintxs, err_code = _scan_topology_with_capacity(vertices, endpts, capacity=3)
+
+    assert err_code == 0
+    assert nintxs == 0
+    assert intxs.shape == (5, 3)
+    assert (
+        flowdir.locate_invalid_graph_topology(vertices, endpts, backend="fortran")
+        is None
+    )
+
+
+def test_topology_wrapper_uses_single_scan_when_capacity_is_sufficient(monkeypatch):
+    calls = []
+
+    def fake_scan(vertex_ijs, arc_endpts, capacity):
+        calls.append(capacity)
+        intxs = np.empty((5, capacity), dtype=np.int32, order="F")
+        intxs[:, 0] = [1, 2, 1, 3, 1]
+        return intxs, 1, 0
+
+    monkeypatch.setattr(
+        graphs_module,
+        "graphs_f",
+        SimpleNamespace(scan_invalid_graph_topology=fake_scan),
+    )
+    intxs = flowdir.locate_invalid_graph_topology(
+        np.zeros((4, 2)), np.array([[0, 1], [2, 3]]), backend="fortran"
+    )
+
+    assert calls == [3]
+    np.testing.assert_array_equal(intxs, [[0, 1, 0, 2, 1]])
+
+
+def test_topology_wrapper_retries_with_exact_reported_capacity(monkeypatch):
+    calls = []
+
+    def fake_scan(vertex_ijs, arc_endpts, capacity):
+        calls.append(capacity)
+        intxs = np.empty((5, capacity), dtype=np.int32, order="F")
+        nintxs = 5
+        nstored = min(capacity, nintxs)
+        for i in range(nstored):
+            intxs[:, i] = [2 * i + 1, 2 * i + 2, 2 * i + 1, 2 * i + 3, 1]
+        return intxs, nintxs, 0
+
+    monkeypatch.setattr(
+        graphs_module,
+        "graphs_f",
+        SimpleNamespace(scan_invalid_graph_topology=fake_scan),
+    )
+    intxs = flowdir.locate_invalid_graph_topology(
+        np.zeros((20, 2)),
+        np.arange(20, dtype=np.int32).reshape(10, 2),
+        backend="fortran",
+    )
+
+    assert calls == [3, 5]
+    assert intxs.shape == (5, 5)
+
+
+def test_topology_wrapper_rejects_inconsistent_retry_count(monkeypatch):
+    calls = []
+
+    def fake_scan(vertex_ijs, arc_endpts, capacity):
+        calls.append(capacity)
+        intxs = np.empty((5, capacity), dtype=np.int32, order="F")
+        return intxs, 4 if len(calls) == 1 else 3, 0
+
+    monkeypatch.setattr(
+        graphs_module,
+        "graphs_f",
+        SimpleNamespace(scan_invalid_graph_topology=fake_scan),
+    )
+    with pytest.raises(RuntimeError, match="count changed"):
+        flowdir.locate_invalid_graph_topology(
+            np.zeros((4, 2)),
+            np.array([[0, 1], [2, 3]]),
+            backend="fortran",
+        )
+
+    assert calls == [3, 4]
+
+
+@pytest.mark.parametrize(
+    ("err_code", "exception"),
+    [(1, ValueError), (2, MemoryError), (99, RuntimeError)],
+)
+def test_topology_wrapper_translates_scanner_errors(monkeypatch, err_code, exception):
+    def fake_scan(vertex_ijs, arc_endpts, capacity):
+        return np.empty((5, capacity), dtype=np.int32), 0, err_code
+
+    monkeypatch.setattr(
+        graphs_module,
+        "graphs_f",
+        SimpleNamespace(scan_invalid_graph_topology=fake_scan),
+    )
+    with pytest.raises(exception):
+        flowdir.locate_invalid_graph_topology(
+            np.zeros((2, 2)), np.array([[0, 1]]), backend="fortran"
+        )
+
+
+def test_self_intersection_overflow_does_not_hide_later_interarc_results():
+    vertices = np.array(
+        [
+            [0, 0],
+            [1, 1],
+            [0, 0],
+            [1, 1],
+            [0, 0],
+            [1, 1],
+            [0, 0],
+            [10, 0],
+            [11, 1],
+            [10, 1],
+            [11, 0],
+        ],
+        dtype=np.float32,
+    )
+    endpts = np.array([[0, 6], [7, 8], [9, 10]], dtype=np.int32)
+
+    intxs_f = flowdir.locate_invalid_graph_topology(vertices, endpts, backend="fortran")
+    intxs_py = flowdir.locate_invalid_graph_topology(vertices, endpts, backend="python")
+
+    assert intxs_f is not None
+    assert intxs_f.shape[0] > 3
+    assert np.any((intxs_f[:, 0] == 0) & (intxs_f[:, 1] == 0))
+    assert np.any((intxs_f[:, 0] == 1) & (intxs_f[:, 1] == 2))
+    np.testing.assert_array_equal(intxs_f, intxs_py)
+
+
+def test_large_self_intersection_only_result_matches_python_backend():
+    vertices = np.array(
+        [[0, 0], [1, 1], [0, 0], [1, 1], [0, 0], [1, 1], [0, 0]],
+        dtype=np.float32,
+    )
+    endpts = np.array([[0, 6]], dtype=np.int32)
+
+    intxs_f = flowdir.locate_invalid_graph_topology(vertices, endpts, backend="fortran")
+    intxs_py = flowdir.locate_invalid_graph_topology(vertices, endpts, backend="python")
+
+    assert intxs_f is not None
+    assert intxs_f.shape[0] > 3
+    assert np.all(intxs_f[:, :2] == 0)
+    np.testing.assert_array_equal(intxs_f, intxs_py)
+
+
+def test_topology_results_are_invariant_to_arc_reordering():
+    vertices, endpts = _make_separated_x_pairs()
+    baseline = flowdir.locate_invalid_graph_topology(
+        vertices, endpts, backend="fortran"
+    )
+
+    permutation = np.arange(endpts.shape[0] - 1, -1, -1)
+    reordered = flowdir.locate_invalid_graph_topology(
+        vertices, endpts[permutation], backend="fortran"
+    )
+
+    def remap_rows(rows, arc_ids):
+        remapped = set()
+        for iarc, jarc, iseg, jseg, intx_flag in rows:
+            iarc = int(arc_ids[iarc])
+            jarc = int(arc_ids[jarc])
+            if iarc > jarc:
+                iarc, jarc = jarc, iarc
+                iseg, jseg = jseg, iseg
+            remapped.add((iarc, jarc, int(iseg), int(jseg), int(intx_flag)))
+        return remapped
+
+    assert remap_rows(baseline, np.arange(endpts.shape[0])) == remap_rows(
+        reordered, permutation
+    )
+
+
+def test_topology_repair_simplifies_each_conflicting_arc_once(monkeypatch):
+    intersections = np.array(
+        [
+            [0, 1, 0, 2, 1],
+            [0, 1, 0, 2, 4],
+            [0, 2, 0, 4, 1],
+            [1, 2, 2, 4, 1],
+        ],
+        dtype=np.int32,
+    )
+    locator_results = iter([intersections, None])
+    simplified_starts = []
+
+    def fake_locator(vertex_xys, arc_endpts, backend="fortran"):
+        return next(locator_results)
+
+    def fake_simplify(vertex_xys, arc_endpts, tol):
+        simplified_starts.append(tuple(vertex_xys[:, 0]))
+        return np.ones(vertex_xys.shape[1], dtype=np.int8)
+
+    monkeypatch.setattr(graphs_module, "locate_invalid_graph_topology", fake_locator)
+    monkeypatch.setattr(
+        graphs_module,
+        "graphs_f",
+        SimpleNamespace(simplify_flowgraph=fake_simplify),
+    )
+
+    vertices = np.array([[0, 1, 2, 3, 4, 5], [0, 0, 0, 0, 0, 0]], dtype=np.float32)
+    endpts = np.array([[0, 2, 4], [1, 3, 5]], dtype=np.int32)
+    keeps = graphs_module._resolve_topology_intersections(
+        vertices, endpts, np.ones(6, dtype=bool), tol=1.0, max_iters=0
+    )
+
+    assert simplified_starts == [(0.0, 0.0), (2.0, 0.0), (4.0, 0.0)]
+    np.testing.assert_array_equal(keeps, np.ones(6, dtype=bool))
+
+
     vs = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]])
     endpts = np.array([[0, 2]])
     simp_vs, simp_endpts, keeps = flowdir.simplify_flowgraph(
@@ -566,5 +866,7 @@ if __name__ == "__main__":
     test_network_graph_3x3()
     test_locate_invalid_graph_topogtaphy()
     test_simplify_flowgraph()
+    test_locate_invalid_graph_topology_retries_after_buffer_overflow()
+    test_topology_scanner_counts_past_capacity()
     test_simplify_multiple_flowgraphs_inserts_overlap_endpoints()
     test_simplify_multiple_flowgraphs_ignores_identical_arcs()
