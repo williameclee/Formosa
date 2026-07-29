@@ -21,6 +21,7 @@
 #     - Integrated overlap resolution into simultaneous multi-graph simplification
 #   2026-07-29, En-Chi Lee (williameclee@gmail.com)
 #     - Made topology intersection results complete using scan-and-retry
+#     - Added validation to simplified graph before return
 
 
 import numpy as np
@@ -48,6 +49,32 @@ import warnings
 
 import numpy.typing as npt
 from typing import Literal, Iterable, Optional, overload
+
+
+class GraphTopologyError(RuntimeError):
+    """
+    Base exception for a graph that fails topology validation.
+    """
+
+    def __init__(
+        self,
+        message: str,
+        intersections: npt.NDArray[np.integer],
+    ) -> None:
+        super().__init__(message)
+        self.intersections = np.asarray(intersections, dtype=np.int32).copy()
+
+
+class InvalidOriginalGraphTopology(GraphTopologyError):
+    """
+    Raised when an invalid result originated from invalid input topology.
+    """
+
+
+class UnresolvedSimplificationTopology(GraphTopologyError):
+    """
+    Raised when simplification leaves invalid topology from valid input.
+    """
 
 
 def create_flowgraph(
@@ -942,6 +969,20 @@ def _ignore_identical_intergraph_arcs(
     return intxs[keeps]
 
 
+def _locate_disallowed_graph_topology(
+    vertices: npt.NDArray[np.number],
+    endpts: npt.NDArray[np.integer],
+    graph_ids: Optional[npt.NDArray[np.integer]] = None,
+) -> Optional[npt.NDArray[np.int32]]:
+    """
+    Locates violations in arrays stored in internal (2, N) layout.
+    """
+    intxs = locate_invalid_graph_topology(vertices.T, endpts.T)
+    if graph_ids is not None:
+        intxs = _ignore_identical_intergraph_arcs(intxs, vertices, endpts, graph_ids)
+    return intxs
+
+
 def _resolve_topology_intersections(
     vertices: npt.NDArray[np.number],
     endpts: npt.NDArray[np.integer],
@@ -958,11 +999,7 @@ def _resolve_topology_intersections(
     vertices_aux = vertices[:, vertex_keeps]
     endpts_aux = vertex_cumsum[endpts]
 
-    intxs = locate_invalid_graph_topology(vertices_aux.T, endpts_aux.T)
-    if graph_ids is not None:
-        intxs = _ignore_identical_intergraph_arcs(
-            intxs, vertices_aux, endpts_aux, graph_ids
-        )
+    intxs = _locate_disallowed_graph_topology(vertices_aux, endpts_aux, graph_ids)
 
     niters = 0
     while (intxs is not None) and (niters <= max_iters):
@@ -982,11 +1019,7 @@ def _resolve_topology_intersections(
         vertices_aux = vertices[:, vertex_keeps]
         endpts_aux = vertex_cumsum[endpts]
 
-        intxs = locate_invalid_graph_topology(vertices_aux.T, endpts_aux.T)
-        if graph_ids is not None:
-            intxs = _ignore_identical_intergraph_arcs(
-                intxs, vertices_aux, endpts_aux, graph_ids
-            )
+        intxs = _locate_disallowed_graph_topology(vertices_aux, endpts_aux, graph_ids)
     # If there are still intersections after that many iterations, don't simplify those arc
     if intxs is not None:
         for iarc in np.unique(intxs[:, :2]):
@@ -1040,13 +1073,29 @@ def _simplify_single_flowgraph(
 
     # Squeeze the vertices and map the arc endpoints to the new indices
     vertex_cumsum = np.cumsum(vertex_keeps) - 1
-    vertices = vertices[:, vertex_keeps]
-    endpts = vertex_cumsum[endpts]
+    simp_vertices = vertices[:, vertex_keeps]
+    simp_endpts = vertex_cumsum[endpts]
+
+    if check_topology:
+        final_intxs = _locate_disallowed_graph_topology(
+            simp_vertices, simp_endpts, graph_ids
+        )
+        if final_intxs is not None:
+            input_intxs = _locate_disallowed_graph_topology(vertices, endpts, graph_ids)
+            if input_intxs is not None:
+                raise InvalidOriginalGraphTopology(
+                    "The simplified graph is invalid because the original input graph topology is invalid.",
+                    input_intxs,
+                )
+            raise UnresolvedSimplificationTopology(
+                "The final simplified graph has unresolved topology violations.",
+                final_intxs,
+            )
 
     # Transpose and cast arrays to C-contiguous layout for return
-    vertices = vertices.T.astype(vertices.dtype, order="C")
-    endpts = endpts.T.astype(np.int32, order="C")
-    return vertices, endpts, vertex_keeps
+    simp_vertices = simp_vertices.T.astype(vertices.dtype, order="C")
+    simp_endpts = simp_endpts.T.astype(np.int32, order="C")
+    return simp_vertices, simp_endpts, vertex_keeps
 
 
 @overload

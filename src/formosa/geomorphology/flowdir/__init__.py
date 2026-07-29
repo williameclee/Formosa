@@ -1,4 +1,7 @@
 from .graphs import (
+    GraphTopologyError,
+    InvalidOriginalGraphTopology,
+    UnresolvedSimplificationTopology,
     construct_flowgraph,
     concat_flowgraph,
     simplify_flowgraph,
