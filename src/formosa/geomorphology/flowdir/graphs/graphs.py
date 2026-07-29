@@ -18,6 +18,7 @@
 #     - Implemented `insert_endpt` and relevant helper functions
 #   2026-07-28, En-Chi Lee (williameclee@gmail.com)
 #     - Implemented `solve_graph_overlaps` and relevant helper functions
+#     - Integrated overlap resolution into simultaneous multi-graph simplification
 
 
 import numpy as np
@@ -793,7 +794,6 @@ def _simplify_multiple_flowgraphs(
     all_endpts_list: list[npt.NDArray[np.integer]] = []
     all_graph_ids_list: list[npt.NDArray[np.uint8]] = []
 
-    offset: int = 0
     for i, (vertices, endpts) in enumerate(zip(vertices_list, endpts_list)):
         vertices_shps.append(vertices.shape)
         endpts_shps.append(endpts.shape)
@@ -816,14 +816,41 @@ def _simplify_multiple_flowgraphs(
                 f"Endpoint array at index {i} shape {endpts.shape} is not A-by-2 or 2-by-A."
             )
 
-        nvertices_i: int = vertices.shape[0]
-        all_vertices_list.append(vertices)
-        all_endpts_list.append(endpts + offset)
-        all_graph_ids_list.append(np.ones((endpts.shape[0]), dtype=np.uint8) * i)
-        offset += nvertices_i
+        all_vertices_list.append(vertices.copy())
+        all_endpts_list.append(endpts.copy())
 
+    # Insert endpoints at graph overlaps before simplifying any coordinates
+    orders_list = [
+        np.zeros(endpts.shape[0], dtype=np.uint8) for endpts in all_endpts_list
+    ]
+    for i in range(len(all_vertices_list) - 1):
+        for j in range(i + 1, len(all_vertices_list)):
+            (
+                orders_list[i],
+                all_vertices_list[i],
+                all_endpts_list[i],
+                orders_list[j],
+                all_vertices_list[j],
+                all_endpts_list[j],
+            ) = solve_graph_overlaps(
+                orders_list[i],
+                all_vertices_list[i],
+                all_endpts_list[i],
+                orders_list[j],
+                all_vertices_list[j],
+                all_endpts_list[j],
+                allows_arcs_overlap=True,
+            )
+
+    # Concatenate the graphs while retaining the graph membership of each arc
+    offset: int = 0
+    offset_endpts_list = []
+    for i, (vertices, endpts) in enumerate(zip(all_vertices_list, all_endpts_list)):
+        offset_endpts_list.append(endpts + offset)
+        all_graph_ids_list.append(np.full(endpts.shape[0], i, dtype=np.uint8))
+        offset += vertices.shape[0]
     all_vertices = np.concatenate(all_vertices_list, axis=0)
-    all_endpts = np.concatenate(all_endpts_list, axis=0)
+    all_endpts = np.concatenate(offset_endpts_list, axis=0)
     all_graph_ids = np.concatenate(all_graph_ids_list, axis=0)
 
     # Call the core single flowgraph simplifier
@@ -833,6 +860,7 @@ def _simplify_multiple_flowgraphs(
         tol=tol,
         check_topology=check_topology,
         backend=backend,
+        graph_ids=all_graph_ids,
     )
 
     # Separate the simplified graph back into multiple graphs
@@ -845,18 +873,14 @@ def _simplify_multiple_flowgraphs(
         vertex_shp = vertices_shps[i]
         endpts_shp = endpts_shps[i]
 
-        nvertices_i = (
-            vertex_shp[0]
-            if (vertex_shp[0] != 2 or vertex_shp[1] == 2)
-            else vertex_shp[1]
-        )
+        nvertices_i = all_vertices_list[i].shape[0]
         keeps_i = keeps_concat[offset : offset + nvertices_i]
 
         vertices = all_vertices_list[i]
         simp_v_i = vertices[keeps_i, :]
 
         vertex_cumsum_i = np.cumsum(keeps_i) - 1
-        local_e_std = all_endpts_list[i] - offset
+        local_e_std = all_endpts_list[i]
         simp_e_i = vertex_cumsum_i[local_e_std]
 
         # Restore original orientation
@@ -881,19 +905,39 @@ def _simplify_multiple_flowgraphs(
         return s_vertices_list, s_endpts_list, keeps_list
 
 
-def _skip_intergraph_intxs(
+def _ignore_identical_intergraph_arcs(
     intxs: Optional[npt.NDArray[np.int32]],
-    graph_ids: Optional[npt.NDArray[np.uint8]],
+    vertices: npt.NDArray[np.number],
+    endpts: npt.NDArray[np.integer],
+    graph_ids: npt.NDArray[np.integer],
 ) -> Optional[npt.NDArray[np.int32]]:
+    """
+    Removes topology violations between identical arcs in different graphs.
+    """
     if intxs is None:
         return None
-    can_skip_intxs = (graph_ids[intxs[0, :]] != graph_ids[intxs[1, :]]) & (
-        (intxs[-1, :] == 2) | (intxs[-1, :] == 3)
-    )
-    if np.sum(can_skip_intxs) == 0:
+
+    keeps = np.ones(intxs.shape[0], dtype=bool)
+    identical_pairs: dict[tuple[int, int], bool] = {}
+    for i, (iarc, jarc, _, _, _) in enumerate(intxs):
+        if graph_ids[iarc] == graph_ids[jarc]:
+            continue
+
+        pair = (int(iarc), int(jarc))
+        if pair not in identical_pairs:
+            istart, iend = endpts[:, iarc]
+            jstart, jend = endpts[:, jarc]
+            iarc_vertices = vertices[:, istart : iend + 1]
+            jarc_vertices = vertices[:, jstart : jend + 1]
+            identical_pairs[pair] = np.array_equal(
+                iarc_vertices, jarc_vertices
+            ) or np.array_equal(iarc_vertices, jarc_vertices[:, ::-1])
+        if identical_pairs[pair]:
+            keeps[i] = False
+
+    if not np.any(keeps):
         return None
-    intxs = intxs[:, can_skip_intxs]
-    return intxs
+    return intxs[keeps]
 
 
 def _resolve_topology_intersections(
@@ -915,20 +959,15 @@ def _resolve_topology_intersections(
     warnings.filterwarnings("error")
     intxs = locate_invalid_graph_topology(vertices_aux.T, endpts_aux.T)
     if graph_ids is not None:
-        intxs = _skip_intergraph_intxs(intxs, graph_ids)
+        intxs = _ignore_identical_intergraph_arcs(
+            intxs, vertices_aux, endpts_aux, graph_ids
+        )
 
     niters = 0
     while (intxs is not None) and (niters <= max_iters):
         tol = float(tol) / 2
         niters += 1
         for iarc, jarc, _, _, intx_code in intxs:
-            if (
-                graph_ids
-                and (graph_ids[iarc] != graph_ids[jarc])
-                and ((intx_code == 2) or (intx_code == 3))
-            ):
-                # Colinear segments are allowed across graphs
-                continue
             start_i = endpts[0, iarc]
             end_i = endpts[1, iarc]
             len_i = end_i - start_i + 1
@@ -953,8 +992,10 @@ def _resolve_topology_intersections(
 
         intxs = locate_invalid_graph_topology(vertices_aux.T, endpts_aux.T)
         if graph_ids is not None:
-            intxs = _skip_intergraph_intxs(intxs, graph_ids)
-    # If there are still intersections after that many iteratsions, don't simplify those arc
+            intxs = _ignore_identical_intergraph_arcs(
+                intxs, vertices_aux, endpts_aux, graph_ids
+            )
+    # If there are still intersections after that many iterations, don't simplify those arc
     if intxs is not None:
         for iarc, jarc, _, _, _ in intxs:
             vertex_keeps[endpts[0, iarc] : endpts[1, iarc] + 1] = True
@@ -1075,6 +1116,8 @@ def simplify_flowgraph(
     """
     Simplify a flow graph using the Ramer-Douglas-Peucker (RDP) algorithm with a fixed tolerance threshold.
 
+    When multiple graphs are supplied, their overlaps are first split into compatible arcs using `solve_graph_overlaps`. Identical arcs belonging to different graphs are ignored during topology validation, including when their vertex directions are reversed.
+
     Parameters
     ----------
     vertex_xys : NDArray[number] or Iterable[NDArray[number]]
@@ -1099,7 +1142,8 @@ def simplify_flowgraph(
     simp_arc_endpts : NDArray[int32] or list/tuple of NDArray[int32]
         A-by-2 array of indices indicating the start and end of each simplified arc, or a list/tuple of such arrays
     keeps : NDArray[bool] or list/tuple of NDArray[bool]
-        V-by-1 mask indicating which of the input vertices are retained in the simplified graph, or a list/tuple of such masks
+        V-by-1 mask indicating which of the input vertices are retained in the simplified graph, or a list/tuple of such masks.
+        For multiple overlapping graphs, the masks refer to the intermediate vertex arrays produced by `solve_graph_overlaps`, which may contain additional vertices.
 
     Raises
     ------
