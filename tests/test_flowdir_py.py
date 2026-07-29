@@ -330,23 +330,22 @@ def test_solve_graph_overlaps(
     g2_ijs = np.array([[5, 0], [3, 0], [2, 0], [1, 0], [6, 0], [10, 1], [11, 1]])
     g2_endpts = np.array([[0, 4], [5, 6]])
 
-    with pytest.warns(UserWarning, match="Provided vertex is not a part of any arc"):
-        (
-            solved_g1_orders,
-            solved_g1_ijs,
-            solved_g1_endpts,
-            solved_g2_orders,
-            solved_g2_ijs,
-            solved_g2_endpts,
-        ) = solve_graph_overlaps(
-            g1_orders,
-            g1_ijs,
-            g1_endpts,
-            g2_orders,
-            g2_ijs,
-            g2_endpts,
-            allows_arcs_overlap=allows_arcs_overlap,
-        )
+    (
+        solved_g1_orders,
+        solved_g1_ijs,
+        solved_g1_endpts,
+        solved_g2_orders,
+        solved_g2_ijs,
+        solved_g2_endpts,
+    ) = solve_graph_overlaps(
+        g1_orders,
+        g1_ijs,
+        g1_endpts,
+        g2_orders,
+        g2_ijs,
+        g2_endpts,
+        allows_arcs_overlap=allows_arcs_overlap,
+    )
 
     assert solved_g1_orders.size == expected_narcs
     assert solved_g2_orders.size == expected_narcs
@@ -365,6 +364,60 @@ def test_solve_graph_overlaps(
     assert g1_vert_g2_intr.size == 0
 
 
+def test_solve_graph_overlaps_with_repeated_coordinates():
+    from formosa.geomorphology.flowdir.graphs.graphs import (
+        find_graph_overlaps,
+        solve_graph_overlaps,
+    )
+
+    # Coordinate (2, 0) occurs in two arcs of the first graph
+    g1_orders = np.array([1, 2])
+    g1_ijs = np.array(
+        [
+            [0, 0],
+            [1, 0],
+            [2, 0],
+            [3, 0],
+            [4, 0],
+            [8, 0],
+            [2, 0],
+            [9, 0],
+        ]
+    )
+    g1_endpts = np.array([[0, 4], [5, 7]])
+    g2_orders = np.array([3])
+    g2_ijs = np.array([[5, 0], [3, 0], [2, 0], [1, 0], [6, 0]])
+    g2_endpts = np.array([[0, 4]])
+
+    (
+        solved_g1_orders,
+        solved_g1_ijs,
+        solved_g1_endpts,
+        solved_g2_orders,
+        solved_g2_ijs,
+        solved_g2_endpts,
+    ) = solve_graph_overlaps(
+        g1_orders,
+        g1_ijs,
+        g1_endpts,
+        g2_orders,
+        g2_ijs,
+        g2_endpts,
+        allows_arcs_overlap=True,
+    )
+
+    assert solved_g1_orders.size == 4
+    assert solved_g2_orders.size == 3
+    vert_vert, intr_intr, _, _ = find_graph_overlaps(
+        solved_g1_ijs,
+        solved_g1_endpts,
+        solved_g2_ijs,
+        solved_g2_endpts,
+    )
+    np.testing.assert_array_equal(vert_vert, np.array([[1, 0], [3, 0]]))
+    np.testing.assert_array_equal(intr_intr, np.array([[2, 0]]))
+
+
 if __name__ == "__main__":
     test_indegree_3x3()
     test_network_graph_3x3()
@@ -372,3 +425,4 @@ if __name__ == "__main__":
     test_locate_invalid_graph_topogtaphy()
     test_graph_insert_endpt()
     test_find_graph_overlaps()
+    test_solve_graph_overlaps_with_repeated_coordinates()
