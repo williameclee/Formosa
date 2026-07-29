@@ -469,8 +469,6 @@ def test_locate_invalid_graph_topogtaphy():
         )
 
 
-def test_simplify_flowgraph():
-    # 1. Single graph test
 def test_locate_invalid_graph_topology_retries_after_buffer_overflow():
     vertices, endpts = _make_separated_x_pairs()
 
@@ -731,6 +729,7 @@ def test_topology_repair_simplifies_each_conflicting_arc_once(monkeypatch):
     np.testing.assert_array_equal(keeps, np.ones(6, dtype=bool))
 
 
+def test_simplify_single_flowgraph():
     vs = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]])
     endpts = np.array([[0, 2]])
     simp_vs, simp_endpts, keeps = flowdir.simplify_flowgraph(
@@ -740,7 +739,40 @@ def test_topology_repair_simplifies_each_conflicting_arc_once(monkeypatch):
     np.testing.assert_array_equal(simp_vs, [[0.0, 0.0], [2.0, 2.0]])
     np.testing.assert_array_equal(simp_endpts, [[0, 1]])
 
-    # 2. Multiple graph test (list of standard arrays)
+    # Test topology correction (single graph)
+    vs_topo = np.array([[0.0, 0.8], [1.0, 2.0], [2.0, 0.2], [0.5, 0.5], [1.5, 0.5]])
+    endpts_topo = np.array([[0, 2], [3, 4]])
+
+    # Under tol = 1.5 and check_topology = False, simplification occurs and causes intersection
+    _, _, keeps_no_check = flowdir.simplify_flowgraph(
+        vs_topo, endpts_topo, tol=1.5, check_topology=False, backend="fortran"
+    )
+    # Vertex 1 should be removed
+    np.testing.assert_array_equal(keeps_no_check, [True, False, True, True, True])
+
+    # Under tol = 1.5 and check_topology = True, it detects intersection, reduces tolerance,
+    # and keeps Vertex 1 to avoid intersection
+    _, _, keeps_with_check = flowdir.simplify_flowgraph(
+        vs_topo, endpts_topo, tol=1.5, check_topology=True, backend="fortran"
+    )
+    # Vertex 1 should be kept
+    np.testing.assert_array_equal(keeps_with_check, [True, True, True, True, True])
+
+    with warnings.catch_warnings():
+        warnings.simplefilter("default")
+        filters_before = list(warnings.filters)
+        flowdir.simplify_flowgraph(
+            vs_topo,
+            endpts_topo,
+            tol=1.5,
+            check_topology=True,
+            backend="fortran",
+        )
+        assert warnings.filters == filters_before
+
+
+def test_simplify_multiple_flowgraphs():
+    # Llist of standard arrays
     vs0 = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]])
     endpts0 = np.array([[0, 2]])
     vs1 = np.array([[3.0, 3.0], [4.0, 4.0], [5.0, 5.0]])
@@ -757,7 +789,7 @@ def test_topology_repair_simplifies_each_conflicting_arc_once(monkeypatch):
     np.testing.assert_array_equal(simp_endpts_list[0], [[0, 1]])
     np.testing.assert_array_equal(simp_endpts_list[1], [[0, 1]])
 
-    # 3. Multiple graph test (tuple of transposed/differing shapes)
+    # Tuple of transposed/differing shapes
     vs0_t = vs0.T  # shape (2, 3)
     endpts0_t = endpts0.T  # shape (2, 1)
 
@@ -776,25 +808,6 @@ def test_topology_repair_simplifies_each_conflicting_arc_once(monkeypatch):
     assert simp_endpts_tuple[0].shape == (2, 1)
     assert simp_vs_tuple[1].shape == (2, 2)
     assert simp_endpts_tuple[1].shape == (1, 2)
-
-    # 4. Test topology correction (single graph)
-    vs_topo = np.array([[0.0, 0.8], [1.0, 2.0], [2.0, 0.2], [0.5, 0.5], [1.5, 0.5]])
-    endpts_topo = np.array([[0, 2], [3, 4]])
-
-    # Under tol = 1.5 and check_topology = False, simplification occurs and causes intersection
-    _, _, keeps_no_check = flowdir.simplify_flowgraph(
-        vs_topo, endpts_topo, tol=1.5, check_topology=False, backend="fortran"
-    )
-    # Vertex 1 should be removed
-    np.testing.assert_array_equal(keeps_no_check, [True, False, True, True, True])
-
-    # Under tol = 1.5 and check_topology = True, it detects intersection, reduces tolerance,
-    # and keeps Vertex 1 to avoid intersection
-    _, _, keeps_with_check = flowdir.simplify_flowgraph(
-        vs_topo, endpts_topo, tol=1.5, check_topology=True, backend="fortran"
-    )
-    # Vertex 1 should be kept
-    np.testing.assert_array_equal(keeps_with_check, [True, True, True, True, True])
 
 
 def test_simplify_multiple_flowgraphs_inserts_overlap_endpoints():
@@ -834,12 +847,8 @@ def test_simplify_multiple_flowgraphs_inserts_overlap_endpoints():
 
 def test_simplify_multiple_flowgraphs_ignores_identical_arcs():
     vertices = [
-        np.array(
-            [[0.0, 0.0], [1.0, 0.2], [2.0, 0.4], [3.0, 0.2], [4.0, 0.0]]
-        ),
-        np.array(
-            [[4.0, 0.0], [3.0, 0.2], [2.0, 0.4], [1.0, 0.2], [0.0, 0.0]]
-        ),
+        np.array([[0.0, 0.0], [1.0, 0.2], [2.0, 0.4], [3.0, 0.2], [4.0, 0.0]]),
+        np.array([[4.0, 0.0], [3.0, 0.2], [2.0, 0.4], [1.0, 0.2], [0.0, 0.0]]),
     ]
     endpts = [np.array([[0, 4]]), np.array([[0, 4]])]
 
@@ -865,7 +874,8 @@ if __name__ == "__main__":
     test_strahler_order_4x4()
     test_network_graph_3x3()
     test_locate_invalid_graph_topogtaphy()
-    test_simplify_flowgraph()
+    test_simplify_single_flowgraph()
+    test_simplify_multiple_flowgraphs()
     test_locate_invalid_graph_topology_retries_after_buffer_overflow()
     test_topology_scanner_counts_past_capacity()
     test_simplify_multiple_flowgraphs_inserts_overlap_endpoints()
