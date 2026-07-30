@@ -1,21 +1,42 @@
+# Last modified
+#   2026-02-11, En-Chi Lee (williameclee@arizona.edu)
+#     - Rename flowdir functions to be more descriptive
+#   2026-06-09, En-Chi Lee (williameclee@gmail.com)
+#     - Added wrapper function for ridge distance computation in `DEMGrid` class
+#     - Removed Numpy type `np.bool` to either `np.bool_` or `bool` for compatibility with newer Numpy versions
+#   2026-06-11, En-Chi Lee (williameclee@gmail.com)
+#     - Updated function and argument names to match the standardised names
+#   2026-06-30, En-Chi Lee (williameclee@gmail.com)
+#     - Added aliases to properties
+#     - Added properties `ridgedir` and `ridge_strahler_order`
+#   2026-07-01, En-Chi Lee (williameclee@gmail.com)
+#     - Added property `shape`
+
 from pathlib import Path
 import warnings
 import numpy as np
 import rasterio
 import rasterio.transform as rt
 import scipy.ndimage as ndi
-from skimage import morphology
 
 from formosa.dem.demio import read_dem
-from formosa.geomorphology.d8directions import D8Directions
-from formosa.geomorphology.flowdir import (
-    compute_flowdir,
-    compute_flowdir_graph,
-    compute_indegree,
-    compute_accumulation,
-    compute_strahler_order,
-    compute_flow_distance,
+from formosa.geomorphology import D8Directions
+from formosa.geomorphology import (
     get_neighbour_values,
+    compute_slope,
+    fill_depressions,
+    compute_flowdir,
+    create_flowgraph,
+    count_indegree,
+    compute_flow_accumulation,
+    compute_flow_strahler_order,
+    compute_dist2source,
+    compute_dist2sink,
+    compute_dist2conf_max,
+    compute_ridgedir,
+    compute_dist2ridge,
+    compute_ridge_strahler_order,
+    label_watersheds,
 )
 
 import numpy.typing as npt
@@ -29,7 +50,7 @@ class DEMGrid:
     transform: rasterio.Affine
     i: npt.NDArray[np.uint32]
     j: npt.NDArray[np.uint32]
-    valid: npt.NDArray[np.bool]
+    valid: npt.NDArray[np.bool_]
 
     def __init__(
         self,
@@ -203,31 +224,37 @@ class DEMGrid:
 
         self.quality = np.zeros(self.dem.shape, dtype=np.int16)
         self._slope: None | npt.NDArray[np.integer | np.floating] = None
-        self._flat: None | npt.NDArray[np.bool] = None
+        self._flat: None | npt.NDArray[np.bool_] = None
         self._flat_gradient: None | npt.NDArray[np.integer] = None
         self._flowdir: None | npt.NDArray[np.integer] = None
         self._indegree: None | npt.NDArray[np.integer] = None
         self._accumulation: None | npt.NDArray[np.integer | np.floating] = None
-        self._strahler_order: None | npt.NDArray[np.integer] = None
+        self._strahler_order: None | npt.NDArray[np.uint8] = None
         self._watershed: None | npt.NDArray[np.int32] = None
         self._graphx = None
         self._graphy = None
         self._flowdist: None | npt.NDArray[np.floating] = None
         self._backdist: None | npt.NDArray[np.floating] = None
+        self._bmax: None | npt.NDArray[np.floating] = None
+        self._ridgedir: None | npt.NDArray[np.uint8] = None
+        self._ridge_strahler_order: None | npt.NDArray[np.uint8] = None
+        self._ridge_dist: None | npt.NDArray[np.float32] = None
+
+    @property
+    def shape(self) -> tuple[int]:
+        return self.dem.shape
 
     @property
     def slope(self) -> npt.NDArray[np.floating | np.integer]:
         if self._slope is not None:
             return self._slope
 
-        from formosa.geomorphology.terrain import compute_slope
-
         self._slope = compute_slope(self.dem, x=self.x, y=self.y)
         self._slope[~self.valid] = np.nan
         return self._slope
 
     @property
-    def sea_mask(self) -> npt.NDArray[np.bool]:
+    def sea_mask(self) -> npt.NDArray[np.bool_]:
         if self._sea_mask is None or self.sea_threshold is None:
             if self.sea_threshold is None:
                 self.sea_threshold = 0
@@ -242,19 +269,19 @@ class DEMGrid:
         if self._flowdir is None:
             self._flowdir, self._flat, self._flat_gradient = compute_flowdir(
                 self.dem,
-                directions=self.directions,
+                dir_scheme=self.directions,
                 resolve_flat=True,
             )
         return self._flowdir
 
     def flowdir_graph_xy(
         self,
-        valid: npt.NDArray[np.bool] | None = None,
+        valid: npt.NDArray[np.bool_] | None = None,
     ) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.integer]]:
-        graphy, graphx = compute_flowdir_graph(
+        graphy, graphx = create_flowgraph(
             self.flowdir,
-            directions=self.directions,
-            valid=valid if valid is not None else self.valid,
+            dir_scheme=self.directions,
+            valids=valid if valid is not None else self.valid,
             x=self.x.astype(np.float64),
             y=self.y,
         )
@@ -263,77 +290,158 @@ class DEMGrid:
     @property
     def indegree(self) -> npt.NDArray[np.integer]:
         if self._indegree is None:
-            self._indegree = compute_indegree(self.flowdir, directions=self.directions)
+            self._indegree = count_indegree(self.flowdir, dir_scheme=self.directions)
         return self._indegree
 
     @property
     def accumulation(self) -> np.ndarray:
         if self._accumulation is None:
-            self._accumulation = compute_accumulation(
+            self._accumulation = compute_flow_accumulation(
                 self.flowdir,
                 valids=self.valid,
-                indegrees=self.indegree,
-                directions=self.directions,
+                indegs=self.indegree,
+                dir_scheme=self.directions,
             )
         return self._accumulation
 
     @property
-    def strahler_order(self) -> npt.NDArray[np.integer]:
+    def strahler_order(self) -> npt.NDArray[np.uint8]:
         if self._strahler_order is None:
-            self._strahler_order = compute_strahler_order(
+            self._strahler_order = compute_flow_strahler_order(
                 self.flowdir,
-                directions=self.directions,
+                dir_scheme=self.directions,
             )
         return self._strahler_order
 
     def fill_depressions(self, method: str = "erosion") -> "DEMGrid":
         self.dem = fill_depressions(
-            fill_pits(self.dem)[0], valid=self.valid, method=method
+            fill_pits(self.dem)[0], valids=self.valid, method=method
         )
         return self
 
     @property
-    def flow_distance(self) -> npt.NDArray[np.floating]:
+    def dist2source(self) -> npt.NDArray[np.floating]:
         if self._flowdist is None:
-            self._flowdist = compute_flow_distance(
+            self._flowdist = compute_dist2source(
                 self.flowdir,
-                directions=self.directions,
+                dir_scheme=self.directions,
                 x=self.x,
                 y=self.y,
                 valids=self.valid,
-                indegrees=self.indegree,
+                indegs=self.indegree,
             )
         return self._flowdist
+
+    @property
+    def flow_distance(self) -> npt.NDArray[np.floating]:
+        return self.dist2source
 
     @property
     def watersheds(self) -> npt.NDArray[np.int32]:
         if self._watershed is not None:
             return self._watershed
 
-        from formosa.geomorphology.flowdir import label_watersheds
-
         self._watershed = label_watersheds(
             self.flowdir,
-            directions=self.directions,
+            dir_scheme=self.directions,
             valids=self.valid,
         )
         return self._watershed
 
     @property
-    def backdist(self) -> npt.NDArray[np.floating]:
+    def dist2sink(self) -> npt.NDArray[np.floating]:
         if self._backdist is not None:
             return self._backdist
 
-        from formosa.geomorphology.flowdir import compute_back_distance
-
-        self._backdist = compute_back_distance(
+        self._backdist = compute_dist2sink(
             self.flowdir,
-            directions=self.directions,
+            dir_scheme=self.directions,
             x=self.x,
             y=self.y,
             valids=self.valid,
         )
         return self._backdist
+
+    @property
+    def backdist(self) -> npt.NDArray[np.floating]:
+        return self.dist2sink
+
+    @property
+    def bmax(self) -> npt.NDArray[np.floating]:
+        if self._bmax is not None:
+            return self._bmax
+
+        self._bmax = compute_dist2conf_max(
+            self.flowdir.astype(np.uint8, order="F"),
+            self.valid.astype(np.bool_, order="F"),
+            self.x.astype(np.float32, order="F"),
+            self.y.astype(np.float32, order="F"),
+            watershed_labels=self.watersheds.astype(np.int32, order="F"),
+            dir_scheme=self.directions,
+        )
+        return self._bmax
+
+    @property
+    def ridge_dist(self) -> npt.NDArray[np.floating]:
+        """
+        'Distance' to the ridge, approximated by the distance to sink in the maximum confluence distance landscape.
+
+        Returns
+        -------
+        dist : npt.NDArray[np.float32]
+            Distance to the ridge, approximated by the distance to sink in the maximum confluence distance landscape.
+        """
+        return self.dist2ridge
+
+    @property
+    def ridgedir(self) -> npt.NDArray[np.uint8]:
+        if self._ridgedir is not None:
+            return self._ridgedir
+        self._ridgedir = compute_ridgedir(
+            self.flowdir,
+            dir_scheme=self.directions,
+            valids=self.valid,
+            x=self.x,
+            y=self.y,
+            watershed_labels=self.watersheds,
+        )
+        return self._ridgedir
+
+    @property
+    def dist2ridge(self) -> npt.NDArray[np.floating]:
+        """
+        'Distance' to the ridge, approximated by the distance to sink in the maximum confluence distance landscape.
+
+        Returns
+        -------
+        dist : npt.NDArray[np.float32]
+            Distance to the ridge, approximated by the distance to sink in the maximum confluence distance landscape.
+        """
+
+        if self._ridge_dist is not None:
+            return self._ridge_dist
+
+        self._ridge_dist = compute_dist2ridge(
+            self.ridgedir,
+            valids=self.valid.astype(np.bool_, order="F"),
+            x=self.x.astype(np.float32, order="F"),
+            y=self.y.astype(np.float32, order="F"),
+            dir_scheme=self.directions,
+            dir_is_ridge=True,
+        )
+        return self._ridge_dist
+
+    @property
+    def ridge_strahler_order(self) -> npt.NDArray[np.uint8]:
+        if self._ridge_strahler_order is not None:
+            return self._ridge_strahler_order
+        self._ridge_strahler_order = compute_ridge_strahler_order(
+            self.ridgedir,
+            dir_scheme=self.directions,
+            valids=self.valid,
+            dir_is_ridge=True,
+        )
+        return self._ridge_strahler_order
 
 
 def detect_ocean_mask(dem, ocean_threshold: int | float = 0):
@@ -346,7 +454,7 @@ def detect_ocean_mask(dem, ocean_threshold: int | float = 0):
 
 def fill_pits(
     dem: npt.NDArray[np.number],
-) -> tuple[npt.NDArray[np.number], npt.NDArray[np.bool]]:
+) -> tuple[npt.NDArray[np.number], npt.NDArray[np.bool_]]:
     dem_filled = dem.copy()
 
     min_neighbours = np.min(get_neighbour_values(dem_filled)[0], axis=0)
@@ -354,36 +462,3 @@ def fill_pits(
     dem_filled[is_pit] = min_neighbours[is_pit]
 
     return dem_filled, is_pit
-
-
-def fill_depressions(
-    dem: npt.NDArray[np.number],
-    valid: npt.NDArray[np.bool] | None = None,
-    method: str = "erosion",
-) -> npt.NDArray[np.number]:
-    assert method in [
-        "erosion",
-        "dilation",
-    ], f"METHOD must be either 'erosion' or 'dilation', got {method} instead"
-
-    dem_seed = dem.copy()
-    if valid is not None:
-        if method == "erosion":
-            dem[~valid] = np.nanmin(dem[valid])
-            seed_value = np.nanmax(dem[valid]) + 1
-        else:
-            dem[~valid] = np.nanmax(dem[valid])
-            seed_value = np.nanmin(dem[valid]) - 1
-    else:
-        if method == "erosion":
-            seed_value = np.nanmax(dem) + 1
-        else:
-            seed_value = np.nanmin(dem) - 1
-
-    dem_mask = np.full(dem.shape, True, dtype=np.bool)
-    dem_mask[0, :] = False
-    dem_mask[-1, :] = False
-    dem_mask[:, 0] = False
-    dem_mask[:, -1] = False
-    dem_seed[dem_mask] = seed_value
-    return morphology.reconstruction(dem_seed, dem, method=method).astype(dem.dtype)
