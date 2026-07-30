@@ -23,6 +23,8 @@
 #     - Renamed helper submodule from `aux` to `utils`
 #   2026-07-14, En-Chi Lee (williameclee@gmail.com)
 #     - Splitted `geomorphology.flowdir` into submodules
+#   2026-07-30, En-Chi Lee (williameclee@gmail.com)
+#     - Fixed Python/FORTRAN backend behaviour parity in `compute_flow_strahler_order`.
 
 
 import numpy as np
@@ -726,30 +728,54 @@ def compute_flow_strahler_order(
         Default is `None`.
     backend : {'fortran', 'python'}, optional
         Backend to use for computation
-        'fortran' uses the Fortran extension for performance, while 'python' uses a pure Python implementation.
-        Default is 'fortran'.
+        `'fortran'` uses the FORTRAN extension for performance, while 'python' uses a pure Python implementation.
+        Default option is `'fortran'`.
 
     Returns
     -------
     orders : NDArray[uint8]
-        2D integer array representing the Strahler order for each cell
+        2D integer array representing the Strahler order for each cell.
+        Invalid cells will have a Strahler order of 0.
+
+    Raises
+    ------
+    AssertionError
+        If the input have the wrong types or shapes.
     """
+
+    assert (
+        dirs.ndim == 2
+    ), f"Flow directions must be a 2D array, got shape {dirs.shape}."
+
+    if valids is None:
+        valids = np.ones(dirs.shape, dtype=bool, order="F")
+    else:
+        assert isinstance(
+            valids, np.ndarray
+        ), f"Valid mask must be a NumPy array (got {type(valids)})."
+        assert (
+            valids.shape == dirs.shape
+        ), f"Shape for flow direction ({dirs.shape}) and valid mask ({valids.shape}) do not match."
+        valids = valids.astype(bool, order="F", copy=False)
+
+    if indegs is None:
+        indegs = count_indegree(
+            dirs, dir_scheme=dir_scheme, valids=valids, backend=backend
+        assert (
+            indegs.shape == dirs.shape
+        ), f"Shape for flow direction ({dirs.shape}) and indegree ({indegs.shape}) do not match."
+
     match backend:
         case "python":
             from .raster_py import _compute_flow_strahler_order_py
 
             orders = _compute_flow_strahler_order_py(
-                dirs=dirs,
-                dir_scheme=dir_scheme,
-                indegs=indegs,
             )
         case "fortran":
             if valids is None:
                 valids = np.ones(dirs.shape, dtype=bool)
 
             if indegs is None:
-                indegs = count_indegree(dirs, dir_scheme=dir_scheme, backend="fortran")
-
             orders = raster_f.compute_flow_strahler_order(
                 dirs.astype(np.uint8, order="F"),
                 valids.astype(bool, order="F"),
@@ -757,7 +783,7 @@ def compute_flow_strahler_order(
                 dir_scheme.offsets.astype(np.int32, order="F"),
                 dir_scheme.codes.astype(np.uint8, order="F"),
             )
-            orders[~valids] = 0
+    orders[~valids] = 0
     return orders.astype(np.uint8, order="F")
 
 
@@ -1136,6 +1162,7 @@ def compute_ridge_strahler_order(
     orders = compute_flow_strahler_order(
         bmaxdirs,
         dir_scheme=dir_scheme,
+        valids=valids,
         indegs=indegs,
         backend=backend,
     )

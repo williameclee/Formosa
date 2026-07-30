@@ -22,6 +22,8 @@
 #   2026-07-29, En-Chi Lee (williameclee@gmail.com)
 #     - Made topology intersection results complete using scan-and-retry
 #     - Added validation to simplified graph before return
+#   2026-07-30, En-Chi Lee (williameclee@gmail.com)
+#     - Fixed Python/FORTRAN backend behaviour parity in `compute_flow_strahler_order`.
 
 
 import numpy as np
@@ -217,12 +219,13 @@ def construct_flowgraph(
         orders = raster.compute_flow_strahler_order(
             dirs,
             dir_scheme=dir_scheme,
+            valids=valids,
             backend=backend,
         )
 
     # Find seed cells to start with
     valids = valids & (orders >= min_order)
-    ncells = np.sum(valids)
+    ncells = int(np.sum(valids))
     indegs = raster.count_indegree(
         dirs, dir_scheme=dir_scheme, valids=valids, backend=backend
     )

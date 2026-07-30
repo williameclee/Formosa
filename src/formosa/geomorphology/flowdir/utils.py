@@ -97,7 +97,7 @@ def compute_downstream_indices(
     npt.NDArray[np.int32],
     npt.NDArray[np.int32],
     npt.NDArray[np.int32],
-    npt.NDArray[np.bool_] | None,
+    npt.NDArray[np.bool_],
 ]:
     """
     Computes the downstream indices for each cell in a flow direction grid.
