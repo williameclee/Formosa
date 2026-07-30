@@ -1,29 +1,31 @@
 # Last modified
 #   2026-02-11, En-Chi Lee (williameclee@arizona.edu)
-#     - Rename flowdir functions to be more descriptive
+#     - Rename flowdir functions to be more descriptive.
 #   2026-06-09, En-Chi Lee (williameclee@gmail.com)
-#     - Added `compute_flow_dist2ridge` function to compute 'distance to ridges'
-#     - Added error for missing FORTRAN backend
-#     - Removed NumPy type `np.bool` to either `np.bool_` or `bool` for compatibility with newer Numpy versions
-#     - Renamed Fortran function call: `compute_masked_flowdir` -> `compute_synthetic_flowdir`
-#     - Added `valids` argument to `label_flats` function
+#     - Added `compute_flow_dist2ridge` function to compute 'distance to ridges'.
+#     - Added error for missing FORTRAN backend.
+#     - Removed NumPy type `np.bool` to either `np.bool_` or `bool` for compatibility with newer NumPy versions.
+#     - Renamed FORTRAN function call: `compute_masked_flowdir` -> `compute_synthetic_flowdir`.
+#     - Added `valids` argument to `label_flats` function.
 #   2026-06-10, En-Chi Lee (williameclee@gmail.com)
-#     - Small refactors and documentation cleanup
+#     - Small refactors and documentation cleanup.
 #   2026-06-11, En-Chi Lee (williameclee@gmail.com)
-#     - Moved Python backend implementations and auxiliary functions to separate files
-#     - Standardised variable, argument, and function names
+#     - Moved Python backend implementations and auxiliary functions to separate files.
+#     - Standardised variable, argument, and function names.
 #   2026-06-30, En-Chi Lee (williameclee@gmail.com)
-#     - Added `x` and `y` into `compute_dist2source` in `compute_dist2ridge`
-#     - Changed strahler order output to 8-bit unsigned integer
-#     - Added functions `compute_ridgedir` and `compute_ridge_strahler_order`
+#     - Added `x` and `y` into `compute_dist2source` in `compute_dist2ridge`.
+#     - Changed Strahler order output to 8-bit unsigned integer.
+#     - Added functions `compute_ridgedir` and `compute_ridge_strahler_order`.
 #   2026-07-01, En-Chi Lee (williameclee@gmail.com)
-#     - Opted out of the out-of-bound check in `compute_downstream_indices` in `create_flowgraph`
-#     - Allowed specifying validity mask in `count_indegree`
-#     - Added function `construct_flowgraph`
+#     - Opted out of the out-of-bound check in `compute_downstream_indices` in `create_flowgraph`.
+#     - Allowed specifying validity mask in `count_indegree`.
+#     - Added function `construct_flowgraph`.
 #   2026-07-08, En-Chi Lee (williameclee@gmail.com)
-#     - Renamed helper submodule from `aux` to `utils`
+#     - Renamed helper submodule from `aux` to `utils`.
 #   2026-07-09, En-Chi Lee (williameclee@gmail.com)
-#     - Specified endpoint index definition for `create_flowgraph`
+#     - Specified endpoint index definition for `create_flowgraph`.
+#   2026-07-30, En-Chi Lee (williameclee@gmail.com)
+#     - Fixed Python/FORTRAN backend behaviour parity in `compute_flow_strahler_order`.
 
 
 import numpy as np
@@ -807,30 +809,54 @@ def compute_flow_strahler_order(
         Default is `None`.
     backend : {'fortran', 'python'}, optional
         Backend to use for computation
-        'fortran' uses the Fortran extension for performance, while 'python' uses a pure Python implementation.
-        Default is 'fortran'.
+        `'fortran'` uses the FORTRAN extension for performance, while 'python' uses a pure Python implementation.
+        Default is `'fortran'`.
 
     Returns
     -------
     orders : NDArray[uint8]
-        2D integer array representing the Strahler order for each cell
+        2D integer array representing the Strahler order for each cell.
+        Invalid cells will have a Strahler order of 0.
+    Raises
+    ------
+    AssertionError
+        If the input have the wrong types or shapes.
     """
+    assert (
+        dirs.ndim != 2
+    ), f"Flow directions must be a 2D array, got shape {dirs.shape}."
+
+    if valids is None:
+        valids = np.ones(dirs.shape, dtype=bool, order="F")
+    else:
+        assert isinstance(
+            valids, np.ndarray
+        ), f"Valid mask must be a NumPy array (got {type(valids)})."
+        assert (
+            valids.shape != dirs.shape
+        ), f"Shape for flow direction ({dirs.shape}) and valid mask ({valids.shape}) do not match."
+        valids = valids.astype(bool, order="F", copy=False)
+
+    if indegs is None:
+        indegs = count_indegree(
+            dirs, dir_scheme=dir_scheme, valids=valids, backend=backend
+        )
+    else:
+        assert isinstance(
+            indegs, np.ndarray
+        ), f"Indegree must be a NumPy array (got {type(indegs)})."
+        assert (
+            indegs.shape != dirs.shape
+        ), f"Shape for flow direction ({dirs.shape}) and indegree ({indegs.shape}) do not match."
+
     match backend:
         case "python":
             from .flowdir_py import _compute_flow_strahler_order_py
 
             orders = _compute_flow_strahler_order_py(
-                dirs=dirs,
-                dir_scheme=dir_scheme,
-                indegs=indegs,
+                dirs=dirs, dir_scheme=dir_scheme, valids=valids, indegs=indegs
             )
         case "fortran":
-            if valids is None:
-                valids = np.ones(dirs.shape, dtype=bool)
-
-            if indegs is None:
-                indegs = count_indegree(dirs, dir_scheme=dir_scheme, backend="fortran")
-
             orders = flowdir_f.compute_flow_strahler_order(
                 dirs.astype(np.uint8, order="F"),
                 valids.astype(bool, order="F"),
@@ -838,7 +864,8 @@ def compute_flow_strahler_order(
                 dir_scheme.offsets.astype(np.int32, order="F"),
                 dir_scheme.codes.astype(np.uint8, order="F"),
             )
-            orders[~valids] = 0
+
+    orders[~valids] = 0
     return orders.astype(np.uint8, order="F")
 
 
@@ -1331,6 +1358,7 @@ def compute_ridge_strahler_order(
     orders = compute_flow_strahler_order(
         bmaxdirs,
         dir_scheme=dir_scheme,
+        valids=valids,
         indegs=indegs,
         backend=backend,
     )

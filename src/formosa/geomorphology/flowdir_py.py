@@ -10,6 +10,8 @@
 #     - Renamed helper submodule from `aux` to `utils`
 #   2026-07-09, En-Chi Lee (williameclee@gmail.com)
 #     - Added better validity check in `_count_indegree_py`
+#   2026-07-30, En-Chi Lee (williameclee@gmail.com)
+#     - Fixed Python/FORTRAN backend behaviour parity in `compute_flow_strahler_order`.
 
 import numpy as np
 
@@ -66,7 +68,7 @@ def _compute_masked_flowdir_py(
 def _count_indegree_py(
     dirs: npt.NDArray[np.integer],
     dir_scheme: D8Directions = D8Directions(),
-    valids: Optional[npt.NDArray[np.integer]] = None,
+    valids: Optional[npt.NDArray[np.bool_]] = None,
 ) -> npt.NDArray[np.int8]:
     if valids is None:
         valids = np.ones(dirs.shape, dtype=bool)
@@ -183,37 +185,56 @@ def _compute_flow_accumulation_py(
 def _compute_flow_strahler_order_py(
     dirs: npt.NDArray[np.integer],
     dir_scheme: D8Directions = D8Directions(),
+    valids: Optional[npt.NDArray[np.bool_]] = None,
     indegs: Optional[npt.NDArray[np.integer]] = None,
 ) -> npt.NDArray[np.int16]:
     from collections import deque
 
+    if valids is None:
+        valids = np.ones(dirs.shape, dtype=bool)
     if indegs is None:
-        indegs = _count_indegree_py(dirs, dir_scheme=dir_scheme)
-    downstream_i, downstreamj, _, _ = compute_downstream_indices(
-        dirs, dir_scheme=dir_scheme
+        indegs = _count_indegree_py(dirs, dir_scheme=dir_scheme, valids=valids)
+    else:
+        indegs = indegs.copy()
+
+    downstream_i, downstream_j, _, downstream_valids = compute_downstream_indices(
+        dirs, dir_scheme=dir_scheme, valids=valids, check=False
     )
 
     strahler_order = np.zeros(indegs.shape, dtype=np.int16)
-    strahler_order[indegs == 0] = 1
+    seeds_mask = valids & (indegs == 0)
+    strahler_order[seeds_mask] = 1
+
+    max_upstream_order = np.zeros(indegs.shape, dtype=np.int16)
+    max_upstream_count = np.zeros(indegs.shape, dtype=np.int8)
 
     ii, jj = np.indices(indegs.shape, dtype=np.int32)
-    seeds = deque(zip(ii[indegs == 0], jj[indegs == 0]))  # type: ignore TODO: figure out what the type error actually is
+    seeds = deque(zip(ii[seeds_mask], jj[seeds_mask]))  # type: ignore
 
     while seeds:
         ci, cj = seeds.popleft()
-        dsi, dsj = (
-            downstream_i[ci, cj],
-            downstreamj[ci, cj],
-        )
-        if (ci, cj) == (dsi, dsj):
+        dsi, dsj = downstream_i[ci, cj], downstream_j[ci, cj]
+        if (
+            not downstream_valids[ci, cj]
+            or not valids[dsi, dsj]
+            or (ci, cj) == (dsi, dsj)
+        ):
             continue
-        if strahler_order[dsi, dsj] < strahler_order[ci, cj]:
-            strahler_order[dsi, dsj] = strahler_order[ci, cj]
-        else:
-            strahler_order[dsi, dsj] += 1
+
+        upstream_order = strahler_order[ci, cj]
+        if upstream_order > max_upstream_order[dsi, dsj]:
+            max_upstream_order[dsi, dsj] = upstream_order
+            max_upstream_count[dsi, dsj] = 1
+        elif upstream_order == max_upstream_order[dsi, dsj]:
+            max_upstream_count[dsi, dsj] += 1
+
         indegs[dsi, dsj] -= 1
         if indegs[dsi, dsj] == 0:
+            strahler_order[dsi, dsj] = max_upstream_order[dsi, dsj]
+            if max_upstream_count[dsi, dsj] >= 2:
+                strahler_order[dsi, dsj] += 1
             seeds.append((dsi, dsj))
+
     return strahler_order
 
 
