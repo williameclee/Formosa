@@ -3,6 +3,8 @@
 #     - Implemented Python backend of function `locate_invalid_graph_topology`
 #   2026-07-14, En-Chi Lee (williameclee@gmail.com)
 #     - Splitted `geomorphology.flowdir` into submodules
+#   2026-07-30, En-Chi Lee (williameclee@gmail.com)
+#     - Various minor refactors and type annotation enhancements
 
 import numpy as np
 
@@ -34,8 +36,8 @@ def _construct_flowgraph_py(
     vertex_startends = np.empty((2, ncells), dtype=np.int32)
 
     # Find seed cells to start with
-    seed_ijs = np.zeros((2, np.sum(valids)), dtype=np.int32, order="F")
-    nseeds: int = np.sum(seeds)
+    seed_ijs = np.zeros((2, int(np.sum(valids))), dtype=np.int32, order="F")
+    nseeds = int(np.sum(seeds))
     seed_i, seed_j = np.nonzero(seeds)
     seed_ijs[0, :nseeds] = seed_i
     seed_ijs[1, :nseeds] = seed_j

@@ -14,6 +14,8 @@
 #   2026-07-29, En-Chi Lee (williameclee@gmail.com)
 #     - Added test cases for function `simplify_flowgraph`
 #     - Added complete topology-intersection scan-and-retry regression tests
+#   2026-07-30, En-Chi Lee (williameclee@gmail.com)
+#     - Various minor refactors and type annotation enhancements
 
 
 import warnings
@@ -528,6 +530,7 @@ def test_topology_scanner_capacity_boundaries(capacity):
     public_intxs = flowdir.locate_invalid_graph_topology(
         vertices, endpts, backend="fortran"
     )
+    assert public_intxs is not None
     expected_stored = public_intxs[:nstored].T.copy()
     expected_stored[:-1] += 1
     np.testing.assert_array_equal(intxs[:, :nstored], expected_stored)
@@ -602,6 +605,7 @@ def test_topology_wrapper_retries_with_exact_reported_capacity(monkeypatch):
     )
 
     assert calls == [3, 5]
+    assert intxs is not None
     assert intxs.shape == (5, 5)
 
 
@@ -924,10 +928,10 @@ def test_simplify_skips_final_validation_when_topology_check_is_disabled(
 
 def test_simplify_multiple_flowgraphs():
     # Llist of standard arrays
-    vs0 = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]])
-    endpts0 = np.array([[0, 2]])
-    vs1 = np.array([[3.0, 3.0], [4.0, 4.0], [5.0, 5.0]])
-    endpts1 = np.array([[0, 2]])
+    vs0 = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]], dtype=np.float32)
+    endpts0 = np.array([[0, 2]], dtype=np.int32)
+    vs1 = np.array([[3.0, 3.0], [4.0, 4.0], [5.0, 5.0]], dtype=np.float32)
+    endpts1 = np.array([[0, 2]], dtype=np.int32)
 
     simp_vs_list, simp_endpts_list, keeps_list = flowdir.simplify_flowgraph(
         [vs0, vs1], [endpts0, endpts1], tol=1.0, check_topology=False, backend="fortran"
