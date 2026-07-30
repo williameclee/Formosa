@@ -761,6 +761,11 @@ def compute_flow_strahler_order(
     if indegs is None:
         indegs = count_indegree(
             dirs, dir_scheme=dir_scheme, valids=valids, backend=backend
+        )
+    else:
+        assert isinstance(
+            indegs, np.ndarray
+        ), f"Indegree must be a NumPy array (got {type(indegs)})."
         assert (
             indegs.shape == dirs.shape
         ), f"Shape for flow direction ({dirs.shape}) and indegree ({indegs.shape}) do not match."
@@ -770,12 +775,9 @@ def compute_flow_strahler_order(
             from .raster_py import _compute_flow_strahler_order_py
 
             orders = _compute_flow_strahler_order_py(
+                dirs=dirs, dir_scheme=dir_scheme, valids=valids, indegs=indegs
             )
         case "fortran":
-            if valids is None:
-                valids = np.ones(dirs.shape, dtype=bool)
-
-            if indegs is None:
             orders = raster_f.compute_flow_strahler_order(
                 dirs.astype(np.uint8, order="F"),
                 valids.astype(bool, order="F"),
