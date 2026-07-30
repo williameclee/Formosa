@@ -7,9 +7,8 @@
 import numpy as np
 
 from formosa.geomorphology.flowdir.d8directions import D8Directions
-from formosa.geomorphology.flowdir.utils import get_neighbour_values, compute_downstream_indices
+from formosa.geomorphology.distances_py import _lines_intersect_v2
 
-from formosa.geomorphology.flowdir_f import distances as dist_f
 
 import numpy.typing as npt
 from typing import Optional
@@ -140,7 +139,7 @@ def _locate_invalid_graph_topology_py(
             continue
         for iseg in range(start_idx, end_idx):
             for jseg in range(iseg + 1, end_idx):
-                intx_flag = dist_f.lines_intersect_v2(
+                intx_flag = _lines_intersect_v2(
                     vertex_ijs[iseg],
                     vertex_ijs[iseg + 1],
                     vertex_ijs[jseg],
@@ -178,7 +177,7 @@ def _locate_invalid_graph_topology_py(
 
             for iseg in range(start_i, end_i):
                 for jseg in range(start_j, end_j):
-                    intx_flag = dist_f.lines_intersect_v2(
+                    intx_flag = _lines_intersect_v2(
                         vertex_ijs[iseg],
                         vertex_ijs[iseg + 1],
                         vertex_ijs[jseg],

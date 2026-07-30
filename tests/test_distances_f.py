@@ -6,6 +6,8 @@ import pytest
 
 from formosa.geomorphology.flowdir_f import distances as dist_f
 
+from test_distances import LINE_INTERSECTION_CASES
+
 
 def test_intersection_detection():
     # Parallel lines
