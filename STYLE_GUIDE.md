@@ -4,10 +4,10 @@
 
 ### Variables
 
-Arrays should typically be plural nouns (e.g. `dirs`, `dists`), while other variable should be single nouns. This extends to boolean mask arrays, which should still be names as plutal nouns (e.g. `valids` instead of `is_valid`).
+Arrays should typically be plural nouns (e.g. `dirs`, `dists`), while other variable should be single nouns. This extends to boolean mask arrays, which should still be names as plural nouns (e.g. `valids` instead of `is_valid`).
 Index arrays (containing pairs of ($i$, $j$) indices) should be named with `_ijs` suffix (e.g. `tofill_ijs`).
 
-#### Standard variable names
+#### Standard Variable Names
 
 Some variables are used so frequently that they should be named consistently across the codebase. These include:
 
