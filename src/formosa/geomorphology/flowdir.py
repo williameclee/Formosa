@@ -817,6 +817,7 @@ def compute_flow_strahler_order(
     orders : NDArray[uint8]
         2D integer array representing the Strahler order for each cell.
         Invalid cells will have a Strahler order of 0.
+
     Raises
     ------
     AssertionError
