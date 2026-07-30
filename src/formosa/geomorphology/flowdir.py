@@ -927,12 +927,13 @@ def construct_flowgraph(
         orders = compute_flow_strahler_order(
             dirs,
             dir_scheme=dir_scheme,
+            valids=valids,
             backend=backend,
         )
 
     # Find seed cells to start with
     valids = valids & (orders >= min_order)
-    ncells = np.sum(valids)
+    ncells = int(np.sum(valids))
     indegs = count_indegree(dirs, dir_scheme=dir_scheme, valids=valids, backend=backend)
     seeds = valids & (indegs == 0)
 
