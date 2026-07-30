@@ -798,11 +798,17 @@ def test_simplify_single_flowgraph():
 
     # Under tol = 1.5 and check_topology = True, it detects intersection, reduces tolerance,
     # and keeps Vertex 1 to avoid intersection
-    _, _, keeps_with_check = flowdir.simplify_flowgraph(
+    checked_vs, checked_endpts, keeps_with_check = flowdir.simplify_flowgraph(
         vs_topo, endpts_topo, tol=1.5, check_topology=True, backend="fortran"
     )
     # Vertex 1 should be kept
     np.testing.assert_array_equal(keeps_with_check, [True, True, True, True, True])
+    assert (
+        flowdir.locate_invalid_graph_topology(
+            checked_vs, checked_endpts, backend="fortran"
+        )
+        is None
+    )
 
     with warnings.catch_warnings():
         warnings.simplefilter("default")
@@ -815,6 +821,80 @@ def test_simplify_single_flowgraph():
             backend="fortran",
         )
         assert warnings.filters == filters_before
+
+
+def test_simplify_rejects_invalid_final_graph_from_valid_input(monkeypatch):
+    vertices = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 0.0], [0.5, 0.5], [1.5, 0.5]])
+    endpts = np.array([[0, 2], [3, 4]])
+    final_intxs = np.array([[0, 1, 0, 2, 1]], dtype=np.int32)
+
+    monkeypatch.setattr(
+        graphs_module,
+        "_resolve_topology_intersections",
+        lambda vertices, endpts, keeps, tol, graph_ids=None: np.array(
+            [True, False, True, True, True]
+        ),
+    )
+    locator_results = iter([final_intxs, None])
+    monkeypatch.setattr(
+        graphs_module,
+        "_locate_disallowed_graph_topology",
+        lambda vertices, endpts, graph_ids=None: next(locator_results),
+    )
+
+    with pytest.raises(flowdir.UnresolvedSimplificationTopology) as exc_info:
+        flowdir.simplify_flowgraph(
+            vertices, endpts, tol=1.0, check_topology=True, backend="fortran"
+        )
+
+    np.testing.assert_array_equal(exc_info.value.intersections, final_intxs)
+
+
+def test_simplify_rejects_invalid_final_graph_from_invalid_input(monkeypatch):
+    vertices = np.array([[0.0, 0.0], [1.0, 1.0], [0.0, 1.0], [1.0, 0.0]])
+    endpts = np.array([[0, 1], [2, 3]])
+    final_intxs = np.array([[0, 1, 0, 2, 1]], dtype=np.int32)
+    input_intxs = np.array([[0, 1, 0, 2, 1]], dtype=np.int32)
+
+    monkeypatch.setattr(
+        graphs_module,
+        "_resolve_topology_intersections",
+        lambda vertices, endpts, keeps, tol, graph_ids=None: np.ones(
+            vertices.shape[1], dtype=bool
+        ),
+    )
+    locator_results = iter([final_intxs, input_intxs])
+    monkeypatch.setattr(
+        graphs_module,
+        "_locate_disallowed_graph_topology",
+        lambda vertices, endpts, graph_ids=None: next(locator_results),
+    )
+
+    with pytest.raises(flowdir.InvalidOriginalGraphTopology) as exc_info:
+        flowdir.simplify_flowgraph(
+            vertices, endpts, tol=1.0, check_topology=True, backend="fortran"
+        )
+
+    np.testing.assert_array_equal(exc_info.value.intersections, input_intxs)
+
+
+def test_simplify_skips_final_validation_when_topology_check_is_disabled(
+    monkeypatch,
+):
+    def fail_if_called(*args, **kwargs):
+        raise AssertionError("Topology validation should be disabled.")
+
+    monkeypatch.setattr(
+        graphs_module, "_locate_disallowed_graph_topology", fail_if_called
+    )
+
+    flowdir.simplify_flowgraph(
+        np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]]),
+        np.array([[0, 2]]),
+        tol=1.0,
+        check_topology=False,
+        backend="fortran",
+    )
 
 
 def test_simplify_multiple_flowgraphs():
