@@ -823,6 +823,31 @@ def test_simplify_single_flowgraph():
         assert warnings.filters == filters_before
 
 
+def test_simplify_single_flowgraph_preserves_vertex_layout():
+    vertices = np.array(
+        [
+            [0.0, 1.0],
+            [1.0, 3.0],
+            [2.0, 1.0],
+            [3.0, 4.0],
+        ]
+    )
+    endpts = np.array([[0, 3]])
+
+    simp_vertices, simp_endpts, keeps = flowdir.simplify_flowgraph(
+        vertices,
+        endpts,
+        tol=0.0,
+        check_topology=False,
+        backend="fortran",
+    )
+
+    assert simp_vertices.shape == (4, 2)
+    np.testing.assert_array_equal(simp_vertices, vertices)
+    np.testing.assert_array_equal(simp_endpts, endpts)
+    np.testing.assert_array_equal(keeps, np.ones(4, dtype=bool))
+
+
 def test_simplify_rejects_invalid_final_graph_from_valid_input(monkeypatch):
     vertices = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 0.0], [0.5, 0.5], [1.5, 0.5]])
     endpts = np.array([[0, 2], [3, 4]])
