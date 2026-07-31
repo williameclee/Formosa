@@ -1237,12 +1237,17 @@ def simplify_flowgraph(
 
     Raises
     ------
+    TypeError
+        If a single graph is supplied and any of `arc_orders`, `vertex_xys`, or `arc_endpts` is not a NumPy array.
+    ValueError
+         1. If single-graph and multi-graph argument forms are mixed.
+         2. If the multi-graph argument collections have different lengths.
+         3. If an order array is not one-dimensional or does not contain one value per arc.
+         4. If a vertex or endpoint array has an invalid shape.
     InvalidOriginalGraphTopology
-        If the final result is invalid and the normalised input graph already
-        contains disallowed topology violations.
+        If the final result is invalid and the normalised input graph already contains disallowed topology violations.
     UnresolvedSimplificationTopology
-        If the normalised input is valid but the final simplified graph
-        contains disallowed topology violations.
+        If the normalised input is valid but the final simplified graph contains disallowed topology violations.
     NotImplementedError
         If tries to call the not-yet-implemented Python backend.
     """
@@ -1275,14 +1280,17 @@ def simplify_flowgraph(
             backend=backend,
         )
 
-    assert (
+    if not (
         isinstance(arc_orders, np.ndarray)
         and isinstance(vertex_xys, np.ndarray)
         and isinstance(arc_endpts, np.ndarray)
-    ), (
-        "Arguments 'vertex_xys', 'arc_endpts', and 'arc_orders' must be Numpy arrays, "
-        + f"but got {type(vertex_xys)}, {type(arc_endpts)}, and {type(arc_orders)} respectively, instead."
-    )
+    ):
+        raise TypeError(
+            "Arguments 'vertex_xys', 'arc_endpts', and 'arc_orders' must be "
+            "NumPy arrays, but got "
+            f"{type(vertex_xys)}, {type(arc_endpts)}, and {type(arc_orders)}, "
+            "respectively."
+        )
     return _simplify_single_flowgraph(
         *(arc_orders, vertex_xys, arc_endpts),
         tol=tol,
