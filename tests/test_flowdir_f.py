@@ -867,6 +867,14 @@ def test_simplify_flowgraph_validates_arc_orders():
     endpts = np.array([[0, 2]])
     orders = [np.array([1]), np.array([2])]
 
+    with pytest.raises(TypeError, match="must be NumPy arrays"):
+        flowdir.simplify_flowgraph(
+            np.array([1]),
+            "not-an-array",  # type: ignore
+            endpts,
+            check_topology=False,
+        )
+
     with pytest.raises(ValueError, match="Order array has length 0"):
         flowdir.simplify_flowgraph(
             np.array([], dtype=np.uint8),
