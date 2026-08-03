@@ -2,6 +2,8 @@ from .graphs import (
     GraphTopologyError,
     InvalidOriginalGraphTopology,
     UnresolvedSimplificationTopology,
+    DirectedFlowCycleError,
+    IncompleteFlowGraphError,
     construct_flowgraph,
     insert_endpt,
     concat_flowgraph,
