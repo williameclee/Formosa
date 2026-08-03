@@ -23,11 +23,6 @@ class D8Directions:
         transform_codes: Callable | None = lambda x: 2 ** (x - 1),
         sort_by_distance: bool = True,
     ):
-        # assert (
-        #     codes.shape[0] == offsets.shape[0]
-        # ), f"Length of codes and offsets must ber equal, got {codes.shape[0]} and {offsets.shape[0]} instead"
-        # self.codes = codes
-        # self.offsets = offsets
         self.window = window
         self.slices = slices
         self.shape = shape
@@ -185,19 +180,3 @@ def construct_d8_directions(
 
     codes = codes.astype(np.int32, order="F")
     return offsets, codes, dirs
-
-
-if __name__ == "__main__":
-    flowdir = np.array([[0, 1], [4, 16]], dtype=np.int32)  # 2x2 array with D8 codes
-    di, dj = D8Directions(window=5).code2d8offset(flowdir)
-    print(f"di:\n{di}\ndj:\n{dj}")
-    # offsets, codes, names = construct_d8_directions(
-    #     window=3, slices=8, shape="circular"
-    # )
-    # print("Offsets:\n", offsets)
-    # print("Codes:\n", codes)
-    # print("Names:\n", names)
-
-# plt.imshow(codes)
-# plt.colorbar()
-# plt.show()
