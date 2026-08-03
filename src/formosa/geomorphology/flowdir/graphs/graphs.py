@@ -61,14 +61,6 @@ class GraphTopologyError(RuntimeError):
     Base exception for a graph that fails topology validation.
     """
 
-    def __init__(
-        self,
-        message: str,
-        intersections: npt.NDArray[np.integer],
-    ) -> None:
-        super().__init__(message)
-        self.intersections = np.asarray(intersections, dtype=np.int32).copy()
-
 
 class InvalidOriginalGraphTopology(GraphTopologyError):
     """

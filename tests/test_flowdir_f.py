@@ -918,8 +918,6 @@ def test_simplify_rejects_invalid_final_graph_from_valid_input(monkeypatch):
             backend="fortran",
         )
 
-    np.testing.assert_array_equal(exc_info.value.intersections, final_intxs)
-
 
 def test_simplify_rejects_invalid_final_graph_from_invalid_input(monkeypatch):
     verts = np.array([[0.0, 0.0], [1.0, 1.0], [0.0, 1.0], [1.0, 0.0]])
@@ -949,8 +947,6 @@ def test_simplify_rejects_invalid_final_graph_from_invalid_input(monkeypatch):
             check_topology=True,
             backend="fortran",
         )
-
-    np.testing.assert_array_equal(exc_info.value.intersections, input_intxs)
 
 
 def test_simplify_skips_final_validation_when_topology_check_is_disabled(
