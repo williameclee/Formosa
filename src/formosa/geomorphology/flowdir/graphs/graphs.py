@@ -132,7 +132,7 @@ def create_flowgraph(
         indexing="ij",
     )
     dsi, dsj, _, ds_valids = compute_downstream_indices(
-        dirs, dir_scheme=dir_scheme, check=False
+        dirs, dir_scheme=dir_scheme, check=False, return_flat_index=False
     )
 
     if x is not None and y is not None:

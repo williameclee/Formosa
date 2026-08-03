@@ -78,7 +78,7 @@ def _count_indegree_py(
         valids = np.ones(dirs.shape, dtype=bool)
     indegs = np.zeros(dirs.shape, dtype=np.int8)
     dsi, dsj, _, ds_valids = compute_downstream_indices(
-        dirs, dir_scheme=dir_scheme, valids=valids, check=False
+        dirs, dir_scheme=dir_scheme, valids=valids, check=False, return_flat_index=False
     )
 
     for i in range(dirs.shape[0]):
@@ -152,7 +152,9 @@ def _compute_flow_accumulation_py(
         weights = np.where(valids, weights, 0)  # type: ignore
 
     if dsij is None:
-        _, _, dsij, _ = compute_downstream_indices(dirs, dir_scheme=dir_scheme)
+        _, _, dsij, _ = compute_downstream_indices(
+            dirs, dir_scheme=dir_scheme, return_flat_index=True
+        )
     else:
         assert (
             dsij.shape == dirs.shape
@@ -161,7 +163,7 @@ def _compute_flow_accumulation_py(
     indegs = indegs.flatten(order="F")
     valids = valids.flatten(order="F")  # type: ignore
     weights = weights.flatten(order="F")  # type: ignore
-    dsij = dsij.flatten(order="F")
+    dsij = dsij.flatten(order="F")  # type: ignore ; dsij will not be None
     dirs = dirs.flatten(order="F")
 
     # Initialize accumulation with self weight
@@ -202,7 +204,7 @@ def _compute_flow_strahler_order_py(
         indegs = indegs.copy()
 
     downstream_i, downstream_j, _, downstream_valids = compute_downstream_indices(
-        dirs, dir_scheme=dir_scheme, valids=valids, check=False
+        dirs, dir_scheme=dir_scheme, valids=valids, check=False, return_flat_index=False
     )
 
     strahler_order = np.zeros(indegs.shape, dtype=np.int16)
