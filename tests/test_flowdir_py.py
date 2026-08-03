@@ -12,7 +12,7 @@
 #   2026-07-28, En-Chi Lee (williameclee@gmail.com)
 #     - Added test cases for functions `find_graph_overlaps` and `solve_graph_overlaps`
 #   2026-08-03, En-Chi Lee (williameclee@gmail.com)
-#     - Added test cases for function `find_acyclic_flowdirs`
+#     - Added test cases for function `find_acyclic_flowdirs` and graph construction validity
 
 
 import pytest
@@ -20,6 +20,8 @@ import numpy as np
 
 from formosa import D8Directions
 import formosa.geomorphology.flowdir as flowdir
+from formosa.geomorphology.flowdir.graphs import graphs as graphs_module
+from formosa.geomorphology.flowdir.graphs import graphs_py as graphs_py_module
 
 T = True
 F = False
@@ -86,6 +88,38 @@ def test_network_graph_3x3():
         np.testing.assert_array_equal(
             vertex_ijs[arc_endpts[i, 0] : arc_endpts[i, 1] + 1], exp_ij
         )
+
+
+def test_construct_flowgraph_rejects_incomplete_backend_output(monkeypatch):
+    dir_scheme = D8Directions(transform_codes=lambda x: x)
+    dirs = np.array([[1, 0]], dtype=np.uint8)
+    orders = np.ones(dirs.shape, dtype=np.uint8)
+
+    def omit_selected_edge(*args, **kwargs):
+        return (
+            0,
+            0,
+            np.empty((0,), dtype=np.int8),
+            np.empty((2, 0), dtype=np.int32),
+            np.empty((2, 0), dtype=np.int32),
+        )
+
+    monkeypatch.setattr(
+        graphs_py_module,
+        "_construct_flowgraph_py",
+        omit_selected_edge,
+    )
+
+    with pytest.raises(flowdir.IncompleteFlowGraphError) as exc_info:
+        graphs_module.construct_flowgraph(
+            dirs,
+            dir_scheme=dir_scheme,
+            orders=orders,
+            min_order=1,
+            backend="python",
+        )
+
+    np.testing.assert_array_equal(exc_info.value.missing_ijs, [[0, 0], [0, 1]])
 
 
 def test_network_graph_concat_3x3():
