@@ -24,6 +24,7 @@
 !     - Splitted 'flowdir_f' into submodules
 !   2026-08-03, En-Chi Lee (williameclee@gmail.com)
 !     - Implemented 'find_acyclic_flowdirs'
+!     - Explicitly handled Python uint8 -> FORTRAN INTEGER*1 conversion/interpretation in 'fill_offset_lookup'
 !!!
 
 module flowdir_raster
@@ -752,8 +753,8 @@ contains
             cj = flood_ijs(2, itofill)
             itofill = itofill + 1
 
-            ni = ci + offset_lookup(dirs(ci, cj), 1)
-            nj = cj + offset_lookup(dirs(ci, cj), 2)
+            ni = ci + offset_lookup(iand(int(dirs(ci, cj)), 255), 1)
+            nj = cj + offset_lookup(iand(int(dirs(ci, cj)), 255), 2)
 
             ! Check bounds
             if (ni < 1 .or. ni > nrows .or. nj < 1 .or. nj > ncols) cycle
@@ -845,8 +846,8 @@ contains
             cj = tofill_ijs(2, itofill)
             itofill = itofill + 1
 
-            ni = ci + offset_lookup(dirs(ci, cj), 1)
-            nj = cj + offset_lookup(dirs(ci, cj), 2)
+            ni = ci + offset_lookup(iand(int(dirs(ci, cj)), 255), 1)
+            nj = cj + offset_lookup(iand(int(dirs(ci, cj)), 255), 2)
 
             ! Check bounds
             if (ni < 1 .or. ni > nrows .or. nj < 1 .or. nj > ncols) cycle
@@ -937,8 +938,8 @@ contains
             cj = tofill_ijs(2, itofill)
             itofill = itofill + 1
 
-            ni = ci + offset_lookup(dirs(ci, cj), 1)
-            nj = cj + offset_lookup(dirs(ci, cj), 2)
+            ni = ci + offset_lookup(iand(int(dirs(ci, cj)), 255), 1)
+            nj = cj + offset_lookup(iand(int(dirs(ci, cj)), 255), 2)
 
             ! Check bounds
             if (ni < 1 .or. ni > nrows .or. nj < 1 .or. nj > ncols) cycle
@@ -1172,8 +1173,8 @@ contains
                 end if
             end if
 
-            ni = ci + offset_lookup(dirs(ci, cj), 1)
-            nj = cj + offset_lookup(dirs(ci, cj), 2)
+            ni = ci + offset_lookup(iand(int(dirs(ci, cj)), 255), 1)
+            nj = cj + offset_lookup(iand(int(dirs(ci, cj)), 255), 2)
 
             ! Check bounds
             if (ni < 1 .or. ni > nrows .or. nj < 1 .or. nj > ncols) cycle
@@ -1498,8 +1499,8 @@ contains
             if (acyclics(ci, cj)) cycle
             acyclics(ci, cj) = .true.
 
-            ni = ci + offset_lookup(dirs(ci, cj), 1)
-            nj = cj + offset_lookup(dirs(ci, cj), 2)
+            ni = ci + offset_lookup(iand(int(dirs(ci, cj)), 255), 1)
+            nj = cj + offset_lookup(iand(int(dirs(ci, cj)), 255), 2)
 
             ! Check bounds
             if (ni < 1 .or. ni > nrows .or. nj < 1 .or. nj > ncols) cycle
