@@ -87,11 +87,11 @@ class D8Directions:
                 safe_codes = np.where(in_range, code, 0).astype(np.uint8, copy=False)
 
             known = in_range & self.valid_code_lookup[safe_codes]
-            didj = self.offset_lookup[safe_codes].copy()
+            didj = self.offset_lookup[safe_codes]
             didj[~known] = 0
             return didj[..., 0], didj[..., 1]
 
-        # Floating fallback, preserving NaNs.
+        # Floating fallback, preserving NaNs
         nan_mask = np.isnan(code)
         in_range = ~nan_mask & (code >= 0) & (code <= 255)
         safe_codes = np.where(in_range, code, 0).astype(np.uint8)
