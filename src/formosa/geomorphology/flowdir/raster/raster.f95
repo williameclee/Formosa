@@ -22,6 +22,8 @@
 !     - Fixed OpenMP data race in 'count_indegree'
 !   2026-07-14, En-Chi Lee (williameclee@gmail.com)
 !     - Splitted 'flowdir_f' into submodules
+!   2026-08-03, En-Chi Lee (williameclee@gmail.com)
+!     - Implemented 'find_acyclic_flowdirs'
 !!!
 
 module flowdir_raster
@@ -1400,6 +1402,138 @@ contains
         deallocate (tofill_ijs)
         !$omp END PARALLEL
     end subroutine flood_upstream
+
+    subroutine find_acyclic_flowdirs( &
+        dirs, indegs, valids, nrows, ncols, offsets, codes, noffsets, acyclics, err_code)
+        !! Identifies valid cells that are not part of a directed flow cycle.
+        !! Uses Kahn's algorithm to traverse cells from zero-indegree seeds,
+        !! successively removing their outgoing edges. Valid cells not reached
+        !! by this traversal belong to a directed cycle and remain false in
+        !! 'acyclics'.
+        implicit none
+        ! Arguments
+        integer, intent(in) :: nrows, ncols
+            !! Size of the grid
+        integer*1, intent(in) :: dirs(nrows, ncols)
+            !! Flow direction grid, using the provided codes
+        integer*1, intent(in) :: indegs(nrows, ncols)
+            !! Indegree grid for the valid flow field
+        logical*1, intent(in) :: valids(nrows, ncols)
+            !! Validity mask (true for valid cells, false for no-data)
+        integer, intent(in) :: noffsets
+            !! Number of flow directions
+        integer, intent(in) :: offsets(noffsets, 2)
+            !! List of offsets for each flow direction
+        integer*1, intent(in) :: codes(noffsets)
+            !! List of flow direction codes corresponding to the offsets
+        ! Outputs
+        logical*1, intent(out) :: acyclics(nrows, ncols)
+            !! Mask indicating valid cells removed by Kahn's algorithm
+            !! (true for acyclic cells, false otherwise)
+        integer, intent(out) :: err_code
+            !! Error code (0 for success, 1 for queue overflow, and 2 for allocation failure)
+        ! Local variables
+        integer, allocatable :: offset_lookup(:, :)
+            !! Lookup table for offsets corresponding to each flow direction code, used to find downstream cell indices
+        integer*1, allocatable :: rem_indegs(:, :)
+            !! Remaining indegrees after removing edges from processed cells
+        logical*1, allocatable :: seeds(:, :)
+            !! Mask of valid zero-indegree cells used to initialise the queue
+        integer, allocatable :: seed_ijs(:, :)
+            !! Queue of (i, j) indices awaiting processing
+        integer :: alloc_stat
+            !! Allocation status code
+        integer :: ci, cj, ni, nj, dir_code
+            !! Rows/columns for current and downstream cells
+        integer :: iseed, nseeds
+            !! Current queue position and final occupied queue position
+
+        err_code = 0
+
+        allocate (offset_lookup(0:255, 2), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = 2
+            return
+        end if
+
+        allocate (rem_indegs(nrows, ncols), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = 2
+            deallocate (offset_lookup)
+            return
+        end if
+        allocate (seeds(nrows, ncols), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = 2
+            deallocate (offset_lookup)
+            deallocate (rem_indegs)
+            return
+        end if
+
+        allocate (seed_ijs(2, nrows*ncols), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = 2
+            deallocate (offset_lookup)
+            deallocate (rem_indegs)
+            deallocate (seeds)
+            return
+        end if
+
+        seeds = valids .and. (indegs == 0)
+        offset_lookup = fill_offset_lookup(offsets, codes, noffsets)
+        call mask2ij(seeds, nrows, ncols, &
+                     seed_ijs, size(seed_ijs, dim=2), nseeds)
+        deallocate (seeds)
+
+        rem_indegs = indegs
+        acyclics = .false.
+
+        ! Process and extend the queue of zero-indegree cells
+        iseed = 1
+        do while (iseed <= nseeds)
+            ci = seed_ijs(1, iseed)
+            cj = seed_ijs(2, iseed)
+            iseed = iseed + 1
+
+            if (acyclics(ci, cj)) cycle
+            acyclics(ci, cj) = .true.
+
+            ! Interpret one-byte direction codes as unsigned values
+            dir_code = iand(int(dirs(ci, cj)), 255)
+            ! Skip direction codes not defined by the direction scheme
+            if (all(offset_lookup(dir_code, :) == -99)) cycle
+            ni = ci + offset_lookup(dir_code, 1)
+            nj = cj + offset_lookup(dir_code, 2)
+
+            ! Check bounds
+            if (ni < 1 .or. ni > nrows .or. nj < 1 .or. nj > ncols) cycle
+            ! Check mask
+            if (.not. valids(ni, nj)) cycle
+            ! Check not a self-loop
+            if (ni == ci .and. nj == cj) cycle
+
+            ! Decrement indegree of downstream cell
+            rem_indegs(ni, nj) = rem_indegs(ni, nj) - int(1, kind=1)
+            ! If indegree is zero, add to tofill buffer
+            if (rem_indegs(ni, nj) /= 0) cycle
+
+            nseeds = nseeds + 1
+            if (nseeds > size(seed_ijs, dim=2)) then
+                ! Buffer overflow
+                err_code = 1
+                deallocate (offset_lookup)
+                deallocate (rem_indegs)
+                deallocate (seed_ijs)
+                return
+            end if
+            seed_ijs(1, nseeds) = ni
+            seed_ijs(2, nseeds) = nj
+        end do
+
+        deallocate (offset_lookup)
+        deallocate (rem_indegs)
+        deallocate (seed_ijs)
+    end subroutine find_acyclic_flowdirs
 
     subroutine compute_max_branch_dist( &
         maxbdists, dirs, valids, x, y, basin_ids, nrows, ncols, &
