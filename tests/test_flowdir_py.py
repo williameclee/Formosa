@@ -11,6 +11,8 @@
 #     - Added test cases for function `insert_endpt`
 #   2026-07-28, En-Chi Lee (williameclee@gmail.com)
 #     - Added test cases for functions `find_graph_overlaps` and `solve_graph_overlaps`
+#   2026-08-03, En-Chi Lee (williameclee@gmail.com)
+#     - Added test cases for function `find_acyclic_flowdirs`
 
 
 import pytest
@@ -416,6 +418,15 @@ def test_solve_graph_overlaps_with_repeated_coordinates():
     )
     np.testing.assert_array_equal(vert_vert, np.array([[1, 0], [3, 0]]))
     np.testing.assert_array_equal(intr_intr, np.array([[2, 0]]))
+
+
+@pytest.mark.parametrize("name", ("valids", "indegs"))
+def test_find_acyclic_flowdirs_rejects_shape_mismatch(name):
+    kwargs = {name: np.ones((2, 1), dtype=bool)}
+    with pytest.raises(ValueError, match="Shapes"):
+        flowdir.find_acyclic_flowdirs(
+            np.zeros((1, 1), dtype=np.uint8), backend="python", **kwargs
+        )
 
 
 if __name__ == "__main__":

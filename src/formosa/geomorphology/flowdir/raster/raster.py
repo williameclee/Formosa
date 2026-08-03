@@ -25,6 +25,8 @@
 #     - Splitted `geomorphology.flowdir` into submodules
 #   2026-07-30, En-Chi Lee (williameclee@gmail.com)
 #     - Fixed Python/FORTRAN backend behaviour parity in `compute_flow_strahler_order`.
+#   2026-08-03, En-Chi Lee (williameclee@gmail.com)
+#     - Implemented functions `find_acyclic_flowdirs` and `find_cyclic_flowdirs` with both FORTRAN and Python backends
 
 
 import numpy as np
@@ -621,6 +623,176 @@ def count_indegree(
             )
 
     return indegs.astype(np.int8, order="F")
+
+
+def _raise_acyclic_flowdir_error(err_code: int) -> None:
+    """
+    Translates a FORTRAN acyclic-flow status into a Python exception.
+    """
+    if err_code == 1:
+        raise RuntimeError("Acyclic-flow traversal queue overflowed.")
+    elif err_code == 2:
+        raise MemoryError("Unable to allocate acyclic-flow traversal workspace.")
+    elif err_code != 0:
+        raise RuntimeError(f"Unexpected acyclic-flow traversal error code: {err_code}.")
+
+
+def _find_acyclic_flowdirs_fortran(
+    dirs: npt.NDArray[np.integer],
+    indegs: npt.NDArray[np.integer],
+    valids: npt.NDArray[np.bool_],
+    dir_scheme: D8Directions,
+) -> npt.NDArray[np.bool_]:
+    """
+    Returns acyclic flow cells using the FORTRAN backend.
+
+    Raises
+    ------
+    RuntimeError
+        If the traversal queue overflows or an unknown status is returned.
+    MemoryError
+        If the traversal workspace cannot be allocated.
+    """
+    acyclics, err_code = raster_f.find_acyclic_flowdirs(
+        dirs.astype(np.uint8, order="F"),
+        indegs.astype(np.int8, order="F"),
+        valids.astype(bool, order="F"),
+        dir_scheme.offsets.astype(np.int32, order="F"),
+        dir_scheme.codes.astype(np.uint8, order="F"),
+    )
+    _raise_acyclic_flowdir_error(err_code)
+    return acyclics.astype(bool, order="F")
+
+
+def find_acyclic_flowdirs(
+    dirs: npt.NDArray[np.integer],
+    dir_scheme: D8Directions = D8Directions(),
+    valids: Optional[npt.NDArray[np.bool_]] = None,
+    indegs: Optional[npt.NDArray[np.integer]] = None,
+    backend: Literal["fortran", "python"] = "fortran",
+) -> npt.NDArray[np.bool_]:
+    """
+    Finds valid cells that do not belong to a directed flow cycle.
+
+    Uses Kahn's algorithm to remove cells reachable from zero-indegree cells.
+    Valid cells remaining after the traversal belong to directed cycles.
+
+    Parameters
+    ----------
+    dirs : NDArray[int]
+        Flow directions for each cell.
+    dir_scheme : D8Directions, optional
+        Flow direction scheme defining the direction codes and offsets.
+        The default scheme is `D8Directions()`.
+    valids : NDArray[bool], optional
+        Mask indicating cells included in the flow field. If `None`, all cells
+        are considered valid.
+        The default mask is `None`.
+    indegs : NDArray[int], optional
+        Indegrees computed for the same valid flow field. If `None`, they are
+        computed using the selected backend.
+        The default input is `None`.
+    backend : {'fortran', 'python'}, optional
+        Computational backend.
+        The default backend is `'fortran'`.
+
+    Returns
+    -------
+    acyclics : NDArray[bool]
+        Mask that is true for valid acyclic cells and false for cyclic or
+        invalid cells.
+
+    Raises
+    ------
+    ValueError
+        If an input shape or backend is invalid.
+    MemoryError
+        If the FORTRAN backend cannot allocate its workspace.
+    RuntimeError
+        If the FORTRAN backend reports queue overflow or an unexpected status.
+    """
+    if dirs.ndim != 2:
+        raise ValueError("'dirs' must be a two-dimensional array.")
+    if valids is None:
+        valids = np.ones(dirs.shape, dtype=bool, order="F")
+    elif valids.shape != dirs.shape:
+        raise ValueError("Shapes of 'dirs' and 'valids' must match.")
+
+    if indegs is None:
+        indegs = count_indegree(
+            dirs, dir_scheme=dir_scheme, valids=valids, backend=backend
+        )
+    elif indegs.shape != dirs.shape:
+        raise ValueError("Shapes of 'dirs' and 'indegs' must match.")
+
+    match backend:
+        case "python":
+            from .raster_py import _find_acyclic_flowdirs_py
+
+            acyclics = _find_acyclic_flowdirs_py(
+                dirs, indegs, valids, dir_scheme=dir_scheme
+            )
+        case "fortran":
+            acyclics = _find_acyclic_flowdirs_fortran(dirs, indegs, valids, dir_scheme)
+
+    return np.asarray(acyclics & valids, dtype=bool, order="F")
+
+
+def find_cyclic_flowdirs(
+    dirs: npt.NDArray[np.integer],
+    dir_scheme: D8Directions = D8Directions(),
+    valids: Optional[npt.NDArray[np.bool_]] = None,
+    indegs: Optional[npt.NDArray[np.integer]] = None,
+    backend: Literal["fortran", "python"] = "fortran",
+) -> npt.NDArray[np.bool_]:
+    """
+    Finds valid cells belonging to directed flow cycles.
+
+    Parameters
+    ----------
+    dirs : NDArray[int]
+        Flow directions for each cell.
+    dir_scheme : D8Directions, optional
+        Flow direction scheme defining the direction codes and offsets.
+        The default scheme is `D8Directions()`.
+    valids : NDArray[bool], optional
+        Mask indicating cells included in the flow field. If `None`, all cells
+        are considered valid.
+        The default input is `None`.
+    indegs : NDArray[int], optional
+        Indegrees computed for the same valid flow field. If `None`, they are
+        computed using the selected backend.
+        The default input is `None`.
+    backend : {'fortran', 'python'}, optional
+        Computational backend.
+        The default backend is `'fortran'`.
+
+    Returns
+    -------
+    cyclics : NDArray[bool]
+        Mask that is true for valid cyclic cells and false for acyclic or
+        invalid cells.
+
+    Raises
+    ------
+    ValueError
+        If an input shape or backend is invalid.
+    MemoryError
+        If the FORTRAN backend cannot allocate its workspace.
+    RuntimeError
+        If the FORTRAN backend reports queue overflow or an unexpected status.
+    """
+    if valids is None:
+        valids = np.ones(dirs.shape, dtype=bool, order="F")
+
+    acyclics = find_acyclic_flowdirs(
+        dirs,
+        dir_scheme=dir_scheme,
+        valids=valids,
+        indegs=indegs,
+        backend=backend,
+    )
+    return np.asarray(valids & ~acyclics, dtype=bool, order="F")
 
 
 def compute_flow_accumulation(
