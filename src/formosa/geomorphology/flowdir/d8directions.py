@@ -1,9 +1,11 @@
 # Last modified
-#  - Moved from `geomorphology.flowdir` to `geomorphology.flowdir.flowdir`
+#      - Moved from `geomorphology.flowdir` to `geomorphology.flowdir.flowdir`
+#   2026-08-03, En-Chi Lee (williameclee@gmail.com)
+#     - Added property `no_flow_code`
 
 import numpy as np
 
-from typing import TypeVar, Tuple, Callable
+from typing import TypeVar, Tuple, Callable, Optional
 import numpy.typing as npt
 
 names = ["self", "E", "SE", "S", "SW", "W", "NW", "N", "NE"]
@@ -41,6 +43,19 @@ class D8Directions:
             int(code): (int(di), int(dj))
             for code, (di, dj) in zip(self.codes, self.offsets)
         }
+
+
+    @property
+    def no_flow_code(self) -> Optional[int]:
+        """
+        The code representing no flow (i.e. have the offset of `(0, 0)`).
+        If such a code does not exist, returns `None`.
+        """
+
+        for code, (di, dj) in self.offset_dict.items():
+            if di == 0 and dj == 0:
+                return code
+        return None
 
     def code2d8offset(self, code: T) -> tuple[T, T]:
         """Get offset (di, dj) for a given D8 code."""
