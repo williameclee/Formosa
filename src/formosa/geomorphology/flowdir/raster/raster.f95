@@ -1498,12 +1498,8 @@ contains
             if (acyclics(ci, cj)) cycle
             acyclics(ci, cj) = .true.
 
-            ! Interpret one-byte direction codes as unsigned values
-            dir_code = iand(int(dirs(ci, cj)), 255)
-            ! Skip direction codes not defined by the direction scheme
-            if (all(offset_lookup(dir_code, :) == -99)) cycle
-            ni = ci + offset_lookup(dir_code, 1)
-            nj = cj + offset_lookup(dir_code, 2)
+            ni = ci + offset_lookup(dirs(ci, cj), 1)
+            nj = cj + offset_lookup(dirs(ci, cj), 2)
 
             ! Check bounds
             if (ni < 1 .or. ni > nrows .or. nj < 1 .or. nj > ncols) cycle
