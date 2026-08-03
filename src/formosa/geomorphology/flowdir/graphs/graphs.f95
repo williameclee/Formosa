@@ -11,6 +11,8 @@
 !     - Splitted 'flowdir_f' into submodules
 !   2026-07-29, En-Chi Lee (williameclee@gmail.com)
 !     - Made topology intersection scans count all violations past output capacity
+!   2026-08-03, En-Chi Lee (williameclee@gmail.com)
+!     - Explicitly handled Python uint8 -> FORTRAN INTEGER*1 conversion/interpretation in 'fill_offset_lookup'
 !!!
 
 module flowdir_graphs
@@ -117,8 +119,8 @@ contains
 
             do while (.true.)
                 ! First check the downstream cell
-                ni = ci + offset_lookup(dirs(ci, cj), 1)
-                nj = cj + offset_lookup(dirs(ci, cj), 2)
+                ni = ci + offset_lookup(iand(int(dirs(ci, cj)), 255), 1)
+                nj = cj + offset_lookup(iand(int(dirs(ci, cj)), 255), 2)
 
                 ds_is_valid = .true.
                 if (ci == ni .and. cj == nj) then ! Self-loop
