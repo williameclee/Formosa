@@ -8,6 +8,8 @@
 !     - Moved 'mask2ij' to separate 'utils' module
 !   2026-07-12, En-Chi Lee (williameclee@gmail.com)
 !     - Moved 'flowdir_utils' module here 'utils'
+!   2026-08-03, En-Chi Lee (williameclee@gmail.com)
+!     - Ensured 'fill_offset_lookup' interpret one-byte direction codes as unsigned values
 !!!
 
 module utils
@@ -146,17 +148,16 @@ contains
         integer :: diffs(0:255, 2)
             !! Lookup table for offsets
         ! Local variables
-        integer :: iofs
+        integer :: iofs, code
 
         ! Create lookup tables for offsets
         diffs = -99 ! Initialise to invalid value
         do iofs = 1, noffsets
-            if (codes(iofs) < 0 .or. codes(iofs) > 255) then
-                error stop "[FILL_OFFSET_LOOKUP] Encountered out-of-bound flow direction code"
-            end if
+            ! Interpret one-byte direction codes as unsigned values
+            code = iand(int(codes(iofs)), 255)
             ! Fill in the offset for the corresponding code index
-            diffs(codes(iofs), 1) = offsets(iofs, 1)
-            diffs(codes(iofs), 2) = offsets(iofs, 2)
+            diffs(code, 1) = offsets(iofs, 1)
+            diffs(code, 2) = offsets(iofs, 2)
         end do
     end function fill_offset_lookup
 end module utils
