@@ -17,8 +17,7 @@
 module utils
     implicit none
 contains
-    pure subroutine mask2ij( &
-        mask, nrows, ncols, ij, nij, cnt, err_code)
+    pure subroutine mask2ij(mask, ij, nij, cnt, err_code)
         !! Converts a 2D logical mask to a list of (i, j) indices where
         !! the mask is true.
         !! The output list will have a maximum size of 2-by-'nij', and
@@ -27,9 +26,7 @@ contains
         !! remaining will be ignored.
         implicit none
         ! Arguments
-        integer, intent(in) :: nrows, ncols
-            !! Size of the input mask
-        logical*1, intent(in) :: mask(nrows, ncols)
+        logical*1, intent(in) :: mask(:, :)
             !! Input logical mask
         integer, intent(in) :: nij
             !! Maximum number of indices to return
@@ -63,18 +60,16 @@ contains
         end do
     end subroutine mask2ij
 
-    pure function find_noflow_code(offsets, codes, noffsets, default_noflow_code) result(noflow_code)
+    pure function find_noflow_code(offsets, codes, default_noflow_code) result(noflow_code)
         !! For pairs of flow direction codes and their corresponding
         !! offsets, find the code that corresponds to the no-flow
         !! direction (0, 0). If not found, return the provided default
         !! no-flow code or 0 if not provided.
         implicit none
         ! Arguments
-        integer, intent(in) :: noffsets
-            !! Number of offset codes
-        integer, intent(in) :: offsets(noffsets, 2)
+        integer, intent(in) :: offsets(:, :)
             !! List of offsets
-        integer*1, intent(in) :: codes(noffsets)
+        integer*1, intent(in) :: codes(:)
             !! List of codes corresponding to the offsets
         integer*1, intent(in), optional :: default_noflow_code
             !! Optional default no-flow code to use if not found in offsets (default: 0)
@@ -92,7 +87,7 @@ contains
         end if
 
         ! Loop through offsets to find the no-flow code
-        do iofs = 1, noffsets
+        do iofs = 1, size(codes)
             if (offsets(iofs, 1) == 0 .and. offsets(iofs, 2) == 0) then
                 noflow_code = codes(iofs)
                 exit
@@ -100,7 +95,7 @@ contains
         end do
     end function find_noflow_code
 
-    pure function find_opposite_codes(offsets, codes, noffsets) result(opp_codes)
+    pure function find_opposite_codes(offsets, codes) result(opp_codes)
         !! For pairs of flow direction codes and their corresponding
         !! offsets, find the list of codes that correspond to the
         !! opposite direction of each code.
@@ -109,21 +104,19 @@ contains
         !! code of code 1 and vice verse.
         implicit none
         ! Arguments
-        integer, intent(in) :: noffsets
-            !! Number of offset codes
-        integer, intent(in) :: offsets(noffsets, 2)
+        integer, intent(in) :: offsets(:, :)
             !! List of offsets
-        integer*1, intent(in) :: codes(noffsets)
+        integer*1, intent(in) :: codes(:)
             !! List of codes corresponding to the offsets
-        integer*1 :: opp_codes(noffsets)
+        integer*1 :: opp_codes(size(codes))
             !! List of opposite codes corresponding to the offsets (same order as input codes)
         ! Local variables
         integer :: iofs, jofs
             !! Offset indices for iterating
 
         ! Loop through offsets to find opposite codes
-        do iofs = 1, noffsets
-            do jofs = 1, noffsets
+        do iofs = 1, size(codes)
+            do jofs = 1, size(codes)
                 if (offsets(iofs, 1) == -offsets(jofs, 1) .and. &
                     offsets(iofs, 2) == -offsets(jofs, 2)) then
                     opp_codes(iofs) = codes(jofs)
@@ -133,7 +126,7 @@ contains
         end do
     end function find_opposite_codes
 
-    pure function fill_offset_lookup(offsets, codes, noffsets) result(diffs)
+    pure function fill_offset_lookup(offsets, codes) result(diffs)
         !! For pairs of flow direction codes and their corresponding
         !! offsets, create a lookup table (array) where the index
         !! corresponds to the code and the value is the offset.
@@ -145,11 +138,9 @@ contains
         !! diffs(1, :) = (1, 0).
         implicit none
         ! Arguments
-        integer, intent(in) :: noffsets
-            !! Number of offset codes
-        integer, intent(in) :: offsets(noffsets, 2)
+        integer, intent(in) :: offsets(:, :)
             !! List of offsets
-        integer*1, intent(in) :: codes(noffsets)
+        integer*1, intent(in) :: codes(:)
             !! List of codes corresponding to the offsets
         ! Outputs
         integer :: diffs(0:255, 2)
@@ -159,7 +150,7 @@ contains
 
         ! Create lookup tables for offsets
         diffs = -99 ! Initialise to invalid value
-        do iofs = 1, noffsets
+        do iofs = 1, size(codes)
             ! F2PY exposes uint8 arrays as signed INTEGER*1 values. Preserve
             ! their bit pattern so codes 128:255 address the intended slots.
             code = iand(int(codes(iofs)), 255)

@@ -72,7 +72,7 @@ contains
             !! (Cell-private) Minimum elevation among valid neighbours
 
         ! Find noflow code
-        noflow_code = find_noflow_code(offsets, codes, noffsets)
+        noflow_code = find_noflow_code(offsets, codes)
         dirs = noflow_code
         is_flat = .false.
 
@@ -148,7 +148,7 @@ contains
             !! (Cell-private) Minimum elevation among valid neighbours
 
         ! Find noflow code
-        noflow_code = find_noflow_code(offsets, codes, noffsets)
+        noflow_code = find_noflow_code(offsets, codes)
         dirs = noflow_code
 
         !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(ci, cj, ni, nj, iofs, zmin) &
@@ -213,7 +213,7 @@ contains
             !! (Cell-private) Offset index for iterating through flow directions
 
         ! Find noflow code
-        noflow_code = find_noflow_code(offsets, codes, noffsets)
+        noflow_code = find_noflow_code(offsets, codes)
 
         is_low_edge = .false.
         is_high_edge = .false.
@@ -310,8 +310,7 @@ contains
             return
         end if
         ! Convert seed mask to list of (i, j) indices
-        call mask2ij(seeds, nrows, ncols, &
-                     seed_ijs, size(seed_ijs, dim=2), nseeds, err_code)
+        call mask2ij(seeds, seed_ijs, size(seed_ijs, dim=2), nseeds, err_code)
         if (err_code /= 0) return
 
         flats = 0
@@ -432,8 +431,7 @@ contains
         high_edge_ijs = 0
         nedges = 0
         z = 0
-        call mask2ij(high_edges, nrows, ncols, &
-                     high_edge_ijs, size(high_edge_ijs, dim=2), nedges, err_code)
+        call mask2ij(high_edges, high_edge_ijs, size(high_edge_ijs, dim=2), nedges, err_code)
         if (err_code /= 0) return
         if (nedges == 0) then
             ! No high edges found, set z to zero and exit
@@ -596,8 +594,7 @@ contains
             err_code = 2
             return
         end if
-        call mask2ij(low_edges, nrows, ncols, &
-                     low_edges_ijs, size(low_edges_ijs, dim=2), nedges, err_code)
+        call mask2ij(low_edges, low_edges_ijs, size(low_edges_ijs, dim=2), nedges, err_code)
         if (err_code /= 0) return
         nedges = nedges + 1
         low_edges_ijs(:, nedges) = marker
@@ -796,7 +793,7 @@ contains
             err_code = 2
             return
         end if
-        offset_lookup = fill_offset_lookup(offsets, codes, noffsets)
+        offset_lookup = fill_offset_lookup(offsets, codes)
 
         ! Fill the tofill buffer with all valid cells with zero in-degrees
         max_queue_size = nrows*ncols
@@ -811,8 +808,7 @@ contains
             return
         end if
         flood_seeds = valids .and. (indegs == 0)
-        call mask2ij(flood_seeds, nrows, ncols, &
-                     flood_ijs, max_queue_size, ntofills, err_code)
+        call mask2ij(flood_seeds, flood_ijs, max_queue_size, ntofills, err_code)
         if (err_code /= 0) return
         deallocate (flood_seeds)
 
@@ -908,7 +904,7 @@ contains
             err_code = 2
             return
         end if
-        offset_lookup = fill_offset_lookup(offsets, codes, noffsets)
+        offset_lookup = fill_offset_lookup(offsets, codes)
 
         ! Fill the tofill buffer with all valid cells with zero indegree
         max_queue_size = nrows*ncols
@@ -923,8 +919,7 @@ contains
             return
         end if
         tofill_seeds = valids .and. (indegs == 0)
-        call mask2ij(tofill_seeds, nrows, ncols, &
-                     tofill_ijs, max_queue_size, ntofills, err_code)
+        call mask2ij(tofill_seeds, tofill_ijs, max_queue_size, ntofills, err_code)
         if (err_code /= 0) return
         deallocate (tofill_seeds)
 
@@ -1020,7 +1015,7 @@ contains
             err_code = 2
             return
         end if
-        offset_lookup = fill_offset_lookup(offsets, codes, noffsets)
+        offset_lookup = fill_offset_lookup(offsets, codes)
 
         ! Fill the tofill buffer with all valid cells with zero indegree
         max_queue_size = nrows*ncols
@@ -1035,8 +1030,7 @@ contains
             return
         end if
         seeds = valids .and. (indegs == 0)
-        call mask2ij(seeds, nrows, ncols, &
-                     tofill_ijs, max_queue_size, ntofills, err_code)
+        call mask2ij(seeds, tofill_ijs, max_queue_size, ntofills, err_code)
         if (err_code /= 0) return
         deallocate (seeds)
 
@@ -1126,7 +1120,7 @@ contains
         integer :: alloc_stat
             !! Per-thread allocation status code
         ! Find noflow code
-        noflow_code = find_noflow_code(offsets, codes, noffsets)
+        noflow_code = find_noflow_code(offsets, codes)
 
         err_code = 0
         dists = -1
@@ -1144,8 +1138,7 @@ contains
             return
         end if
         seeds = valids .and. (dirs == noflow_code)
-        call mask2ij(seeds, nrows, ncols, &
-                     seed_ijs, max_queue_size, nseeds, err_code)
+        call mask2ij(seeds, seed_ijs, max_queue_size, nseeds, err_code)
         if (err_code /= 0) return
         deallocate (seeds)
 
@@ -1264,7 +1257,7 @@ contains
             err_code = 2
             return
         end if
-        offset_lookup = fill_offset_lookup(offsets, codes, noffsets)
+        offset_lookup = fill_offset_lookup(offsets, codes)
 
         ! Fill the tofill buffer with all valid cells with zero indegree
         max_queue_size = nrows*ncols
@@ -1281,8 +1274,7 @@ contains
         seeds = valids .and. (indegs == 0)
         err_code = 0
         orders = merge(int(1, kind=2), int(0, kind=2), seeds)
-        call mask2ij(seeds, nrows, ncols, &
-                     tofill_ijs, max_queue_size, ntofills, err_code)
+        call mask2ij(seeds, tofill_ijs, max_queue_size, ntofills, err_code)
         if (err_code /= 0) return
         deallocate (seeds)
 
@@ -1400,7 +1392,7 @@ contains
             !! Per-thread allocation status code
 
         ! Find noflow code
-        noflow_code = find_noflow_code(offsets, codes, noffsets)
+        noflow_code = find_noflow_code(offsets, codes)
 
         err_code = 0
         labels = 0
@@ -1418,8 +1410,7 @@ contains
             return
         end if
         seeds = valids .and. (dirs == noflow_code)
-        call mask2ij(seeds, nrows, ncols, &
-                     seed_ijs, max_queue_size, nseeds, err_code)
+        call mask2ij(seeds, seed_ijs, max_queue_size, nseeds, err_code)
         if (err_code /= 0) return
         deallocate (seeds)
 
@@ -1522,7 +1513,7 @@ contains
             !! Per-thread allocation status code
 
         ! Find noflow code
-        noflow_code = find_noflow_code(offsets, codes, noffsets)
+        noflow_code = find_noflow_code(offsets, codes)
 
         err_code = 0
         flooded = .false.
@@ -1534,8 +1525,7 @@ contains
             err_code = 2
             return
         end if
-        call mask2ij(seeds, nrows, ncols, &
-                     seed_ijs, max_queue_size, nseeds, err_code)
+        call mask2ij(seeds, seed_ijs, max_queue_size, nseeds, err_code)
         if (err_code /= 0) return
 
         ! Loop through seeds
@@ -1680,9 +1670,8 @@ contains
         end if
 
         seeds = valids .and. (indegs == 0)
-        offset_lookup = fill_offset_lookup(offsets, codes, noffsets)
-        call mask2ij(seeds, nrows, ncols, &
-                     seed_ijs, size(seed_ijs, dim=2), nseeds, err_code)
+        offset_lookup = fill_offset_lookup(offsets, codes)
+        call mask2ij(seeds, seed_ijs, size(seed_ijs, dim=2), nseeds, err_code)
         if (err_code /= 0) return
         deallocate (seeds)
 
@@ -1798,7 +1787,7 @@ contains
             err_code = 2
             return
         end if
-        diffs = fill_offset_lookup(offsets, codes, noffsets)
+        diffs = fill_offset_lookup(offsets, codes)
 
         maxlen = 2*(nrows + ncols)
 
@@ -2157,8 +2146,8 @@ contains
 
     !     integer :: sij(2) ! Seed indices
 
-    !     noflow_code = find_noflow_code(offsets, codes, noffsets)
-    !     opp_codes = find_opposite_codes(offsets, codes, noffsets)
+    !     noflow_code = find_noflow_code(offsets, codes)
+    !     opp_codes = find_opposite_codes(offsets, codes)
 
     !     allocate (processed(nrows, ncols))
     !     call compute_flowdir_simple( &

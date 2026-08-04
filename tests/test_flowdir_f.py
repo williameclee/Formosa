@@ -77,6 +77,18 @@ def test_mask2ij_returns_output_capacity_error():
     assert indices.shape == (2, 2)
 
 
+def test_fortran_direction_utilities_infer_input_shapes():
+    offsets = np.array([[0, 0], [0, 1], [0, -1]], dtype=np.int32, order="F")
+    codes = np.array([0, 1, 5], dtype=np.int8)
+
+    assert utils_f.find_noflow_code(offsets, codes) == 0
+    assert np.array_equal(utils_f.find_opposite_codes(offsets, codes), [0, 5, 1])
+
+    lookup = utils_f.fill_offset_lookup(offsets, codes)
+    assert np.array_equal(lookup[1], [0, 1])
+    assert np.array_equal(lookup[5], [0, -1])
+
+
 def test_downstreamid_3x3():
     dir_scheme = D8Directions(transform_codes=lambda x: x)
 

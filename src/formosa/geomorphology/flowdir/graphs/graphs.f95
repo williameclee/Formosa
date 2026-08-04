@@ -101,7 +101,7 @@ contains
             err_code = 2
             return
         end if
-        offset_lookup = fill_offset_lookup(offsets, codes, noffsets)
+        offset_lookup = fill_offset_lookup(offsets, codes)
 
         ! Find index of seeds
         allocate (seed_ijs(2, ncells), stat=alloc_stat)
@@ -110,11 +110,11 @@ contains
             deallocate (offset_lookup)
             return
         end if
-        call mask2ij(seeds, nrows, ncols, seed_ijs, ncells, nseeds, err_code)
+        call mask2ij(seeds, seed_ijs, ncells, nseeds, err_code)
         if (err_code /= 0) return
 
         ! Find noflow code
-        noflow_code = find_noflow_code(offsets, codes, noffsets)
+        noflow_code = find_noflow_code(offsets, codes)
 
         allocate (seens(nrows, ncols), stat=alloc_stat)
         if (alloc_stat /= 0) then
