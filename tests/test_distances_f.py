@@ -1,6 +1,6 @@
 # Last modified
 #   2026-07-10, En-Chi Lee (williameclee@gmail.com)
-#     - Added test cases for the Fortran function of `lines_intersect_v2`
+#     - Added test cases for the FORTRAN function of `lines_intersect_v2`
 
 import pytest
 

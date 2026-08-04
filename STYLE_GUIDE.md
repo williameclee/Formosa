@@ -2,6 +2,8 @@
 
 ## Naming Conventions
 
+All language should be in British English by default.
+
 ### Variables
 
 Arrays should typically be plural nouns (e.g. `dirs`, `dists`), while other variable should be single nouns. This extends to boolean mask arrays, which should still be names as plural nouns (e.g. `valids` instead of `is_valid`).
@@ -29,7 +31,7 @@ All public functions should have descriptive docstrings written in the *NumPy st
 
 - A clear, concise summary line.
 - A **Parameters** section detailing variable names, types (e.g. `NDArray[int]`), and default values if optional.
-  - Each parameter should start with the short phrase describing the parameter, without the leading 'A' or 'The', and end without a period.
+  - Each parameter should start with the short phrase describing the parameter, without the leading 'A' or 'The', and end with a period.
   - More detailed descriptions of parameters can be provided in a separate paragraph after the short phrase.
   - For optional parameters, the default value should be specified at the end of the description in parentheses (e.g. 'The default backend is `"python"`').
 - A **Returns** section specifying returned values, types, and descriptions of output structures.

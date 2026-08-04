@@ -4,10 +4,10 @@
 #     - Added function `construct_flowgraph`
 #   2026-07-09, En-Chi Lee (williameclee@gmail.com)
 #     - Specified endpoint index definition for `construct_flowgraph`
-#     - Implemented Fortran backend of function `simplify_flowgraph` and function `concat_flowgraph`
+#     - Implemented FORTRAN backend of function `simplify_flowgraph` and function `concat_flowgraph`
 #     - Added vertex mask to output of function `simplify_flowgraph`
 #   2026-07-12, En-Chi Lee (williameclee@gmail.com)
-#     - Implemented Python and Fortran backends of function `locate_invalid_graph_topology`
+#     - Implemented Python and FORTRAN backends of function `locate_invalid_graph_topology`
 #   2026-07-13, En-Chi Lee (williameclee@gmail.com)
 #     - Added default topology check to `simplify_flowgraph`
 #   2026-07-14, En-Chi Lee (williameclee@gmail.com)
@@ -31,6 +31,7 @@
 #     - Made `solve_graph_overlaps` stable and recognised already valid shared arcs
 #   2026-08-04, En-Chi Lee (williameclee@gmail.com)
 #     - Made `simplify_flowgraph` able to handle empty graphs
+#     - Accelerated graph validation and simplification
 #     - Implemented function `remove_unused_vertices`
 
 
@@ -130,29 +131,29 @@ def create_flowgraph(
     Parameters
     ----------
     dirs : NDArray[int]
-        A 2D array representing the flow directions for each cell.
+        2D array representing the flow directions for each cell.
     valids : NDArray[bool], optional
-        A boolean mask array indicating valid cells in the flow direction grid.
+        Boolean mask array indicating valid cells in the flow direction grid.
         If `None`, all cells are considered valid.
         Default is `None`.
     directions : D8Directions, optional
-        An instance of `D8Directions` defining the flow direction scheme.
+        Instance of `D8Directions` defining the flow direction scheme.
         Default is `D8Directions()`.
     x : NDArray[number], optional
-        A 2D array representing the x-coordinates of each cell.
+        2D array representing the x-coordinates of each cell.
         If provided, the graph will use these coordinates instead of grid indices.
         Default is `None`.
     y : NDArray[number], optional
-        A 2D array representing the y-coordinates of each cell.
+        2D array representing the y-coordinates of each cell.
         If provided, the graph will use these coordinates instead of grid indices.
         Default is `None`.
 
     Returns
     -------
     graphi : NDArray[int]
-        A 1D array representing the row indices of the graph edges.
+        1D array representing the row indices of the graph edges.
     graphj : NDArray[int]
-        A 1D array representing the column indices of the graph edges.
+        1D array representing the column indices of the graph edges.
     """
     if valids is not None:
         assert (
@@ -438,7 +439,7 @@ def find_vertex_id(
     ----------
     verts : NDArray[int | float]
         V-by-m array representing the m-dimensional coordinates of the vertices.
-    vert :  NDArray[int | float]
+    vert : NDArray[int | float]
         m-by-(1) array representing the m-dimensional coordinate of the vertex to find.
     n : int, optional
         Maximum number of indices to return, if the vertex appears multiple times in the array.
@@ -489,7 +490,7 @@ def find_arc_id_of_vertex(
     is_inclusive : bool
         Whether the `endpts` array is inclusive or half-open.
         If it is inclusive, the corresponding vertices in the arc are start_id ... end_id; if half-open, the vertices are start_id ... end_id - 1 instead.
-        Default is `True`.
+        Default option is `True`.
 
     Returns
     -------
@@ -515,7 +516,7 @@ def find_arc_id_of_vertex(
     is_inclusive : bool
         Whether the `endpts` array is inclusive or half-open.
         If it is inclusive, the corresponding vertices in the arc are start_id ... end_id; if half-open, the vertices are start_id ... end_id - 1 instead.
-        Default is `True`.
+        Default option is `True`.
 
     Returns
     -------
