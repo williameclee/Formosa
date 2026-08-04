@@ -26,7 +26,7 @@
 !     - Implemented 'find_acyclic_flowdirs'
 !     - Explicitly handled Python uint8 -> FORTRAN INTEGER*1 conversion/interpretation in 'fill_offset_lookup'
 !   2026-08-04, En-Chi Lee (williameclee@gmail.com)
-!     - Moved error handling to Python
+!     - Added allocation error monitoring and moved error handling to Python
 !!!
 
 module flowdir_raster
@@ -277,6 +277,7 @@ contains
         integer, intent(out) :: err_code
             !! Code indicating the status of the result
             !!   - 0: Programme executed properly
+            !!   - 2: Internal workspace allocation failed
             !!   - 3: Flat-flooding buffer capacity was exceeded
         ! Local variables
         integer :: iflat
@@ -297,13 +298,21 @@ contains
         integer :: iofs
             !! Index for iterating through offsets
 
-        allocate (flat_ijs(2, nrows*ncols))
-        allocate (seed_ijs(2, nrows*ncols/2))
+        err_code = 0
+        allocate (flat_ijs(2, nrows*ncols), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
+        allocate (seed_ijs(2, nrows*ncols/2), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
         ! Convert seed mask to list of (i, j) indices
         call mask2ij(seeds, nrows, ncols, &
                      seed_ijs, size(seed_ijs, dim=2), nseeds)
 
-        err_code = 0
         flats = 0
         iflat = 1
         iseed = 1
@@ -384,6 +393,7 @@ contains
         integer, intent(out) :: err_code
             !! Code indicating the status of the result
             !!   - 0: Programme executed properly
+            !!   - 2: Internal workspace allocation failed
             !!   - 3: High-edge queue capacity was exceeded or an index was out of bounds
         ! Local variables
         integer :: nflats
@@ -412,7 +422,11 @@ contains
 
         err_code = 0
         max_queue_size = count(flats /= 0) + max(nrows, ncols)*(maxval(flats) - minval(flats) + 1)
-        allocate (high_edge_ijs(2, max_queue_size))
+        allocate (high_edge_ijs(2, max_queue_size), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
 
         high_edge_ijs = 0
         nedges = 0
@@ -429,10 +443,18 @@ contains
         high_edge_ijs(:, nedges) = marker
 
         nflats = maxval(flats)
-        allocate (maxdist(nflats))
+        allocate (maxdist(nflats), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
         maxdist = 0
 
-        allocate (queued(nrows, ncols))
+        allocate (queued(nrows, ncols), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
         queued = .false.
         added_since_marker = .false.
 
@@ -544,6 +566,7 @@ contains
         integer, intent(out) :: err_code
             !! Code indicating the status of the result
             !!   - 0: Programme executed properly
+            !!   - 2: Internal workspace allocation failed
             !!   - 3: Low-edge queue capacity was exceeded or an index was out of bounds
         ! Local variables
         integer :: iofs
@@ -567,7 +590,11 @@ contains
 
         err_code = 0
         max_queue_size = count(flats /= 0) + max(nrows, ncols)*maxval(flats)
-        allocate (low_edges_ijs(2, max_queue_size))
+        allocate (low_edges_ijs(2, max_queue_size), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
         call mask2ij(low_edges, nrows, ncols, &
                      low_edges_ijs, size(low_edges_ijs, dim=2), nedges)
         nedges = nedges + 1
@@ -575,7 +602,11 @@ contains
 
         ! Initialise z to zero
         z = 0
-        allocate (queued(nrows, ncols))
+        allocate (queued(nrows, ncols), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
         queued = .false.
 
         ! Mark initial seeds as queued
@@ -740,6 +771,7 @@ contains
         integer, intent(out) :: err_code
             !! Code indicating the status of the result
             !!   - 0: Programme executed properly
+            !!   - 2: Internal workspace allocation failed
             !!   - 3: Flooding queue capacity was exceeded
         ! Local variables
         integer, allocatable :: offset_lookup(:, :)
@@ -756,13 +788,26 @@ contains
             !! Mask to identify initial seed cells for the flooding algorithm (valid cells with zero in-degrees)
 
         ! Create lookup tables for offsets
-        allocate (offset_lookup(0:255, 2))
+        err_code = 0
+        allocate (offset_lookup(0:255, 2), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
         offset_lookup = fill_offset_lookup(offsets, codes, noffsets)
 
         ! Fill the tofill buffer with all valid cells with zero in-degrees
         max_queue_size = nrows*ncols
-        allocate (flood_ijs(2, max_queue_size))
-        allocate (flood_seeds(nrows, ncols))
+        allocate (flood_ijs(2, max_queue_size), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
+        allocate (flood_seeds(nrows, ncols), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
         flood_seeds = valids .and. (indegs == 0)
         call mask2ij(flood_seeds, nrows, ncols, &
                      flood_ijs, max_queue_size, ntofills)
@@ -836,6 +881,7 @@ contains
         integer, intent(out) :: err_code
             !! Code indicating the status of the result
             !!   - 0: Programme executed properly
+            !!   - 2: Internal workspace allocation failed
             !!   - 3: Source-distance queue capacity was exceeded
         ! Local variables
         integer, allocatable :: offset_lookup(:, :)
@@ -853,13 +899,26 @@ contains
             !! Maximum size of the flooding buffer ('tofill_ijs')
 
         ! Create lookup tables for offsets
-        allocate (offset_lookup(0:255, 2))
+        err_code = 0
+        allocate (offset_lookup(0:255, 2), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
         offset_lookup = fill_offset_lookup(offsets, codes, noffsets)
 
         ! Fill the tofill buffer with all valid cells with zero indegree
         max_queue_size = nrows*ncols
-        allocate (tofill_ijs(2, max_queue_size))
-        allocate (tofill_seeds(nrows, ncols))
+        allocate (tofill_ijs(2, max_queue_size), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
+        allocate (tofill_seeds(nrows, ncols), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
         tofill_seeds = valids .and. (indegs == 0)
         call mask2ij(tofill_seeds, nrows, ncols, &
                      tofill_ijs, max_queue_size, ntofills)
@@ -934,6 +993,7 @@ contains
         integer, intent(out) :: err_code
             !! Code indicating the status of the result
             !!   - 0: Programme executed properly
+            !!   - 2: Internal workspace allocation failed
             !!   - 3: Source-distance queue capacity was exceeded
         ! Local variables
         integer, allocatable :: offset_lookup(:, :)
@@ -950,13 +1010,26 @@ contains
             !! Maximum size of the flooding buffer ('tofill_ijs')
 
         ! Create lookup tables for offsets
-        allocate (offset_lookup(0:255, 2))
+        err_code = 0
+        allocate (offset_lookup(0:255, 2), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
         offset_lookup = fill_offset_lookup(offsets, codes, noffsets)
 
         ! Fill the tofill buffer with all valid cells with zero indegree
         max_queue_size = nrows*ncols
-        allocate (tofill_ijs(2, max_queue_size))
-        allocate (seeds(nrows, ncols))
+        allocate (tofill_ijs(2, max_queue_size), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
+        allocate (seeds(nrows, ncols), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
         seeds = valids .and. (indegs == 0)
         call mask2ij(seeds, nrows, ncols, &
                      tofill_ijs, max_queue_size, ntofills)
@@ -1026,6 +1099,7 @@ contains
         integer, intent(out) :: err_code
             !! Code indicating the status of the result
             !!   - 0: Programme executed properly
+            !!   - 2: Internal workspace allocation failed
             !!   - 3: Sink-distance queue capacity was exceeded
         ! Local variables
         integer :: iofs
@@ -1044,6 +1118,8 @@ contains
             !! Buffer for storing (i, j) indices of cells to be processed in the breadth-first search from sink cells
         integer :: max_queue_size
             !! Maximum size of the buffer for cells to be processed ('seed_ijs' and 'tofill_ijs')
+        integer :: alloc_stat
+            !! Per-thread allocation status code
 
         ! Find noflow code
         noflow_code = find_noflow_code(offsets, codes, noffsets)
@@ -1053,18 +1129,31 @@ contains
 
         ! Append all cells with noflow direction to buffer
         max_queue_size = nrows*ncols
-        allocate (seed_ijs(2, max_queue_size))
-        allocate (seeds(nrows, ncols))
+        allocate (seed_ijs(2, max_queue_size), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
+        allocate (seeds(nrows, ncols), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
         seeds = valids .and. (dirs == noflow_code)
         call mask2ij(seeds, nrows, ncols, &
                      seed_ijs, max_queue_size, nseeds)
         deallocate (seeds)
 
         ! Loop through seeds
-        !$omp PARALLEL DEFAULT(SHARED) PRIVATE(iseed, si, sj, ci, cj, ifill, nfills, tofill_ijs)
-        allocate (tofill_ijs(2, max_queue_size))
+        !$omp PARALLEL DEFAULT(SHARED) PRIVATE(iseed, si, sj, ci, cj, ifill, nfills, tofill_ijs, alloc_stat)
+        allocate (tofill_ijs(2, max_queue_size), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            !$omp atomic write
+            err_code = 2
+        end if
         !$omp DO SCHEDULE(DYNAMIC)
         do iseed = 1, nseeds
+            if (alloc_stat /= 0) cycle
             si = seed_ijs(1, iseed)
             sj = seed_ijs(2, iseed)
 
@@ -1110,7 +1199,7 @@ contains
             end do
         end do
         !$omp END DO
-        deallocate (tofill_ijs)
+        if (allocated(tofill_ijs)) deallocate (tofill_ijs)
         !$omp END PARALLEL
         deallocate (seed_ijs)
     end subroutine compute_dist2sink
@@ -1141,6 +1230,7 @@ contains
         integer, intent(out) :: err_code
             !! Code indicating the status of the result
             !!   - 0: Programme executed properly
+            !!   - 2: Internal workspace allocation failed
             !!   - 3: Strahler traversal queue capacity was exceeded
         ! Local variables
         integer, allocatable :: offset_lookup(:, :)
@@ -1163,13 +1253,26 @@ contains
             !! Maximum size of the buffer for cells to be processed ('tofill_ijs')
 
         ! Create lookup tables for offsets
-        allocate (offset_lookup(0:255, 2))
+        err_code = 0
+        allocate (offset_lookup(0:255, 2), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
         offset_lookup = fill_offset_lookup(offsets, codes, noffsets)
 
         ! Fill the tofill buffer with all valid cells with zero indegree
         max_queue_size = nrows*ncols
-        allocate (tofill_ijs(2, max_queue_size))
-        allocate (seeds(nrows, ncols))
+        allocate (tofill_ijs(2, max_queue_size), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
+        allocate (seeds(nrows, ncols), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
         seeds = valids .and. (indegs == 0)
         err_code = 0
         orders = merge(int(1, kind=2), int(0, kind=2), seeds)
@@ -1270,6 +1373,7 @@ contains
         integer, intent(out) :: err_code
             !! Code indicating the status of the result
             !!   - 0: Programme executed properly
+            !!   - 2: Internal workspace allocation failed
             !!   - 3: Watershed traversal queue capacity was exceeded
         ! Local variables
         integer :: iofs
@@ -1286,6 +1390,8 @@ contains
             !! Buffers for storing (i, j) indices of seed cells and cells to be processed in the breadth-first search from seed cells
         integer :: max_queue_size
             !! Maximum size of the buffer for cells to be processed ('seed_ijs' and 'tofill_ijs')
+        integer :: alloc_stat
+            !! Per-thread allocation status code
 
         ! Find noflow code
         noflow_code = find_noflow_code(offsets, codes, noffsets)
@@ -1295,18 +1401,31 @@ contains
 
         ! Append all cells with noflow direction to buffer
         max_queue_size = nrows*ncols
-        allocate (seed_ijs(2, max_queue_size))
-        allocate (seeds(nrows, ncols))
+        allocate (seed_ijs(2, max_queue_size), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
+        allocate (seeds(nrows, ncols), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
         seeds = valids .and. (dirs == noflow_code)
         call mask2ij(seeds, nrows, ncols, &
                      seed_ijs, max_queue_size, nseeds)
         deallocate (seeds)
 
         ! Loop through seeds
-        !$omp PARALLEL DEFAULT(SHARED) PRIVATE(iseed, si, sj, ci, cj, ifill, nfills, tofill_ijs)
-        allocate (tofill_ijs(2, max_queue_size))
+        !$omp PARALLEL DEFAULT(SHARED) PRIVATE(iseed, si, sj, ci, cj, ifill, nfills, tofill_ijs, alloc_stat)
+        allocate (tofill_ijs(2, max_queue_size), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            !$omp atomic write
+            err_code = 2
+        end if
         !$omp DO SCHEDULE(DYNAMIC)
         do iseed = 1, nseeds
+            if (alloc_stat /= 0) cycle
             si = seed_ijs(1, iseed)
             sj = seed_ijs(2, iseed)
 
@@ -1351,7 +1470,7 @@ contains
             end do
         end do
         !$omp END DO
-        deallocate (tofill_ijs)
+        if (allocated(tofill_ijs)) deallocate (tofill_ijs)
         !$omp END PARALLEL
     end subroutine label_watersheds
 
@@ -1377,6 +1496,7 @@ contains
         integer, intent(out) :: err_code
             !! Code indicating the status of the result
             !!   - 0: Programme executed properly
+            !!   - 2: Internal workspace allocation failed
             !!   - 3: Upstream-flooding queue capacity was exceeded
         ! Local variables
         integer :: iofs
@@ -1391,6 +1511,8 @@ contains
             !! Buffers for storing (i, j) indices of seed cells and cells to be processed in the flooding algorithm
         integer :: max_queue_size
             !! Maximum size of the buffer for cells to be processed ('seed_ijs' and 'tofill_ijs')
+        integer :: alloc_stat
+            !! Per-thread allocation status code
 
         ! Find noflow code
         noflow_code = find_noflow_code(offsets, codes, noffsets)
@@ -1400,15 +1522,24 @@ contains
 
         ! Append all cells with noflow direction to buffer
         max_queue_size = nrows*ncols
-        allocate (seed_ijs(2, max_queue_size))
+        allocate (seed_ijs(2, max_queue_size), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
         call mask2ij(seeds, nrows, ncols, &
                      seed_ijs, max_queue_size, nseeds)
 
         ! Loop through seeds
-        !$omp PARALLEL DEFAULT(SHARED) PRIVATE(iseed, si, sj, ci, cj, ifill, nfills, tofill_ijs)
-        allocate (tofill_ijs(2, max_queue_size))
+        !$omp PARALLEL DEFAULT(SHARED) PRIVATE(iseed, si, sj, ci, cj, ifill, nfills, tofill_ijs, alloc_stat)
+        allocate (tofill_ijs(2, max_queue_size), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            !$omp atomic write
+            err_code = 2
+        end if
         !$omp DO SCHEDULE(DYNAMIC)
         do iseed = 1, nseeds
+            if (alloc_stat /= 0) cycle
             si = seed_ijs(1, iseed)
             sj = seed_ijs(2, iseed)
 
@@ -1457,7 +1588,7 @@ contains
         end do
         !$omp END DO
         deallocate (seed_ijs)
-        deallocate (tofill_ijs)
+        if (allocated(tofill_ijs)) deallocate (tofill_ijs)
         !$omp END PARALLEL
     end subroutine flood_upstream
 
@@ -1594,7 +1725,7 @@ contains
 
     subroutine compute_max_branch_dist( &
         maxbdists, dirs, valids, x, y, basin_ids, nrows, ncols, &
-        offsets, codes, noffsets)
+        offsets, codes, noffsets, err_code)
         implicit none
         ! Inputs
         integer, intent(in) :: nrows, ncols
@@ -1616,6 +1747,10 @@ contains
         ! Outputs
         real, intent(out) :: maxbdists(nrows, ncols)
             !! Grid of maximum branch distances for each cell, i.e. the maximum distance along flow paths to a confluence point downstream
+        integer, intent(out) :: err_code
+            !! Code indicating the status of the result
+            !!   - 0: Programme executed properly
+            !!   - 2: Internal workspace allocation failed
         ! Local variables
         integer, allocatable :: diffs(:, :)
             !! Lookup table for offsets corresponding to each flow direction code, used to find downstream cell indices
@@ -1632,9 +1767,16 @@ contains
             !! When incrementing, each ID is of 'maxlen' apart such that 'path1id + ilen' is unique, which allows for more efficient confluence lookup.
         integer, allocatable :: path1(:, :), path2(:, :), visited(:, :)
         logical*1, allocatable :: is_max_dist(:, :)
+        integer :: alloc_stat
+            !! Per-thread allocation status code
 
         ! Create lookup tables for offsets
-        allocate (diffs(0:255, 2))
+        err_code = 0
+        allocate (diffs(0:255, 2), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
         diffs = fill_offset_lookup(offsets, codes, noffsets)
 
         ! Define neighbour offsets
@@ -1647,22 +1789,31 @@ contains
 
         maxlen = 2*(nrows + ncols)
 
-        allocate (is_max_dist(nrows, ncols))
+        allocate (is_max_dist(nrows, ncols), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
         maxbdists = 0.0
         is_max_dist = .false.
         !$omp PARALLEL DEFAULT(SHARED) &
         !$omp PRIVATE(ci, cj, ni, nj, nneighbour, dists) &
-        !$omp PRIVATE(path1, path2, path1id, path2id, visited)
-        allocate (path1(2, maxlen))
-        allocate (path2(2, maxlen))
-        allocate (visited(nrows, ncols))
-        visited = 0
+        !$omp PRIVATE(path1, path2, path1id, path2id, visited, alloc_stat)
+        allocate (path1(2, maxlen), path2(2, maxlen), &
+                  visited(nrows, ncols), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            !$omp atomic write
+            err_code = 2
+        else
+            visited = 0
+        end if
         path1id = 1
         path2id = 1 + maxlen
         !$omp DO SCHEDULE(DYNAMIC) &
         !$omp COLLAPSE(2)
         do cj = 1, ncols
             do ci = 1, nrows
+                if (alloc_stat /= 0) cycle
                 do nneighbour = 1, size(neighbour_offsets, 1)
                     if (.not. valids(ci, cj)) cycle
                     ni = ci + neighbour_offsets(nneighbour, 1)
@@ -1699,9 +1850,9 @@ contains
             end do
         end do
         !$omp END DO
-        deallocate (path1)
-        deallocate (path2)
-        deallocate (visited)
+        if (allocated(path1)) deallocate (path1)
+        if (allocated(path2)) deallocate (path2)
+        if (allocated(visited)) deallocate (visited)
         !$omp END PARALLEL
         deallocate (is_max_dist)
         deallocate (diffs)
@@ -1710,7 +1861,7 @@ contains
     subroutine compute_confluence_dist( &
         dists, &
         s1ij, s2ij, dirs, x, y, &
-        offset_lookup, check_flag)
+        offset_lookup, check_flag, err_code)
         !! Traces flow paths from two seed cells downstream to compute their confluence distance.
         implicit none
         ! Arguments
@@ -1727,6 +1878,10 @@ contains
         ! Outputs
         real, intent(out) :: dists(2)
             !! Distances from each seed ceel to the confluence cell (or to max path length if no confluence found)
+        integer, intent(out) :: err_code
+            !! Code indicating the status of the result
+            !!   - 0: Programme executed properly
+            !!   - 2: Internal workspace allocation failed
         ! Local variables
         logical*1 :: check_flag_
         integer :: maxpathlen
@@ -1743,9 +1898,14 @@ contains
         ! id1 uses values in [id1, id1 + maxpathlen - 1].
         ! id2 uses values in [id2, id2 + maxpathlen - 1].
         id2 = 1 + maxpathlen
-        allocate (path1(2, maxpathlen))
-        allocate (path2(2, maxpathlen))
-        allocate (visited(size(dirs, 1), size(dirs, 2)))
+        err_code = 0
+        allocate (path1(2, maxpathlen), path2(2, maxpathlen), &
+                  visited(size(dirs, 1), size(dirs, 2)), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            dists = 0.0
+            return
+        end if
         visited = 0
 
         check_flag_ = (.not. present(check_flag)) .or. check_flag

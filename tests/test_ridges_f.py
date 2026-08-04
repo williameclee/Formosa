@@ -12,8 +12,20 @@ import numpy as np
 from formosa import D8Directions
 
 
+class _CheckedRasterBackend:
+    def __init__(self, backend):
+        self._backend = backend
+
+    def compute_confluence_dist(self, *args, **kwargs):
+        dists, err_code = self._backend.compute_confluence_dist(*args, **kwargs)
+        assert err_code == 0
+        return dists
+
+
 def test_confluence_distance_2x2():
     from formosa.geomorphology.flowdir_f import flowdir_raster as raster_f
+
+    raster_f = _CheckedRasterBackend(raster_f)
 
     dir_scheme = D8Directions(transform_codes=lambda x: x)
     offset_lookup = np.zeros((256, 2), dtype=np.int32)
@@ -140,6 +152,8 @@ def test_confluence_distance_2x2():
 
 def test_confluence_distance_3x3():
     from formosa.geomorphology.flowdir_f import flowdir_raster as raster_f
+
+    raster_f = _CheckedRasterBackend(raster_f)
 
     dir_scheme = D8Directions(transform_codes=lambda x: x)
     offset_lookup = np.zeros((256, 2), dtype=np.int32)

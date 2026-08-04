@@ -24,6 +24,7 @@
 #     - Added test cases for FORTRAN error code handling
 
 import warnings
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -37,6 +38,31 @@ from formosa.geomorphology.flowdir_f import flowdir_graphs as graphs_f
 
 T = True
 F = False
+
+
+def test_all_fortran_allocations_check_status():
+    source_root = Path(__file__).parents[1] / "src" / "formosa" / "geomorphology"
+    unguarded = []
+    for source_path in source_root.rglob("*.f95"):
+        lines = source_path.read_text().splitlines()
+        for line_number, line in enumerate(lines, start=1):
+            if not line.lower().lstrip().startswith("allocate ("):
+                continue
+            statement = line.strip()
+            next_index = line_number
+            while statement.endswith("&") and next_index < len(lines):
+                statement = f"{statement} {lines[next_index].strip()}"
+                next_index += 1
+            if "stat=" not in statement.lower():
+                unguarded.append(f"{source_path.relative_to(source_root)}:{line_number}")
+                continue
+            stat_var = statement.lower().split("stat=", 1)[1].split(")", 1)[0].strip()
+            status_check = f"if ({stat_var} /= 0)"
+            following_lines = " ".join(lines[next_index : next_index + 4]).lower()
+            if status_check not in following_lines:
+                unguarded.append(f"{source_path.relative_to(source_root)}:{line_number}")
+
+    assert unguarded == []
 
 
 def test_downstreamid_3x3():
@@ -486,6 +512,22 @@ def test_label_flats_translates_fortran_errors(
         raster_module.label_flats(
             np.zeros((1, 1), dtype=np.float32),
             np.ones((1, 1), dtype=bool),
+        )
+
+
+def test_max_branch_distance_translates_allocation_failure(monkeypatch):
+    def fake_compute(*args):
+        return np.zeros((1, 1), dtype=np.float32), 2
+
+    monkeypatch.setattr(
+        raster_module,
+        "raster_f",
+        SimpleNamespace(compute_max_branch_dist=fake_compute),
+    )
+
+    with pytest.raises(MemoryError, match=r"compute_max_branch_dist.*error code 2"):
+        raster_module.compute_dist2conf_max(
+            np.zeros((1, 1), dtype=np.uint8),
         )
 
 
