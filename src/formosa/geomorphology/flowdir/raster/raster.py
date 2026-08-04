@@ -1223,7 +1223,7 @@ def compute_dist2conf_max(
     else:
         raise TypeError(f"Labels must be a NumPy array (got {type(watershed_labels)}).")
 
-    bmax = raster_f.compute_max_branch_dist(
+    bmax, err_code = raster_f.compute_max_branch_dist(
         dirs.astype(np.uint8, order="F"),
         valids.astype(bool, order="F"),
         x.astype(np.float32, order="F"),
@@ -1232,6 +1232,7 @@ def compute_dist2conf_max(
         dir_scheme.offsets.astype(np.int32, order="F"),
         dir_scheme.codes.astype(np.uint8, order="F"),
     )
+    raise_fortran_error("compute_max_branch_dist", err_code)
     return bmax.astype(np.float32, order="F")
 
 
