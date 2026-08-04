@@ -776,7 +776,7 @@ def test_topology_repair_simplifies_each_conflicting_arc_once(monkeypatch):
     vertices = np.array([[0, 1, 2, 3, 4, 5], [0, 0, 0, 0, 0, 0]], dtype=np.float32)
     endpts = np.array([[0, 2, 4], [1, 3, 5]], dtype=np.int32)
     keeps = graphs_module._resolve_topology_intersections(
-        vertices, endpts, np.ones(6, dtype=bool), tol=1.0, max_iters=0
+        vertices, endpts, np.ones(6, dtype=bool), tol=1.0, max_iters=1
     )
 
     assert simplified_starts == [(0.0, 0.0), (2.0, 0.0), (4.0, 0.0)]
