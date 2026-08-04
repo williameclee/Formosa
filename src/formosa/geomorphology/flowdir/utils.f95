@@ -10,13 +10,15 @@
 !     - Moved 'flowdir_utils' module here 'utils'
 !   2026-08-03, En-Chi Lee (williameclee@gmail.com)
 !     - Explicitly handled Python uint8 -> FORTRAN INTEGER*1 conversion/interpretation in 'fill_offset_lookup'
+!   2026-08-04, En-Chi Lee (williameclee@gmail.com)
+!     - Refactored 'mask2ij' to propagate buffer overflow error
 !!!
 
 module utils
     implicit none
 contains
     subroutine mask2ij( &
-        mask, nrows, ncols, ij, nij, cnt)
+        mask, nrows, ncols, ij, nij, cnt, err_code)
         !! Converts a 2D logical mask to a list of (i, j) indices where
         !! the mask is true.
         !! The output list will have a maximum size of 2-by-'nij', and
@@ -36,17 +38,22 @@ contains
             !! Output list of (i, j) indices where mask is true, with a maximum size of 2-by-nij
         integer, intent(out) :: cnt
             !! Actual number of valid indices found (up to nij)
+        integer, intent(out) :: err_code
+            !! Code indicating the status of the result
+            !!   - 0: Programme executed properly
+            !!   - 3: Output index buffer capacity was exceeded
         ! Local variables
         integer :: ci, cj
 
         ! Count number of valid neighbors
         cnt = 0
+        err_code = 0
 
         do cj = lbound(mask, 2), ubound(mask, 2)
             do ci = lbound(mask, 1), ubound(mask, 1)
                 if (.not. mask(ci, cj)) cycle
                 if (cnt == nij) then
-                    print *, "Warning: mask2ij found more valid indices than the maximum allowed (", cnt, "). Only the first ", nij, " indices will be returned."
+                    err_code = 3
                     return
                 end if
                 cnt = cnt + 1

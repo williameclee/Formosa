@@ -35,6 +35,7 @@ import formosa.geomorphology.flowdir as flowdir
 from formosa.geomorphology.flowdir.raster import raster as raster_module
 from formosa.geomorphology.flowdir.graphs import graphs as graphs_module
 from formosa.geomorphology.flowdir_f import flowdir_graphs as graphs_f
+from formosa.geomorphology.flowdir_f import utils as utils_f
 
 T = True
 F = False
@@ -63,6 +64,17 @@ def test_all_fortran_allocations_check_status():
                 unguarded.append(f"{source_path.relative_to(source_root)}:{line_number}")
 
     assert unguarded == []
+
+
+def test_mask2ij_returns_output_capacity_error():
+    indices, count, err_code = utils_f.mask2ij(
+        np.ones((2, 2), dtype=bool, order="F"),
+        2,
+    )
+
+    assert count == 2
+    assert err_code == 3
+    assert indices.shape == (2, 2)
 
 
 def test_downstreamid_3x3():

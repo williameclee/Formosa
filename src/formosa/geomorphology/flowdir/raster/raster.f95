@@ -311,7 +311,8 @@ contains
         end if
         ! Convert seed mask to list of (i, j) indices
         call mask2ij(seeds, nrows, ncols, &
-                     seed_ijs, size(seed_ijs, dim=2), nseeds)
+                     seed_ijs, size(seed_ijs, dim=2), nseeds, err_code)
+        if (err_code /= 0) return
 
         flats = 0
         iflat = 1
@@ -432,7 +433,8 @@ contains
         nedges = 0
         z = 0
         call mask2ij(high_edges, nrows, ncols, &
-                     high_edge_ijs, size(high_edge_ijs, dim=2), nedges)
+                     high_edge_ijs, size(high_edge_ijs, dim=2), nedges, err_code)
+        if (err_code /= 0) return
         if (nedges == 0) then
             ! No high edges found, set z to zero and exit
             deallocate (high_edge_ijs)
@@ -596,7 +598,8 @@ contains
             return
         end if
         call mask2ij(low_edges, nrows, ncols, &
-                     low_edges_ijs, size(low_edges_ijs, dim=2), nedges)
+                     low_edges_ijs, size(low_edges_ijs, dim=2), nedges, err_code)
+        if (err_code /= 0) return
         nedges = nedges + 1
         low_edges_ijs(:, nedges) = marker
 
@@ -810,7 +813,8 @@ contains
         end if
         flood_seeds = valids .and. (indegs == 0)
         call mask2ij(flood_seeds, nrows, ncols, &
-                     flood_ijs, max_queue_size, ntofills)
+                     flood_ijs, max_queue_size, ntofills, err_code)
+        if (err_code /= 0) return
         deallocate (flood_seeds)
 
         err_code = 0
@@ -921,7 +925,8 @@ contains
         end if
         tofill_seeds = valids .and. (indegs == 0)
         call mask2ij(tofill_seeds, nrows, ncols, &
-                     tofill_ijs, max_queue_size, ntofills)
+                     tofill_ijs, max_queue_size, ntofills, err_code)
+        if (err_code /= 0) return
         deallocate (tofill_seeds)
 
         !! Main loop to fill distances using a breadth-first search starting from source cells
@@ -1032,7 +1037,8 @@ contains
         end if
         seeds = valids .and. (indegs == 0)
         call mask2ij(seeds, nrows, ncols, &
-                     tofill_ijs, max_queue_size, ntofills)
+                     tofill_ijs, max_queue_size, ntofills, err_code)
+        if (err_code /= 0) return
         deallocate (seeds)
 
         !! Main loop to fill distances using a breadth-first search starting from source cells
@@ -1141,7 +1147,8 @@ contains
         end if
         seeds = valids .and. (dirs == noflow_code)
         call mask2ij(seeds, nrows, ncols, &
-                     seed_ijs, max_queue_size, nseeds)
+                     seed_ijs, max_queue_size, nseeds, err_code)
+        if (err_code /= 0) return
         deallocate (seeds)
 
         ! Loop through seeds
@@ -1277,7 +1284,8 @@ contains
         err_code = 0
         orders = merge(int(1, kind=2), int(0, kind=2), seeds)
         call mask2ij(seeds, nrows, ncols, &
-                     tofill_ijs, max_queue_size, ntofills)
+                     tofill_ijs, max_queue_size, ntofills, err_code)
+        if (err_code /= 0) return
         deallocate (seeds)
 
         itofill = 1
@@ -1413,7 +1421,8 @@ contains
         end if
         seeds = valids .and. (dirs == noflow_code)
         call mask2ij(seeds, nrows, ncols, &
-                     seed_ijs, max_queue_size, nseeds)
+                     seed_ijs, max_queue_size, nseeds, err_code)
+        if (err_code /= 0) return
         deallocate (seeds)
 
         ! Loop through seeds
@@ -1528,7 +1537,8 @@ contains
             return
         end if
         call mask2ij(seeds, nrows, ncols, &
-                     seed_ijs, max_queue_size, nseeds)
+                     seed_ijs, max_queue_size, nseeds, err_code)
+        if (err_code /= 0) return
 
         ! Loop through seeds
         !$omp PARALLEL DEFAULT(SHARED) PRIVATE(iseed, si, sj, ci, cj, ifill, nfills, tofill_ijs, alloc_stat)
@@ -1674,7 +1684,8 @@ contains
         seeds = valids .and. (indegs == 0)
         offset_lookup = fill_offset_lookup(offsets, codes, noffsets)
         call mask2ij(seeds, nrows, ncols, &
-                     seed_ijs, size(seed_ijs, dim=2), nseeds)
+                     seed_ijs, size(seed_ijs, dim=2), nseeds, err_code)
+        if (err_code /= 0) return
         deallocate (seeds)
 
         rem_indegs = indegs

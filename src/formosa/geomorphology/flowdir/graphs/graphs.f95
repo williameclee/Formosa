@@ -110,7 +110,8 @@ contains
             deallocate (offset_lookup)
             return
         end if
-        call mask2ij(seeds, nrows, ncols, seed_ijs, ncells, nseeds)
+        call mask2ij(seeds, nrows, ncols, seed_ijs, ncells, nseeds, err_code)
+        if (err_code /= 0) return
 
         ! Find noflow code
         noflow_code = find_noflow_code(offsets, codes, noffsets)
