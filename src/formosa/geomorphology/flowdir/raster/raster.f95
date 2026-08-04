@@ -285,7 +285,6 @@ contains
             !! Index of the current flat region being labeled (!= issed because same flat can have multiple seeds)
         integer, allocatable :: seed_ijs(:, :)
             !! List of (i, j) indices for seed cells
-            !! It should be safe to assume that the number of seed cells will not exceed nrows*ncols/2, since each flat region should have at least 2 cells.
         integer :: iseed, nseeds
             !! Index and total number of seed cells ('seed_ijs')
         integer, allocatable :: flat_ijs(:, :)
@@ -305,7 +304,7 @@ contains
             err_code = 2
             return
         end if
-        allocate (seed_ijs(2, nrows*ncols/2), stat=err_code)
+        allocate (seed_ijs(2, nrows*ncols), stat=err_code)
         if (err_code /= 0) then
             err_code = 2
             return
@@ -1596,9 +1595,9 @@ contains
             end do
         end do
         !$omp END DO
-        deallocate (seed_ijs)
         if (allocated(tofill_ijs)) deallocate (tofill_ijs)
         !$omp END PARALLEL
+        deallocate (seed_ijs)
     end subroutine flood_upstream
 
     subroutine find_acyclic_flowdirs( &
@@ -1760,7 +1759,9 @@ contains
         integer, intent(out) :: err_code
             !! Code indicating the status of the result
             !!   - 0: Programme executed properly
+            !!   - 1: A traced flow path contains a cycle
             !!   - 2: Internal workspace allocation failed
+            !!   - 3: A traced flow path exceeded its allocated capacity
         ! Local variables
         integer, allocatable :: diffs(:, :)
             !! Lookup table for offsets corresponding to each flow direction code, used to find downstream cell indices
