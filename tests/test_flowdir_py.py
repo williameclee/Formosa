@@ -351,6 +351,25 @@ def test_find_graph_overlaps_is_symmetric_with_repeated_coordinates():
     assert np.any(np.all(forward[0] == [1, 0], axis=1))
 
 
+@pytest.mark.parametrize("empty_graph", (1, 2))
+def test_find_graph_overlaps_accepts_an_empty_graph(empty_graph):
+    from formosa.geomorphology.flowdir.graphs.graphs import find_graph_overlaps
+
+    empty_ijs = np.empty((0, 2), dtype=np.int32)
+    empty_endpts = np.empty((0, 2), dtype=np.int32)
+    ijs = np.array([[0, 0], [1, 0]], dtype=np.int32)
+    endpts = np.array([[0, 1]], dtype=np.int32)
+    graphs = ((empty_ijs, empty_endpts), (ijs, endpts))
+    if empty_graph == 2:
+        graphs = graphs[::-1]
+
+    overlaps = find_graph_overlaps(*graphs[0], *graphs[1])
+
+    for overlap_type in overlaps:
+        assert overlap_type.shape == (0, 2)
+        assert overlap_type.dtype == np.int32
+
+
 @pytest.mark.parametrize(
     (
         "allows_arcs_overlap",
@@ -499,7 +518,7 @@ def test_find_acyclic_flowdirs_rejects_shape_mismatch(name):
     kwargs = {name: np.ones((2, 1), dtype=bool)}
     with pytest.raises(ValueError, match="Shapes"):
         flowdir.find_acyclic_flowdirs(
-            np.zeros((1, 1), dtype=np.uint8), backend="python", **kwargs
+            np.zeros((1, 1), dtype=np.uint8), backend="python", **kwargs  # type: ignore
         )
 
 
