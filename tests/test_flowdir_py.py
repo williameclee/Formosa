@@ -122,6 +122,47 @@ def test_construct_flowgraph_rejects_incomplete_backend_output(monkeypatch):
     np.testing.assert_array_equal(exc_info.value.missing_ijs, [[0, 0], [0, 1]])
 
 
+def test_construct_flowgraph_rejects_missing_directed_edge(monkeypatch):
+    dir_scheme = D8Directions(transform_codes=lambda x: x)
+    dirs = np.array([[1, 1, 0]], dtype=np.uint8)
+    orders = np.ones(dirs.shape, dtype=np.uint8)
+
+    def omit_second_edge(*args, **kwargs):
+        # All expected cells are present in the raw vertex buffer, but the only
+        # returned arc stops at (0, 1); the edge (0, 1) -> (0, 2) is omitted.
+        return (
+            1,
+            3,
+            np.array([1], dtype=np.int8),
+            np.array([[0, 0, 0], [0, 1, 2]], dtype=np.int32),
+            np.array([[0], [1]], dtype=np.int32),
+        )
+
+    monkeypatch.setattr(
+        graphs_py_module,
+        "_construct_flowgraph_py",
+        omit_second_edge,
+    )
+
+    with pytest.raises(flowdir.IncompleteFlowGraphError) as exc_info:
+        graphs_module.construct_flowgraph(
+            dirs,
+            dir_scheme=dir_scheme,
+            orders=orders,
+            min_order=1,
+            backend="python",
+        )
+
+    np.testing.assert_array_equal(
+        exc_info.value.missing_edges,
+        [[0, 1, 0, 2]],
+    )
+    np.testing.assert_array_equal(
+        exc_info.value.missing_ijs,
+        [[0, 1], [0, 2]],
+    )
+
+
 def test_network_graph_concat_3x3():
     dir_scheme = D8Directions(transform_codes=lambda x: x)
 

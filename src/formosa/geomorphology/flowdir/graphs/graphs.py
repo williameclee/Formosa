@@ -91,13 +91,22 @@ class DirectedFlowCycleError(GraphTopologyError):
 
 class IncompleteFlowGraphError(GraphTopologyError):
     """
-    Raised when construction omits a cell participating in a selected edge.
+    Raised when construction omits one or more selected directed edges.
     """
 
-    def __init__(self, missing_ijs: npt.NDArray[np.integer]) -> None:
+    def __init__(
+        self,
+        missing_ijs: npt.NDArray[np.integer],
+        missing_edges: Optional[npt.NDArray[np.integer]] = None,
+    ) -> None:
         self.missing_ijs = np.asarray(missing_ijs, dtype=np.int32).copy()
+        if missing_edges is None:
+            self.missing_edges = np.empty((0, 4), dtype=np.int32)
+        else:
+            self.missing_edges = np.asarray(missing_edges, dtype=np.int32).copy()
         super().__init__(
-            "Flow-graph construction omitted selected edge cells at "
+            "Flow-graph construction omitted selected directed edges "
+            f"{self.missing_edges.tolist()}; participating cells are "
             f"{self.missing_ijs.tolist()}."
         )
 
@@ -217,27 +226,43 @@ def _valid_flow_edges(
 
 def _validate_flowgraph_coverage(
     vertex_ijs: npt.NDArray[np.integer],
-    valids: npt.NDArray[np.bool_],
+    arc_endpts: npt.NDArray[np.integer],
     dsi: npt.NDArray[np.integer],
     dsj: npt.NDArray[np.integer],
     has_valid_ds: npt.NDArray[np.bool_],
 ) -> None:
     """
-    Checks that all segments actually show up in the graph.
+    Checks that every selected directed edge occurs in a returned graph arc.
     """
-    expected = has_valid_ds.copy()
-    expected[
-        dsi[has_valid_ds],
-        dsj[has_valid_ds],
-    ] = True
+    represented = np.zeros(has_valid_ds.shape, dtype=bool)
 
-    represented = np.zeros(valids.shape, dtype=bool)
-    if vertex_ijs.shape[0] > 0:
-        represented[vertex_ijs[:, 0], vertex_ijs[:, 1]] = True
+    # Identify consecutive vertex pairs that belong to an arc.
+    segment_counts = np.zeros(vertex_ijs.shape[0], dtype=np.int32)
+    np.add.at(segment_counts, arc_endpts[:, 0], 1)
+    np.add.at(segment_counts, arc_endpts[:, 1], -1)
+    segment_valids = np.cumsum(segment_counts)[:-1] > 0
 
-    missing_ijs = np.argwhere(expected & ~represented)
-    if missing_ijs.size > 0:
-        raise IncompleteFlowGraphError(missing_ijs)
+    sources = vertex_ijs[:-1][segment_valids]
+    targets = vertex_ijs[1:][segment_valids]
+
+    # Confirm each represented edge matches the source cell's expected downstream.
+    matches = (targets[:, 0] == dsi[sources[:, 0], sources[:, 1]]) & (
+        targets[:, 1] == dsj[sources[:, 0], sources[:, 1]]
+    )
+    matched_sources = sources[matches]
+    represented[matched_sources[:, 0], matched_sources[:, 1]] = True
+
+    missing_sources = np.argwhere(has_valid_ds & ~represented)
+    if missing_sources.size:
+        missing_targets = np.column_stack(
+            (
+                dsi[missing_sources[:, 0], missing_sources[:, 1]],
+                dsj[missing_sources[:, 0], missing_sources[:, 1]],
+            )
+        )
+        missing_edges = np.column_stack((missing_sources, missing_targets))
+        missing_ijs = np.unique(missing_edges.reshape(-1, 2), axis=0)
+        raise IncompleteFlowGraphError(missing_ijs, missing_edges)
 
 
 def construct_flowgraph(
@@ -379,7 +404,7 @@ def construct_flowgraph(
         arc_endpts = arc_endpts[id, :]
 
     dsi, dsj, has_valid_ds = _valid_flow_edges(dirs, valids, dir_scheme)
-    _validate_flowgraph_coverage(vertex_ijs, valids, dsi, dsj, has_valid_ds)
+    _validate_flowgraph_coverage(vertex_ijs, arc_endpts, dsi, dsj, has_valid_ds)
 
     return arc_orders, vertex_ijs, arc_endpts
 
@@ -698,7 +723,7 @@ def _used_graph_vertices(
     unique_is_endpts : NDArray[bool]
         U-by-(1) boolean array indicating whether each unique coordinate is an endpoint of at least one arc.
     """
-    
+
     # Skip empty graphs
     endpts = np.asarray(endpts)
     if endpts.shape[0] == 0:
@@ -1166,7 +1191,7 @@ def _resolve_topology_intersections(
     """
     Checks for topology violations and resolves them by iteratively reducing
     the tolerance for conflicting arcs and re-simplifying them.
-    
+
     Parameters
     ----------
     vertices : NDArray[int | float]
