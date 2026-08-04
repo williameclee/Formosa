@@ -277,6 +277,7 @@ contains
         integer, intent(out) :: err_code
             !! Code indicating the status of the result
             !!   - 0: Programme executed properly
+            !!   - 1: A high-edge seed does not belong to a labelled flat
             !!   - 2: Internal workspace allocation failed
             !!   - 3: Flat-flooding buffer capacity was exceeded
         ! Local variables
@@ -497,9 +498,8 @@ contains
                 err_code = 3
                 return
             else if (flats(ci, cj) == 0) then
-                ! Skip if for some reason we ended up with a non-flat cell in the queue
-                print *, "[AWAY_FROM_HIGH] Warning: Encountered non-flat cell in queue at (", ci, ",", cj, "). This should not happen, but will be skipped."
-                cycle
+                err_code = 1
+                return
             end if
 
             z(ci, cj) = dist
@@ -1126,7 +1126,6 @@ contains
             !! Maximum size of the buffer for cells to be processed ('seed_ijs' and 'tofill_ijs')
         integer :: alloc_stat
             !! Per-thread allocation status code
-
         ! Find noflow code
         noflow_code = find_noflow_code(offsets, codes, noffsets)
 
@@ -1780,6 +1779,8 @@ contains
         logical*1, allocatable :: is_max_dist(:, :)
         integer :: alloc_stat
             !! Per-thread allocation status code
+        integer :: inner_err_code
+            !! Status returned by a confluence trace
 
         ! Create lookup tables for offsets
         err_code = 0
@@ -1809,7 +1810,7 @@ contains
         is_max_dist = .false.
         !$omp PARALLEL DEFAULT(SHARED) &
         !$omp PRIVATE(ci, cj, ni, nj, nneighbour, dists) &
-        !$omp PRIVATE(path1, path2, path1id, path2id, visited, alloc_stat)
+        !$omp PRIVATE(path1, path2, path1id, path2id, visited, alloc_stat, inner_err_code)
         allocate (path1(2, maxlen), path2(2, maxlen), &
                   visited(nrows, ncols), stat=alloc_stat)
         if (alloc_stat /= 0) then
@@ -1838,7 +1839,14 @@ contains
                         dists, ci, cj, ni, nj, dirs, x, y, diffs, &
                         maxpathlen=maxlen, path1=path1, path2=path2, &
                         visited=visited, id1=path1id, id2=path2id, &
-                        check_flag=logical(basin_ids(ni, nj) == basin_ids(ci, cj), kind=1))
+                        check_flag=logical(basin_ids(ni, nj) == basin_ids(ci, cj), kind=1), &
+                        err_code=inner_err_code)
+                    if (inner_err_code /= 0) then
+                        !$omp critical
+                        if (err_code == 0) err_code = inner_err_code
+                        !$omp end critical
+                        cycle
+                    end if
                     maxbdists(ci, cj) = max(maxbdists(ci, cj), dists(1))
                     !$omp ATOMIC UPDATE
                     maxbdists(ni, nj) = max(maxbdists(ni, nj), dists(2))
@@ -1892,7 +1900,9 @@ contains
         integer, intent(out) :: err_code
             !! Code indicating the status of the result
             !!   - 0: Programme executed properly
+            !!   - 1: A traced flow path contains a cycle
             !!   - 2: Internal workspace allocation failed
+            !!   - 3: A traced flow path exceeded its allocated capacity
         ! Local variables
         logical*1 :: check_flag_
         integer :: maxpathlen
@@ -1925,7 +1935,7 @@ contains
             dists, &
             s1ij(1), s1ij(2), s2ij(1), s2ij(2), dirs, x, y, offset_lookup, &
             maxpathlen, path1, path2, visited, id1, id2, &
-            check_flag=check_flag_)
+            check_flag=check_flag_, err_code=err_code)
         deallocate (path1)
         deallocate (path2)
         deallocate (visited)
@@ -1933,7 +1943,7 @@ contains
 
     subroutine inner_compute_confluence_dist( &
         dists, s1i, s1j, s2i, s2j, dirs, x, y, &
-        offset_lookup, maxpathlen, path1, path2, visited, id1, id2, check_flag)
+        offset_lookup, maxpathlen, path1, path2, visited, id1, id2, check_flag, err_code)
         !! Inner routine for computing the confluence distance between two seed cells.
         !!
         !! The 'visited' grid tracks cell visits. It stores the exact path step
@@ -1965,6 +1975,11 @@ contains
             !! Grid to track visited paths by ids
         ! Outputs
         real, intent(out) :: dists(2)
+        integer, intent(out) :: err_code
+            !! Code indicating the status of the result
+            !!   - 0: Programme executed properly
+            !!   - 1: A traced flow path contains a cycle
+            !!   - 3: A traced flow path exceeded its allocated capacity
             !! Distances from each seed cell to the confluence cell (or to max path length if no confluence found)
         ! Local variables
         integer :: ipath1, ipath2, npath1, npath2
@@ -1984,6 +1999,7 @@ contains
         iconf2 = maxpathlen
 
         dists = 0.0
+        err_code = 0
         is_active1 = .true.
         is_active2 = .true.
 
@@ -2026,20 +2042,18 @@ contains
                     is_active1 = .false.
                     exit path1_prc
                 else if (npath1 >= maxpathlen) then
-                    print *, "[CONFLUENCE_DISTANCE] Warning: Path 1 exceeded max length of ", maxpathlen
+                    err_code = 3
                     iconf1 = npath1
-                    is_active1 = .false.
-                    exit path1_prc
+                    return
                 end if
                 npath1 = npath1 + 1
                 path1(1, npath1) = n1i
                 path1(2, npath1) = n1j
                 ! Check for self-intersection (value lies within Path 1's active range of IDs for the current run)
                 if (visited(n1i, n1j) >= id1 .and. visited(n1i, n1j) < id1 + npath1 - 1) then
-                    print *, "[CONFLUENCE_DISTANCE] Warning: Path 1 self-intersection at ", n1i, ",", n1j
+                    err_code = 1
                     iconf1 = npath1
-                    is_active1 = .false.
-                    exit path1_prc
+                    return
                 end if
                 ! Check if enters a visited cell
                 if (.not. local_check_flag) exit path1_prc
@@ -2075,20 +2089,18 @@ contains
                     is_active2 = .false.
                     exit path2_prc
                 else if (npath2 >= maxpathlen) then
-                    print *, "[CONFLUENCE_DISTANCE] Warning: Path 2 exceeded max length of ", maxpathlen
+                    err_code = 3
                     iconf2 = npath2
-                    is_active2 = .false.
-                    exit path2_prc
+                    return
                 end if
                 npath2 = npath2 + 1
                 path2(1, npath2) = n2i
                 path2(2, npath2) = n2j
                 ! Check for self-intersection (value lies within Path 2's active range of IDs for the current run)
                 if (visited(n2i, n2j) >= id2 .and. visited(n2i, n2j) < id2 + npath2 - 1) then
-                    print *, "[CONFLUENCE_DISTANCE] Warning: Path 2 self-intersection at ", n2i, ",", n2j
+                    err_code = 1
                     iconf2 = npath2
-                    is_active2 = .false.
-                    exit path2_prc
+                    return
                 end if
                 ! Check if enters a visited cell
                 if (.not. local_check_flag) exit path2_prc
