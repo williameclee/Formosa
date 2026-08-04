@@ -1,6 +1,12 @@
+# Last modified
+#      - Moved from `geomorphology.flowdir` to `geomorphology.flowdir.flowdir`
+#   2026-08-03, En-Chi Lee (williameclee@gmail.com)
+#     - Added property `no_flow_code`
+#     - Got rid of built-in list iteration to accelerate `_code2offset_ndarray`
+
 import numpy as np
 
-from typing import TypeVar, Tuple, Callable
+from typing import TypeVar, Tuple, Callable, Optional
 import numpy.typing as npt
 
 names = ["self", "E", "SE", "S", "SW", "W", "NW", "N", "NE"]
@@ -17,11 +23,6 @@ class D8Directions:
         transform_codes: Callable | None = lambda x: 2 ** (x - 1),
         sort_by_distance: bool = True,
     ):
-        # assert (
-        #     codes.shape[0] == offsets.shape[0]
-        # ), f"Length of codes and offsets must ber equal, got {codes.shape[0]} and {offsets.shape[0]} instead"
-        # self.codes = codes
-        # self.offsets = offsets
         self.window = window
         self.slices = slices
         self.shape = shape
@@ -39,33 +40,68 @@ class D8Directions:
             for code, (di, dj) in zip(self.codes, self.offsets)
         }
 
+        self.offset_lookup = np.zeros((256, 2), dtype=np.int32)
+        self.valid_code_lookup = np.zeros(256, dtype=bool)
+
+        for code, offset in zip(self.codes, self.offsets):
+            code = int(code)
+            if not 0 <= code <= 255:
+                raise ValueError(
+                    f"Direction code must be between 0 and 255, got {code}."
+                )
+            self.offset_lookup[code] = offset
+            self.valid_code_lookup[code] = True
+
+    @property
+    def no_flow_code(self) -> Optional[int]:
+        """
+        The code representing no flow (i.e. have the offset of `(0, 0)`).
+        If such a code does not exist, returns `None`.
+        """
+
+        for code, (di, dj) in self.offset_dict.items():
+            if di == 0 and dj == 0:
+                return code
+        return None
+
     def code2d8offset(self, code: T) -> tuple[T, T]:
         """Get offset (di, dj) for a given D8 code."""
         if isinstance(code, np.ndarray):
-            return self._code2offset_ndarray(code, self.offset_dict)  # type: ignore
+            return self._code2offset_ndarray(code)  # type: ignore
         elif isinstance(code, (int, np.integer)):
             return self._code2offset_scalar(code, self.offset_dict)  # type: ignore
         else:
             raise TypeError(f"Unsupported type for code: {type(code)}")
 
     def _code2offset_ndarray(
-        self,
-        code: npt.NDArray[np.integer],
-        offset_dict: dict[int, tuple[int, int]],
+        self, code: npt.NDArray[np.integer]
     ) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.integer]]:
-        """Get offset (di, dj) for a given D8 code."""
-        didj = np.array(
-            [
-                offset_dict.get(int(c), (0, 0)) if not np.isnan(c) else (-999, -999)
-                for c in code.flatten()
-            ],
-            dtype=self.offsets.dtype,
-        ).reshape(code.shape + (2,))
-        # replace (-999, -999) back to np.nan
-        didj = np.where(didj == -999, np.nan, didj)
-        di = didj[..., 0]
-        dj = didj[..., 1]
-        return di, dj
+        code = np.asarray(code)
+
+        if np.issubdtype(code.dtype, np.integer):
+            if code.dtype == np.uint8:
+                safe_codes = code
+                in_range = np.ones(code.shape, dtype=bool)
+            else:
+                in_range = (code >= 0) & (code <= 255)
+                safe_codes = np.where(in_range, code, 0).astype(np.uint8, copy=False)
+
+            known = in_range & self.valid_code_lookup[safe_codes]
+            didj = self.offset_lookup[safe_codes]
+            didj[~known] = 0
+            return didj[..., 0], didj[..., 1]
+
+        # Floating fallback, preserving NaNs
+        nan_mask = np.isnan(code)
+        in_range = ~nan_mask & (code >= 0) & (code <= 255)
+        safe_codes = np.where(in_range, code, 0).astype(np.uint8)
+
+        known = in_range & self.valid_code_lookup[safe_codes]
+        didj = self.offset_lookup[safe_codes].astype(float)
+        didj[~known] = 0
+        didj[nan_mask] = np.nan
+
+        return didj[..., 0], didj[..., 1]
 
     def _code2offset_scalar(
         self, code: int, offset_dict: dict[int, tuple[int, int]]
@@ -144,19 +180,3 @@ def construct_d8_directions(
 
     codes = codes.astype(np.int32, order="F")
     return offsets, codes, dirs
-
-
-if __name__ == "__main__":
-    flowdir = np.array([[0, 1], [4, 16]], dtype=np.int32)  # 2x2 array with D8 codes
-    di, dj = D8Directions(window=5).code2d8offset(flowdir)
-    print(f"di:\n{di}\ndj:\n{dj}")
-    # offsets, codes, names = construct_d8_directions(
-    #     window=3, slices=8, shape="circular"
-    # )
-    # print("Offsets:\n", offsets)
-    # print("Codes:\n", codes)
-    # print("Names:\n", names)
-
-# plt.imshow(codes)
-# plt.colorbar()
-# plt.show()

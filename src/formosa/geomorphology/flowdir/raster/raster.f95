@@ -16,132 +16,21 @@
 !     - Optimised confluence lookup algorithm
 !     - Changed index array shape to optimise cache locality
 !     - Allowed specifying validity mask in 'count_indegree'
-!   2026-07-02, En-Chi Lee (williameclee@gmail.com)
-!     - Iterated the array bound instead of starting from 1 in 'mask2ij'
-!     - Added function 'construct_flowgraph'
 !   2026-07-08, En-Chi Lee (williameclee@gmail.com)
 !     - Moved 'mask2ij' to separate 'utils' module
 !   2026-07-09, En-Chi Lee (williameclee@gmail.com)
 !     - Fixed OpenMP data race in 'count_indegree'
-!     - Added overflow check in 'construct_flowgraph'
+!   2026-07-14, En-Chi Lee (williameclee@gmail.com)
+!     - Splitted 'flowdir_f' into submodules
+!   2026-08-03, En-Chi Lee (williameclee@gmail.com)
+!     - Implemented 'find_acyclic_flowdirs'
+!     - Explicitly handled Python uint8 -> FORTRAN INTEGER*1 conversion/interpretation in 'fill_offset_lookup'
 !!!
 
-module flowdir_utils
-    implicit none
-contains
-    function find_noflow_code(offsets, codes, noffsets, default_noflow_code) result(noflow_code)
-        !! For pairs of flow direction codes and their corresponding
-        !! offsets, find the code that corresponds to the no-flow
-        !! direction (0, 0). If not found, return the provided default
-        !! no-flow code or 0 if not provided.
-        implicit none
-        ! Arguments
-        integer, intent(in) :: noffsets
-            !! Number of offset codes
-        integer, intent(in) :: offsets(noffsets, 2)
-            !! List of offsets
-        integer*1, intent(in) :: codes(noffsets)
-            !! List of codes corresponding to the offsets
-        integer*1, intent(in), optional :: default_noflow_code
-            !! Optional default no-flow code to use if not found in offsets (default: 0)
-        integer*1 :: noflow_code
-            !! No-flow code to be returned
-        ! Local variables
-        integer :: iofs
-            !! Offset index for iterating
-
-        ! Assign default no-flow code if not provided
-        if (present(default_noflow_code)) then
-            noflow_code = default_noflow_code
-        else
-            noflow_code = 0
-        end if
-
-        ! Loop through offsets to find the no-flow code
-        do iofs = 1, noffsets
-            if (offsets(iofs, 1) == 0 .and. offsets(iofs, 2) == 0) then
-                noflow_code = codes(iofs)
-                exit
-            end if
-        end do
-    end function find_noflow_code
-
-    function find_opposite_codes(offsets, codes, noffsets) result(opp_codes)
-        !! For pairs of flow direction codes and their corresponding
-        !! offsets, find the list of codes that correspond to the
-        !! opposite direction of each code.
-        !! For example, if code 1 corresponds to offset (1, 0), and code
-        !! 2 corresponds to offset (-1, 0), then code 2 is the opposite
-        !! code of code 1 and vice verse.
-        implicit none
-        ! Arguments
-        integer, intent(in) :: noffsets
-            !! Number of offset codes
-        integer, intent(in) :: offsets(noffsets, 2)
-            !! List of offsets
-        integer*1, intent(in) :: codes(noffsets)
-            !! List of codes corresponding to the offsets
-        integer*1 :: opp_codes(noffsets)
-            !! List of opposite codes corresponding to the offsets (same order as input codes)
-        ! Local variables
-        integer :: iofs, jofs
-            !! Offset indices for iterating
-
-        ! Loop through offsets to find opposite codes
-        do iofs = 1, noffsets
-            do jofs = 1, noffsets
-                if (offsets(iofs, 1) == -offsets(jofs, 1) .and. &
-                    offsets(iofs, 2) == -offsets(jofs, 2)) then
-                    opp_codes(iofs) = codes(jofs)
-                    exit
-                end if
-            end do
-        end do
-    end function find_opposite_codes
-
-    function fill_offset_lookup(offsets, codes, noffsets) result(diffs)
-        !! For pairs of flow direction codes and their corresponding
-        !! offsets, create a lookup table (array) where the index
-        !! corresponds to the code and the value is the offset.
-        !! The offset codes must be between 0 and 255, and the returned
-        !! lookup table will have a size of 256-by-2 to accommodate all
-        !! possible codes. Unused indices will have an offset of
-        !! (-99, -99) to indicate invalid code.
-        !! For example, if code 1 corresponds to offset (1, 0), then
-        !! diffs(1, :) = (1, 0).
-        implicit none
-        ! Arguments
-        integer, intent(in) :: noffsets
-            !! Number of offset codes
-        integer, intent(in) :: offsets(noffsets, 2)
-            !! List of offsets
-        integer*1, intent(in) :: codes(noffsets)
-            !! List of codes corresponding to the offsets
-        ! Outputs
-        integer :: diffs(0:255, 2)
-            !! Lookup table for offsets
-        ! Local variables
-        integer :: iofs
-
-        ! Create lookup tables for offsets
-        diffs = -99 ! Initialise to invalid value
-        do iofs = 1, noffsets
-            if (codes(iofs) < 0 .or. codes(iofs) > 255) then
-                print *, "[OFFSET_LOOKUP] Error: Flow direction code out of bounds: ", codes(iofs)
-                stop
-            end if
-            ! Fill in the offset for the corresponding code index
-            diffs(codes(iofs), 1) = offsets(iofs, 1)
-            diffs(codes(iofs), 2) = offsets(iofs, 2)
-        end do
-    end function fill_offset_lookup
-end module flowdir_utils
-
-module flowdir
+module flowdir_raster
     use omp_lib
     use utils
     use distances
-    use flowdir_utils
     implicit none
 contains
     subroutine compute_flowdir_simple( &
@@ -864,8 +753,8 @@ contains
             cj = flood_ijs(2, itofill)
             itofill = itofill + 1
 
-            ni = ci + offset_lookup(dirs(ci, cj), 1)
-            nj = cj + offset_lookup(dirs(ci, cj), 2)
+            ni = ci + offset_lookup(iand(int(dirs(ci, cj)), 255), 1)
+            nj = cj + offset_lookup(iand(int(dirs(ci, cj)), 255), 2)
 
             ! Check bounds
             if (ni < 1 .or. ni > nrows .or. nj < 1 .or. nj > ncols) cycle
@@ -957,8 +846,8 @@ contains
             cj = tofill_ijs(2, itofill)
             itofill = itofill + 1
 
-            ni = ci + offset_lookup(dirs(ci, cj), 1)
-            nj = cj + offset_lookup(dirs(ci, cj), 2)
+            ni = ci + offset_lookup(iand(int(dirs(ci, cj)), 255), 1)
+            nj = cj + offset_lookup(iand(int(dirs(ci, cj)), 255), 2)
 
             ! Check bounds
             if (ni < 1 .or. ni > nrows .or. nj < 1 .or. nj > ncols) cycle
@@ -1049,8 +938,8 @@ contains
             cj = tofill_ijs(2, itofill)
             itofill = itofill + 1
 
-            ni = ci + offset_lookup(dirs(ci, cj), 1)
-            nj = cj + offset_lookup(dirs(ci, cj), 2)
+            ni = ci + offset_lookup(iand(int(dirs(ci, cj)), 255), 1)
+            nj = cj + offset_lookup(iand(int(dirs(ci, cj)), 255), 2)
 
             ! Check bounds
             if (ni < 1 .or. ni > nrows .or. nj < 1 .or. nj > ncols) cycle
@@ -1284,8 +1173,8 @@ contains
                 end if
             end if
 
-            ni = ci + offset_lookup(dirs(ci, cj), 1)
-            nj = cj + offset_lookup(dirs(ci, cj), 2)
+            ni = ci + offset_lookup(iand(int(dirs(ci, cj)), 255), 1)
+            nj = cj + offset_lookup(iand(int(dirs(ci, cj)), 255), 2)
 
             ! Check bounds
             if (ni < 1 .or. ni > nrows .or. nj < 1 .or. nj > ncols) cycle
@@ -1312,173 +1201,6 @@ contains
         deallocate (offset_lookup)
         deallocate (tofill_ijs)
     end subroutine compute_flow_strahler_order
-
-    subroutine construct_flowgraph( &
-        dirs, valids, orders, seeds, indegs, nrows, ncols, &
-        offsets, codes, noffsets, preserve_junction, ncells, &
-        narcs, nvertices, arc_orders, vertex_ijs, vertex_startends)
-        implicit none
-        ! Arguments
-        integer, intent(in) :: nrows, ncols
-            !! Size of the grid
-        integer*1, intent(in) :: dirs(nrows, ncols)
-            !! Flow direction grid, using the provided codes
-        logical*1, intent(in) :: valids(nrows, ncols)
-            !! Validity mask (true for valid cells, false for cells that should not be processed, including those with low order)
-        integer*2, intent(in) :: orders(nrows, ncols)
-            !! Grid of Strahler stream order values for each cell
-        logical*1, intent(in) :: seeds(nrows, ncols)
-            !! Mask to identify initial seed cells for the algorithm (valid cells with zero indegree)
-        integer*1, intent(in) :: indegs(nrows, ncols)
-            !! Indegree of the cell
-        integer, intent(in) :: noffsets
-            !! Number of flow directions
-        integer, intent(in) :: offsets(noffsets, 2)
-            !! List of offsets for each flow direction
-        integer*1, intent(in) :: codes(noffsets)
-            !! List of flow direction codes corresponding to the offsets
-        logical, intent(in) :: preserve_junction
-            !! Whether to stop an arc when another arc joins it
-        integer, intent(in) :: ncells
-            !! Number of valid cells
-        ! Outputs
-        integer, intent(out) :: narcs, nvertices
-            !! How many arcs and vertices there are
-        integer*2, intent(out) :: arc_orders(ncells)
-            !! Order of each arc
-            !! Note only the first 'narcs' elements contain the actual data
-        integer, intent(out) :: vertex_ijs(2, 2*ncells)
-            !! Ordered (i, j) indices of cells that each arc contains
-            !! Note only the first 'nvertices' columns contain the actual data
-        integer, intent(out) :: vertex_startends(1:2, ncells)
-            !! Where each arc starts and ends in the 'vertex_ijs' array
-            !! Note only the first 'narcs' columns contain the actual data
-        ! Local variables
-        integer*1 :: noflow_code
-            !! Code corresponding to noflow direction, used to identify sink cells
-        integer, allocatable :: offset_lookup(:, :)
-            !! Lookup table for offsets corresponding to each flow direction code, used to find downstream cell indices
-        integer, allocatable :: seed_ijs(:, :)
-            !! Buffer for storing (i, j) indices of seed cells
-        integer*2 :: order
-            !! Order of the current arc
-        integer :: nseeds, iseed
-            !! Number of seeds and index for iterating through seeds
-        integer :: iarc, ivertex
-            !! index for iterating through arcs and vertices
-        integer :: si, sj, ci, cj, ni, nj
-            !! Rows/columns for seed, current, and neighbour cells
-        logical :: ds_is_valid, is_end_vertex
-            !! Flag of whether the downstream neighbour is a valid cell, and whether we have arrived at the end of the arc
-        logical*1, allocatable :: seens(:, :)
-            !! Mask to identify which cells have already been seen
-
-        ! Create lookup tables for offsets
-        allocate (offset_lookup(0:255, 2))
-        offset_lookup = fill_offset_lookup(offsets, codes, noffsets)
-
-        ! Find index of seeds
-        allocate (seed_ijs(2, ncells))
-        call mask2ij(seeds, nrows, ncols, seed_ijs, ncells, nseeds)
-
-        ! Find noflow code
-        noflow_code = find_noflow_code(offsets, codes, noffsets)
-
-        allocate (seens(nrows, ncols))
-        seens = .false.
-        iseed = 1
-        iarc = 1
-        ivertex = 1
-
-        do while (iseed <= nseeds)
-            si = seed_ijs(1, iseed)
-            sj = seed_ijs(2, iseed)
-            iseed = iseed + 1
-            seens(si, sj) = .true.
-
-            ! Skip isolated point
-            if (dirs(si, sj) == noflow_code) cycle
-
-            ! Initialise the arc
-            order = orders(si, sj)
-            arc_orders(iarc) = order
-            vertex_startends(1, iarc) = ivertex
-            vertex_ijs(:, ivertex) = [si, sj]
-            ivertex = ivertex + 1
-            ci = si
-            cj = sj
-
-            do while (.true.)
-                ! First check the downstream cell
-                ni = ci + offset_lookup(dirs(ci, cj), 1)
-                nj = cj + offset_lookup(dirs(ci, cj), 2)
-
-                ds_is_valid = .true.
-                if (ci == ni .and. cj == nj) then ! Self-loop
-                    ds_is_valid = .false.
-                else if (ni <= 0 .or. ni > nrows .or. nj <= 0 .or. nj > ncols) then ! OOB
-                    ds_is_valid = .false.
-                else if (.not. valids(ni, nj)) then
-                    ds_is_valid = .false.
-                end if
-
-                if (.not. ds_is_valid) then
-                    is_end_vertex = .true.
-                else
-                    is_end_vertex = orders(ni, nj) /= order
-                    if (preserve_junction) is_end_vertex = is_end_vertex .or. (indegs(ni, nj) >= 2)
-                end if
-
-                if (is_end_vertex) then
-                    if (.not. ds_is_valid) then
-                        if (vertex_startends(1, iarc) == ivertex - 1) then
-                            ! Single-length arc, roll back arc and vertex registration
-                            ivertex = ivertex - 1
-                            iarc = iarc - 1
-                            exit
-                        else
-                            vertex_startends(2, iarc) = ivertex - 1
-                            exit
-                        end if
-                    end if
-                    if (ivertex > size(vertex_ijs, 2)) then
-                        print *, "[CONSTRUCT_FLOWGRAPH] Error: vertex buffer overflow "// &
-                            "(size:", ivertex, ", allocated:", size(vertex_ijs, 2), ")"
-                        stop
-                    end if
-                    vertex_ijs(:, ivertex) = [ni, nj]
-                    vertex_startends(2, iarc) = ivertex
-                    ivertex = ivertex + 1
-                    if (ds_is_valid .and. (.not. seens(ni, nj))) then
-                        seens(ni, nj) = .true.
-                        nseeds = nseeds + 1
-                        seed_ijs(:, nseeds) = [ni, nj]
-                    end if
-                    exit
-                end if
-
-                seens(ni, nj) = .true.
-                if (ivertex > size(vertex_ijs, 2)) then
-                    print *, "[CONSTRUCT_FLOWGRAPH] Error: vertex buffer overflow "// &
-                        "(size:", ivertex, ", allocated:", size(vertex_ijs, 2), ")"
-                    stop
-                end if
-                vertex_ijs(:, ivertex) = [ni, nj]
-                ivertex = ivertex + 1
-                ci = ni
-                cj = nj
-            end do
-
-            iarc = iarc + 1
-        end do
-
-        deallocate (offset_lookup)
-        deallocate (seens)
-        deallocate (seed_ijs)
-
-        narcs = iarc - 1
-        nvertices = ivertex - 1
-    end subroutine construct_flowgraph
 
     subroutine label_watersheds( &
         labels, dirs, valids, nrows, ncols, offsets, codes, noffsets)
@@ -1682,6 +1404,134 @@ contains
         !$omp END PARALLEL
     end subroutine flood_upstream
 
+    subroutine find_acyclic_flowdirs( &
+        dirs, indegs, valids, nrows, ncols, offsets, codes, noffsets, acyclics, err_code)
+        !! Identifies valid cells that are not part of a directed flow cycle.
+        !! Uses Kahn's algorithm to traverse cells from zero-indegree seeds,
+        !! successively removing their outgoing edges. Valid cells not reached
+        !! by this traversal belong to a directed cycle and remain false in
+        !! 'acyclics'.
+        implicit none
+        ! Arguments
+        integer, intent(in) :: nrows, ncols
+            !! Size of the grid
+        integer*1, intent(in) :: dirs(nrows, ncols)
+            !! Flow direction grid, using the provided codes
+        integer*1, intent(in) :: indegs(nrows, ncols)
+            !! Indegree grid for the valid flow field
+        logical*1, intent(in) :: valids(nrows, ncols)
+            !! Validity mask (true for valid cells, false for no-data)
+        integer, intent(in) :: noffsets
+            !! Number of flow directions
+        integer, intent(in) :: offsets(noffsets, 2)
+            !! List of offsets for each flow direction
+        integer*1, intent(in) :: codes(noffsets)
+            !! List of flow direction codes corresponding to the offsets
+        ! Outputs
+        logical*1, intent(out) :: acyclics(nrows, ncols)
+            !! Mask indicating valid cells removed by Kahn's algorithm
+            !! (true for acyclic cells, false otherwise)
+        integer, intent(out) :: err_code
+            !! Error code (0 for success, 1 for queue overflow, and 2 for allocation failure)
+        ! Local variables
+        integer, allocatable :: offset_lookup(:, :)
+            !! Lookup table for offsets corresponding to each flow direction code, used to find downstream cell indices
+        integer*1, allocatable :: rem_indegs(:, :)
+            !! Remaining indegrees after removing edges from processed cells
+        logical*1, allocatable :: seeds(:, :)
+            !! Mask of valid zero-indegree cells used to initialise the queue
+        integer, allocatable :: seed_ijs(:, :)
+            !! Queue of (i, j) indices awaiting processing
+        integer :: alloc_stat
+            !! Allocation status code
+        integer :: ci, cj, ni, nj
+            !! Rows/columns for current and downstream cells
+        integer :: iseed, nseeds
+            !! Current queue position and final occupied queue position
+
+        err_code = 0
+
+        allocate (offset_lookup(0:255, 2), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = 2
+            return
+        end if
+
+        allocate (rem_indegs(nrows, ncols), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = 2
+            deallocate (offset_lookup)
+            return
+        end if
+        allocate (seeds(nrows, ncols), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = 2
+            deallocate (offset_lookup)
+            deallocate (rem_indegs)
+            return
+        end if
+
+        allocate (seed_ijs(2, nrows*ncols), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = 2
+            deallocate (offset_lookup)
+            deallocate (rem_indegs)
+            deallocate (seeds)
+            return
+        end if
+
+        seeds = valids .and. (indegs == 0)
+        offset_lookup = fill_offset_lookup(offsets, codes, noffsets)
+        call mask2ij(seeds, nrows, ncols, &
+                     seed_ijs, size(seed_ijs, dim=2), nseeds)
+        deallocate (seeds)
+
+        rem_indegs = indegs
+        acyclics = .false.
+
+        ! Process and extend the queue of zero-indegree cells
+        iseed = 1
+        do while (iseed <= nseeds)
+            ci = seed_ijs(1, iseed)
+            cj = seed_ijs(2, iseed)
+            iseed = iseed + 1
+
+            if (acyclics(ci, cj)) cycle
+            acyclics(ci, cj) = .true.
+
+            ni = ci + offset_lookup(iand(int(dirs(ci, cj)), 255), 1)
+            nj = cj + offset_lookup(iand(int(dirs(ci, cj)), 255), 2)
+
+            ! Check bounds
+            if (ni < 1 .or. ni > nrows .or. nj < 1 .or. nj > ncols) cycle
+            ! Check mask
+            if (.not. valids(ni, nj)) cycle
+            ! Check not a self-loop
+            if (ni == ci .and. nj == cj) cycle
+
+            ! Decrement indegree of downstream cell
+            rem_indegs(ni, nj) = rem_indegs(ni, nj) - int(1, kind=1)
+            ! If indegree is zero, add to tofill buffer
+            if (rem_indegs(ni, nj) /= 0) cycle
+
+            nseeds = nseeds + 1
+            if (nseeds > size(seed_ijs, dim=2)) then
+                ! Buffer overflow
+                err_code = 1
+                deallocate (offset_lookup)
+                deallocate (rem_indegs)
+                deallocate (seed_ijs)
+                return
+            end if
+            seed_ijs(1, nseeds) = ni
+            seed_ijs(2, nseeds) = nj
+        end do
+
+        deallocate (offset_lookup)
+        deallocate (rem_indegs)
+        deallocate (seed_ijs)
+    end subroutine find_acyclic_flowdirs
+
     subroutine compute_max_branch_dist( &
         maxbdists, dirs, valids, x, y, basin_ids, nrows, ncols, &
         offsets, codes, noffsets)
@@ -1876,16 +1726,16 @@ contains
         integer, intent(in) :: maxpathlen
             !! Maximum path length to search before giving up and assuming no confluence
             !! It should be large enough to allow confluence but prevent infinite loops in case of errors.
+        integer, intent(in) :: id1, id2
+            !! Unique ids to mark visited cells for each path in the visited grid
         integer, intent(inout) :: path1(2, maxpathlen), path2(2, maxpathlen)
             !! Workspace arrays for paths and visited grid
         integer, intent(inout) :: visited(:, :)
             !! Grid to track visited paths by ids
         ! Outputs
-        real :: dists(2)
+        real, intent(out) :: dists(2)
             !! Distances from each seed cell to the confluence cell (or to max path length if no confluence found)
         ! Local variables
-        integer :: id1, id2
-            !! Unique ids to mark visited cells for each path in the visited grid
         integer :: ipath1, ipath2, npath1, npath2
             !! Indices for iterating through paths and current path lengths
         integer :: iconf1, iconf2
@@ -2100,4 +1950,4 @@ contains
     !     ! Find lowest border cell of the basin containing the seed
 
     ! end subroutine compute_spill_flow
-end module flowdir
+end module flowdir_raster

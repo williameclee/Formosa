@@ -1,40 +1,41 @@
 # Last modified
 #   2026-02-11, En-Chi Lee (williameclee@arizona.edu)
-#     - Rename flowdir functions to be more descriptive.
+#     - Rename flowdir functions to be more descriptive
 #   2026-06-09, En-Chi Lee (williameclee@gmail.com)
-#     - Added `compute_flow_dist2ridge` function to compute 'distance to ridges'.
-#     - Added error for missing FORTRAN backend.
-#     - Removed NumPy type `np.bool` to either `np.bool_` or `bool` for compatibility with newer NumPy versions.
-#     - Renamed FORTRAN function call: `compute_masked_flowdir` -> `compute_synthetic_flowdir`.
-#     - Added `valids` argument to `label_flats` function.
+#     - Added `compute_flow_dist2ridge` function to compute 'distance to ridges'
+#     - Added error for missing FORTRAN backend
+#     - Removed NumPy type `np.bool` to either `np.bool_` or `bool` for compatibility with newer Numpy versions
+#     - Renamed Fortran function call: `compute_masked_flowdir` -> `compute_synthetic_flowdir`
+#     - Added `valids` argument to `label_flats` function
 #   2026-06-10, En-Chi Lee (williameclee@gmail.com)
-#     - Small refactors and documentation cleanup.
+#     - Small refactors and documentation cleanup
 #   2026-06-11, En-Chi Lee (williameclee@gmail.com)
-#     - Moved Python backend implementations and auxiliary functions to separate files.
-#     - Standardised variable, argument, and function names.
+#     - Moved Python backend implementations and auxiliary functions to separate files
+#     - Standardised variable, argument, and function names
 #   2026-06-30, En-Chi Lee (williameclee@gmail.com)
-#     - Added `x` and `y` into `compute_dist2source` in `compute_dist2ridge`.
-#     - Changed Strahler order output to 8-bit unsigned integer.
-#     - Added functions `compute_ridgedir` and `compute_ridge_strahler_order`.
+#     - Added `x` and `y` into `compute_dist2source` in `compute_dist2ridge`
+#     - Changed strahler order output to 8-bit unsigned integer
+#     - Added functions `compute_ridgedir` and `compute_ridge_strahler_order`
 #   2026-07-01, En-Chi Lee (williameclee@gmail.com)
-#     - Opted out of the out-of-bound check in `compute_downstream_indices` in `create_flowgraph`.
-#     - Allowed specifying validity mask in `count_indegree`.
-#     - Added function `construct_flowgraph`.
+#     - Allowed specifying validity mask in `count_indegree`
+#     - Added function `construct_flowgraph`
 #   2026-07-08, En-Chi Lee (williameclee@gmail.com)
-#     - Renamed helper submodule from `aux` to `utils`.
-#   2026-07-09, En-Chi Lee (williameclee@gmail.com)
-#     - Specified endpoint index definition for `create_flowgraph`.
+#     - Renamed helper submodule from `aux` to `utils`
+#   2026-07-14, En-Chi Lee (williameclee@gmail.com)
+#     - Splitted `geomorphology.flowdir` into submodules
 #   2026-07-30, En-Chi Lee (williameclee@gmail.com)
 #     - Fixed Python/FORTRAN backend behaviour parity in `compute_flow_strahler_order`.
+#   2026-08-03, En-Chi Lee (williameclee@gmail.com)
+#     - Implemented functions `find_acyclic_flowdirs` and `find_cyclic_flowdirs` with both FORTRAN and Python backends
 
 
 import numpy as np
 
-from formosa.geomorphology.d8directions import D8Directions
-from .utils import get_neighbour_values, compute_downstream_indices
+from formosa.geomorphology.flowdir.d8directions import D8Directions
+from formosa.geomorphology.flowdir.utils import get_neighbour_values
 
 try:
-    from formosa.geomorphology.flowdir_f import flowdir as flowdir_f
+    from formosa.geomorphology.flowdir_f import flowdir_raster as raster_f
 except ImportError as err:
 
     class _MissingFortranBackend:
@@ -43,13 +44,15 @@ except ImportError as err:
 
         def __getattr__(self, name):
             raise ImportError(
-                "formosa.geomorphology.flowdir_f is required for backend='fortran' but is not available."
+                "formosa.geomorphology.raster_f is required for backend='fortran' but is not available."
             ) from self._err
 
-    flowdir_f = _MissingFortranBackend(err)
+    raster_f = _MissingFortranBackend(err)
+
+import warnings
 
 import numpy.typing as npt
-from typing import Literal, Optional
+from typing import Literal, Iterable, Optional, overload
 
 
 def fill_depressions(
@@ -120,13 +123,13 @@ def compute_flowdir_simple(
     """
     match backend:
         case "python":
-            from .flowdir_py import _compute_flowdir_simple_py
+            from .raster_py import _compute_flowdir_simple_py
 
             dirs, flats = _compute_flowdir_simple_py(dem, dir_scheme=dir_scheme)
         case "fortran":
             if valids is None:
                 valids = np.ones(dem.shape, dtype=bool, order="F")
-            dirs, flats = flowdir_f.compute_flowdir_simple(
+            dirs, flats = raster_f.compute_flowdir_simple(
                 dem.astype(np.float32, order="F"),
                 valids.astype(bool, order="F"),
                 dir_scheme.offsets.astype(np.int32, order="F"),
@@ -172,7 +175,7 @@ def find_flat_edges(
     """
     match backend:
         case "python":
-            from .flowdir_py import _find_flat_edges_py
+            from .raster_py import _find_flat_edges_py
 
             low_edges, high_edges = _find_flat_edges_py(
                 dem, dirs, dir_scheme=dir_scheme
@@ -181,7 +184,7 @@ def find_flat_edges(
             if valids is None:
                 valids = np.ones(dem.shape, dtype=bool, order="F")
 
-            low_edges, high_edges = flowdir_f.find_flat_edges(
+            low_edges, high_edges = raster_f.find_flat_edges(
                 dem.astype(np.float32, order="F"),
                 dirs.astype(np.int32, order="F"),
                 valids.astype(bool, order="F"),
@@ -241,7 +244,7 @@ def label_flats(
     else:
         valids = np.ones(dem.shape, dtype=bool, order="F")
 
-    labels = flowdir_f.label_flats(
+    labels = raster_f.label_flats(
         dem.astype(np.float32, order="F"),
         seeds.astype(bool, order="F"),
         valids.astype(bool, order="F"),
@@ -360,7 +363,7 @@ def create_pushing_syn_grad(
         labels.shape == high_edges.shape
     ), f"Shapes for labels ({labels.shape}) and high_edges ({high_edges.shape}) do not match."
 
-    z_syn = flowdir_f.create_pushing_syn_grad(
+    z_syn = raster_f.create_pushing_syn_grad(
         labels.astype(np.int32, order="F"),
         high_edges.astype(bool, order="F"),
         dir_scheme.offsets.astype(np.int32, order="F"),
@@ -400,7 +403,7 @@ def create_pulling_syn_grad(
     ValueError
         If the shapes of the input arrays do not match the expected dimensions.
     """
-    z_syn = flowdir_f.create_pulling_syn_grad(
+    z_syn = raster_f.create_pulling_syn_grad(
         labels.astype(np.int32, order="F"),
         low_edges.astype(bool, order="F"),
         dir_scheme.offsets.astype(np.int32, order="F"),
@@ -438,11 +441,11 @@ def compute_syn_flowdir(
     """
     match backend:
         case "python":
-            from .flowdir_py import _compute_masked_flowdir_py
+            from .raster_py import _compute_masked_flowdir_py
 
             dirs = _compute_masked_flowdir_py(z, labels, dir_scheme=dir_scheme)
         case "fortran":
-            dirs = flowdir_f.compute_syn_flowdir(
+            dirs = raster_f.compute_syn_flowdir(
                 z.astype(np.int32, order="F"),
                 labels.astype(np.int32, order="F"),
                 dir_scheme.offsets.astype(np.int32, order="F"),
@@ -608,11 +611,11 @@ def count_indegree(
 
     match backend:
         case "python":
-            from .flowdir_py import _count_indegree_py
+            from .raster_py import _count_indegree_py
 
             indegs = _count_indegree_py(dirs, dir_scheme=dir_scheme, valids=valids)
         case "fortran":
-            indegs = flowdir_f.count_indegree(
+            indegs = raster_f.count_indegree(
                 dirs.astype(np.uint8, order="F"),
                 valids.astype(bool, order="F"),
                 dir_scheme.offsets.astype(np.int32, order="F"),
@@ -622,86 +625,174 @@ def count_indegree(
     return indegs.astype(np.int8, order="F")
 
 
-def create_flowgraph(
-    dirs: npt.NDArray[np.integer],
-    valids: Optional[npt.NDArray[np.bool_]] = None,
-    dir_scheme: D8Directions = D8Directions(),
-    x: Optional[npt.NDArray[np.number]] = None,
-    y: Optional[npt.NDArray[np.number]] = None,
-) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.integer]]:
+def _raise_acyclic_flowdir_error(err_code: int) -> None:
     """
-    Computes a graph representation of the flow directions in a flow direction grid.
+    Translates a FORTRAN acyclic-flow status into a Python exception.
+    """
+    if err_code == 1:
+        raise RuntimeError("Acyclic-flow traversal queue overflowed.")
+    elif err_code == 2:
+        raise MemoryError("Unable to allocate acyclic-flow traversal workspace.")
+    elif err_code != 0:
+        raise RuntimeError(f"Unexpected acyclic-flow traversal error code: {err_code}.")
+
+
+def _find_acyclic_flowdirs_fortran(
+    dirs: npt.NDArray[np.integer],
+    indegs: npt.NDArray[np.integer],
+    valids: npt.NDArray[np.bool_],
+    dir_scheme: D8Directions,
+) -> npt.NDArray[np.bool_]:
+    """
+    Returns acyclic flow cells using the FORTRAN backend.
+
+    Raises
+    ------
+    RuntimeError
+        If the traversal queue overflows or an unknown status is returned.
+    MemoryError
+        If the traversal workspace cannot be allocated.
+    """
+    acyclics, err_code = raster_f.find_acyclic_flowdirs(
+        dirs.astype(np.uint8, order="F"),
+        indegs.astype(np.int8, order="F"),
+        valids.astype(bool, order="F"),
+        dir_scheme.offsets.astype(np.int32, order="F"),
+        dir_scheme.codes.astype(np.uint8, order="F"),
+    )
+    _raise_acyclic_flowdir_error(err_code)
+    return acyclics.astype(bool, order="F")
+
+
+def find_acyclic_flowdirs(
+    dirs: npt.NDArray[np.integer],
+    dir_scheme: D8Directions = D8Directions(),
+    valids: Optional[npt.NDArray[np.bool_]] = None,
+    indegs: Optional[npt.NDArray[np.integer]] = None,
+    backend: Literal["fortran", "python"] = "fortran",
+) -> npt.NDArray[np.bool_]:
+    """
+    Finds valid cells that do not belong to a directed flow cycle.
+
+    Uses Kahn's algorithm to remove cells reachable from zero-indegree cells.
+    Valid cells remaining after the traversal belong to directed cycles.
 
     Parameters
     ----------
     dirs : NDArray[int]
-        A 2D array representing the flow directions for each cell.
+        Flow directions for each cell.
+    dir_scheme : D8Directions, optional
+        Flow direction scheme defining the direction codes and offsets.
+        The default scheme is `D8Directions()`.
     valids : NDArray[bool], optional
-        A boolean mask array indicating valid cells in the flow direction grid.
-        If `None`, all cells are considered valid.
-        Default is `None`.
-    directions : D8Directions, optional
-        An instance of `D8Directions` defining the flow direction scheme.
-        Default is `D8Directions()`.
-    x : NDArray[number], optional
-        A 2D array representing the x-coordinates of each cell.
-        If provided, the graph will use these coordinates instead of grid indices.
-        Default is `None`.
-    y : NDArray[number], optional
-        A 2D array representing the y-coordinates of each cell.
-        If provided, the graph will use these coordinates instead of grid indices.
-        Default is `None`.
+        Mask indicating cells included in the flow field. If `None`, all cells
+        are considered valid.
+        The default mask is `None`.
+    indegs : NDArray[int], optional
+        Indegrees computed for the same valid flow field. If `None`, they are
+        computed using the selected backend.
+        The default input is `None`.
+    backend : {'fortran', 'python'}, optional
+        Computational backend.
+        The default backend is `'fortran'`.
 
     Returns
     -------
-    graphi : NDArray[int]
-        A 1D array representing the row indices of the graph edges.
-    graphj : NDArray[int]
-        A 1D array representing the column indices of the graph edges.
+    acyclics : NDArray[bool]
+        Mask that is true for valid acyclic cells and false for cyclic or
+        invalid cells.
+
+    Raises
+    ------
+    ValueError
+        If an input shape or backend is invalid.
+    MemoryError
+        If the FORTRAN backend cannot allocate its workspace.
+    RuntimeError
+        If the FORTRAN backend reports queue overflow or an unexpected status.
     """
-    if valids is not None:
-        assert (
-            valids.shape == dirs.shape
-        ), f"Shape for dlowdirs and valids mask must match, but got valid shape {dirs.shape} and flowdirs shape {valids.shape} instead"
-    else:
-        valids = np.full(dirs.shape, True, dtype=bool)
+    if dirs.ndim != 2:
+        raise ValueError("'dirs' must be a two-dimensional array.")
+    if valids is None:
+        valids = np.ones(dirs.shape, dtype=bool, order="F")
+    elif valids.shape != dirs.shape:
+        raise ValueError("Shapes of 'dirs' and 'valids' must match.")
 
-    i, j = np.meshgrid(
-        np.arange(dirs.shape[0], dtype=np.int32),
-        np.arange(dirs.shape[1], dtype=np.int32),
-        indexing="ij",
+    if indegs is None:
+        indegs = count_indegree(
+            dirs, dir_scheme=dir_scheme, valids=valids, backend=backend
+        )
+    elif indegs.shape != dirs.shape:
+        raise ValueError("Shapes of 'dirs' and 'indegs' must match.")
+
+    match backend:
+        case "python":
+            from .raster_py import _find_acyclic_flowdirs_py
+
+            acyclics = _find_acyclic_flowdirs_py(
+                dirs, indegs, valids, dir_scheme=dir_scheme
+            )
+        case "fortran":
+            acyclics = _find_acyclic_flowdirs_fortran(dirs, indegs, valids, dir_scheme)
+
+    return np.asarray(acyclics & valids, dtype=bool, order="F")
+
+
+def find_cyclic_flowdirs(
+    dirs: npt.NDArray[np.integer],
+    dir_scheme: D8Directions = D8Directions(),
+    valids: Optional[npt.NDArray[np.bool_]] = None,
+    indegs: Optional[npt.NDArray[np.integer]] = None,
+    backend: Literal["fortran", "python"] = "fortran",
+) -> npt.NDArray[np.bool_]:
+    """
+    Finds valid cells belonging to directed flow cycles.
+
+    Parameters
+    ----------
+    dirs : NDArray[int]
+        Flow directions for each cell.
+    dir_scheme : D8Directions, optional
+        Flow direction scheme defining the direction codes and offsets.
+        The default scheme is `D8Directions()`.
+    valids : NDArray[bool], optional
+        Mask indicating cells included in the flow field. If `None`, all cells
+        are considered valid.
+        The default input is `None`.
+    indegs : NDArray[int], optional
+        Indegrees computed for the same valid flow field. If `None`, they are
+        computed using the selected backend.
+        The default input is `None`.
+    backend : {'fortran', 'python'}, optional
+        Computational backend.
+        The default backend is `'fortran'`.
+
+    Returns
+    -------
+    cyclics : NDArray[bool]
+        Mask that is true for valid cyclic cells and false for acyclic or
+        invalid cells.
+
+    Raises
+    ------
+    ValueError
+        If an input shape or backend is invalid.
+    MemoryError
+        If the FORTRAN backend cannot allocate its workspace.
+    RuntimeError
+        If the FORTRAN backend reports queue overflow or an unexpected status.
+    """
+    if valids is None:
+        valids = np.ones(dirs.shape, dtype=bool, order="F")
+
+    acyclics = find_acyclic_flowdirs(
+        dirs,
+        dir_scheme=dir_scheme,
+        valids=valids,
+        indegs=indegs,
+        backend=backend,
     )
-    dsi, dsj, _, ds_valids = compute_downstream_indices(
-        dirs, dir_scheme=dir_scheme, check=False
-    )
-
-    if x is not None and y is not None:
-        j, i = x, y
-
-        # Map i,j to actual coordinates
-        dsx = np.full_like(dsj, np.nan, dtype=np.float64)
-        dsy = np.full_like(dsj, np.nan, dtype=np.float64)
-        dsx[ds_valids] = x[dsi[ds_valids], dsj[ds_valids]]
-        dsy[ds_valids] = y[dsi[ds_valids], dsj[ds_valids]]
-        dsi, dsj = dsy, dsx
-
-    graphi = np.stack(
-        (
-            i[valids & ds_valids],
-            dsi[valids & ds_valids],
-            np.full(i[valids & ds_valids].size, np.nan),
-        ),
-        axis=1,
-    ).ravel(order="C")
-    graphj = np.stack(
-        (
-            j[valids & ds_valids],
-            dsj[valids & ds_valids],
-            np.full(j[valids & ds_valids].size, np.nan),
-        ),
-        axis=1,
-    ).ravel(order="C")
-    return graphi, graphj
+    return np.asarray(valids & ~acyclics, dtype=bool, order="F")
 
 
 def compute_flow_accumulation(
@@ -750,7 +841,7 @@ def compute_flow_accumulation(
     """
     match backend:
         case "python":
-            from .flowdir_py import _compute_flow_accumulation_py
+            from .raster_py import _compute_flow_accumulation_py
 
             accums = _compute_flow_accumulation_py(
                 dirs,
@@ -770,7 +861,7 @@ def compute_flow_accumulation(
             if weights is None:
                 weights = np.where(valids, 1.0, 0.0).astype(np.float32)
 
-            accums = flowdir_f.compute_flow_accumulation(
+            accums = raster_f.compute_flow_accumulation(
                 dirs.astype(np.uint8, order="F"),
                 valids.astype(bool, order="F"),
                 weights.astype(np.float32, order="F"),
@@ -810,7 +901,7 @@ def compute_flow_strahler_order(
     backend : {'fortran', 'python'}, optional
         Backend to use for computation
         `'fortran'` uses the FORTRAN extension for performance, while 'python' uses a pure Python implementation.
-        Default is `'fortran'`.
+        Default option is `'fortran'`.
 
     Returns
     -------
@@ -823,8 +914,9 @@ def compute_flow_strahler_order(
     AssertionError
         If the input have the wrong types or shapes.
     """
+
     assert (
-        dirs.ndim != 2
+        dirs.ndim == 2
     ), f"Flow directions must be a 2D array, got shape {dirs.shape}."
 
     if valids is None:
@@ -834,7 +926,7 @@ def compute_flow_strahler_order(
             valids, np.ndarray
         ), f"Valid mask must be a NumPy array (got {type(valids)})."
         assert (
-            valids.shape != dirs.shape
+            valids.shape == dirs.shape
         ), f"Shape for flow direction ({dirs.shape}) and valid mask ({valids.shape}) do not match."
         valids = valids.astype(bool, order="F", copy=False)
 
@@ -847,142 +939,26 @@ def compute_flow_strahler_order(
             indegs, np.ndarray
         ), f"Indegree must be a NumPy array (got {type(indegs)})."
         assert (
-            indegs.shape != dirs.shape
+            indegs.shape == dirs.shape
         ), f"Shape for flow direction ({dirs.shape}) and indegree ({indegs.shape}) do not match."
 
     match backend:
         case "python":
-            from .flowdir_py import _compute_flow_strahler_order_py
+            from .raster_py import _compute_flow_strahler_order_py
 
             orders = _compute_flow_strahler_order_py(
                 dirs=dirs, dir_scheme=dir_scheme, valids=valids, indegs=indegs
             )
         case "fortran":
-            orders = flowdir_f.compute_flow_strahler_order(
+            orders = raster_f.compute_flow_strahler_order(
                 dirs.astype(np.uint8, order="F"),
                 valids.astype(bool, order="F"),
                 indegs.astype(np.int8, order="F"),
                 dir_scheme.offsets.astype(np.int32, order="F"),
                 dir_scheme.codes.astype(np.uint8, order="F"),
             )
-
     orders[~valids] = 0
     return orders.astype(np.uint8, order="F")
-
-
-def construct_flowgraph(
-    dirs: npt.NDArray[np.integer],
-    dir_scheme: D8Directions = D8Directions(),
-    valids: Optional[npt.NDArray[np.bool_]] = None,
-    min_order: int = 2,
-    orders: Optional[npt.NDArray[np.integer]] = None,
-    preserve_junctions: bool = True,
-    sort: bool = True,
-    backend: Literal["fortran", "python"] = "fortran",
-) -> tuple[npt.NDArray[np.int8], npt.NDArray[np.int32], npt.NDArray[np.int32]]:
-    """
-    Constructs a flow graph from a flow direction grid.
-
-    Parameters
-    ----------
-    dirs : NDArray[int], optional
-        A 2D array representing the flow directions for each cell
-    dir_scheme : D8Directions, optional
-        Instance of `D8Directions` defining the flow direction scheme
-        Default is `D8Directions()`.
-    valids : NDArray[bool], optional
-        Boolean mask array indicating valid cells in the flow direction grid
-        If `None`, all cells are considered valid.
-        Default is `None`.
-    min_order : int, optional
-        Minimum Strahler order to include in the flow graph (see `orders`)
-        Default is 2.
-    orders : NDArray[uint8], optional
-        2D integer array representing the Strahler order for each cell
-        If `None`, it will be computed from the flow direction grid.
-        Default is `None`.
-    preserve_junctions : bool, optional
-        Whether to preserve junctions in the flow graph
-        Default is `True`.
-    sort : bool, option
-        Whether to sort the flow graph by arc order and then by length
-        Default is `True`.
-    backend : {'fortran', 'python'}, optional
-        The backend to use for computation
-        'fortran' uses the Fortran extension for performance, while 'python' uses a pure Python implementation.
-        Default is 'fortran'.
-
-    Returns
-    -------
-    arc_orders : NDArray[int8]
-        1D array representing the Strahler order for each arc in the flow graph
-    vertex_ijs : NDArray[int32]
-        V-by-2 array containing the ordered (i, j) incices of all arcs, concactinated together
-    vertex_startends : NDArray[int32]
-        A-by-2 array containing the indices of where each arc starts and ends in `vertex_ijs`
-        The returned endpoints are inclusive, meaning slicing must be done as `vertex_ijs[start : end + 1]`.
-    """
-    if valids is None:
-        valids = np.ones(dirs.shape, dtype=bool)
-    if orders is None:
-        orders = compute_flow_strahler_order(
-            dirs,
-            dir_scheme=dir_scheme,
-            valids=valids,
-            backend=backend,
-        )
-
-    # Find seed cells to start with
-    valids = valids & (orders >= min_order)
-    ncells = int(np.sum(valids))
-    indegs = count_indegree(dirs, dir_scheme=dir_scheme, valids=valids, backend=backend)
-    seeds = valids & (indegs == 0)
-
-    match backend:
-        case "python":
-            from .flowdir_py import _construct_flowgraph_py
-
-            narcs, nvertices, arc_orders, vertex_ijs, arc_endpts = (
-                _construct_flowgraph_py(
-                    dirs=dirs,
-                    dir_scheme=dir_scheme,
-                    valids=valids,
-                    orders=orders,
-                    indegs=indegs,
-                    seeds=seeds,
-                    preserve_junctions=preserve_junctions,
-                    ncells=ncells,
-                )
-            )
-        case "fortran":
-            narcs, nvertices, arc_orders, vertex_ijs, arc_endpts = (
-                flowdir_f.construct_flowgraph(
-                    dirs.astype(np.uint8, order="F"),
-                    valids.astype(bool, order="F"),
-                    orders.astype(np.int16, order="F"),
-                    seeds.astype(np.bool_, order="F"),
-                    indegs.astype(np.int8, order="F"),
-                    dir_scheme.offsets.astype(np.int32, order="F"),
-                    dir_scheme.codes.astype(np.uint8, order="F"),
-                    preserve_junctions,
-                    ncells,
-                )
-            )
-            # Convert from 1-based index to 0-based index
-            vertex_ijs -= 1
-            arc_endpts -= 1
-
-    arc_orders = arc_orders[:narcs].T.copy(order="C")
-    arc_endpts = arc_endpts[:, :narcs].T.copy(order="C")
-    vertex_ijs = vertex_ijs[:, :nvertices].T.copy(order="C")
-
-    if sort:
-        arc_lengths = arc_endpts[:, 1] - arc_endpts[:, 0] + 1
-        id = np.lexsort((arc_lengths, arc_orders))
-        arc_orders = arc_orders[id]
-        arc_endpts = arc_endpts[id, :]
-
-    return arc_orders, vertex_ijs, arc_endpts
 
 
 def compute_dist2source(
@@ -1055,7 +1031,7 @@ def compute_dist2source(
     else:
         raise TypeError(f"Indegree must be a NumPy array (got {type(indegs)}).")
 
-    dists = flowdir_f.compute_dist2source(
+    dists = raster_f.compute_dist2source(
         dirs.astype(np.uint8, order="F"),
         valids.astype(bool, order="F"),
         x.astype(np.float32, order="F"),
@@ -1095,7 +1071,7 @@ def label_watersheds(
     """
     match backend:
         case "python":
-            from .flowdir_py import _label_watersheds_py
+            from .raster_py import _label_watersheds_py
 
             watersheds = _label_watersheds_py(
                 dirs=dirs,
@@ -1116,7 +1092,7 @@ def label_watersheds(
                     f"Valid mask must be a NumPy array (got {type(valids)})."
                 )
 
-            watersheds = flowdir_f.label_watersheds(
+            watersheds = raster_f.label_watersheds(
                 dirs.astype(np.uint8, order="F"),
                 valids.astype(bool, order="F"),
                 dir_scheme.offsets.astype(np.int32, order="F"),
@@ -1175,7 +1151,7 @@ def compute_dist2sink(
         y = np.arange(dirs.shape[0], dtype=np.float32)
         x, y = np.meshgrid(x, y, indexing="xy")
 
-    dists = flowdir_f.compute_dist2sink(
+    dists = raster_f.compute_dist2sink(
         dirs.astype(np.uint8, order="F"),
         x.astype(np.float32, order="F"),
         y.astype(np.float32, order="F"),
@@ -1251,7 +1227,7 @@ def compute_dist2conf_max(
     else:
         raise TypeError(f"Labels must be a NumPy array (got {type(watershed_labels)}).")
 
-    bmax = flowdir_f.compute_max_branch_dist(
+    bmax = raster_f.compute_max_branch_dist(
         dirs.astype(np.uint8, order="F"),
         valids.astype(bool, order="F"),
         x.astype(np.float32, order="F"),

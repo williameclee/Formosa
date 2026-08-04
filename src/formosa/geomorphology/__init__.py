@@ -7,8 +7,10 @@
 #     - Added functions `compute_ridgedir` and `compute_ridge_strahler_order`
 #   2026-07-02, En-Chi Lee (williameclee@gmail.com)
 #     - Added function `construct_flowgraph`
+#   2026-07-09, En-Chi Lee (williameclee@gmail.com)
+#     - Added function `simplify_flowgraph`
 
-from formosa.geomorphology.d8directions import D8Directions
+from formosa.geomorphology.flowdir.d8directions import D8Directions
 from formosa.geomorphology.terrain import compute_slope
 from formosa.geomorphology.flowdir import (
     get_neighbour_values,
@@ -19,10 +21,12 @@ from formosa.geomorphology.flowdir import (
     compute_flow_accumulation,
     compute_flow_strahler_order,
     construct_flowgraph,
+    concat_flowgraph,
+    simplify_flowgraph,
     compute_dist2source,
     compute_dist2sink,
-    label_watersheds,
     compute_dist2conf_max,
+    label_watersheds,
     compute_ridgedir,
     compute_dist2ridge,
     compute_ridge_strahler_order,

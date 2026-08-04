@@ -5,18 +5,26 @@
 #     - Standardised variable, argument, and function names
 #   2026-07-02, En-Chi Lee (williameclee@gmail.com)
 #     - Updated indegree algorithm
-#     - Added `_compute_flow_strahler_order_py` and `_construct_flowgraph_py`
 #   2026-07-08, En-Chi Lee (williameclee@gmail.com)
 #     - Renamed helper submodule from `aux` to `utils`
 #   2026-07-09, En-Chi Lee (williameclee@gmail.com)
 #     - Added better validity check in `_count_indegree_py`
+#   2026-07-14, En-Chi Lee (williameclee@gmail.com)
+#     - Splitted `geomorphology.flowdir` into submodules
 #   2026-07-30, En-Chi Lee (williameclee@gmail.com)
 #     - Fixed Python/FORTRAN backend behaviour parity in `compute_flow_strahler_order`.
+#   2026-08-03, En-Chi Lee (williameclee@gmail.com)
+#     - Implemented Python backend for function `find_acyclic_flowdirs`.
+
+from collections import deque
 
 import numpy as np
 
-from formosa.geomorphology.d8directions import D8Directions
-from .utils import get_neighbour_values, compute_downstream_indices
+from formosa.geomorphology.flowdir.d8directions import D8Directions
+from formosa.geomorphology.flowdir.utils import (
+    get_neighbour_values,
+    compute_downstream_indices,
+)
 
 import numpy.typing as npt
 from typing import Optional
@@ -74,7 +82,7 @@ def _count_indegree_py(
         valids = np.ones(dirs.shape, dtype=bool)
     indegs = np.zeros(dirs.shape, dtype=np.int8)
     dsi, dsj, _, ds_valids = compute_downstream_indices(
-        dirs, dir_scheme=dir_scheme, valids=valids, check=False
+        dirs, dir_scheme=dir_scheme, valids=valids, check=False, return_flat_index=False
     )
 
     for i in range(dirs.shape[0]):
@@ -88,6 +96,46 @@ def _count_indegree_py(
             indegs[dsi[i, j], dsj[i, j]] += 1
     # TODO: Find out why is there overflow here?
     return indegs
+
+
+def _find_acyclic_flowdirs_py(
+    dirs: npt.NDArray[np.integer],
+    indegs: npt.NDArray[np.integer],
+    valids: npt.NDArray[np.bool_],
+    dir_scheme: D8Directions = D8Directions(),
+) -> npt.NDArray[np.bool_]:
+    """Finds valid cells that do not belong to a directed flow cycle."""
+    remaining_indegs = np.asarray(indegs, dtype=np.int8).copy()
+    acyclics = np.zeros(valids.shape, dtype=bool)
+    queue = deque(map(tuple, np.argwhere(valids & (remaining_indegs == 0))))
+
+    dsi, dsj, _, ds_inbounds = compute_downstream_indices(
+        dirs,
+        dir_scheme=dir_scheme,
+        check=False,
+        return_flat_index=False,
+        oob_is_okay=True,
+    )
+    ds_valids = np.zeros(valids.shape, dtype=bool)
+    ds_valids[ds_inbounds] = valids[dsi[ds_inbounds], dsj[ds_inbounds]]
+    di, dj = dir_scheme.code2d8offset(dirs)
+    has_valid_ds = valids & ds_valids & ((di != 0) | (dj != 0))
+
+    while queue:
+        i, j = queue.popleft()
+        if acyclics[i, j]:
+            continue
+        acyclics[i, j] = True
+        if not has_valid_ds[i, j]:
+            continue
+
+        ni = dsi[i, j]
+        nj = dsj[i, j]
+        remaining_indegs[ni, nj] -= 1
+        if remaining_indegs[ni, nj] == 0:
+            queue.append((ni, nj))
+
+    return acyclics
 
 
 def _find_flat_edges_py(
@@ -148,7 +196,9 @@ def _compute_flow_accumulation_py(
         weights = np.where(valids, weights, 0)  # type: ignore
 
     if dsij is None:
-        _, _, dsij, _ = compute_downstream_indices(dirs, dir_scheme=dir_scheme)
+        _, _, dsij, _ = compute_downstream_indices(
+            dirs, dir_scheme=dir_scheme, return_flat_index=True
+        )
     else:
         assert (
             dsij.shape == dirs.shape
@@ -157,7 +207,7 @@ def _compute_flow_accumulation_py(
     indegs = indegs.flatten(order="F")
     valids = valids.flatten(order="F")  # type: ignore
     weights = weights.flatten(order="F")  # type: ignore
-    dsij = dsij.flatten(order="F")
+    dsij = dsij.flatten(order="F")  # type: ignore ; dsij will not be None
     dirs = dirs.flatten(order="F")
 
     # Initialize accumulation with self weight
@@ -198,7 +248,7 @@ def _compute_flow_strahler_order_py(
         indegs = indegs.copy()
 
     downstream_i, downstream_j, _, downstream_valids = compute_downstream_indices(
-        dirs, dir_scheme=dir_scheme, valids=valids, check=False
+        dirs, dir_scheme=dir_scheme, valids=valids, check=False, return_flat_index=False
     )
 
     strahler_order = np.zeros(indegs.shape, dtype=np.int16)
@@ -289,102 +339,3 @@ def _label_watersheds_py(
                     to_fill.append((ni, nj))
     watershed = watershed + 1  # make background 0 and watersheds start from 1
     return watershed
-
-
-def _construct_flowgraph_py(
-    dirs: npt.NDArray[np.integer],
-    dir_scheme: D8Directions,
-    valids: npt.NDArray[np.bool_],
-    orders: npt.NDArray[np.integer],
-    indegs: npt.NDArray[np.integer],
-    seeds: npt.NDArray[np.bool_],
-    preserve_junctions: bool = True,
-    ncells: Optional[int] = None,
-):
-    seens = np.zeros_like(dirs, dtype=np.bool_)
-
-    # Hold the cell ijs of the start and end node
-    if ncells is None:
-        ncells = dirs.size
-    arc_orders = np.zeros((ncells,), dtype=np.int8)
-    vertex_ijs = np.empty((2, 2 * ncells), dtype=np.int32)
-    vertex_startends = np.empty((2, ncells), dtype=np.int32)
-
-    # Find seed cells to start with
-    seed_ijs = np.zeros((2, np.sum(valids)), dtype=np.int32, order="F")
-    nseeds: int = np.sum(seeds)
-    seed_i, seed_j = np.nonzero(seeds)
-    seed_ijs[0, :nseeds] = seed_i
-    seed_ijs[1, :nseeds] = seed_j
-
-    iseed: int = 0
-    iarc: int = 0
-    ivertex: int = 0
-
-    while iseed < nseeds:
-        si, sj = seed_ijs[0, iseed], seed_ijs[1, iseed]
-        iseed += 1
-        seens[si, sj] = True
-
-        # Skip isolated point
-        di, dj = dir_scheme.code2d8offset(dirs[si, sj])
-        if (di == 0) and (dj == 0):
-            continue
-
-        # Initialise the arc
-        order = orders[si, sj]
-        arc_orders[iarc] = order
-        vertex_startends[0, iarc] = ivertex
-        vertex_ijs[:, ivertex] = [si, sj]
-        ivertex += 1
-        ci, cj = si, sj
-
-        while True:
-            di, dj = dir_scheme.code2d8offset(dirs[ci, cj])
-            ni = ci + di
-            nj = cj + dj
-
-            ds_is_valid = True
-            if (ci == ni) and (cj == nj):  # Self-loop
-                ds_is_valid = False
-            elif (
-                (ni < 0) or (ni >= dirs.shape[0]) or (nj < 0) or (nj >= dirs.shape[1])
-            ):  # OOB
-                ds_is_valid = False
-            elif not valids[ni, nj]:
-                ds_is_valid = False
-
-            is_end_vertex = (not ds_is_valid) or (orders[ni, nj] != order)
-            if preserve_junctions:
-                is_end_vertex = is_end_vertex or (indegs[ni, nj] >= 2)
-
-            if is_end_vertex:
-                if not ds_is_valid:
-                    if vertex_startends[0, iarc] == ivertex - 1:
-                        # Single-length arc, roll back arc and vertex registration
-                        ivertex -= 1
-                        iarc -= 1
-                        break
-                    else:
-                        vertex_startends[1, iarc] = ivertex - 1
-                        break
-                vertex_ijs[:, ivertex] = [ni, nj]
-                vertex_startends[1, iarc] = ivertex
-                ivertex += 1
-                if (ds_is_valid) and (not seens[ni, nj]):
-                    seens[ni, nj] = True
-                    seed_ijs[:, nseeds] = [ni, nj]
-                    nseeds += 1
-                break
-
-            seens[ni, nj] = True
-
-            vertex_ijs[:, ivertex] = [ni, nj]
-            ivertex += 1
-            ci, cj = ni, nj
-        iarc += 1
-
-    narcs = iarc
-    nvertices = ivertex
-
-    return narcs, nvertices, arc_orders, vertex_ijs, vertex_startends

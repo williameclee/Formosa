@@ -21,9 +21,10 @@ ext_suffix = run_command(
 custom_target(
   'flowdir_f',
   input: files(
-    'src/formosa/geomorphology/utils.f95',
+    'src/formosa/geomorphology/flowdir/utils.f95',
     'src/formosa/geomorphology/distances.f95',
-    'src/formosa/geomorphology/flowdir.f95',
+    'src/formosa/geomorphology/flowdir/graphs/graphs.f95',
+    'src/formosa/geomorphology/flowdir/raster/raster.f95',
   ),
   output: ['flowdir_f' + ext_suffix],
   command: [
