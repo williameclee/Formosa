@@ -95,10 +95,12 @@ def compute_downstream_indices(
     dir_scheme: D8Directions = D8Directions(),
     valids: Optional[npt.NDArray[np.bool_]] = None,
     check: bool = True,
+    return_flat_index: bool = True,
+    oob_is_okay: bool = False,
 ) -> tuple[
     npt.NDArray[np.int32],
     npt.NDArray[np.int32],
-    npt.NDArray[np.int32],
+    Optional[npt.NDArray[np.int32]],
     npt.NDArray[np.bool_],
 ]:
     """
