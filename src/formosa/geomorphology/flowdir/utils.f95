@@ -12,11 +12,73 @@
 !     - Explicitly handled Python uint8 -> FORTRAN INTEGER*1 conversion/interpretation in 'fill_offset_lookup'
 !   2026-08-04, En-Chi Lee (williameclee@gmail.com)
 !     - Refactored 'mask2ij' to propagate buffer overflow error
+!     - Added function 'mask2id' as the linear-index version of 'mask2ij'; also added related linear index check functions
 !!!
 
 module utils
     implicit none
 contains
+    pure function ij2id_checked(i, j, nrows, ncols) result(cell_id)
+        !! Encodes a valid one-based grid coordinate as a linear cell ID.
+        !! Zero is returned for an out-of-bounds coordinate and is never a
+        !! valid cell ID.
+        implicit none
+        integer, intent(in) :: i, j, nrows, ncols
+        integer :: cell_id
+
+        if (nrows < 1 .or. ncols < 1) then
+            cell_id = 0
+        else if (ncols > huge(cell_id)/nrows) then
+            cell_id = 0
+        else if (i < 1 .or. i > nrows .or. j < 1 .or. j > ncols) then
+            cell_id = 0
+        else
+            cell_id = i + (j - 1)*nrows
+        end if
+    end function ij2id_checked
+
+    pure subroutine id2ij_checked(cell_id, nrows, ncols, i, j, is_valid)
+        !! Decodes a one-based linear cell ID, rejecting IDs outside the grid.
+        implicit none
+        integer, intent(in) :: cell_id, nrows, ncols
+        integer, intent(out) :: i, j
+        logical*1, intent(out) :: is_valid
+
+        is_valid = nrows >= 1 .and. ncols >= 1
+        if (is_valid) is_valid = ncols <= huge(cell_id)/nrows
+        if (is_valid) is_valid = cell_id >= 1 .and. cell_id <= nrows*ncols
+        if (.not. is_valid) then
+            i = 0
+            j = 0
+            return
+        end if
+        i = mod(cell_id - 1, nrows) + 1
+        j = (cell_id - 1)/nrows + 1
+    end subroutine id2ij_checked
+
+    pure subroutine mask2id(mask, ids, nids, cnt, err_code)
+        !! Converts a mask to validated one-based linear cell IDs.
+        implicit none
+        logical*1, intent(in) :: mask(:, :)
+        integer, intent(in) :: nids
+        integer, intent(out) :: ids(nids), cnt, err_code
+        integer :: ci, cj
+
+        cnt = 0
+        err_code = 0
+        do cj = lbound(mask, 2), ubound(mask, 2)
+            do ci = lbound(mask, 1), ubound(mask, 1)
+                if (.not. mask(ci, cj)) cycle
+                if (cnt == nids) then
+                    err_code = 3
+                    return
+                end if
+                cnt = cnt + 1
+                ids(cnt) = ij2id_checked(ci, cj, size(mask, 1), size(mask, 2))
+            end do
+        end do
+    end subroutine mask2id
+
     pure subroutine mask2ij(mask, ij, nij, cnt, err_code)
         !! Converts a 2D logical mask to a list of (i, j) indices where
         !! the mask is true.

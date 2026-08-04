@@ -27,6 +27,7 @@
 !     - Explicitly handled Python uint8 -> FORTRAN INTEGER*1 conversion/interpretation in 'fill_offset_lookup'
 !   2026-08-04, En-Chi Lee (williameclee@gmail.com)
 !     - Added allocation error monitoring and moved error handling to Python
+!     - Used function 'mask2id' as the linear-index version of 'mask2ij'
 !!!
 
 module flowdir_raster
@@ -1077,12 +1078,14 @@ contains
             !! Rows/columns for seed, current and upstream cells
         logical*1, allocatable :: seeds(:, :)
             !! Mask to identify seed cells for the algorithm (valid cells with noflow direction)
-        integer, allocatable :: seed_ijs(:, :)
-            !! Buffer for storing (i, j) indices of seed cells to be processed in the algorithm
-        integer, allocatable :: tofill_ijs(:, :)
-            !! Buffer for storing (i, j) indices of cells to be processed in the breadth-first search from sink cells
+        integer, allocatable :: seed_ids(:)
+            !! Buffer for storing linear IDs of seed cells to be processed in the algorithm
+        integer, allocatable :: tofill_ids(:)
+            !! Buffer for storing linear cell IDs in the breadth-first search from sink cells
+        integer :: cell_id
+        logical*1 :: id_is_valid
         integer :: max_queue_size
-            !! Maximum size of the buffer for cells to be processed ('seed_ijs' and 'tofill_ijs')
+            !! Maximum number of linear cell IDs in the seed and traversal queues
         integer :: alloc_stat
             !! Per-thread allocation status code
         ! Find noflow code
@@ -1093,7 +1096,7 @@ contains
 
         ! Append all cells with noflow direction to buffer
         max_queue_size = nrows*ncols
-        allocate (seed_ijs(2, max_queue_size), stat=err_code)
+        allocate (seed_ids(max_queue_size), stat=err_code)
         if (err_code /= 0) then
             err_code = 2
             return
@@ -1104,13 +1107,15 @@ contains
             return
         end if
         seeds = valids .and. (dirs == noflow_code)
-        call mask2ij(seeds, seed_ijs, max_queue_size, nseeds, err_code)
+        call mask2id(seeds, seed_ids, max_queue_size, nseeds, err_code)
         if (err_code /= 0) return
         deallocate (seeds)
 
         ! Loop through seeds
-        !$omp PARALLEL DEFAULT(SHARED) PRIVATE(iseed, si, sj, ci, cj, ifill, nfills, tofill_ijs, alloc_stat)
-        allocate (tofill_ijs(2, max_queue_size), stat=alloc_stat)
+        !$omp PARALLEL DEFAULT(SHARED) PRIVATE(iseed, si, sj, ci, cj, ui, uj, iofs) &
+        !$omp PRIVATE(ifill, nfills, tofill_ids, alloc_stat) &
+        !$omp PRIVATE(cell_id, id_is_valid)
+        allocate (tofill_ids(max_queue_size), stat=alloc_stat)
         if (alloc_stat /= 0) then
             !$omp atomic write
             err_code = 2
@@ -1118,19 +1123,27 @@ contains
         !$omp DO SCHEDULE(DYNAMIC)
         do iseed = 1, nseeds
             if (alloc_stat /= 0) cycle
-            si = seed_ijs(1, iseed)
-            sj = seed_ijs(2, iseed)
+            call id2ij_checked(seed_ids(iseed), nrows, ncols, si, sj, id_is_valid)
+            if (.not. id_is_valid) then
+                !$omp atomic write
+                err_code = 3
+                cycle
+            end if
 
             ! Loop through buffer
             nfills = 1
             ifill = 1
             dists(si, sj) = 0.0
-            tofill_ijs(:, 1) = [si, sj]
+            tofill_ids(1) = seed_ids(iseed)
 
             do while (ifill <= nfills)
-                ci = tofill_ijs(1, ifill)
-                cj = tofill_ijs(2, ifill)
+                call id2ij_checked(tofill_ids(ifill), nrows, ncols, ci, cj, id_is_valid)
                 ifill = ifill + 1
+                if (.not. id_is_valid) then
+                    !$omp atomic write
+                    err_code = 3
+                    exit
+                end if
 
                 ! Loop over offsets to find contributing cells
                 do iofs = 1, noffsets
@@ -1155,7 +1168,13 @@ contains
                         err_code = 3
                         exit
                     end if
-                    tofill_ijs(:, nfills) = [ui, uj]
+                    cell_id = ij2id_checked(ui, uj, nrows, ncols)
+                    if (cell_id == 0) then
+                        !$omp atomic write
+                        err_code = 3
+                        exit
+                    end if
+                    tofill_ids(nfills) = cell_id
                     ! Compute distance
                     dists(ui, uj) = dists(ci, cj) &
                                     + l2dist_xy(x(ui, uj), y(ui, uj), x(ci, cj), y(ci, cj))
@@ -1163,9 +1182,9 @@ contains
             end do
         end do
         !$omp END DO
-        if (allocated(tofill_ijs)) deallocate (tofill_ijs)
+        if (allocated(tofill_ids)) deallocate (tofill_ids)
         !$omp END PARALLEL
-        deallocate (seed_ijs)
+        deallocate (seed_ids)
     end subroutine compute_dist2sink
 
     subroutine compute_flow_strahler_order( &
@@ -1350,10 +1369,12 @@ contains
             !! Rows/columns for seed, current and upstream indices
         logical*1, allocatable :: seeds(:, :)
             !! Mask to identify seed cells for the algorithm (valid cells with noflow direction)
-        integer, allocatable :: seed_ijs(:, :), tofill_ijs(:, :)
-            !! Buffers for storing (i, j) indices of seed cells and cells to be processed in the breadth-first search from seed cells
+        integer, allocatable :: seed_ids(:), tofill_ids(:)
+            !! Buffers for storing linear IDs of seed cells and queued cells
+        integer :: cell_id
+        logical*1 :: id_is_valid
         integer :: max_queue_size
-            !! Maximum size of the buffer for cells to be processed ('seed_ijs' and 'tofill_ijs')
+            !! Maximum number of linear cell IDs in the seed and traversal queues
         integer :: alloc_stat
             !! Per-thread allocation status code
 
@@ -1365,7 +1386,7 @@ contains
 
         ! Append all cells with noflow direction to buffer
         max_queue_size = nrows*ncols
-        allocate (seed_ijs(2, max_queue_size), stat=err_code)
+        allocate (seed_ids(max_queue_size), stat=err_code)
         if (err_code /= 0) then
             err_code = 2
             return
@@ -1376,13 +1397,15 @@ contains
             return
         end if
         seeds = valids .and. (dirs == noflow_code)
-        call mask2ij(seeds, seed_ijs, max_queue_size, nseeds, err_code)
+        call mask2id(seeds, seed_ids, max_queue_size, nseeds, err_code)
         if (err_code /= 0) return
         deallocate (seeds)
 
         ! Loop through seeds
-        !$omp PARALLEL DEFAULT(SHARED) PRIVATE(iseed, si, sj, ci, cj, ifill, nfills, tofill_ijs, alloc_stat)
-        allocate (tofill_ijs(2, max_queue_size), stat=alloc_stat)
+        !$omp PARALLEL DEFAULT(SHARED) PRIVATE(iseed, si, sj, ci, cj, ui, uj, iofs) &
+        !$omp PRIVATE(ifill, nfills, tofill_ids, alloc_stat) &
+        !$omp PRIVATE(cell_id, id_is_valid)
+        allocate (tofill_ids(max_queue_size), stat=alloc_stat)
         if (alloc_stat /= 0) then
             !$omp atomic write
             err_code = 2
@@ -1390,19 +1413,27 @@ contains
         !$omp DO SCHEDULE(DYNAMIC)
         do iseed = 1, nseeds
             if (alloc_stat /= 0) cycle
-            si = seed_ijs(1, iseed)
-            sj = seed_ijs(2, iseed)
+            call id2ij_checked(seed_ids(iseed), nrows, ncols, si, sj, id_is_valid)
+            if (.not. id_is_valid) then
+                !$omp atomic write
+                err_code = 3
+                cycle
+            end if
 
             ! Loop through buffer
             nfills = 1
             ifill = 1
             labels(si, sj) = iseed
-            tofill_ijs(:, 1) = [si, sj]
+            tofill_ids(1) = seed_ids(iseed)
 
             do while (ifill <= nfills)
-                ci = tofill_ijs(1, ifill)
-                cj = tofill_ijs(2, ifill)
+                call id2ij_checked(tofill_ids(ifill), nrows, ncols, ci, cj, id_is_valid)
                 ifill = ifill + 1
+                if (.not. id_is_valid) then
+                    !$omp atomic write
+                    err_code = 3
+                    exit
+                end if
 
                 ! Loop over offsets to find contributing cells
                 do iofs = 1, noffsets
@@ -1427,15 +1458,22 @@ contains
                         err_code = 3
                         exit
                     end if
-                    tofill_ijs(:, nfills) = [ui, uj]
+                    cell_id = ij2id_checked(ui, uj, nrows, ncols)
+                    if (cell_id == 0) then
+                        !$omp atomic write
+                        err_code = 3
+                        exit
+                    end if
+                    tofill_ids(nfills) = cell_id
                     ! Compute distance
                     labels(ui, uj) = labels(ci, cj)
                 end do
             end do
         end do
         !$omp END DO
-        if (allocated(tofill_ijs)) deallocate (tofill_ijs)
+        if (allocated(tofill_ids)) deallocate (tofill_ids)
         !$omp END PARALLEL
+        deallocate (seed_ids)
     end subroutine label_watersheds
 
     subroutine flood_upstream( &
@@ -1471,10 +1509,12 @@ contains
             !! Index for iterating through seed cells and buffer, and total number of seed cells and buffer fills
         integer :: si, sj, ci, cj, ui, uj
             !! Rows/columns for seed, current and upstream indices
-        integer, allocatable :: seed_ijs(:, :), tofill_ijs(:, :)
-            !! Buffers for storing (i, j) indices of seed cells and cells to be processed in the flooding algorithm
+        integer, allocatable :: seed_ids(:), tofill_ids(:)
+            !! Buffers for storing linear IDs of seed cells and queued cells
+        integer :: cell_id
+        logical*1 :: id_is_valid
         integer :: max_queue_size
-            !! Maximum size of the buffer for cells to be processed ('seed_ijs' and 'tofill_ijs')
+            !! Maximum number of linear cell IDs in the seed and traversal queues
         integer :: alloc_stat
             !! Per-thread allocation status code
 
@@ -1486,17 +1526,19 @@ contains
 
         ! Append all cells with noflow direction to buffer
         max_queue_size = nrows*ncols
-        allocate (seed_ijs(2, max_queue_size), stat=err_code)
+        allocate (seed_ids(max_queue_size), stat=err_code)
         if (err_code /= 0) then
             err_code = 2
             return
         end if
-        call mask2ij(seeds, seed_ijs, max_queue_size, nseeds, err_code)
+        call mask2id(seeds, seed_ids, max_queue_size, nseeds, err_code)
         if (err_code /= 0) return
 
         ! Loop through seeds
-        !$omp PARALLEL DEFAULT(SHARED) PRIVATE(iseed, si, sj, ci, cj, ifill, nfills, tofill_ijs, alloc_stat)
-        allocate (tofill_ijs(2, max_queue_size), stat=alloc_stat)
+        !$omp PARALLEL DEFAULT(SHARED) PRIVATE(iseed, si, sj, ci, cj, ui, uj, iofs) &
+        !$omp PRIVATE(ifill, nfills, tofill_ids, alloc_stat) &
+        !$omp PRIVATE(cell_id, id_is_valid)
+        allocate (tofill_ids(max_queue_size), stat=alloc_stat)
         if (alloc_stat /= 0) then
             !$omp atomic write
             err_code = 2
@@ -1504,8 +1546,12 @@ contains
         !$omp DO SCHEDULE(DYNAMIC)
         do iseed = 1, nseeds
             if (alloc_stat /= 0) cycle
-            si = seed_ijs(1, iseed)
-            sj = seed_ijs(2, iseed)
+            call id2ij_checked(seed_ids(iseed), nrows, ncols, si, sj, id_is_valid)
+            if (.not. id_is_valid) then
+                !$omp atomic write
+                err_code = 3
+                cycle
+            end if
 
             ! Check if is valid
             if (.not. valids(si, sj)) cycle
@@ -1514,12 +1560,16 @@ contains
             nfills = 1
             ifill = 1
             flooded(si, sj) = .true.
-            tofill_ijs(:, 1) = [si, sj]
+            tofill_ids(1) = seed_ids(iseed)
 
             do while (ifill <= nfills)
-                ci = tofill_ijs(1, ifill)
-                cj = tofill_ijs(2, ifill)
+                call id2ij_checked(tofill_ids(ifill), nrows, ncols, ci, cj, id_is_valid)
                 ifill = ifill + 1
+                if (.not. id_is_valid) then
+                    !$omp atomic write
+                    err_code = 3
+                    exit
+                end if
 
                 ! Loop over offsets to find contributing cells
                 do iofs = 1, noffsets
@@ -1544,16 +1594,22 @@ contains
                         err_code = 3
                         exit
                     end if
-                    tofill_ijs(:, nfills) = [ui, uj]
+                    cell_id = ij2id_checked(ui, uj, nrows, ncols)
+                    if (cell_id == 0) then
+                        !$omp atomic write
+                        err_code = 3
+                        exit
+                    end if
+                    tofill_ids(nfills) = cell_id
                     ! Compute distance
                     flooded(ui, uj) = .true.
                 end do
             end do
         end do
         !$omp END DO
-        if (allocated(tofill_ijs)) deallocate (tofill_ijs)
+        if (allocated(tofill_ids)) deallocate (tofill_ids)
         !$omp END PARALLEL
-        deallocate (seed_ijs)
+        deallocate (seed_ids)
     end subroutine flood_upstream
 
     subroutine find_acyclic_flowdirs( &

@@ -78,6 +78,20 @@ def test_mask2ij_returns_output_capacity_error():
     assert indices.shape == (2, 2)
 
 
+def test_checked_linear_cell_ids_reject_invalid_coordinates_and_ids():
+    assert utils_f.ij2id_checked(1, 1, 3, 4) == 1
+    assert utils_f.ij2id_checked(3, 4, 3, 4) == 12
+    assert utils_f.ij2id_checked(0, 1, 3, 4) == 0
+    assert utils_f.ij2id_checked(4, 1, 3, 4) == 0
+    assert utils_f.ij2id_checked(1, 0, 3, 4) == 0
+    assert utils_f.ij2id_checked(1, 5, 3, 4) == 0
+
+    assert utils_f.id2ij_checked(1, 3, 4) == (1, 1, True)
+    assert utils_f.id2ij_checked(12, 3, 4) == (3, 4, True)
+    assert utils_f.id2ij_checked(0, 3, 4) == (0, 0, False)
+    assert utils_f.id2ij_checked(13, 3, 4) == (0, 0, False)
+
+
 def test_fortran_direction_utilities_infer_input_shapes():
     offsets = np.array([[0, 0], [0, 1], [0, -1]], dtype=np.int32, order="F")
     codes = np.array([0, 1, 5], dtype=np.int8)
