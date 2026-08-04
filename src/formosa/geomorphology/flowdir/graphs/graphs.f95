@@ -218,7 +218,7 @@ contains
         nvertices = ivertex - 1
     end subroutine construct_flowgraph
 
-    recursive subroutine simplify_arc_rdp( &
+    pure recursive subroutine simplify_arc_rdp( &
         xys, keeps, istart, iend, tol)
         ! Simplify a single arc segment recursively using the Ramer-Douglas-Peucker (RDP) algorithm.
         implicit none
@@ -264,7 +264,7 @@ contains
         call simplify_arc_rdp(xys, keeps, i_max_err2, iend, tol)
     end subroutine simplify_arc_rdp
 
-    subroutine simplify_flowgraph( &
+    pure subroutine simplify_flowgraph( &
         vertex_xys, arc_endpts, vertex_keeps, nvertices, narcs, tol)
         ! Simplify all arcs in a flow graph using the Ramer-Douglas-Peucker (RDP) algorithm.
         implicit none
@@ -326,7 +326,7 @@ contains
         end do
     end function argsort_arcs
 
-    subroutine record_topology_intersection(record, intxs, nintxs)
+    pure subroutine record_topology_intersection(record, intxs, nintxs)
         !! Counts one detected topology violation and stores it if capacity remains.
         !!
         !! The total count is incremented even after 'intxs' is full. This lets
@@ -344,7 +344,7 @@ contains
         if (nintxs <= size(intxs, 2)) intxs(:, nintxs) = record
     end subroutine record_topology_intersection
 
-    subroutine scan_invalid_graph_topology( &
+    pure subroutine scan_invalid_graph_topology( &
         vertex_ijs, arc_endpts, capacity, intxs, nintxs, err_code)
         !! Scans all candidate segment pairs and returns the total violation count.
         !!

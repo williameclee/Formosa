@@ -17,7 +17,7 @@
 module utils
     implicit none
 contains
-    subroutine mask2ij( &
+    pure subroutine mask2ij( &
         mask, nrows, ncols, ij, nij, cnt, err_code)
         !! Converts a 2D logical mask to a list of (i, j) indices where
         !! the mask is true.

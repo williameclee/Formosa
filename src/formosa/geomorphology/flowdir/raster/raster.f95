@@ -248,7 +248,7 @@ contains
         !$omp END PARALLEL DO
     end subroutine find_flat_edges
 
-    subroutine label_flats( &
+    pure subroutine label_flats( &
         z, seeds, valids, flats, nrows, ncols, &
         offsets, noffsets, err_code)
         !! Labels connected flat regions in the elevation grid, using a
@@ -370,7 +370,7 @@ contains
         deallocate (seed_ijs)
     end subroutine label_flats
 
-    subroutine create_pushing_syn_grad( &
+    pure subroutine create_pushing_syn_grad( &
         z, flats, nrows, ncols, &
         high_edges, offsets, noffsets, err_code)
         !! Produces a synthetic elevation that decreases away from 'high
@@ -543,7 +543,7 @@ contains
         deallocate (maxdist)
     end subroutine create_pushing_syn_grad
 
-    subroutine create_pulling_syn_grad( &
+    pure subroutine create_pulling_syn_grad( &
         z, flats, nrows, ncols, &
         low_edges, offsets, noffsets, err_code)
         !! Produces a synthetic elevation that drains towards 'low
@@ -1783,6 +1783,14 @@ contains
         integer :: inner_err_code
             !! Status returned by a confluence trace
 
+        ! Define neighbour offsets
+        parameter(neighbour_offsets= &
+                  reshape([1, -1, & ! SW
+                           0, 1, & ! E
+                           1, 1, & ! SE
+                           1, 0 & ! S
+                           ], [4, 2]))
+
         ! Create lookup tables for offsets
         err_code = 0
         allocate (diffs(0:255, 2), stat=err_code)
@@ -1791,14 +1799,6 @@ contains
             return
         end if
         diffs = fill_offset_lookup(offsets, codes, noffsets)
-
-        ! Define neighbour offsets
-        neighbour_offsets = &
-            reshape([1, -1, & ! SW
-                     0, 1, & ! E
-                     1, 1, & ! SE
-                     1, 0 & ! S
-                     ], [4, 2])
 
         maxlen = 2*(nrows + ncols)
 
@@ -1878,7 +1878,7 @@ contains
         deallocate (diffs)
     end subroutine compute_max_branch_dist
 
-    subroutine compute_confluence_dist( &
+    pure subroutine compute_confluence_dist( &
         dists, &
         s1ij, s2ij, dirs, x, y, &
         offset_lookup, check_flag, err_code)
@@ -1942,7 +1942,7 @@ contains
         deallocate (visited)
     end subroutine compute_confluence_dist
 
-    subroutine inner_compute_confluence_dist( &
+    pure subroutine inner_compute_confluence_dist( &
         dists, s1i, s1j, s2i, s2j, dirs, x, y, &
         offset_lookup, maxpathlen, path1, path2, visited, id1, id2, check_flag, err_code)
         !! Inner routine for computing the confluence distance between two seed cells.
@@ -1959,7 +1959,7 @@ contains
             !! Indices of the two seed cells from which to trace flow paths
         integer*1, intent(in) :: dirs(:, :)
             !! Gird of flow direction codes and the corresponding offset lookup table
-        real, intent(in) :: x(:, :), y(:, :)
+        real, contiguous, intent(in) :: x(:, :), y(:, :)
             !! Coordinates of cell centres for distance calculation
         integer, intent(in) :: offset_lookup(0:255, 2)
             !! Lookup table for offsets corresponding to each flow direction code, used to find downstream cell indices
@@ -1972,7 +1972,7 @@ contains
             !! Unique ids to mark visited cells for each path in the visited grid
         integer, intent(inout) :: path1(2, maxpathlen), path2(2, maxpathlen)
             !! Workspace arrays for paths and visited grid
-        integer, intent(inout) :: visited(:, :)
+        integer, contiguous, intent(inout) :: visited(:, :)
             !! Grid to track visited paths by ids
         ! Outputs
         real, intent(out) :: dists(2)

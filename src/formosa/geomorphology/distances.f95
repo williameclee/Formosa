@@ -15,7 +15,7 @@ module distances
         module procedure l1dist_xy_real
     end interface l1dist_xy
 contains
-    function l1dist_xy_int(x1, y1, x2, y2) result(dist)
+    pure function l1dist_xy_int(x1, y1, x2, y2) result(dist)
         !! Calculates the L1 distance between two 2D points.
         implicit none
         ! Arguments
@@ -24,7 +24,7 @@ contains
         dist = abs(x1 - x2) + abs(y1 - y2)
     end function l1dist_xy_int
 
-    function l1dist_xy_real(x1, y1, x2, y2) result(dist)
+    pure function l1dist_xy_real(x1, y1, x2, y2) result(dist)
         !! Calculates the L1 distance between two 2D points.
         implicit none
         ! Arguments
@@ -33,7 +33,7 @@ contains
         dist = abs(x1 - x2) + abs(y1 - y2)
     end function l1dist_xy_real
 
-    function l2dist_xy(x1, y1, x2, y2) result(dist)
+    pure function l2dist_xy(x1, y1, x2, y2) result(dist)
         !! Calculates the L2 distance between two 2D points.
         implicit none
         ! Arguments
@@ -44,7 +44,7 @@ contains
         dist = sqrt((x1 - x2)**2 + (y1 - y2)**2)
     end function l2dist_xy
 
-    function pt2linedist2_xy(x1, y1, x2, y2, x3, y3) result(dist2)
+    pure function pt2linedist2_xy(x1, y1, x2, y2, x3, y3) result(dist2)
         ! Calculates the squared distance of a point to a line segment defined by two points on a 2D plane.
         implicit none
         ! Arguments
@@ -71,7 +71,7 @@ contains
         dist2 = (x3 - (x1 + lx*t))**2 + (y3 - (y1 + ly*t))**2
     end function pt2linedist2_xy
 
-    function pt2linedist_xy(x1, y1, x2, y2, x3, y3) result(dist)
+    pure function pt2linedist_xy(x1, y1, x2, y2, x3, y3) result(dist)
         ! Calculates the distance of a point to a line segment defined by two points on a 2D plane.
         implicit none
         ! Arguments
