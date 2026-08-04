@@ -13,6 +13,8 @@
 #     - Added test cases for functions `find_graph_overlaps` and `solve_graph_overlaps`
 #   2026-08-03, En-Chi Lee (williameclee@gmail.com)
 #     - Added test cases for function `find_acyclic_flowdirs` and graph construction validity
+#   2026-08-04, En-Chi Lee (williameclee@gmail.com)
+#     - Added test cases for function `remove_unused_vertices`
 
 
 import pytest
@@ -182,6 +184,40 @@ def test_network_graph_concat_3x3():
     assert arc_endpts[-1, 1] == vertex_ijs.shape[0] - 1
     np.testing.assert_array_equal(s_arc_orders, exp_s_orders)
     np.testing.assert_array_equal(s_arc_endpts, exp_s_endpts)
+
+
+def test_remove_unused_vertices_compacts_arc_ranges():
+    vertices = np.array(
+        [
+            [99, 99],
+            *([0, 0], [1, 0]),
+            [98, 98],
+            [97, 97],
+            *([2, 0], [3, 0], [4, 0]),
+            [96, 96],
+        ]
+    )
+    endpts = np.array([[1, 2], [5, 7]], dtype=np.int32)
+
+    compact_vertices, compact_endpts = flowdir.remove_unused_vertices(vertices, endpts)
+
+    np.testing.assert_array_equal(
+        compact_vertices, [[0, 0], [1, 0], [2, 0], [3, 0], [4, 0]]
+    )
+    np.testing.assert_array_equal(compact_endpts, [[0, 1], [2, 4]])
+    assert compact_endpts[0, 1] + 1 == compact_endpts[1, 0]
+
+
+def test_remove_unused_vertices_handles_empty_graph():
+    vertices = np.array([[99, 99]], dtype=np.int32)
+    endpts = np.empty((0, 2), dtype=np.int32)
+
+    compact_vertices, compact_endpts = flowdir.remove_unused_vertices(vertices, endpts)
+
+    assert compact_vertices.shape == (0, 2)
+    assert compact_vertices.dtype == vertices.dtype
+    assert compact_endpts.shape == (0, 2)
+    assert compact_endpts.dtype == endpts.dtype
 
 
 def test_locate_invalid_graph_topogtaphy():

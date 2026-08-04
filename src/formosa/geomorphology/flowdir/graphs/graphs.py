@@ -31,6 +31,7 @@
 #     - Made `solve_graph_overlaps` stable and recognised already valid shared arcs
 #   2026-08-04, En-Chi Lee (williameclee@gmail.com)
 #     - Made `simplify_flowgraph` able to handle empty graphs
+#     - Implemented function `remove_unused_vertices`
 
 
 from dataclasses import dataclass
@@ -709,6 +710,64 @@ def concat_flowgraph(
             cursor += 1
 
     return s_arc_orders, s_vertex_ijs, s_arc_endpts
+
+
+def remove_unused_vertices(
+    vertices: npt.NDArray[np.number],
+    endpts: npt.NDArray[np.integer],
+) -> tuple[npt.NDArray[np.number], npt.NDArray[np.integer]]:
+    """
+    Removes stored vertices that are not referenced by any graph arc.
+
+    Arcs retain their input order and their vertices are copied into adjacent
+    ranges. Consequently, the start of every arc after the first is one index
+    beyond the end of the preceding arc. Arc endpoint indices are inclusive.
+
+    Parameters
+    ----------
+    vertices : NDArray[int | float]
+        V-by-n array of stored vertex coordinates.
+    endpts : NDArray[int]
+        A-by-2 array of inclusive arc ranges into `vertices`.
+
+    Returns
+    -------
+    vertices : NDArray[int | float]
+        Compact vertex array containing only vertices referenced by arcs.
+    endpts : NDArray[int]
+        Arc ranges remapped into the compact vertex array.
+
+    Raises
+    ------
+    ValueError
+        If the input arguments have the wrong shapes.
+    """
+    vertices = np.asarray(vertices)
+    endpts = np.asarray(endpts)
+
+    if vertices.ndim != 2:
+        raise ValueError("vertices must be a two-dimensional array.")
+    if endpts.ndim != 2 or endpts.shape[1] != 2:
+        raise ValueError("endpts must have shape (number of arcs, 2).")
+    if endpts.shape[0] == 0:
+        return vertices[:0].copy(), endpts.copy()
+    if np.any(endpts[:, 0] < 0) or np.any(endpts[:, 1] < endpts[:, 0]):
+        raise ValueError(
+            "Each arc must have a non-negative start no greater than its end."
+        )
+    if np.any(endpts[:, 1] >= vertices.shape[0]):
+        raise ValueError("Arc endpoints must index rows in vertices.")
+
+    lengths = endpts[:, 1] - endpts[:, 0] + 1
+    compact_vertices = np.concatenate(
+        [vertices[start : end + 1] for start, end in endpts], axis=0
+    )
+    compact_ends = np.cumsum(lengths, dtype=np.intp) - 1
+    compact_starts = np.concatenate(([0], compact_ends[:-1] + 1))
+    compact_endpts = np.column_stack((compact_starts, compact_ends)).astype(
+        endpts.dtype, copy=False
+    )
+    return compact_vertices, compact_endpts
 
 
 @dataclass
