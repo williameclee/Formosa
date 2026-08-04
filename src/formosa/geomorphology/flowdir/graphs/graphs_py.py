@@ -25,15 +25,17 @@ def _construct_flowgraph_py(
     seeds: npt.NDArray[np.bool_],
     preserve_junctions: bool = True,
     ncells: Optional[int] = None,
-):
+) -> tuple[
+    int, int, npt.NDArray[np.int8], npt.NDArray[np.int32], npt.NDArray[np.int32]
+]:
     seens = np.zeros_like(dirs, dtype=np.bool_)
 
     # Hold the cell ijs of the start and end node
     if ncells is None:
         ncells = dirs.size
-    arc_orders = np.zeros((ncells,), dtype=np.int8)
-    vertex_ijs = np.empty((2, 2 * ncells), dtype=np.int32)
-    vertex_startends = np.empty((2, ncells), dtype=np.int32)
+    graph_orders = np.zeros((ncells,), dtype=np.int8)
+    graph_verts = np.empty((2, 2 * ncells), dtype=np.int32)
+    graph_endpts = np.empty((2, ncells), dtype=np.int32)
 
     # Find seed cells to start with
     seed_ijs = np.zeros((2, int(np.sum(valids))), dtype=np.int32, order="F")
@@ -44,7 +46,7 @@ def _construct_flowgraph_py(
 
     iseed: int = 0
     iarc: int = 0
-    ivertex: int = 0
+    ivert: int = 0
 
     while iseed < nseeds:
         si, sj = seed_ijs[0, iseed], seed_ijs[1, iseed]
@@ -58,10 +60,10 @@ def _construct_flowgraph_py(
 
         # Initialise the arc
         order = orders[si, sj]
-        arc_orders[iarc] = order
-        vertex_startends[0, iarc] = ivertex
-        vertex_ijs[:, ivertex] = [si, sj]
-        ivertex += 1
+        graph_orders[iarc] = order
+        graph_endpts[0, iarc] = ivert
+        graph_verts[:, ivert] = [si, sj]
+        ivert += 1
         ci, cj = si, sj
 
         while True:
@@ -85,17 +87,17 @@ def _construct_flowgraph_py(
 
             if is_end_vertex:
                 if not ds_is_valid:
-                    if vertex_startends[0, iarc] == ivertex - 1:
+                    if graph_endpts[0, iarc] == ivert - 1:
                         # Single-length arc, roll back arc and vertex registration
-                        ivertex -= 1
+                        ivert -= 1
                         iarc -= 1
                         break
                     else:
-                        vertex_startends[1, iarc] = ivertex - 1
+                        graph_endpts[1, iarc] = ivert - 1
                         break
-                vertex_ijs[:, ivertex] = [ni, nj]
-                vertex_startends[1, iarc] = ivertex
-                ivertex += 1
+                graph_verts[:, ivert] = [ni, nj]
+                graph_endpts[1, iarc] = ivert
+                ivert += 1
                 if (ds_is_valid) and (not seens[ni, nj]):
                     seens[ni, nj] = True
                     seed_ijs[:, nseeds] = [ni, nj]
@@ -104,15 +106,15 @@ def _construct_flowgraph_py(
 
             seens[ni, nj] = True
 
-            vertex_ijs[:, ivertex] = [ni, nj]
-            ivertex += 1
+            graph_verts[:, ivert] = [ni, nj]
+            ivert += 1
             ci, cj = ni, nj
         iarc += 1
 
     narcs = iarc
-    nvertices = ivertex
+    nverts = ivert
 
-    return narcs, nvertices, arc_orders, vertex_ijs, vertex_startends
+    return narcs, nverts, graph_orders, graph_verts, graph_endpts
 
 
 def _locate_invalid_graph_topology_py(
