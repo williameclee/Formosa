@@ -454,6 +454,25 @@ def test_solve_graph_overlaps_with_repeated_coordinates():
     np.testing.assert_array_equal(intr_intr, np.array([[2, 0]]))
 
 
+def test_solve_graph_overlaps_is_idempotent():
+    from formosa.geomorphology.flowdir.graphs.graphs import solve_graph_overlaps
+
+    args = (
+        np.array([1]),
+        np.array([[0, 0], [1, 0], [2, 0], [3, 0], [4, 0]]),
+        np.array([[0, 4]]),
+        np.array([2]),
+        np.array([[1, -1], [1, 0], [2, 0], [3, 0], [3, 1]]),
+        np.array([[0, 4]]),
+    )
+
+    first = solve_graph_overlaps(*args, allows_arcs_overlap=True)
+    second = solve_graph_overlaps(*first, allows_arcs_overlap=True)
+
+    for first_array, second_array in zip(first, second):
+        np.testing.assert_array_equal(second_array, first_array)
+
+
 @pytest.mark.parametrize("name", ("valids", "indegs"))
 def test_find_acyclic_flowdirs_rejects_shape_mismatch(name):
     kwargs = {name: np.ones((2, 1), dtype=bool)}
@@ -471,3 +490,4 @@ if __name__ == "__main__":
     test_graph_insert_endpt()
     test_find_graph_overlaps()
     test_solve_graph_overlaps_with_repeated_coordinates()
+    test_solve_graph_overlaps_is_idempotent()

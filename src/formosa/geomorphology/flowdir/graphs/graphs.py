@@ -27,6 +27,8 @@
 #     - Various minor refactors and type annotation enhancements
 #   2026-07-31, En-Chi Lee (williameclee@gmail.com)
 #     - Preserved arc orders when `simplify_flowgraph` splits overlapping graphs
+#   2026-08-03, En-Chi Lee (williameclee@gmail.com)
+#     - Made `solve_graph_overlaps` stable and recognised already valid shared arcs
 
 
 import numpy as np
@@ -812,6 +814,24 @@ def _find_overlap_neighbours(
     return prev_alsos, after_alsos
 
 
+def _count_graph_vertex_occurrences(
+    ijs: npt.NDArray[np.number],
+    endpts: npt.NDArray[np.integer],
+    coords: npt.NDArray[np.number],
+) -> npt.NDArray[np.intp]:
+    """
+    Counts coordinate occurrences within the inclusive ranges of all arcs.
+    """
+    counts = np.zeros(coords.shape[0], dtype=np.intp)
+    for start, end in endpts:
+        arc_coords = ijs[start : end + 1]
+        counts += np.sum(
+            np.all(arc_coords[:, np.newaxis, :] == coords[np.newaxis, :, :], axis=2),
+            axis=0,
+        )
+    return counts
+
+
 def solve_graph_overlaps(
     g1_orders: npt.NDArray[np.integer],
     g1_ijs: npt.NDArray[np.number],
@@ -886,19 +906,44 @@ def solve_graph_overlaps(
         )
 
     if allows_arcs_overlap:
-        # Locate shared runs without assuming coordinates occur only once
-        v_prev_alsos, v_after_alsos = _find_overlap_neighbours(
-            g1_ijs, g1_endpts, overlaps
+        # Reclassify after endpoint-mismatch splitting.
+        # Endpoint/endpoint coordinates still provide the boundary context needed to recognise interior vertices as part of an existing shared run on later calls.
+        vert_vert, overlaps, _, _ = find_graph_overlaps(
+            g1_ijs, g1_endpts, g2_ijs, g2_endpts
         )
-        r_prev_alsos, r_after_alsos = _find_overlap_neighbours(
-            g2_ijs, g2_endpts, overlaps
+        # Endpoint coordinates bound an already-normalised shared run only when splitting has duplicated them across arcs in both graphs. 
+        # Natural outer endpoints that occur once must not hide the boundaries that still need to be split on the first pass.
+        g1_vert_vert_counts = _count_graph_vertex_occurrences(
+            g1_ijs, g1_endpts, vert_vert
+        )
+        g2_vert_vert_counts = _count_graph_vertex_occurrences(
+            g2_ijs, g2_endpts, vert_vert
+        )
+        shared_endpts = vert_vert[(g1_vert_vert_counts > 1) & (g2_vert_vert_counts > 1)]
+        shareds = np.unique(np.concatenate((shared_endpts, overlaps), axis=0), axis=0)
+
+        # Locate shared runs without assuming coordinates occur only once.
+        g1_prev_shareds, g1_after_shareds = _find_overlap_neighbours(
+            g1_ijs, g1_endpts, shareds
+        )
+        g2_prev_shareds, g2_after_shareds = _find_overlap_neighbours(
+            g2_ijs, g2_endpts, shareds
         )
 
-        need_endpts = ~(v_prev_alsos & v_after_alsos & r_prev_alsos & r_after_alsos)
+        shared_ids = {tuple(coord): i for i, coord in enumerate(shareds)}
+        overlap_ids = np.array(
+            [shared_ids[tuple(coord)] for coord in overlaps], dtype=np.intp
+        )
+        need_endpts = ~(
+            g1_prev_shareds[overlap_ids]
+            & g1_after_shareds[overlap_ids]
+            & g2_prev_shareds[overlap_ids]
+            & g2_after_shareds[overlap_ids]
+        )
 
     # Split isolated crossings, or every interior overlap when arcs may not overlap
     for ivert, vert in enumerate(overlaps):
-        if allows_arcs_overlap and (not need_endpts[ivert]):  # type: ignore : Lazy evaulation should guarentee that unbounded need_endpts is never used
+        if allows_arcs_overlap and (not need_endpts[ivert]):  # type: ignore : Lazy evaluation should guarantee that unbounded need_endpts is never used
             continue
         g1_orders, g1_ijs, g1_endpts = insert_endpt(g1_orders, g1_ijs, g1_endpts, vert)
         g2_orders, g2_ijs, g2_endpts = insert_endpt(g2_orders, g2_ijs, g2_endpts, vert)
