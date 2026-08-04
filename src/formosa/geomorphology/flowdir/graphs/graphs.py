@@ -698,7 +698,14 @@ def _used_graph_vertices(
     unique_is_endpts : NDArray[bool]
         U-by-(1) boolean array indicating whether each unique coordinate is an endpoint of at least one arc.
     """
+    
+    # Skip empty graphs
     endpts = np.asarray(endpts)
+    if endpts.shape[0] == 0:
+        return (
+            np.empty((0, ijs.shape[1]), dtype=ijs.dtype),
+            np.empty((0,), dtype=bool),
+        )
 
     # Expand inclusive endpoint ranges to exclude unreferenced entries in `ijs`
     used_ids = np.concatenate([np.arange(start, end + 1) for start, end in endpts])

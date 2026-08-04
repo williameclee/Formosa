@@ -1055,6 +1055,33 @@ def test_simplify_multiple_flowgraphs():
     assert simp_endpts_tuple[1].shape == (1, 2)
 
 
+def test_simplify_multiple_flowgraphs_accepts_one_empty_graph():
+    empty_orders = np.empty((0,), dtype=np.uint8)
+    empty_verts = np.empty((0, 2), dtype=np.float32)
+    empty_endpts = np.empty((0, 2), dtype=np.int32)
+    orders = np.array([1], dtype=np.uint8)
+    verts = np.array([[0.0, 0.0], [1.0, 0.0]], dtype=np.float32)
+    endpts = np.array([[0, 1]], dtype=np.int32)
+
+    simp_orders, simp_verts, simp_endpts, keeps = flowdir.simplify_flowgraph(
+        [empty_orders, orders],
+        [empty_verts, verts],
+        [empty_endpts, endpts],
+        tol=0.0,
+        check_topology=True,
+        backend="fortran",
+    )
+
+    np.testing.assert_array_equal(simp_orders[0], empty_orders)
+    np.testing.assert_array_equal(simp_verts[0], empty_verts)
+    np.testing.assert_array_equal(simp_endpts[0], empty_endpts)
+    np.testing.assert_array_equal(keeps[0], np.empty((0,), dtype=bool))
+    np.testing.assert_array_equal(simp_orders[1], orders)
+    np.testing.assert_array_equal(simp_verts[1], verts)
+    np.testing.assert_array_equal(simp_endpts[1], endpts)
+    np.testing.assert_array_equal(keeps[1], np.ones(2, dtype=bool))
+
+
 def test_simplify_flowgraph_keeps_every_arc_endpoint():
     orders = np.array([1, 2, 3], dtype=np.uint8)
     verts = np.array(
@@ -1182,3 +1209,4 @@ if __name__ == "__main__":
     test_simplify_multiple_flowgraphs_inserts_overlap_endpoints()
     test_simplify_multiple_flowgraphs_ignores_identical_arcs()
     test_simplify_flowgraph_keeps_every_arc_endpoint()
+    test_simplify_multiple_flowgraphs_accepts_one_empty_graph()
