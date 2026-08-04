@@ -31,6 +31,7 @@
 #     - Made `solve_graph_overlaps` stable and recognised already valid shared arcs
 #   2026-08-04, En-Chi Lee (williameclee@gmail.com)
 #     - Made `simplify_flowgraph` able to handle empty graphs
+#     - Implemented function `remove_unused_vertices`
 
 
 from dataclasses import dataclass
@@ -58,7 +59,9 @@ except ImportError as err:
 import warnings
 
 import numpy.typing as npt
-from typing import Literal, Iterable, Optional, overload
+from typing import Literal, Iterable, Optional, TypeVar, overload
+
+NpIndex = TypeVar("NpIndex", np.int32, np.int64, np.intp)
 
 
 class GraphTopologyError(RuntimeError):
@@ -277,6 +280,7 @@ def construct_flowgraph(
     preserve_junctions: bool = True,
     sort: bool = True,
     backend: Literal["fortran", "python"] = "fortran",
+    remove_unused: bool = False,
 ) -> tuple[npt.NDArray[np.int8], npt.NDArray[np.int32], npt.NDArray[np.int32]]:
     """
     Constructs a flow graph from a flow direction grid.
@@ -309,6 +313,9 @@ def construct_flowgraph(
         The backend to use for computation.
         `'fortran'` uses the FORTRAN extension for performance, while 'python' uses a pure Python implementation.
         Default backend is `'fortran'`.
+    remove_unused : bool, optional
+        Whether to compact the vertex array after construction so the arc ranges are adjacent in arc order. 
+        Default option is `False`.
 
     Returns
     -------
@@ -409,7 +416,14 @@ def construct_flowgraph(
     dsi, dsj, has_valid_ds = _valid_flow_edges(dirs, valids, dir_scheme)
     _validate_flowgraph_coverage(vertex_ijs, arc_endpts, dsi, dsj, has_valid_ds)
 
-    return arc_orders, vertex_ijs, arc_endpts
+    if remove_unused:
+        vertex_ijs, arc_endpts = remove_unused_vertices(vertex_ijs, arc_endpts)  # type: ignore
+
+    return (
+        arc_orders,
+        vertex_ijs.astype(np.int32, order="C"),
+        arc_endpts.astype(np.int32, order="C"),
+    )
 
 
 def find_vertex_id(
@@ -542,6 +556,7 @@ def insert_endpt(
     ijs: npt.NDArray[np.number],
     endpts: npt.NDArray[np.integer],
     add_endpt: npt.NDArray[np.number] | int,
+    remove_unused: bool = False,
 ) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.number], npt.NDArray[np.integer]]:
     """
     Turns an interior vertex of a flow graph in to an endpoint.
@@ -559,6 +574,9 @@ def insert_endpt(
         Either:
          1. n-by-(1) array representing the coordinate of the vertex to turn to an endpoint
          2. Integer specifying the index of the vertex in the `ijs` array to turn to an endpoint
+    remove_unused : bool, optional
+        Whether to compact the returned vertex array so the arc ranges are adjacent. 
+        Default option is `False`.
 
     Returns
     -------
@@ -582,6 +600,11 @@ def insert_endpt(
         + f"but got {np.size(orders, 0)} and {np.size(endpts, 0)}, respectively, instead."
     )
 
+    def _return_graph(orders, ijs, endpts):
+        if remove_unused:
+            ijs, endpts = remove_unused_vertices(ijs, endpts)
+        return orders, ijs, endpts
+
     if isinstance(add_endpt, int):
         ivert = add_endpt
     else:
@@ -592,7 +615,7 @@ def insert_endpt(
                 "Provided endpoint is not found in the list of vertices. "
                 + "Returning the original graph."
             )
-            return orders, ijs, endpts
+            return _return_graph(orders, ijs, endpts)
 
         # Exclude matching coordinates stored outside the ranges used by any arc
         iverts = np.atleast_1d(ivert)
@@ -607,7 +630,7 @@ def insert_endpt(
                 "Provided endpoint is not a part of any arc. "
                 + "Returning the original graph."
             )
-            return orders, ijs, endpts
+            return _return_graph(orders, ijs, endpts)
         ivert: int | list[int] = int(iverts[0]) if iverts.size == 1 else iverts.tolist()
     iarc = find_arc_id_of_vertex(endpts, ivert)
 
@@ -630,14 +653,14 @@ def insert_endpt(
 
     if isinstance(ivert, int):
         orders, ijs, endpts = _insert_endpt(orders, ijs, endpts, iarc, ivert)
-        return orders, ijs, endpts
+        return _return_graph(orders, ijs, endpts)
 
     assert isinstance(iarc, list)  # Just for static type checking
     for jvert, jarc in zip(ivert, iarc):
         if jarc is None:
             continue
         orders, ijs, endpts = _insert_endpt(orders, ijs, endpts, jarc, jvert)
-    return orders, ijs, endpts
+    return _return_graph(orders, ijs, endpts)
 
 
 def concat_flowgraph(
@@ -709,6 +732,64 @@ def concat_flowgraph(
             cursor += 1
 
     return s_arc_orders, s_vertex_ijs, s_arc_endpts
+
+
+def remove_unused_vertices(
+    vertices: npt.NDArray[np.number],
+    endpts: npt.NDArray[NpIndex],
+) -> tuple[npt.NDArray[np.number], npt.NDArray[NpIndex]]:
+    """
+    Removes stored vertices that are not referenced by any graph arc.
+
+    Arcs retain their input order and their vertices are copied into adjacent
+    ranges. Consequently, the start of every arc after the first is one index
+    beyond the end of the preceding arc. Arc endpoint indices are inclusive.
+
+    Parameters
+    ----------
+    vertices : NDArray[int | float]
+        V-by-n array of stored vertex coordinates.
+    endpts : NDArray[int]
+        A-by-2 array of inclusive arc ranges into `vertices`.
+
+    Returns
+    -------
+    vertices : NDArray[int | float]
+        Compact vertex array containing only vertices referenced by arcs.
+    endpts : NDArray[int]
+        Arc ranges remapped into the compact vertex array.
+
+    Raises
+    ------
+    ValueError
+        If the input arguments have the wrong shapes.
+    """
+    vertices = np.asarray(vertices)
+    endpts = np.asarray(endpts)
+
+    if vertices.ndim != 2:
+        raise ValueError("vertices must be a two-dimensional array.")
+    if endpts.ndim != 2 or endpts.shape[1] != 2:
+        raise ValueError("endpts must have shape (number of arcs, 2).")
+    if endpts.shape[0] == 0:
+        return vertices[:0].copy(), endpts.copy()
+    if np.any(endpts[:, 0] < 0) or np.any(endpts[:, 1] < endpts[:, 0]):
+        raise ValueError(
+            "Each arc must have a non-negative start no greater than its end."
+        )
+    if np.any(endpts[:, 1] >= vertices.shape[0]):
+        raise ValueError("Arc endpoints must index rows in vertices.")
+
+    lengths = endpts[:, 1] - endpts[:, 0] + 1
+    compact_vertices = np.concatenate(
+        [vertices[start : end + 1] for start, end in endpts], axis=0
+    )
+    compact_ends = np.cumsum(lengths, dtype=np.intp) - 1
+    compact_starts = np.concatenate(([0], compact_ends[:-1] + 1))
+    compact_endpts = np.column_stack((compact_starts, compact_ends)).astype(
+        endpts.dtype, copy=False
+    )
+    return compact_vertices, compact_endpts
 
 
 @dataclass
@@ -920,7 +1001,7 @@ def find_graph_overlaps(
 def _find_shared_vertex_neighbours(
     analysis: _GraphVertexAnalysis,
     endpts: npt.NDArray[np.integer],
-    shared_vert_ids: npt.NDArray[np.intp],
+    shared_vert_ids: npt.NDArray[NpIndex],
     context: npt.NDArray[np.bool_],
 ) -> tuple[npt.NDArray[np.bool_], npt.NDArray[np.bool_]]:
     """
@@ -984,10 +1065,10 @@ def _find_shared_vertex_neighbours(
 def _split_arcs_at_vertex_ids(
     orders: npt.NDArray[np.integer],
     ijs: npt.NDArray[np.number],
-    endpts: npt.NDArray[np.integer],
+    endpts: npt.NDArray[NpIndex],
     analysis: _GraphVertexAnalysis,
-    split_coord_ids: npt.NDArray[np.intp],
-) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.number], npt.NDArray[np.integer]]:
+    split_coord_ids: npt.NDArray[NpIndex],
+) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.number], npt.NDArray[NpIndex]]:
     """
     Splits all requested interior vertices while rebuilding arrays once.
 
@@ -1046,18 +1127,19 @@ def _split_arcs_at_vertex_ids(
 def solve_graph_overlaps(
     g1_orders: npt.NDArray[np.integer],
     g1_ijs: npt.NDArray[np.number],
-    g1_endpts: npt.NDArray[np.integer],
+    g1_endpts: npt.NDArray[NpIndex],
     g2_orders: npt.NDArray[np.integer],
     g2_ijs: npt.NDArray[np.number],
-    g2_endpts: npt.NDArray[np.integer],
+    g2_endpts: npt.NDArray[NpIndex],
     allows_arcs_overlap: bool = True,
+    remove_unused: bool = False,
 ) -> tuple[
     npt.NDArray[np.integer],
     npt.NDArray[np.number],
-    npt.NDArray[np.integer],
+    npt.NDArray[NpIndex],
     npt.NDArray[np.integer],
     npt.NDArray[np.number],
-    npt.NDArray[np.integer],
+    npt.NDArray[NpIndex],
 ]:
     """
     Splits two graphs at shared vertices to align their arc endpoints.
@@ -1082,6 +1164,9 @@ def solve_graph_overlaps(
         Whether shared sequences of interior vertices may remain overlapping without being split into separate arcs.
         If true, consecutive overlap of vertices are isolated as a new arc, which will be identical between the two input graphs (aside form the directivity).
         The default option is `True`.
+    remove_unused : bool, optional
+        Whether to compact both returned vertex arrays so their arc ranges are adjacent. 
+        Default option is `False`.
 
     Returns
     -------
@@ -1130,15 +1215,18 @@ def solve_graph_overlaps(
         g1_ijs,
         g1_endpts,
         g1_analysis,
-        shared.g1_vert_ids[g1_split],
+        shared.g1_vert_ids[g1_split],  # type: ignore
     )
     g2_orders, g2_ijs, g2_endpts = _split_arcs_at_vertex_ids(
         g2_orders,
         g2_ijs,
         g2_endpts,
         g2_analysis,
-        shared.g2_vert_ids[g2_split],
+        shared.g2_vert_ids[g2_split],  # type: ignore
     )
+    if remove_unused:
+        g1_ijs, g1_endpts = remove_unused_vertices(g1_ijs, g1_endpts)
+        g2_ijs, g2_endpts = remove_unused_vertices(g2_ijs, g2_endpts)
     return g1_orders, g1_ijs, g1_endpts, g2_orders, g2_ijs, g2_endpts
 
 
@@ -1157,20 +1245,20 @@ def _convert_index_array_to_F_fmt(vertices: npt.NDArray) -> npt.NDArray:
 def _simplify_multiple_flowgraphs(
     orders_list: list[npt.NDArray[np.integer]] | tuple[npt.NDArray[np.integer], ...],
     vertices_list: list[npt.NDArray[np.number]] | tuple[npt.NDArray[np.number], ...],
-    endpts_list: list[npt.NDArray[np.integer]] | tuple[npt.NDArray[np.integer], ...],
+    endpts_list: list[npt.NDArray[NpIndex]] | tuple[npt.NDArray[NpIndex], ...],
     tol: int | float,
     check_topology: bool,
     backend: str,
 ) -> tuple[
     list[npt.NDArray[np.integer]] | tuple[npt.NDArray[np.integer], ...],
     list[npt.NDArray[np.number]] | tuple[npt.NDArray[np.number], ...],
-    list[npt.NDArray[np.integer]] | tuple[npt.NDArray[np.integer], ...],
+    list[npt.NDArray[NpIndex]] | tuple[npt.NDArray[NpIndex], ...],
     list[npt.NDArray[np.bool_]] | tuple[npt.NDArray[np.bool_], ...],
 ]:
     def is_empty_graph(
         orders: npt.NDArray[np.integer],
         vertices: npt.NDArray[np.number],
-        endpts: npt.NDArray[np.integer],
+        endpts: npt.NDArray[NpIndex],
     ) -> bool:
         return (
             orders.shape == (0,)
@@ -1218,7 +1306,7 @@ def _simplify_multiple_flowgraphs(
 
     all_orders_list: list[npt.NDArray[np.integer]] = []
     all_vertices_list: list[npt.NDArray[np.number]] = []
-    all_endpts_list: list[npt.NDArray[np.integer]] = []
+    all_endpts_list: list[npt.NDArray[np.intp]] = []
     all_graph_ids_list: list[npt.NDArray[np.uint8]] = []
 
     for i, (vertices, endpts, orders) in enumerate(
@@ -1295,7 +1383,7 @@ def _simplify_multiple_flowgraphs(
     # Separate the simplified graph back into multiple graphs
     s_orders_list: list[npt.NDArray[np.integer]] = []
     s_vertices_list: list[npt.NDArray[np.number]] = []
-    s_endpts_list: list[npt.NDArray[np.integer]] = []
+    s_endpts_list: list[npt.NDArray[NpIndex]] = []
     keeps_list: list[npt.NDArray[np.bool_]] = []
 
     offset = 0
@@ -1309,7 +1397,7 @@ def _simplify_multiple_flowgraphs(
         vertices = all_vertices_list[i]
         simp_v_i = vertices[keeps_i, :]
 
-        vertex_cumsum_i = np.cumsum(keeps_i) - 1
+        vertex_cumsum_i = (np.cumsum(keeps_i) - 1).astype(np.intp)
         local_e_std = all_endpts_list[i]
         simp_e_i = vertex_cumsum_i[local_e_std]
 
@@ -1321,7 +1409,7 @@ def _simplify_multiple_flowgraphs(
 
         s_orders_list.append(all_orders_list[i])
         s_vertices_list.append(simp_v_i)
-        s_endpts_list.append(simp_e_i)
+        s_endpts_list.append(simp_e_i)  # type: ignore
         keeps_list.append(keeps_i)
 
         offset += nvertices_i
@@ -1445,7 +1533,7 @@ def _resolve_topology_intersections(
 def _simplify_single_flowgraph(
     orders: npt.NDArray[np.integer],
     vertices: npt.NDArray[np.number],
-    endpts: npt.NDArray[np.integer],
+    endpts: npt.NDArray[NpIndex],
     tol: float,
     check_topology: bool,
     backend: str,
@@ -1453,7 +1541,7 @@ def _simplify_single_flowgraph(
 ) -> tuple[
     npt.NDArray[np.integer],
     npt.NDArray[np.number],
-    npt.NDArray[np.integer],
+    npt.NDArray[NpIndex],
     npt.NDArray[np.bool_],
 ]:
     """
@@ -1523,22 +1611,23 @@ def _simplify_single_flowgraph(
 
     # Transpose and cast arrays to C-contiguous layout for return
     simp_vertices = simp_vertices.T.astype(vertices.dtype, order="C")
-    simp_endpts = simp_endpts.T.astype(np.int32, order="C")
-    return orders.copy(), simp_vertices, simp_endpts, vertex_keeps
+    simp_endpts = simp_endpts.T.astype(np.intp, order="C")
+    return orders.copy(), simp_vertices, simp_endpts, vertex_keeps  # type: ignore
 
 
 @overload
 def simplify_flowgraph(
     arc_orders: npt.NDArray[np.integer],
     vertex_xys: npt.NDArray[np.number],
-    arc_endpts: npt.NDArray[np.integer],
+    arc_endpts: npt.NDArray[NpIndex],
     tol: int | float = 1,
     check_topology: bool = True,
     backend: Literal["fortran", "python"] = "fortran",
+    remove_unused: bool = False,
 ) -> tuple[
     npt.NDArray[np.integer],
     npt.NDArray[np.number],
-    npt.NDArray[np.integer],
+    npt.NDArray[NpIndex],
     npt.NDArray[np.bool_],
 ]: ...
 
@@ -1547,14 +1636,15 @@ def simplify_flowgraph(
 def simplify_flowgraph(
     arc_orders: list[npt.NDArray[np.integer]],
     vertex_xys: list[npt.NDArray[np.number]],
-    arc_endpts: list[npt.NDArray[np.integer]],
+    arc_endpts: list[npt.NDArray[NpIndex]],
     tol: int | float = 1,
     check_topology: bool = True,
     backend: Literal["fortran", "python"] = "fortran",
+    remove_unused: bool = False,
 ) -> tuple[
     list[npt.NDArray[np.integer]],
     list[npt.NDArray[np.number]],
-    list[npt.NDArray[np.integer]],
+    list[npt.NDArray[NpIndex]],
     list[npt.NDArray[np.bool_]],
 ]: ...
 
@@ -1563,14 +1653,15 @@ def simplify_flowgraph(
 def simplify_flowgraph(
     arc_orders: tuple[npt.NDArray[np.integer], ...],
     vertex_xys: tuple[npt.NDArray[np.number], ...],
-    arc_endpts: tuple[npt.NDArray[np.integer], ...],
+    arc_endpts: tuple[npt.NDArray[NpIndex], ...],
     tol: int | float = 1,
     check_topology: bool = True,
     backend: Literal["fortran", "python"] = "fortran",
+    remove_unused: bool = False,
 ) -> tuple[
     tuple[npt.NDArray[np.integer], ...],
     tuple[npt.NDArray[np.number], ...],
-    tuple[npt.NDArray[np.integer], ...],
+    tuple[npt.NDArray[NpIndex], ...],
     tuple[npt.NDArray[np.bool_], ...],
 ]: ...
 
@@ -1587,13 +1678,14 @@ def simplify_flowgraph(
         | tuple[npt.NDArray[np.number], ...]
     ),
     arc_endpts: (
-        npt.NDArray[np.integer]
-        | list[npt.NDArray[np.integer]]
-        | tuple[npt.NDArray[np.integer], ...]
+        npt.NDArray[NpIndex]
+        | list[npt.NDArray[NpIndex]]
+        | tuple[npt.NDArray[NpIndex], ...]
     ),
     tol: int | float = 1,
     check_topology: bool = True,
     backend: Literal["fortran", "python"] = "fortran",
+    remove_unused: bool = False,
 ):
     """
     Simplify a flow graph using the Ramer-Douglas-Peucker (RDP) algorithm with a fixed tolerance threshold.
@@ -1618,6 +1710,9 @@ def simplify_flowgraph(
     backend : {'fortran', 'python'}, optional
         Backend to use for computation.
         Default backend and the only one currently available is `'fortran'`.
+    remove_unused : bool, optional
+        Whether to compact each returned vertex array so its arc ranges are adjacent. 
+        Default option is `False`.
 
     Returns
     -------
@@ -1669,12 +1764,22 @@ def simplify_flowgraph(
                 f"the same length, but got {len(vertex_xys)}, {len(arc_endpts)}, "
                 f"and {len(arc_orders)}, respectively."
             )
-        return _simplify_multiple_flowgraphs(
+        result = _simplify_multiple_flowgraphs(
             *(arc_orders, vertex_xys, arc_endpts),
             tol=tol,
             check_topology=check_topology,
             backend=backend,
         )
+        if not remove_unused:
+            return result
+        simp_orders, simp_vertices, simp_endpts, keeps = result
+        compacted = [
+            remove_unused_vertices(vertices, endpts)
+            for vertices, endpts in zip(simp_vertices, simp_endpts)
+        ]
+        compact_vertices = type(simp_vertices)(item[0] for item in compacted)
+        compact_endpts = type(simp_endpts)(item[1] for item in compacted)
+        return simp_orders, compact_vertices, compact_endpts, keeps
 
     if not (
         isinstance(arc_orders, np.ndarray)
@@ -1687,12 +1792,17 @@ def simplify_flowgraph(
             f"{type(vertex_xys)}, {type(arc_endpts)}, and {type(arc_orders)}, "
             "respectively."
         )
-    return _simplify_single_flowgraph(
+    result = _simplify_single_flowgraph(
         *(arc_orders, vertex_xys, arc_endpts),
         tol=tol,
         check_topology=check_topology,
         backend=backend,
     )
+    if not remove_unused:
+        return result
+    simp_orders, simp_vertices, simp_endpts, keeps = result
+    simp_vertices, simp_endpts = remove_unused_vertices(simp_vertices, simp_endpts)
+    return simp_orders, simp_vertices, simp_endpts, keeps
 
 
 def _raise_topology_scan_error(err_code: int) -> None:

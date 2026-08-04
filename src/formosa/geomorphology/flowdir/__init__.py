@@ -6,6 +6,7 @@ from .graphs import (
     IncompleteFlowGraphError,
     construct_flowgraph,
     concat_flowgraph,
+    remove_unused_vertices,
     simplify_flowgraph,
     locate_invalid_graph_topology,
     create_flowgraph,
