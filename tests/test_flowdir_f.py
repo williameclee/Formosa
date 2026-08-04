@@ -1022,6 +1022,38 @@ def test_simplify_multiple_flowgraphs():
     assert simp_endpts_tuple[1].shape == (1, 2)
 
 
+def test_simplify_flowgraph_keeps_every_arc_endpoint():
+    orders = np.array([1, 2, 3], dtype=np.uint8)
+    verts = np.array(
+        [
+            [0.0, 0.0],
+            [1.0, 0.2],
+            [2.0, 0.0],
+            [2.0, 0.0],
+            [3.0, 0.2],
+            [4.0, 0.0],
+            [2.0, 0.0],
+            [2.0, 1.0],
+        ]
+    )
+    endpts = np.array([[0, 2], [3, 5], [6, 7]], dtype=np.int32)
+
+    _, simp_verts, simp_endpts, keeps = flowdir.simplify_flowgraph(
+        orders,
+        verts,
+        endpts,
+        tol=1.0,
+        check_topology=True,
+        backend="fortran",
+    )
+
+    assert np.all(keeps[endpts.ravel()])
+    np.testing.assert_array_equal(
+        simp_verts[simp_endpts.ravel()],
+        verts[endpts.ravel()],
+    )
+
+
 def test_simplify_multiple_flowgraphs_inserts_overlap_endpoints():
     vertices = [
         np.array([[0.0, 0.0], [1.0, 0.0], [2.0, 0.0]]),
@@ -1116,3 +1148,4 @@ if __name__ == "__main__":
     test_topology_scanner_counts_past_capacity()
     test_simplify_multiple_flowgraphs_inserts_overlap_endpoints()
     test_simplify_multiple_flowgraphs_ignores_identical_arcs()
+    test_simplify_flowgraph_keeps_every_arc_endpoint()

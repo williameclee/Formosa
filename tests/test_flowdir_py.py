@@ -330,6 +330,27 @@ def test_find_graph_overlaps():
         assert not np.any(np.all(overlap_type == [99, 99], axis=1))
 
 
+def test_find_graph_overlaps_is_symmetric_with_repeated_coordinates():
+    from formosa.geomorphology.flowdir.graphs.graphs import find_graph_overlaps
+
+    g1_ijs = np.array([[0, 0], [1, 0], [2, 0], [1, 0], [3, 0]])
+    g1_endpts = np.array([[0, 2], [3, 4]])
+    g2_ijs = np.array([[0, 0], [2, 0], [4, 0], [1, 0], [5, 0]])
+    g2_endpts = np.array([[0, 2], [3, 4]])
+
+    forward = find_graph_overlaps(g1_ijs, g1_endpts, g2_ijs, g2_endpts)
+    forward = find_graph_overlaps(g1_ijs, g1_endpts, g2_ijs, g2_endpts)
+    reverse = find_graph_overlaps(g2_ijs, g2_endpts, g1_ijs, g1_endpts)
+
+    np.testing.assert_array_equal(forward[0], reverse[0])
+    np.testing.assert_array_equal(forward[1], reverse[1])
+    np.testing.assert_array_equal(forward[2], reverse[3])
+    np.testing.assert_array_equal(forward[3], reverse[2])
+    # A coordinate is classified as an endpoint when any used occurrence is
+    # an endpoint, even if another occurrence is interior.
+    assert np.any(np.all(forward[0] == [1, 0], axis=1))
+
+
 @pytest.mark.parametrize(
     (
         "allows_arcs_overlap",
@@ -490,4 +511,5 @@ if __name__ == "__main__":
     test_graph_insert_endpt()
     test_find_graph_overlaps()
     test_solve_graph_overlaps_with_repeated_coordinates()
+    test_find_graph_overlaps_is_symmetric_with_repeated_coordinates()
     test_solve_graph_overlaps_is_idempotent()
