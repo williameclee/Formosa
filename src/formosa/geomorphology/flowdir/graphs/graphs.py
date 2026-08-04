@@ -61,14 +61,6 @@ class GraphTopologyError(RuntimeError):
     Base exception for a graph that fails topology validation.
     """
 
-    def __init__(
-        self,
-        message: str,
-        intersections: npt.NDArray[np.integer],
-    ) -> None:
-        super().__init__(message)
-        self.intersections = np.asarray(intersections, dtype=np.int32).copy()
-
 
 class InvalidOriginalGraphTopology(GraphTopologyError):
     """
@@ -80,6 +72,32 @@ class UnresolvedSimplificationTopology(GraphTopologyError):
     """
     Raised when simplification leaves invalid topology from valid input.
     """
+
+
+class DirectedFlowCycleError(GraphTopologyError):
+    """
+    Raised when the selected flow field contains one or more directed cycles.
+    """
+
+    def __init__(self, cycle_ijs: npt.NDArray[np.integer]) -> None:
+        self.cycle_ijs = np.asarray(cycle_ijs, dtype=np.int32).copy()
+        super().__init__(
+            "Selected flow graph contains directed cycles at "
+            f"{self.cycle_ijs.tolist()}."
+        )
+
+
+class IncompleteFlowGraphError(GraphTopologyError):
+    """
+    Raised when construction omits a cell participating in a selected edge.
+    """
+
+    def __init__(self, missing_ijs: npt.NDArray[np.integer]) -> None:
+        self.missing_ijs = np.asarray(missing_ijs, dtype=np.int32).copy()
+        super().__init__(
+            "Flow-graph construction omitted selected edge cells at "
+            f"{self.missing_ijs.tolist()}."
+        )
 
 
 def create_flowgraph(
@@ -132,7 +150,7 @@ def create_flowgraph(
         indexing="ij",
     )
     dsi, dsj, _, ds_valids = compute_downstream_indices(
-        dirs, dir_scheme=dir_scheme, check=False
+        dirs, dir_scheme=dir_scheme, check=False, return_flat_index=False
     )
 
     if x is not None and y is not None:
@@ -164,6 +182,62 @@ def create_flowgraph(
     return graphi, graphj
 
 
+def _valid_flow_edges(
+    dirs: npt.NDArray[np.integer],
+    valids: npt.NDArray[np.bool_],
+    dir_scheme: D8Directions,
+) -> tuple[
+    npt.NDArray[np.int32],
+    npt.NDArray[np.int32],
+    npt.NDArray[np.bool_],
+]:
+    """
+    Returns downstream indices and a mask indicating whether the cell flows into a valid neighbouring (non-self) edge.
+    """
+    dsi, dsj, _, ds_inbounds = compute_downstream_indices(
+        dirs,
+        dir_scheme=dir_scheme,
+        check=False,
+        return_flat_index=False,
+        oob_is_okay=True,
+    )
+
+    # Whether the downstream cell is also valid (not just inbound)
+    ds_valids = np.zeros(dirs.shape, dtype=bool)
+    ds_valids[ds_inbounds] = valids[dsi[ds_inbounds], dsj[ds_inbounds]]
+
+    # Exclude self-loops (where offsets di, dj == 0)
+    not_self = dirs != dir_scheme.no_flow_code
+
+    has_valid_ds = valids & ds_valids & not_self
+    return dsi, dsj, has_valid_ds
+
+
+def _validate_flowgraph_coverage(
+    vertex_ijs: npt.NDArray[np.integer],
+    valids: npt.NDArray[np.bool_],
+    dsi: npt.NDArray[np.integer],
+    dsj: npt.NDArray[np.integer],
+    has_valid_ds: npt.NDArray[np.bool_],
+) -> None:
+    """
+    Checks that all segments actually show up in the graph.
+    """
+    expected = has_valid_ds.copy()
+    expected[
+        dsi[has_valid_ds],
+        dsj[has_valid_ds],
+    ] = True
+
+    represented = np.zeros(valids.shape, dtype=bool)
+    if vertex_ijs.shape[0] > 0:
+        represented[vertex_ijs[:, 0], vertex_ijs[:, 1]] = True
+
+    missing_ijs = np.argwhere(expected & ~represented)
+    if missing_ijs.size > 0:
+        raise IncompleteFlowGraphError(missing_ijs)
+
+
 def construct_flowgraph(
     dirs: npt.NDArray[np.integer],
     dir_scheme: D8Directions = D8Directions(),
@@ -180,41 +254,54 @@ def construct_flowgraph(
     Parameters
     ----------
     dirs : NDArray[int], optional
-        A 2D array representing the flow directions for each cell
+        2D array representing the flow directions for each cell.
     dir_scheme : D8Directions, optional
-        Instance of `D8Directions` defining the flow direction scheme
-        Default is `D8Directions()`.
+        Instance of `D8Directions` defining the flow direction scheme.
+        Default scheme is `D8Directions()`.
     valids : NDArray[bool], optional
-        Boolean mask array indicating valid cells in the flow direction grid
+        Boolean mask array indicating valid cells in the flow direction grid.
         If `None`, all cells are considered valid.
-        Default is `None`.
+        Default mask is `None`.
     min_order : int, optional
-        Minimum Strahler order to include in the flow graph (see `orders`)
-        Default is 2.
+        Minimum Strahler order to include in the flow graph (see `orders`).
+        Default order is 2.
     orders : NDArray[uint8], optional
-        2D integer array representing the Strahler order for each cell
+        2D integer array representing the Strahler order for each cell.
         If `None`, it will be computed from the flow direction grid.
-        Default is `None`.
+        Default input is `None`.
     preserve_junctions : bool, optional
-        Whether to preserve junctions in the flow graph
-        Default is `True`.
+        Whether to preserve junctions in the flow graph.
+        Default option is `True`.
     sort : bool, option
-        Whether to sort the flow graph by arc order and then by length
-        Default is `True`.
+        Whether to sort the flow graph by arc order and then by length.
+        Default option is `True`.
     backend : {'fortran', 'python'}, optional
-        The backend to use for computation
-        'fortran' uses the Fortran extension for performance, while 'python' uses a pure Python implementation.
-        Default is 'fortran'.
+        The backend to use for computation.
+        `'fortran'` uses the FORTRAN extension for performance, while 'python' uses a pure Python implementation.
+        Default backend is `'fortran'`.
 
     Returns
     -------
     arc_orders : NDArray[int8]
-        1D array representing the Strahler order for each arc in the flow graph
+        1D array representing the Strahler order for each arc in the flow graph.
     vertex_ijs : NDArray[int32]
-        V-by-2 array containing the ordered (i, j) incices of all arcs, concactinated together
+        V-by-2 array containing the ordered (i, j) incices of all arcs, concactinated together.
     vertex_endpts : NDArray[int32]
-        A-by-2 array containing the indices of where each arc starts and ends in `vertex_ijs`
+        A-by-2 array containing the indices of where each arc starts and ends in `vertex_ijs`.
         The returned endpoints are inclusive, meaning slicing must be done as `vertex_ijs[start : end + 1]`.
+
+    Raises
+    ------
+    DirectedFlowCycleError
+        If the selected flow field contains a directed cycle.
+    IncompleteFlowGraphError
+        If either endpoint of a selected directed edge is absent from the
+        constructed graph.
+
+    Notes
+    -----
+    Selected cells with no selected incoming or outgoing edge are intentionally
+    omitted from the arc representation.
     """
     if valids is None:
         valids = np.ones(dirs.shape, dtype=bool)
@@ -232,6 +319,17 @@ def construct_flowgraph(
     indegs = raster.count_indegree(
         dirs, dir_scheme=dir_scheme, valids=valids, backend=backend
     )
+    cyclics = raster.find_cyclic_flowdirs(
+        dirs,
+        dir_scheme=dir_scheme,
+        valids=valids,
+        indegs=indegs,
+        backend=backend,
+    )
+    cycle_ijs = np.argwhere(cyclics).astype(np.int32, order="C")
+    if cycle_ijs.size > 0:
+        raise DirectedFlowCycleError(cycle_ijs)
+
     seeds = valids & (indegs == 0)
 
     match backend:
@@ -277,6 +375,9 @@ def construct_flowgraph(
         id = np.lexsort((arc_lengths, arc_orders))
         arc_orders = arc_orders[id]
         arc_endpts = arc_endpts[id, :]
+
+    dsi, dsj, has_valid_ds = _valid_flow_edges(dirs, valids, dir_scheme)
+    _validate_flowgraph_coverage(vertex_ijs, valids, dsi, dsj, has_valid_ds)
 
     return arc_orders, vertex_ijs, arc_endpts
 

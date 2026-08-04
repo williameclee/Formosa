@@ -18,7 +18,8 @@
 #     - Various minor refactors and type annotation enhancements
 #   2026-07-31, En-Chi Lee (williameclee@gmail.com)
 #     - Updated tests to match the updated `simplify_flowgraph` interface; also added additional tests for the new interface
-
+#   2026-08-03, En-Chi Lee (williameclee@gmail.com)
+#     - Added test cases for function `find_acyclic_flowdirs`
 
 import warnings
 from types import SimpleNamespace
@@ -28,6 +29,7 @@ import numpy as np
 
 from formosa import D8Directions
 import formosa.geomorphology.flowdir as flowdir
+from formosa.geomorphology.flowdir.raster import raster as raster_module
 from formosa.geomorphology.flowdir.graphs import graphs as graphs_module
 from formosa.geomorphology.flowdir_f import flowdir_graphs as graphs_f
 
@@ -916,8 +918,6 @@ def test_simplify_rejects_invalid_final_graph_from_valid_input(monkeypatch):
             backend="fortran",
         )
 
-    np.testing.assert_array_equal(exc_info.value.intersections, final_intxs)
-
 
 def test_simplify_rejects_invalid_final_graph_from_invalid_input(monkeypatch):
     verts = np.array([[0.0, 0.0], [1.0, 1.0], [0.0, 1.0], [1.0, 0.0]])
@@ -947,8 +947,6 @@ def test_simplify_rejects_invalid_final_graph_from_invalid_input(monkeypatch):
             check_topology=True,
             backend="fortran",
         )
-
-    np.testing.assert_array_equal(exc_info.value.intersections, input_intxs)
 
 
 def test_simplify_skips_final_validation_when_topology_check_is_disabled(
@@ -1077,6 +1075,30 @@ def test_simplify_multiple_flowgraphs_ignores_identical_arcs():
     # The identical central arcs may simplify despite having opposite directions
     for graph_verts in simp_verts:
         assert not np.any(np.all(graph_verts == [2.0, 0.4], axis=1))
+
+
+@pytest.mark.parametrize(
+    ("err_code", "exception"),
+    [(1, RuntimeError), (2, MemoryError), (99, RuntimeError)],
+)
+def test_find_acyclic_flowdirs_translates_fortran_errors(
+    monkeypatch, err_code, exception
+):
+    def fake_find(*args):
+        return np.zeros((1, 1), dtype=bool), err_code
+
+    monkeypatch.setattr(
+        raster_module,
+        "raster_f",
+        SimpleNamespace(find_acyclic_flowdirs=fake_find),
+    )
+
+    with pytest.raises(exception):
+        flowdir.find_acyclic_flowdirs(
+            np.zeros((1, 1), dtype=np.uint8),
+            indegs=np.zeros((1, 1), dtype=np.int8),
+            backend="fortran",
+        )
 
 
 if __name__ == "__main__":

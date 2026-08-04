@@ -7,6 +7,8 @@
 #   2026-07-02, En-Chi Lee (williameclee@gmail.com)
 #     - Actually implemented validity check in `compute_downstram_indices`
 #     - Updated `geomorphology.flowdir` submodule path
+#   2026-08-03, En-Chi Lee (williameclee@gmail.com)
+#     - Added arguments `return_flat_index` and `oob_is_okay` to `compute_downstream_indices`
 
 import numpy as np
 
@@ -93,10 +95,12 @@ def compute_downstream_indices(
     dir_scheme: D8Directions = D8Directions(),
     valids: Optional[npt.NDArray[np.bool_]] = None,
     check: bool = True,
+    return_flat_index: bool = True,
+    oob_is_okay: bool = False,
 ) -> tuple[
     npt.NDArray[np.int32],
     npt.NDArray[np.int32],
-    npt.NDArray[np.int32],
+    Optional[npt.NDArray[np.int32]],
     npt.NDArray[np.bool_],
 ]:
     """
@@ -116,28 +120,35 @@ def compute_downstream_indices(
     check : bool, optional
         Whether to raise an error if some downstream indices are out of bounds.
         Otherwise, only a warning is issued.
-        Default is True.
+        Default option is `True`.
+    return_flat_index : bool, optional
+        Whether to compute the flattened downstream indices.
+        Defualt option is `True`.
+    oob_is_okay: bool, optional
+        Whether having out-of-bound downstream cells is expected (or will be explicitly handled downstream).
+        Default behaviour is `False`.
 
     Returns
     -------
     dsi : NDArray[int]
-        A 2D array of downstream row indices for each cell.
+        2D array of downstream row indices for each cell.
         When the cell is invalid, it is set to -1.
     dsj : NDArray[int]
-        A 2D array of downstream column indices for each cell.
+        2D array of downstream column indices for each cell.
         When the cell is invalid, it is set to -1.
-    dsij : NDArray[int32]
-        A 2D array of flattened downstream indices for each cell.
-        When the cell is invalid, it is set to -1.
+    dsij : NDArray[int32] | None
+         1. 2D array of flattened downstream indices for each cell, when `return_flat_index` is true.
+            When the cell is invalid, it is set to -1.
+         2. `None` if `return_flat_index` is false.
     ds_inbounds : NDArray[bool]
-        A boolean mask array indicating out-of-bound downstream cells for each cell.
+        Boolean mask array indicating out-of-bound downstream cells for each cell.
 
     Raises
     ------
     ValueError
         If `check` is `True` and some downstream indices are out of bounds.
     UserWarning
-        If `check` is `False` but some downstream indices are out of bounds.
+        If `check` is `False` and `oob_is_okay` is `False`, but some downstream indices are out of bounds.
     """
     if valids is None:
         valids = ~np.isnan(dirs)
@@ -157,11 +168,15 @@ def compute_downstream_indices(
     di, dj = dir_scheme.code2d8offset(dirs)
     dsi = ii.astype(np.int32) + (di).astype(np.int32)
     dsj = jj.astype(np.int32) + (dj).astype(np.int32)
-    dsij: npt.NDArray[np.int32] = dsj.astype(np.int32) * I + dsi.astype(np.int32)
 
     dsi[~valids] = -1
     dsj[~valids] = -1
-    dsij[~valids] = -1
+
+    if return_flat_index:
+        dsij = dsj.astype(np.int32) * I + dsi.astype(np.int32)
+        dsij[~valids] = -1
+    else:
+        dsij = None
 
     ds_oobs = valids & ((dsi < 0) | (dsi >= I) | (dsj < 0) | (dsj >= J))
 
@@ -171,5 +186,6 @@ def compute_downstream_indices(
     if check:
         raise ValueError("Some downstream indices out of bounds")
 
-    warnings.warn("Some downstream indices out of bounds", UserWarning)
+    if not oob_is_okay:
+        warnings.warn("Some downstream indices out of bounds", UserWarning)
     return dsi, dsj, dsij, ~ds_oobs

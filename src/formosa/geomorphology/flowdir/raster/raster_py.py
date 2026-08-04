@@ -13,6 +13,10 @@
 #     - Splitted `geomorphology.flowdir` into submodules
 #   2026-07-30, En-Chi Lee (williameclee@gmail.com)
 #     - Fixed Python/FORTRAN backend behaviour parity in `compute_flow_strahler_order`.
+#   2026-08-03, En-Chi Lee (williameclee@gmail.com)
+#     - Implemented Python backend for function `find_acyclic_flowdirs`.
+
+from collections import deque
 
 import numpy as np
 
@@ -78,7 +82,7 @@ def _count_indegree_py(
         valids = np.ones(dirs.shape, dtype=bool)
     indegs = np.zeros(dirs.shape, dtype=np.int8)
     dsi, dsj, _, ds_valids = compute_downstream_indices(
-        dirs, dir_scheme=dir_scheme, valids=valids, check=False
+        dirs, dir_scheme=dir_scheme, valids=valids, check=False, return_flat_index=False
     )
 
     for i in range(dirs.shape[0]):
@@ -92,6 +96,46 @@ def _count_indegree_py(
             indegs[dsi[i, j], dsj[i, j]] += 1
     # TODO: Find out why is there overflow here?
     return indegs
+
+
+def _find_acyclic_flowdirs_py(
+    dirs: npt.NDArray[np.integer],
+    indegs: npt.NDArray[np.integer],
+    valids: npt.NDArray[np.bool_],
+    dir_scheme: D8Directions = D8Directions(),
+) -> npt.NDArray[np.bool_]:
+    """Finds valid cells that do not belong to a directed flow cycle."""
+    remaining_indegs = np.asarray(indegs, dtype=np.int8).copy()
+    acyclics = np.zeros(valids.shape, dtype=bool)
+    queue = deque(map(tuple, np.argwhere(valids & (remaining_indegs == 0))))
+
+    dsi, dsj, _, ds_inbounds = compute_downstream_indices(
+        dirs,
+        dir_scheme=dir_scheme,
+        check=False,
+        return_flat_index=False,
+        oob_is_okay=True,
+    )
+    ds_valids = np.zeros(valids.shape, dtype=bool)
+    ds_valids[ds_inbounds] = valids[dsi[ds_inbounds], dsj[ds_inbounds]]
+    di, dj = dir_scheme.code2d8offset(dirs)
+    has_valid_ds = valids & ds_valids & ((di != 0) | (dj != 0))
+
+    while queue:
+        i, j = queue.popleft()
+        if acyclics[i, j]:
+            continue
+        acyclics[i, j] = True
+        if not has_valid_ds[i, j]:
+            continue
+
+        ni = dsi[i, j]
+        nj = dsj[i, j]
+        remaining_indegs[ni, nj] -= 1
+        if remaining_indegs[ni, nj] == 0:
+            queue.append((ni, nj))
+
+    return acyclics
 
 
 def _find_flat_edges_py(
@@ -152,7 +196,9 @@ def _compute_flow_accumulation_py(
         weights = np.where(valids, weights, 0)  # type: ignore
 
     if dsij is None:
-        _, _, dsij, _ = compute_downstream_indices(dirs, dir_scheme=dir_scheme)
+        _, _, dsij, _ = compute_downstream_indices(
+            dirs, dir_scheme=dir_scheme, return_flat_index=True
+        )
     else:
         assert (
             dsij.shape == dirs.shape
@@ -161,7 +207,7 @@ def _compute_flow_accumulation_py(
     indegs = indegs.flatten(order="F")
     valids = valids.flatten(order="F")  # type: ignore
     weights = weights.flatten(order="F")  # type: ignore
-    dsij = dsij.flatten(order="F")
+    dsij = dsij.flatten(order="F")  # type: ignore ; dsij will not be None
     dirs = dirs.flatten(order="F")
 
     # Initialize accumulation with self weight
@@ -202,7 +248,7 @@ def _compute_flow_strahler_order_py(
         indegs = indegs.copy()
 
     downstream_i, downstream_j, _, downstream_valids = compute_downstream_indices(
-        dirs, dir_scheme=dir_scheme, valids=valids, check=False
+        dirs, dir_scheme=dir_scheme, valids=valids, check=False, return_flat_index=False
     )
 
     strahler_order = np.zeros(indegs.shape, dtype=np.int16)
