@@ -12,8 +12,20 @@ import numpy as np
 from formosa import D8Directions
 
 
+class _CheckedRasterBackend:
+    def __init__(self, backend):
+        self._backend = backend
+
+    def compute_confluence_dist(self, *args, **kwargs):
+        dists, err_code = self._backend.compute_confluence_dist(*args, **kwargs)
+        assert err_code == 0
+        return dists
+
+
 def test_confluence_distance_2x2():
     from formosa.geomorphology.flowdir_f import flowdir_raster as raster_f
+
+    raster_f = _CheckedRasterBackend(raster_f)
 
     dir_scheme = D8Directions(transform_codes=lambda x: x)
     offset_lookup = np.zeros((256, 2), dtype=np.int32)
@@ -141,6 +153,8 @@ def test_confluence_distance_2x2():
 def test_confluence_distance_3x3():
     from formosa.geomorphology.flowdir_f import flowdir_raster as raster_f
 
+    raster_f = _CheckedRasterBackend(raster_f)
+
     dir_scheme = D8Directions(transform_codes=lambda x: x)
     offset_lookup = np.zeros((256, 2), dtype=np.int32)
     for code, (di, dj) in zip(dir_scheme.codes, dir_scheme.offsets):
@@ -177,6 +191,43 @@ def test_confluence_distance_3x3():
     dists = raster_f.compute_confluence_dist([1, 1], [1, 2], **common_kwargs)
     assert np.isclose(dists[0], 0.0)
     assert np.isclose(dists[1], 1.0)
+
+
+def test_confluence_distance_reports_cyclic_path():
+    from formosa.geomorphology.flowdir_f import flowdir_raster as raster_f
+
+    dir_scheme = D8Directions(transform_codes=lambda x: x)
+    offset_lookup = np.zeros((256, 2), dtype=np.int32)
+    codes_by_offset = {}
+    for code, offset in zip(dir_scheme.codes, dir_scheme.offsets):
+        offset_lookup[code, :] = offset
+        codes_by_offset[tuple(offset)] = code
+
+    dirs = np.array(
+        [
+            [codes_by_offset[(0, 1)], codes_by_offset[(0, -1)], 0],
+            [0, 0, 0],
+        ],
+        dtype=np.uint8,
+        order="F",
+    )
+    x, y = np.meshgrid(
+        np.arange(dirs.shape[1], dtype=np.float32),
+        np.arange(dirs.shape[0], dtype=np.float32),
+        indexing="xy",
+    )
+
+    _, err_code = raster_f.compute_confluence_dist(
+        [1, 1],
+        [2, 3],
+        dirs,
+        x.astype(np.float32, order="F"),
+        y.astype(np.float32, order="F"),
+        offset_lookup,
+        True,
+    )
+
+    assert err_code == 1
 
 
 if __name__ == "__main__":

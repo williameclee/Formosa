@@ -13,6 +13,8 @@
 !     - Made topology intersection scans count all violations past output capacity
 !   2026-08-03, En-Chi Lee (williameclee@gmail.com)
 !     - Explicitly handled Python uint8 -> FORTRAN INTEGER*1 conversion/interpretation in 'fill_offset_lookup'
+!   2026-08-04, En-Chi Lee (williameclee@gmail.com)
+!     - Added allocation error monitoring and moved error handling to Python
 !!!
 
 module flowdir_graphs
@@ -25,7 +27,7 @@ contains
     subroutine construct_flowgraph( &
         dirs, valids, orders, seeds, indegs, nrows, ncols, &
         offsets, codes, noffsets, preserve_junction, ncells, &
-        narcs, nvertices, arc_orders, vertex_ijs, arc_endpts)
+        narcs, nvertices, arc_orders, vertex_ijs, arc_endpts, err_code)
         implicit none
         ! Arguments
         integer, intent(in) :: nrows, ncols
@@ -62,6 +64,11 @@ contains
         integer, intent(out) :: arc_endpts(2, ncells)
             !! Where each arc starts and ends in the 'vertex_ijs' array
             !! Note only the first 'narcs' columns contain the actual data
+        integer, intent(out) :: err_code
+            !! Code indicating the status of the result
+            !!   - 0: Programme executed properly
+            !!   - 2: Internal workspace allocation failed
+            !!   - 3: Vertex output buffer capacity was exceeded
         ! Local variables
         integer*1 :: noflow_code
             !! Code corresponding to noflow direction, used to identify sink cells
@@ -81,19 +88,41 @@ contains
             !! Flag of whether the downstream neighbour is a valid cell, and whether we have arrived at the end of the arc
         logical*1, allocatable :: seens(:, :)
             !! Mask to identify which cells have already been seen
+        integer :: alloc_stat
+            !! Allocation status code
+
+        err_code = 0
+        narcs = 0
+        nvertices = 0
 
         ! Create lookup tables for offsets
-        allocate (offset_lookup(0:255, 2))
+        allocate (offset_lookup(0:255, 2), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = 2
+            return
+        end if
         offset_lookup = fill_offset_lookup(offsets, codes, noffsets)
 
         ! Find index of seeds
-        allocate (seed_ijs(2, ncells))
-        call mask2ij(seeds, nrows, ncols, seed_ijs, ncells, nseeds)
+        allocate (seed_ijs(2, ncells), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = 2
+            deallocate (offset_lookup)
+            return
+        end if
+        call mask2ij(seeds, nrows, ncols, seed_ijs, ncells, nseeds, err_code)
+        if (err_code /= 0) return
 
         ! Find noflow code
         noflow_code = find_noflow_code(offsets, codes, noffsets)
 
-        allocate (seens(nrows, ncols))
+        allocate (seens(nrows, ncols), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = 2
+            deallocate (offset_lookup)
+            deallocate (seed_ijs)
+            return
+        end if
         seens = .false.
         iseed = 1
         iarc = 1
@@ -151,9 +180,8 @@ contains
                         end if
                     end if
                     if (ivertex > size(vertex_ijs, 2)) then
-                        print *, "[CONSTRUCT_FLOWGRAPH] Error: vertex buffer overflow "// &
-                            "(size:", ivertex, ", allocated:", size(vertex_ijs, 2), ")"
-                        stop
+                        err_code = 3
+                        exit
                     end if
                     vertex_ijs(:, ivertex) = [ni, nj]
                     arc_endpts(2, iarc) = ivertex
@@ -168,15 +196,16 @@ contains
 
                 seens(ni, nj) = .true.
                 if (ivertex > size(vertex_ijs, 2)) then
-                    print *, "[CONSTRUCT_FLOWGRAPH] Error: vertex buffer overflow "// &
-                        "(size:", ivertex, ", allocated:", size(vertex_ijs, 2), ")"
-                    stop
+                    err_code = 3
+                    exit
                 end if
                 vertex_ijs(:, ivertex) = [ni, nj]
                 ivertex = ivertex + 1
                 ci = ni
                 cj = nj
             end do
+
+            if (err_code /= 0) exit
 
             iarc = iarc + 1
         end do

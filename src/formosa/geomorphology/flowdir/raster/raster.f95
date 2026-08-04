@@ -25,6 +25,8 @@
 !   2026-08-03, En-Chi Lee (williameclee@gmail.com)
 !     - Implemented 'find_acyclic_flowdirs'
 !     - Explicitly handled Python uint8 -> FORTRAN INTEGER*1 conversion/interpretation in 'fill_offset_lookup'
+!   2026-08-04, En-Chi Lee (williameclee@gmail.com)
+!     - Added allocation error monitoring and moved error handling to Python
 !!!
 
 module flowdir_raster
@@ -248,7 +250,7 @@ contains
 
     subroutine label_flats( &
         z, seeds, valids, flats, nrows, ncols, &
-        offsets, noffsets)
+        offsets, noffsets, err_code)
         !! Labels connected flat regions in the elevation grid, using a
         !! flood-fill algorithm starting from the provided seed cells.
         !! Only valid cells (as indicated by the valids mask) will be
@@ -272,12 +274,17 @@ contains
         ! Outputs
         integer, intent(out) :: flats(nrows, ncols)
             !! Label grid indicating individual flat regions (or 0 for non-flat cells)
+        integer, intent(out) :: err_code
+            !! Code indicating the status of the result
+            !!   - 0: Programme executed properly
+            !!   - 1: A high-edge seed does not belong to a labelled flat
+            !!   - 2: Internal workspace allocation failed
+            !!   - 3: Flat-flooding buffer capacity was exceeded
         ! Local variables
         integer :: iflat
             !! Index of the current flat region being labeled (!= issed because same flat can have multiple seeds)
         integer, allocatable :: seed_ijs(:, :)
             !! List of (i, j) indices for seed cells
-            !! It should be safe to assume that the number of seed cells will not exceed nrows*ncols/2, since each flat region should have at least 2 cells.
         integer :: iseed, nseeds
             !! Index and total number of seed cells ('seed_ijs')
         integer, allocatable :: flat_ijs(:, :)
@@ -291,11 +298,21 @@ contains
         integer :: iofs
             !! Index for iterating through offsets
 
-        allocate (flat_ijs(2, nrows*ncols))
-        allocate (seed_ijs(2, nrows*ncols/2))
+        err_code = 0
+        allocate (flat_ijs(2, nrows*ncols), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
+        allocate (seed_ijs(2, nrows*ncols), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
         ! Convert seed mask to list of (i, j) indices
         call mask2ij(seeds, nrows, ncols, &
-                     seed_ijs, size(seed_ijs, dim=2), nseeds)
+                     seed_ijs, size(seed_ijs, dim=2), nseeds, err_code)
+        if (err_code /= 0) return
 
         flats = 0
         iflat = 1
@@ -338,8 +355,8 @@ contains
                     ! Add to tofill buffer
                     nfills = nfills + 1
                     if (nfills > size(flat_ijs, dim=2)) then
-             print *, "[LABEL_FLAT] Error: Flat flooding buffer overflow (size:", nfills, ", allocated:", size(flat_ijs, dim=2), ")"
-                        stop
+                        err_code = 3
+                        return
                     end if
                     flat_ijs(:, nfills) = [ni, nj]
                     flats(ni, nj) = iflat
@@ -355,7 +372,7 @@ contains
 
     subroutine create_pushing_syn_grad( &
         z, flats, nrows, ncols, &
-        high_edges, offsets, noffsets)
+        high_edges, offsets, noffsets, err_code)
         !! Produces a synthetic elevation that decreases away from 'high
         !! edges' of flats.
         !! Modified from [R. Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009), Algorithm 5 (p. 133--134).
@@ -374,6 +391,11 @@ contains
         ! Outputs
         integer, intent(out) :: z(nrows, ncols)
             !! Synthetic elevation grid that has the down gradient flow away from high edges
+        integer, intent(out) :: err_code
+            !! Code indicating the status of the result
+            !!   - 0: Programme executed properly
+            !!   - 2: Internal workspace allocation failed
+            !!   - 3: High-edge queue capacity was exceeded or an index was out of bounds
         ! Local variables
         integer :: nflats
             !! Number of unique flat labels (excluding 0 for non-flat cells)
@@ -399,14 +421,20 @@ contains
         integer :: max_queue_size
             !! Maximum size of the queue buffer for high edge cells ('high_edges_ijs', including the marker)
 
+        err_code = 0
         max_queue_size = count(flats /= 0) + max(nrows, ncols)*(maxval(flats) - minval(flats) + 1)
-        allocate (high_edge_ijs(2, max_queue_size))
+        allocate (high_edge_ijs(2, max_queue_size), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
 
         high_edge_ijs = 0
         nedges = 0
         z = 0
         call mask2ij(high_edges, nrows, ncols, &
-                     high_edge_ijs, size(high_edge_ijs, dim=2), nedges)
+                     high_edge_ijs, size(high_edge_ijs, dim=2), nedges, err_code)
+        if (err_code /= 0) return
         if (nedges == 0) then
             ! No high edges found, set z to zero and exit
             deallocate (high_edge_ijs)
@@ -417,10 +445,18 @@ contains
         high_edge_ijs(:, nedges) = marker
 
         nflats = maxval(flats)
-        allocate (maxdist(nflats))
+        allocate (maxdist(nflats), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
         maxdist = 0
 
-        allocate (queued(nrows, ncols))
+        allocate (queued(nrows, ncols), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
         queued = .false.
         added_since_marker = .false.
 
@@ -448,8 +484,8 @@ contains
                 nedges = nedges + 1
                 ! Check buffer size
                 if (nedges > max_queue_size) then
-                   print *, "[AWAY_FROM_HIGH] Error: High edges buffer overflow (size:", nedges, ", allocated:", max_queue_size, ")"
-                    stop
+                    err_code = 3
+                    return
                 end if
                 high_edge_ijs(:, nedges) = marker
                 added_since_marker = .false.
@@ -458,12 +494,11 @@ contains
 
             ! Check bounds after marker check
             if (ci < 1 .or. ci > nrows .or. cj < 1 .or. cj > ncols) then
-                print *, "[AWAY_FROM_HIGH] Error: Current index out of bounds (", ci, ",", cj, ")"
-                stop
+                err_code = 3
+                return
             else if (flats(ci, cj) == 0) then
-                ! Skip if for some reason we ended up with a non-flat cell in the queue
-                print *, "[AWAY_FROM_HIGH] Warning: Encountered non-flat cell in queue at (", ci, ",", cj, "). This should not happen, but will be skipped."
-                cycle
+                err_code = 1
+                return
             end if
 
             z(ci, cj) = dist
@@ -490,8 +525,8 @@ contains
                 ! Update queue
                 nedges = nedges + 1
                 if (nedges > max_queue_size) then
-                   print *, "[AWAY_FROM_HIGH] Error: High edges buffer overflow (size:", nedges, ", allocated:", max_queue_size, ")"
-                    stop
+                    err_code = 3
+                    return
                 end if
                 high_edge_ijs(:, nedges) = [ni, nj]
                 queued(ni, nj) = .true.
@@ -510,7 +545,7 @@ contains
 
     subroutine create_pulling_syn_grad( &
         z, flats, nrows, ncols, &
-        low_edges, offsets, noffsets)
+        low_edges, offsets, noffsets, err_code)
         !! Produces a synthetic elevation that drains towards 'low
         !! edges' of flats.
         !! Modified from [R. Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009), Algorithm 6 (p. 134).
@@ -528,6 +563,12 @@ contains
             !! List of offsets for each flow direction
         ! Outputs
         integer, intent(out) :: z(nrows, ncols)
+            !! Synthetic elevation grid that drains towards low edges
+        integer, intent(out) :: err_code
+            !! Code indicating the status of the result
+            !!   - 0: Programme executed properly
+            !!   - 2: Internal workspace allocation failed
+            !!   - 3: Low-edge queue capacity was exceeded or an index was out of bounds
         ! Local variables
         integer :: iofs
             !! Index for iterating through offsets
@@ -548,16 +589,26 @@ contains
         integer :: max_queue_size
             !! Maximum size of the queue buffer for low edge cells ('low_edges_ijs', including the marker)
 
+        err_code = 0
         max_queue_size = count(flats /= 0) + max(nrows, ncols)*maxval(flats)
-        allocate (low_edges_ijs(2, max_queue_size))
+        allocate (low_edges_ijs(2, max_queue_size), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
         call mask2ij(low_edges, nrows, ncols, &
-                     low_edges_ijs, size(low_edges_ijs, dim=2), nedges)
+                     low_edges_ijs, size(low_edges_ijs, dim=2), nedges, err_code)
+        if (err_code /= 0) return
         nedges = nedges + 1
         low_edges_ijs(:, nedges) = marker
 
         ! Initialise z to zero
         z = 0
-        allocate (queued(nrows, ncols))
+        allocate (queued(nrows, ncols), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
         queued = .false.
 
         ! Mark initial seeds as queued
@@ -584,8 +635,8 @@ contains
                 nedges = nedges + 1
                 ! Check buffer size
                 if (nedges > max_queue_size) then
-                    print *, "[TOWARDS_LOW] Error: Low edges buffer overflow (size:", nedges, ", allocated:", max_queue_size, ")"
-                    stop
+                    err_code = 3
+                    return
                 end if
                 low_edges_ijs(:, nedges) = marker
                 added_since_marker = .false.
@@ -594,8 +645,8 @@ contains
 
             ! Check bounds after marker check
             if (ci < 1 .or. ci > nrows .or. cj < 1 .or. cj > ncols) then
-                print *, "[TOWARDS_LOW] Error: Current indices out of bounds (", ci, ",", cj, ")"
-                stop
+                err_code = 3
+                return
             end if
 
             ! Queueing should guarantee we only visit each cell once
@@ -623,8 +674,8 @@ contains
                 ! Update queue
                 nedges = nedges + 1
                 if (nedges > max_queue_size) then
-                    print *, "[TOWARDS_LOW] Error: Low edges buffer overflow (size:", nedges, ", allocated:", max_queue_size, ")"
-                    stop
+                    err_code = 3
+                    return
                 end if
                 low_edges_ijs(:, nedges) = [ni, nj]
                 queued(ni, nj) = .true.
@@ -695,7 +746,7 @@ contains
 
     subroutine compute_flow_accumulation( &
         dirs, valids, areas, indegs, accumulations, nrows, ncols, &
-        offsets, codes, noffsets)
+        offsets, codes, noffsets, err_code)
         !! Computes flow accumulation for each cell in a flow direction grid.
         implicit none
         ! Arguments
@@ -719,6 +770,11 @@ contains
         ! Outputs
         real, intent(out) :: accumulations(nrows, ncols)
             !! Grid of flow accumulation values, i.e. total area flowing into each cell
+        integer, intent(out) :: err_code
+            !! Code indicating the status of the result
+            !!   - 0: Programme executed properly
+            !!   - 2: Internal workspace allocation failed
+            !!   - 3: Flooding queue capacity was exceeded
         ! Local variables
         integer, allocatable :: offset_lookup(:, :)
             !! Lookup table for offsets corresponding to each flow direction code, used to find downstream cell indices
@@ -734,18 +790,33 @@ contains
             !! Mask to identify initial seed cells for the flooding algorithm (valid cells with zero in-degrees)
 
         ! Create lookup tables for offsets
-        allocate (offset_lookup(0:255, 2))
+        err_code = 0
+        allocate (offset_lookup(0:255, 2), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
         offset_lookup = fill_offset_lookup(offsets, codes, noffsets)
 
         ! Fill the tofill buffer with all valid cells with zero in-degrees
         max_queue_size = nrows*ncols
-        allocate (flood_ijs(2, max_queue_size))
-        allocate (flood_seeds(nrows, ncols))
+        allocate (flood_ijs(2, max_queue_size), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
+        allocate (flood_seeds(nrows, ncols), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
         flood_seeds = valids .and. (indegs == 0)
         call mask2ij(flood_seeds, nrows, ncols, &
-                     flood_ijs, max_queue_size, ntofills)
+                     flood_ijs, max_queue_size, ntofills, err_code)
+        if (err_code /= 0) return
         deallocate (flood_seeds)
 
+        err_code = 0
         accumulations = areas
         itofill = 1
         do while (itofill <= ntofills)
@@ -773,8 +844,8 @@ contains
             if (indegs(ni, nj) > 0) cycle
             ntofills = ntofills + 1
             if (ntofills > max_queue_size) then
-                print *, "[FLOW_ACCUMULATION] Error: Flooding buffer overflow (size:", ntofills, ", allocated:", max_queue_size, ")"
-                stop
+                err_code = 3
+                return
             end if
             flood_ijs(:, ntofills) = [ni, nj]
         end do
@@ -784,7 +855,7 @@ contains
 
     subroutine compute_dist2source_l1( &
         dirs, valids, indegs, dists, nrows, ncols, &
-        offsets, codes, noffsets)
+        offsets, codes, noffsets, err_code)
         !! Computes the distance to the nearest source cell (cell with
         !! zero indegree) for each cell in a flow direction grid, using
         !! a breadth-first search starting from source cells.
@@ -810,6 +881,11 @@ contains
         ! Outputs
         integer, intent(out) :: dists(nrows, ncols)
             !! Grid of distances to the nearest source cell (cell with zero indegree).
+        integer, intent(out) :: err_code
+            !! Code indicating the status of the result
+            !!   - 0: Programme executed properly
+            !!   - 2: Internal workspace allocation failed
+            !!   - 3: Source-distance queue capacity was exceeded
         ! Local variables
         integer, allocatable :: offset_lookup(:, :)
             !! Lookup table for offsets corresponding to each flow direction code, used to find downstream cell indices
@@ -826,19 +902,34 @@ contains
             !! Maximum size of the flooding buffer ('tofill_ijs')
 
         ! Create lookup tables for offsets
-        allocate (offset_lookup(0:255, 2))
+        err_code = 0
+        allocate (offset_lookup(0:255, 2), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
         offset_lookup = fill_offset_lookup(offsets, codes, noffsets)
 
         ! Fill the tofill buffer with all valid cells with zero indegree
         max_queue_size = nrows*ncols
-        allocate (tofill_ijs(2, max_queue_size))
-        allocate (tofill_seeds(nrows, ncols))
+        allocate (tofill_ijs(2, max_queue_size), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
+        allocate (tofill_seeds(nrows, ncols), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
         tofill_seeds = valids .and. (indegs == 0)
         call mask2ij(tofill_seeds, nrows, ncols, &
-                     tofill_ijs, max_queue_size, ntofills)
+                     tofill_ijs, max_queue_size, ntofills, err_code)
+        if (err_code /= 0) return
         deallocate (tofill_seeds)
 
         !! Main loop to fill distances using a breadth-first search starting from source cells
+        err_code = 0
         dists = 0.0
         itofill = 1
         do while (itofill <= ntofills)
@@ -866,8 +957,8 @@ contains
             if (indegs(ni, nj) == 0) then
                 ntofills = ntofills + 1
                 if (ntofills > max_queue_size) then
-                    print *, "[DIST2SOURCE_L1] Error: tofill buffer overflow (size:", ntofills, ", allocated:", max_queue_size, ")"
-                    stop
+                    err_code = 3
+                    return
                 end if
                 tofill_ijs(:, ntofills) = [ni, nj]
             end if
@@ -878,7 +969,7 @@ contains
 
     subroutine compute_dist2source( &
         dirs, valids, x, y, indegs, dists, nrows, ncols, &
-        offsets, codes, noffsets)
+        offsets, codes, noffsets, err_code)
         !! Computes the distance downstream along flow directions for
         !! each cell in the flow direction grid.
         implicit none
@@ -903,6 +994,11 @@ contains
         ! Outputs
         real, intent(out) :: dists(nrows, ncols)
             !! Grid of distances to the nearest source cell
+        integer, intent(out) :: err_code
+            !! Code indicating the status of the result
+            !!   - 0: Programme executed properly
+            !!   - 2: Internal workspace allocation failed
+            !!   - 3: Source-distance queue capacity was exceeded
         ! Local variables
         integer, allocatable :: offset_lookup(:, :)
             !! Lookup table for offsets corresponding to each flow direction code, used to find downstream cell indices
@@ -918,19 +1014,34 @@ contains
             !! Maximum size of the flooding buffer ('tofill_ijs')
 
         ! Create lookup tables for offsets
-        allocate (offset_lookup(0:255, 2))
+        err_code = 0
+        allocate (offset_lookup(0:255, 2), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
         offset_lookup = fill_offset_lookup(offsets, codes, noffsets)
 
         ! Fill the tofill buffer with all valid cells with zero indegree
         max_queue_size = nrows*ncols
-        allocate (tofill_ijs(2, max_queue_size))
-        allocate (seeds(nrows, ncols))
+        allocate (tofill_ijs(2, max_queue_size), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
+        allocate (seeds(nrows, ncols), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
         seeds = valids .and. (indegs == 0)
         call mask2ij(seeds, nrows, ncols, &
-                     tofill_ijs, max_queue_size, ntofills)
+                     tofill_ijs, max_queue_size, ntofills, err_code)
+        if (err_code /= 0) return
         deallocate (seeds)
 
         !! Main loop to fill distances using a breadth-first search starting from source cells
+        err_code = 0
         dists = 0.0
         itofill = 1
         do while (itofill <= ntofills)
@@ -958,8 +1069,8 @@ contains
             if (indegs(ni, nj) == 0) then
                 ntofills = ntofills + 1
                 if (ntofills > max_queue_size) then
-                    print *, "[DIST2SOURCE] Error: tofill buffer overflow (size:", ntofills, ", allocated:", max_queue_size, ")"
-                    stop
+                    err_code = 3
+                    return
                 end if
                 tofill_ijs(:, ntofills) = [ni, nj]
             end if
@@ -969,7 +1080,7 @@ contains
     end subroutine compute_dist2source
 
     subroutine compute_dist2sink( &
-        dists, dirs, x, y, valids, nrows, ncols, offsets, codes, noffsets)
+        dists, dirs, x, y, valids, nrows, ncols, offsets, codes, noffsets, err_code)
         !! Computes the distance upstream along flow directions for each cell in the flow direction grid.
         implicit none
         ! Arguments
@@ -989,6 +1100,12 @@ contains
             !! List of flow direction codes corresponding to the offsets
         ! Outputs
         real, intent(out) :: dists(nrows, ncols)
+            !! Grid of distances to the downstream sink
+        integer, intent(out) :: err_code
+            !! Code indicating the status of the result
+            !!   - 0: Programme executed properly
+            !!   - 2: Internal workspace allocation failed
+            !!   - 3: Sink-distance queue capacity was exceeded
         ! Local variables
         integer :: iofs
             !! Index for iterating through offsets
@@ -1006,26 +1123,42 @@ contains
             !! Buffer for storing (i, j) indices of cells to be processed in the breadth-first search from sink cells
         integer :: max_queue_size
             !! Maximum size of the buffer for cells to be processed ('seed_ijs' and 'tofill_ijs')
-
+        integer :: alloc_stat
+            !! Per-thread allocation status code
         ! Find noflow code
         noflow_code = find_noflow_code(offsets, codes, noffsets)
 
+        err_code = 0
         dists = -1
 
         ! Append all cells with noflow direction to buffer
         max_queue_size = nrows*ncols
-        allocate (seed_ijs(2, max_queue_size))
-        allocate (seeds(nrows, ncols))
+        allocate (seed_ijs(2, max_queue_size), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
+        allocate (seeds(nrows, ncols), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
         seeds = valids .and. (dirs == noflow_code)
         call mask2ij(seeds, nrows, ncols, &
-                     seed_ijs, max_queue_size, nseeds)
+                     seed_ijs, max_queue_size, nseeds, err_code)
+        if (err_code /= 0) return
         deallocate (seeds)
 
         ! Loop through seeds
-        !$omp PARALLEL DEFAULT(SHARED) PRIVATE(iseed, si, sj, ci, cj, ifill, nfills, tofill_ijs)
-        allocate (tofill_ijs(2, max_queue_size))
+        !$omp PARALLEL DEFAULT(SHARED) PRIVATE(iseed, si, sj, ci, cj, ifill, nfills, tofill_ijs, alloc_stat)
+        allocate (tofill_ijs(2, max_queue_size), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            !$omp atomic write
+            err_code = 2
+        end if
         !$omp DO SCHEDULE(DYNAMIC)
         do iseed = 1, nseeds
+            if (alloc_stat /= 0) cycle
             si = seed_ijs(1, iseed)
             sj = seed_ijs(2, iseed)
 
@@ -1059,8 +1192,9 @@ contains
                     ! Add to buffer
                     nfills = nfills + 1
                     if (nfills > max_queue_size) then
-                        print *, "[DIST2SINK] Error: tofill buffer overflow (size:", nfills, ", allocated:", max_queue_size, ")"
-                        stop
+                        !$omp atomic write
+                        err_code = 3
+                        exit
                     end if
                     tofill_ijs(:, nfills) = [ui, uj]
                     ! Compute distance
@@ -1070,14 +1204,14 @@ contains
             end do
         end do
         !$omp END DO
-        deallocate (tofill_ijs)
+        if (allocated(tofill_ijs)) deallocate (tofill_ijs)
         !$omp END PARALLEL
         deallocate (seed_ijs)
     end subroutine compute_dist2sink
 
     subroutine compute_flow_strahler_order( &
         dirs, valids, indegs, orders, nrows, ncols, &
-        offsets, codes, noffsets)
+        offsets, codes, noffsets, err_code)
         implicit none
         ! Arguments
         integer, intent(in) :: nrows, ncols
@@ -1098,6 +1232,11 @@ contains
         ! Outputs
         integer*2, intent(out) :: orders(nrows, ncols)
             !! Grid of Strahler stream order values for each cell
+        integer, intent(out) :: err_code
+            !! Code indicating the status of the result
+            !!   - 0: Programme executed properly
+            !!   - 2: Internal workspace allocation failed
+            !!   - 3: Strahler traversal queue capacity was exceeded
         ! Local variables
         integer, allocatable :: offset_lookup(:, :)
             !! Lookup table for offsets corresponding to each flow direction code, used to find downstream cell indices
@@ -1119,17 +1258,32 @@ contains
             !! Maximum size of the buffer for cells to be processed ('tofill_ijs')
 
         ! Create lookup tables for offsets
-        allocate (offset_lookup(0:255, 2))
+        err_code = 0
+        allocate (offset_lookup(0:255, 2), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
         offset_lookup = fill_offset_lookup(offsets, codes, noffsets)
 
         ! Fill the tofill buffer with all valid cells with zero indegree
         max_queue_size = nrows*ncols
-        allocate (tofill_ijs(2, max_queue_size))
-        allocate (seeds(nrows, ncols))
+        allocate (tofill_ijs(2, max_queue_size), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
+        allocate (seeds(nrows, ncols), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
         seeds = valids .and. (indegs == 0)
+        err_code = 0
         orders = merge(int(1, kind=2), int(0, kind=2), seeds)
         call mask2ij(seeds, nrows, ncols, &
-                     tofill_ijs, max_queue_size, ntofills)
+                     tofill_ijs, max_queue_size, ntofills, err_code)
+        if (err_code /= 0) return
         deallocate (seeds)
 
         itofill = 1
@@ -1192,8 +1346,8 @@ contains
 
             ntofills = ntofills + 1
             if (ntofills > max_queue_size) then
-             print *, "[COMPUTE_STRAHLER_ORDER] Error: tofill buffer overflow (size:", ntofills, ", allocated:", max_queue_size, ")"
-                stop
+                err_code = 3
+                return
             end if
             tofill_ijs(:, ntofills) = [ni, nj]
 
@@ -1203,7 +1357,7 @@ contains
     end subroutine compute_flow_strahler_order
 
     subroutine label_watersheds( &
-        labels, dirs, valids, nrows, ncols, offsets, codes, noffsets)
+        labels, dirs, valids, nrows, ncols, offsets, codes, noffsets, err_code)
         implicit none
         ! Arguments
         integer, intent(in) :: nrows, ncols
@@ -1222,6 +1376,11 @@ contains
         integer, intent(out) :: labels(nrows, ncols)
             !! Grid of watershed labels, where cells with the same label belong to the same watershed.
             !! Cells with no-data or that do not flow into any watershed should have a label of 0.
+        integer, intent(out) :: err_code
+            !! Code indicating the status of the result
+            !!   - 0: Programme executed properly
+            !!   - 2: Internal workspace allocation failed
+            !!   - 3: Watershed traversal queue capacity was exceeded
         ! Local variables
         integer :: iofs
             !! Index for iterating through offsets
@@ -1237,26 +1396,43 @@ contains
             !! Buffers for storing (i, j) indices of seed cells and cells to be processed in the breadth-first search from seed cells
         integer :: max_queue_size
             !! Maximum size of the buffer for cells to be processed ('seed_ijs' and 'tofill_ijs')
+        integer :: alloc_stat
+            !! Per-thread allocation status code
 
         ! Find noflow code
         noflow_code = find_noflow_code(offsets, codes, noffsets)
 
+        err_code = 0
         labels = 0
 
         ! Append all cells with noflow direction to buffer
         max_queue_size = nrows*ncols
-        allocate (seed_ijs(2, max_queue_size))
-        allocate (seeds(nrows, ncols))
+        allocate (seed_ijs(2, max_queue_size), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
+        allocate (seeds(nrows, ncols), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
         seeds = valids .and. (dirs == noflow_code)
         call mask2ij(seeds, nrows, ncols, &
-                     seed_ijs, max_queue_size, nseeds)
+                     seed_ijs, max_queue_size, nseeds, err_code)
+        if (err_code /= 0) return
         deallocate (seeds)
 
         ! Loop through seeds
-        !$omp PARALLEL DEFAULT(SHARED) PRIVATE(iseed, si, sj, ci, cj, ifill, nfills, tofill_ijs)
-        allocate (tofill_ijs(2, max_queue_size))
+        !$omp PARALLEL DEFAULT(SHARED) PRIVATE(iseed, si, sj, ci, cj, ifill, nfills, tofill_ijs, alloc_stat)
+        allocate (tofill_ijs(2, max_queue_size), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            !$omp atomic write
+            err_code = 2
+        end if
         !$omp DO SCHEDULE(DYNAMIC)
         do iseed = 1, nseeds
+            if (alloc_stat /= 0) cycle
             si = seed_ijs(1, iseed)
             sj = seed_ijs(2, iseed)
 
@@ -1290,8 +1466,9 @@ contains
                     ! Add to buffer
                     nfills = nfills + 1
                     if (nfills > max_queue_size) then
-                    print *, "[LABEL_WATERSHEDS] Error: To-fill buffer overflow (size:", nfills, ", allocated:", max_queue_size, ")"
-                        stop
+                        !$omp atomic write
+                        err_code = 3
+                        exit
                     end if
                     tofill_ijs(:, nfills) = [ui, uj]
                     ! Compute distance
@@ -1300,12 +1477,12 @@ contains
             end do
         end do
         !$omp END DO
-        deallocate (tofill_ijs)
+        if (allocated(tofill_ijs)) deallocate (tofill_ijs)
         !$omp END PARALLEL
     end subroutine label_watersheds
 
     subroutine flood_upstream( &
-        flooded, dirs, seeds, valids, nrows, ncols, offsets, codes, noffsets)
+        flooded, dirs, seeds, valids, nrows, ncols, offsets, codes, noffsets, err_code)
         implicit none
         ! Arguments
         integer, intent(in) :: nrows, ncols
@@ -1323,6 +1500,11 @@ contains
         ! Outputs
         logical*1, intent(out) :: flooded(nrows, ncols)
             !! Mask indicating which cells are flooded (true for flooded cells, false for non-flooded cells)
+        integer, intent(out) :: err_code
+            !! Code indicating the status of the result
+            !!   - 0: Programme executed properly
+            !!   - 2: Internal workspace allocation failed
+            !!   - 3: Upstream-flooding queue capacity was exceeded
         ! Local variables
         integer :: iofs
             !! Index for iterating through offsets
@@ -1336,23 +1518,36 @@ contains
             !! Buffers for storing (i, j) indices of seed cells and cells to be processed in the flooding algorithm
         integer :: max_queue_size
             !! Maximum size of the buffer for cells to be processed ('seed_ijs' and 'tofill_ijs')
+        integer :: alloc_stat
+            !! Per-thread allocation status code
 
         ! Find noflow code
         noflow_code = find_noflow_code(offsets, codes, noffsets)
 
+        err_code = 0
         flooded = .false.
 
         ! Append all cells with noflow direction to buffer
         max_queue_size = nrows*ncols
-        allocate (seed_ijs(2, max_queue_size))
+        allocate (seed_ijs(2, max_queue_size), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
         call mask2ij(seeds, nrows, ncols, &
-                     seed_ijs, max_queue_size, nseeds)
+                     seed_ijs, max_queue_size, nseeds, err_code)
+        if (err_code /= 0) return
 
         ! Loop through seeds
-        !$omp PARALLEL DEFAULT(SHARED) PRIVATE(iseed, si, sj, ci, cj, ifill, nfills, tofill_ijs)
-        allocate (tofill_ijs(2, max_queue_size))
+        !$omp PARALLEL DEFAULT(SHARED) PRIVATE(iseed, si, sj, ci, cj, ifill, nfills, tofill_ijs, alloc_stat)
+        allocate (tofill_ijs(2, max_queue_size), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            !$omp atomic write
+            err_code = 2
+        end if
         !$omp DO SCHEDULE(DYNAMIC)
         do iseed = 1, nseeds
+            if (alloc_stat /= 0) cycle
             si = seed_ijs(1, iseed)
             sj = seed_ijs(2, iseed)
 
@@ -1389,8 +1584,9 @@ contains
                     ! Add to buffer
                     nfills = nfills + 1
                     if (nfills > max_queue_size) then
-                       print *, "[FLOOD_UPSTREAM] Error: tofill buffer overflow (size:", nfills, ", allocated:", max_queue_size, ")"
-                        stop
+                        !$omp atomic write
+                        err_code = 3
+                        exit
                     end if
                     tofill_ijs(:, nfills) = [ui, uj]
                     ! Compute distance
@@ -1399,9 +1595,9 @@ contains
             end do
         end do
         !$omp END DO
-        deallocate (seed_ijs)
-        deallocate (tofill_ijs)
+        if (allocated(tofill_ijs)) deallocate (tofill_ijs)
         !$omp END PARALLEL
+        deallocate (seed_ijs)
     end subroutine flood_upstream
 
     subroutine find_acyclic_flowdirs( &
@@ -1432,7 +1628,10 @@ contains
             !! Mask indicating valid cells removed by Kahn's algorithm
             !! (true for acyclic cells, false otherwise)
         integer, intent(out) :: err_code
-            !! Error code (0 for success, 1 for queue overflow, and 2 for allocation failure)
+            !! Code indicating the status of the result
+            !!   - 0: Programme executed properly
+            !!   - 2: Traversal workspace allocation failed
+            !!   - 3: Acyclic traversal queue capacity was exceeded
         ! Local variables
         integer, allocatable :: offset_lookup(:, :)
             !! Lookup table for offsets corresponding to each flow direction code, used to find downstream cell indices
@@ -1483,7 +1682,8 @@ contains
         seeds = valids .and. (indegs == 0)
         offset_lookup = fill_offset_lookup(offsets, codes, noffsets)
         call mask2ij(seeds, nrows, ncols, &
-                     seed_ijs, size(seed_ijs, dim=2), nseeds)
+                     seed_ijs, size(seed_ijs, dim=2), nseeds, err_code)
+        if (err_code /= 0) return
         deallocate (seeds)
 
         rem_indegs = indegs
@@ -1517,7 +1717,7 @@ contains
             nseeds = nseeds + 1
             if (nseeds > size(seed_ijs, dim=2)) then
                 ! Buffer overflow
-                err_code = 1
+                err_code = 3
                 deallocate (offset_lookup)
                 deallocate (rem_indegs)
                 deallocate (seed_ijs)
@@ -1534,7 +1734,7 @@ contains
 
     subroutine compute_max_branch_dist( &
         maxbdists, dirs, valids, x, y, basin_ids, nrows, ncols, &
-        offsets, codes, noffsets)
+        offsets, codes, noffsets, err_code)
         implicit none
         ! Inputs
         integer, intent(in) :: nrows, ncols
@@ -1556,6 +1756,12 @@ contains
         ! Outputs
         real, intent(out) :: maxbdists(nrows, ncols)
             !! Grid of maximum branch distances for each cell, i.e. the maximum distance along flow paths to a confluence point downstream
+        integer, intent(out) :: err_code
+            !! Code indicating the status of the result
+            !!   - 0: Programme executed properly
+            !!   - 1: A traced flow path contains a cycle
+            !!   - 2: Internal workspace allocation failed
+            !!   - 3: A traced flow path exceeded its allocated capacity
         ! Local variables
         integer, allocatable :: diffs(:, :)
             !! Lookup table for offsets corresponding to each flow direction code, used to find downstream cell indices
@@ -1572,9 +1778,18 @@ contains
             !! When incrementing, each ID is of 'maxlen' apart such that 'path1id + ilen' is unique, which allows for more efficient confluence lookup.
         integer, allocatable :: path1(:, :), path2(:, :), visited(:, :)
         logical*1, allocatable :: is_max_dist(:, :)
+        integer :: alloc_stat
+            !! Per-thread allocation status code
+        integer :: inner_err_code
+            !! Status returned by a confluence trace
 
         ! Create lookup tables for offsets
-        allocate (diffs(0:255, 2))
+        err_code = 0
+        allocate (diffs(0:255, 2), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
         diffs = fill_offset_lookup(offsets, codes, noffsets)
 
         ! Define neighbour offsets
@@ -1587,22 +1802,31 @@ contains
 
         maxlen = 2*(nrows + ncols)
 
-        allocate (is_max_dist(nrows, ncols))
+        allocate (is_max_dist(nrows, ncols), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
         maxbdists = 0.0
         is_max_dist = .false.
         !$omp PARALLEL DEFAULT(SHARED) &
         !$omp PRIVATE(ci, cj, ni, nj, nneighbour, dists) &
-        !$omp PRIVATE(path1, path2, path1id, path2id, visited)
-        allocate (path1(2, maxlen))
-        allocate (path2(2, maxlen))
-        allocate (visited(nrows, ncols))
-        visited = 0
+        !$omp PRIVATE(path1, path2, path1id, path2id, visited, alloc_stat, inner_err_code)
+        allocate (path1(2, maxlen), path2(2, maxlen), &
+                  visited(nrows, ncols), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            !$omp atomic write
+            err_code = 2
+        else
+            visited = 0
+        end if
         path1id = 1
         path2id = 1 + maxlen
         !$omp DO SCHEDULE(DYNAMIC) &
         !$omp COLLAPSE(2)
         do cj = 1, ncols
             do ci = 1, nrows
+                if (alloc_stat /= 0) cycle
                 do nneighbour = 1, size(neighbour_offsets, 1)
                     if (.not. valids(ci, cj)) cycle
                     ni = ci + neighbour_offsets(nneighbour, 1)
@@ -1616,7 +1840,14 @@ contains
                         dists, ci, cj, ni, nj, dirs, x, y, diffs, &
                         maxpathlen=maxlen, path1=path1, path2=path2, &
                         visited=visited, id1=path1id, id2=path2id, &
-                        check_flag=logical(basin_ids(ni, nj) == basin_ids(ci, cj), kind=1))
+                        check_flag=logical(basin_ids(ni, nj) == basin_ids(ci, cj), kind=1), &
+                        err_code=inner_err_code)
+                    if (inner_err_code /= 0) then
+                        !$omp critical
+                        if (err_code == 0) err_code = inner_err_code
+                        !$omp end critical
+                        cycle
+                    end if
                     maxbdists(ci, cj) = max(maxbdists(ci, cj), dists(1))
                     !$omp ATOMIC UPDATE
                     maxbdists(ni, nj) = max(maxbdists(ni, nj), dists(2))
@@ -1639,9 +1870,9 @@ contains
             end do
         end do
         !$omp END DO
-        deallocate (path1)
-        deallocate (path2)
-        deallocate (visited)
+        if (allocated(path1)) deallocate (path1)
+        if (allocated(path2)) deallocate (path2)
+        if (allocated(visited)) deallocate (visited)
         !$omp END PARALLEL
         deallocate (is_max_dist)
         deallocate (diffs)
@@ -1650,7 +1881,7 @@ contains
     subroutine compute_confluence_dist( &
         dists, &
         s1ij, s2ij, dirs, x, y, &
-        offset_lookup, check_flag)
+        offset_lookup, check_flag, err_code)
         !! Traces flow paths from two seed cells downstream to compute their confluence distance.
         implicit none
         ! Arguments
@@ -1667,6 +1898,12 @@ contains
         ! Outputs
         real, intent(out) :: dists(2)
             !! Distances from each seed ceel to the confluence cell (or to max path length if no confluence found)
+        integer, intent(out) :: err_code
+            !! Code indicating the status of the result
+            !!   - 0: Programme executed properly
+            !!   - 1: A traced flow path contains a cycle
+            !!   - 2: Internal workspace allocation failed
+            !!   - 3: A traced flow path exceeded its allocated capacity
         ! Local variables
         logical*1 :: check_flag_
         integer :: maxpathlen
@@ -1683,9 +1920,14 @@ contains
         ! id1 uses values in [id1, id1 + maxpathlen - 1].
         ! id2 uses values in [id2, id2 + maxpathlen - 1].
         id2 = 1 + maxpathlen
-        allocate (path1(2, maxpathlen))
-        allocate (path2(2, maxpathlen))
-        allocate (visited(size(dirs, 1), size(dirs, 2)))
+        err_code = 0
+        allocate (path1(2, maxpathlen), path2(2, maxpathlen), &
+                  visited(size(dirs, 1), size(dirs, 2)), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            dists = 0.0
+            return
+        end if
         visited = 0
 
         check_flag_ = (.not. present(check_flag)) .or. check_flag
@@ -1694,7 +1936,7 @@ contains
             dists, &
             s1ij(1), s1ij(2), s2ij(1), s2ij(2), dirs, x, y, offset_lookup, &
             maxpathlen, path1, path2, visited, id1, id2, &
-            check_flag=check_flag_)
+            check_flag=check_flag_, err_code=err_code)
         deallocate (path1)
         deallocate (path2)
         deallocate (visited)
@@ -1702,7 +1944,7 @@ contains
 
     subroutine inner_compute_confluence_dist( &
         dists, s1i, s1j, s2i, s2j, dirs, x, y, &
-        offset_lookup, maxpathlen, path1, path2, visited, id1, id2, check_flag)
+        offset_lookup, maxpathlen, path1, path2, visited, id1, id2, check_flag, err_code)
         !! Inner routine for computing the confluence distance between two seed cells.
         !!
         !! The 'visited' grid tracks cell visits. It stores the exact path step
@@ -1734,6 +1976,11 @@ contains
             !! Grid to track visited paths by ids
         ! Outputs
         real, intent(out) :: dists(2)
+        integer, intent(out) :: err_code
+            !! Code indicating the status of the result
+            !!   - 0: Programme executed properly
+            !!   - 1: A traced flow path contains a cycle
+            !!   - 3: A traced flow path exceeded its allocated capacity
             !! Distances from each seed cell to the confluence cell (or to max path length if no confluence found)
         ! Local variables
         integer :: ipath1, ipath2, npath1, npath2
@@ -1753,6 +2000,7 @@ contains
         iconf2 = maxpathlen
 
         dists = 0.0
+        err_code = 0
         is_active1 = .true.
         is_active2 = .true.
 
@@ -1795,20 +2043,18 @@ contains
                     is_active1 = .false.
                     exit path1_prc
                 else if (npath1 >= maxpathlen) then
-                    print *, "[CONFLUENCE_DISTANCE] Warning: Path 1 exceeded max length of ", maxpathlen
+                    err_code = 3
                     iconf1 = npath1
-                    is_active1 = .false.
-                    exit path1_prc
+                    return
                 end if
                 npath1 = npath1 + 1
                 path1(1, npath1) = n1i
                 path1(2, npath1) = n1j
                 ! Check for self-intersection (value lies within Path 1's active range of IDs for the current run)
                 if (visited(n1i, n1j) >= id1 .and. visited(n1i, n1j) < id1 + npath1 - 1) then
-                    print *, "[CONFLUENCE_DISTANCE] Warning: Path 1 self-intersection at ", n1i, ",", n1j
+                    err_code = 1
                     iconf1 = npath1
-                    is_active1 = .false.
-                    exit path1_prc
+                    return
                 end if
                 ! Check if enters a visited cell
                 if (.not. local_check_flag) exit path1_prc
@@ -1844,20 +2090,18 @@ contains
                     is_active2 = .false.
                     exit path2_prc
                 else if (npath2 >= maxpathlen) then
-                    print *, "[CONFLUENCE_DISTANCE] Warning: Path 2 exceeded max length of ", maxpathlen
+                    err_code = 3
                     iconf2 = npath2
-                    is_active2 = .false.
-                    exit path2_prc
+                    return
                 end if
                 npath2 = npath2 + 1
                 path2(1, npath2) = n2i
                 path2(2, npath2) = n2j
                 ! Check for self-intersection (value lies within Path 2's active range of IDs for the current run)
                 if (visited(n2i, n2j) >= id2 .and. visited(n2i, n2j) < id2 + npath2 - 1) then
-                    print *, "[CONFLUENCE_DISTANCE] Warning: Path 2 self-intersection at ", n2i, ",", n2j
+                    err_code = 1
                     iconf2 = npath2
-                    is_active2 = .false.
-                    exit path2_prc
+                    return
                 end if
                 ! Check if enters a visited cell
                 if (.not. local_check_flag) exit path2_prc
