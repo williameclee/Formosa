@@ -1159,6 +1159,18 @@ def _resolve_topology_intersections(
     """
     Checks for topology violations and resolves them by iteratively reducing
     the tolerance for conflicting arcs and re-simplifying them.
+    
+    Parameters
+    ----------
+    vertices : NDArray[int | float]
+    endpts : NDArray[int]
+    vertex_keeps : NDArray[bool]
+    tol : float
+    graph_ids : NDArray[int] | None
+    max_iters : int
+        - max_iters = 0: Validate, but make no repair attempts.
+        - max_iters = 1: Make at most one repair attempt.
+        - max_iters = N: Make at most N attempts.
     """
     vertex_cumsum = np.cumsum(vertex_keeps) - 1
     vertices_aux = vertices[:, vertex_keeps]
@@ -1167,7 +1179,7 @@ def _resolve_topology_intersections(
     intxs = _locate_disallowed_graph_topology(vertices_aux, endpts_aux, graph_ids)
 
     niters = 0
-    while (intxs is not None) and (niters <= max_iters):
+    while (intxs is not None) and (niters < max_iters):
         tol = float(tol) / 2
         niters += 1
         for iarc in np.unique(intxs[:, :2]):

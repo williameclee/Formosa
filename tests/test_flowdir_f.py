@@ -783,6 +783,39 @@ def test_topology_repair_simplifies_each_conflicting_arc_once(monkeypatch):
     np.testing.assert_array_equal(keeps, np.ones(6, dtype=bool))
 
 
+def test_topology_repair_attempt_count_matches_max_iters(monkeypatch):
+    intersections = np.array([[0, 1, 0, 2, 1]], dtype=np.int32)
+    simplify_calls = []
+
+    monkeypatch.setattr(
+        graphs_module,
+        "locate_invalid_graph_topology",
+        lambda *args, **kwargs: intersections,
+    )
+
+    def fake_simplify(vertex_xys, arc_endpts, tol):
+        simplify_calls.append(tol)
+        return np.ones(vertex_xys.shape[1], dtype=np.int8)
+
+    monkeypatch.setattr(
+        graphs_module,
+        "graphs_f",
+        SimpleNamespace(simplify_flowgraph=fake_simplify),
+    )
+
+    vertices = np.array([[0, 1, 2, 3], [0, 0, 0, 0]], dtype=np.float32)
+    endpts = np.array([[0, 2], [1, 3]], dtype=np.int32)
+    graphs_module._resolve_topology_intersections(
+        vertices,
+        endpts,
+        np.ones(4, dtype=bool),
+        tol=1.0,
+        max_iters=0,
+    )
+
+    assert simplify_calls == []
+
+
 def test_simplify_single_flowgraph():
     verts = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]])
     endpts = np.array([[0, 2]])
