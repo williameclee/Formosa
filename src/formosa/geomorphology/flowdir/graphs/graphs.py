@@ -29,6 +29,8 @@
 #     - Preserved arc orders when `simplify_flowgraph` splits overlapping graphs
 #   2026-08-03, En-Chi Lee (williameclee@gmail.com)
 #     - Made `solve_graph_overlaps` stable and recognised already valid shared arcs
+#   2026-08-04, En-Chi Lee (williameclee@gmail.com)
+#     - Made `simplify_flowgraph` able to handle empty graphs
 
 
 import numpy as np
@@ -1007,6 +1009,52 @@ def _simplify_multiple_flowgraphs(
     list[npt.NDArray[np.integer]] | tuple[npt.NDArray[np.integer], ...],
     list[npt.NDArray[np.bool_]] | tuple[npt.NDArray[np.bool_], ...],
 ]:
+    def is_empty_graph(
+        orders: npt.NDArray[np.integer],
+        vertices: npt.NDArray[np.number],
+        endpts: npt.NDArray[np.integer],
+    ) -> bool:
+        return (
+            orders.shape == (0,)
+            and vertices.shape in ((0, 2), (2, 0))
+            and endpts.shape in ((0, 2), (2, 0))
+        )
+
+    empty_graphs = [
+        is_empty_graph(orders, vertices, endpts)
+        for orders, vertices, endpts in zip(orders_list, vertices_list, endpts_list)
+    ]
+    if len(empty_graphs) == 0 or any(empty_graphs):
+        nonempty_ids = [i for i, is_empty in enumerate(empty_graphs) if not is_empty]
+        if nonempty_ids:
+            nonempty_results = _simplify_multiple_flowgraphs(
+                [orders_list[i] for i in nonempty_ids],
+                [vertices_list[i] for i in nonempty_ids],
+                [endpts_list[i] for i in nonempty_ids],
+                tol=tol,
+                check_topology=check_topology,
+                backend=backend,
+            )
+        else:
+            nonempty_results = ([], [], [], [])
+
+        result_lists: tuple[list[npt.NDArray], ...] = ([], [], [], [])
+        nonempty_i = 0
+        for i, is_empty in enumerate(empty_graphs):
+            if is_empty:
+                result_lists[0].append(orders_list[i].copy())
+                result_lists[1].append(vertices_list[i].copy())
+                result_lists[2].append(endpts_list[i].copy())
+                result_lists[3].append(np.empty((0,), dtype=bool))
+            else:
+                for result_list, nonempty_result in zip(result_lists, nonempty_results):
+                    result_list.append(nonempty_result[nonempty_i])
+                nonempty_i += 1
+
+        if isinstance(vertices_list, tuple):
+            return tuple(tuple(result) for result in result_lists)  # type: ignore
+        return result_lists  # type: ignore
+
     vertices_shps: list[tuple] = []
     endpts_shps: list[tuple] = []
 

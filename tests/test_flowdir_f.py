@@ -1082,6 +1082,54 @@ def test_simplify_multiple_flowgraphs_accepts_one_empty_graph():
     np.testing.assert_array_equal(keeps[1], np.ones(2, dtype=bool))
 
 
+@pytest.mark.parametrize("collection_type", (list, tuple))
+def test_simplify_multiple_flowgraphs_round_trips_all_empty_graphs(collection_type):
+    orders = collection_type(
+        (np.empty((0,), dtype=np.uint8), np.empty((0,), dtype=np.int16))
+    )
+    verts = collection_type(
+        (np.empty((0, 2), dtype=np.float32), np.empty((2, 0), dtype=np.float64))
+    )
+    endpts = collection_type(
+        (np.empty((0, 2), dtype=np.int32), np.empty((2, 0), dtype=np.int64))
+    )
+
+    simp_orders, simp_verts, simp_endpts, keeps = flowdir.simplify_flowgraph(
+        orders,
+        verts,
+        endpts,
+        tol=1.0,
+        check_topology=True,
+        backend="fortran",
+    )
+
+    assert isinstance(simp_orders, collection_type)
+    assert isinstance(simp_verts, collection_type)
+    assert isinstance(simp_endpts, collection_type)
+    assert isinstance(keeps, collection_type)
+    for original_group, simplified_group in zip(
+        (orders, verts, endpts),
+        (simp_orders, simp_verts, simp_endpts),
+    ):
+        for original, simplified in zip(original_group, simplified_group):
+            np.testing.assert_array_equal(simplified, original)
+            assert simplified.shape == original.shape
+            assert simplified.dtype == original.dtype
+    for keep in keeps:
+        np.testing.assert_array_equal(keep, np.empty((0,), dtype=bool))
+
+
+@pytest.mark.parametrize("collection_type", (list, tuple))
+def test_simplify_multiple_flowgraphs_accepts_empty_collections(collection_type):
+    empty = collection_type()
+
+    results = flowdir.simplify_flowgraph(empty, empty, empty)
+
+    for result in results:
+        assert isinstance(result, collection_type)
+        assert len(result) == 0
+
+
 def test_simplify_flowgraph_keeps_every_arc_endpoint():
     orders = np.array([1, 2, 3], dtype=np.uint8)
     verts = np.array(
