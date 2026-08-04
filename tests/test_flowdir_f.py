@@ -1189,7 +1189,9 @@ def test_simplify_multiple_flowgraphs_inserts_overlap_endpoints():
         assert graph_endpts.shape == (2, 2)
         np.testing.assert_array_equal(graph_endpts, np.array([[0, 1], [2, 3]]))
         np.testing.assert_array_equal(graph_verts[graph_endpts[:, 0]], expected_starts)
-        assert graph_keeps.size == 5
+        # Batch overlap splitting rebuilds a compact vertex array, duplicating
+        # only the shared endpoint required by the two resulting arcs.
+        assert graph_keeps.size == 4
 
     # Both occurrences of the crossing are endpoints after each graph is split
     for graph_verts, graph_endpts in zip(simp_verts, simp_endpts):
