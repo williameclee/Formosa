@@ -646,27 +646,27 @@ def concat_flowgraph(
     arc_endpts: npt.NDArray[np.integer],
 ) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.integer], npt.NDArray[np.integer]]:
     """
-    Concactenate arcs of the same order in a flow graph, separated by NaNs.
+    Concatenates arcs of the same order in a flow graph, separated by NaNs.
     It mainly serves to reduce the number of drawing calls when visualising the graph.
 
     Parameters
     ----------
     arc_orders : NDArray[int]
-        O-by-1 array representing the Strahler order for each arc in the flow graph
+        O-by-1 array representing the Strahler order for each arc in the flow graph.
     vertex_ijs : NDArray[int]
-        V-by-2 array containing the ordered (i, j) incices of all arcs, concactinated together
+        V-by-2 array containing the ordered (i, j) incices of all arcs, concactinated together.
     vertex_startends : NDArray[int]
-        A-by-2 array containing the indices of where each arc starts and ends in `vertex_ijs`
+        A-by-2 array containing the indices of where each arc starts and ends in `vertex_ijs`.
         The returned endpoints are inclusive, meaning slicing must be done as `vertex_ijs[start : end + 1]`.
 
     Returns
     ----------
     arc_orders : NDArray[int]
-        O-by-1 array representing the Strahler order for each arc in the flow graph
+        O-by-1 array representing the Strahler order for each arc in the flow graph.
     vertex_ijs : NDArray[int]
-        V'-by-2 array containing the ordered (i, j) incices of all arcs, concactinated together
+        V'-by-2 array containing the ordered (i, j) incices of all arcs, concactinated together.
     vertex_startends : NDArray[int]
-        O-by-2 array containing the indices of where each arc starts and ends in `vertex_ijs`
+        O-by-2 array containing the indices of where each arc starts and ends in `vertex_ijs`.
         The returned endpoints are inclusive, meaning slicing must be done as `vertex_ijs[start : end + 1]`.
     """
     # Input validation
@@ -682,26 +682,31 @@ def concat_flowgraph(
     arc_orders = arc_orders[id]
     arc_endpts = arc_endpts[id, :]
 
-    s_arc_orders = np.unique(arc_orders)
+    s_arc_orders, first_group_ids = np.unique(arc_orders, return_index=True)
+    arc_lengths = arc_endpts[:, 1] - arc_endpts[:, 0] + 1
+    output_size = int(np.sum(arc_lengths) + arc_orders.size - 1)
+    output_dtype = (
+        vertex_ijs.dtype
+        if arc_orders.size == 1
+        else np.result_type(vertex_ijs.dtype, np.float64)
+    )
+    s_vertex_ijs = np.full(
+        (output_size, vertex_ijs.shape[1]), np.nan, dtype=output_dtype
+    )
     s_arc_endpts = np.zeros((s_arc_orders.size, 2), dtype=np.int32)
-    s_vertex_ijs = None
 
-    for iarc in range(arc_orders.size):
-        this_ijs = vertex_ijs[arc_endpts[iarc, 0] : arc_endpts[iarc, 1] + 1, :]
-        if s_vertex_ijs is None:
-            s_vertex_ijs = this_ijs
-        else:
-            s_vertex_ijs = np.concat(
-                [s_vertex_ijs, np.array([[np.nan, np.nan]]), this_ijs], axis=0
-            )
-        if (iarc < arc_orders.size - 1) and (arc_orders[iarc] == arc_orders[iarc + 1]):
-            continue
-        s_arc_endpts[s_arc_orders == arc_orders[iarc], 1] = s_vertex_ijs.shape[0] - 1
-        if arc_orders[iarc] < np.max(s_arc_orders):
-            s_arc_endpts[s_arc_orders == arc_orders[iarc + 1], 0] = (
-                s_vertex_ijs.shape[0] + 1
-            )
-    assert s_vertex_ijs is not None  # Empty graphs should have been handled above
+    cursor = 0
+    group_id = 0
+    for iarc, (start, end) in enumerate(arc_endpts):
+        if iarc in first_group_ids:
+            group_id = int(np.searchsorted(first_group_ids, iarc))
+            s_arc_endpts[group_id, 0] = cursor
+        length = int(end - start + 1)
+        s_vertex_ijs[cursor : cursor + length] = vertex_ijs[start : end + 1]
+        cursor += length
+        s_arc_endpts[group_id, 1] = cursor - 1
+        if iarc < arc_orders.size - 1:
+            cursor += 1
 
     return s_arc_orders, s_vertex_ijs, s_arc_endpts
 
