@@ -796,15 +796,15 @@ def _find_overlap_neighbours(
 
     dtype = np.result_type(ijs.dtype, overlaps.dtype)
     overlap_coords = np.ascontiguousarray(overlaps, dtype=dtype)
-    row_dtype = np.dtype((np.void, dtype.itemsize * overlaps.shape[1]))
-    overlap_keys = overlap_coords.view(row_dtype).ravel()
+    overlap_ids_by_coord = {tuple(coord): i for i, coord in enumerate(overlap_coords)}
 
     for start, end in endpts:
         arc_coords = np.ascontiguousarray(ijs[start : end + 1], dtype=dtype)
-        arc_keys = arc_coords.view(row_dtype).ravel()
-        overlap_ids = np.searchsorted(overlap_keys, arc_keys)
-        matches = overlap_ids < overlap_keys.size
-        matches[matches] &= overlap_keys[overlap_ids[matches]] == arc_keys[matches]
+        overlap_ids = np.array(
+            [overlap_ids_by_coord.get(tuple(coord), -1) for coord in arc_coords],
+            dtype=np.intp,
+        )
+        matches = overlap_ids >= 0
 
         # Record adjacency only between consecutive vertices of the same arc
         prev_matches = matches[1:] & matches[:-1]
