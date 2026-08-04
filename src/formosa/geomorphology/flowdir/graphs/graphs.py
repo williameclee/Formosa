@@ -33,6 +33,7 @@
 #     - Made `simplify_flowgraph` able to handle empty graphs
 
 
+from dataclasses import dataclass
 import numpy as np
 
 from formosa.geomorphology.flowdir.d8directions import D8Directions
@@ -645,27 +646,27 @@ def concat_flowgraph(
     arc_endpts: npt.NDArray[np.integer],
 ) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.integer], npt.NDArray[np.integer]]:
     """
-    Concactenate arcs of the same order in a flow graph, separated by NaNs.
+    Concatenates arcs of the same order in a flow graph, separated by NaNs.
     It mainly serves to reduce the number of drawing calls when visualising the graph.
 
     Parameters
     ----------
     arc_orders : NDArray[int]
-        O-by-1 array representing the Strahler order for each arc in the flow graph
+        O-by-1 array representing the Strahler order for each arc in the flow graph.
     vertex_ijs : NDArray[int]
-        V-by-2 array containing the ordered (i, j) incices of all arcs, concactinated together
+        V-by-2 array containing the ordered (i, j) incices of all arcs, concactinated together.
     vertex_startends : NDArray[int]
-        A-by-2 array containing the indices of where each arc starts and ends in `vertex_ijs`
+        A-by-2 array containing the indices of where each arc starts and ends in `vertex_ijs`.
         The returned endpoints are inclusive, meaning slicing must be done as `vertex_ijs[start : end + 1]`.
 
     Returns
     ----------
     arc_orders : NDArray[int]
-        O-by-1 array representing the Strahler order for each arc in the flow graph
+        O-by-1 array representing the Strahler order for each arc in the flow graph.
     vertex_ijs : NDArray[int]
-        V'-by-2 array containing the ordered (i, j) incices of all arcs, concactinated together
+        V'-by-2 array containing the ordered (i, j) incices of all arcs, concactinated together.
     vertex_startends : NDArray[int]
-        O-by-2 array containing the indices of where each arc starts and ends in `vertex_ijs`
+        O-by-2 array containing the indices of where each arc starts and ends in `vertex_ijs`.
         The returned endpoints are inclusive, meaning slicing must be done as `vertex_ijs[start : end + 1]`.
     """
     # Input validation
@@ -681,74 +682,186 @@ def concat_flowgraph(
     arc_orders = arc_orders[id]
     arc_endpts = arc_endpts[id, :]
 
-    s_arc_orders = np.unique(arc_orders)
+    s_arc_orders, first_group_ids = np.unique(arc_orders, return_index=True)
+    arc_lengths = arc_endpts[:, 1] - arc_endpts[:, 0] + 1
+    output_size = int(np.sum(arc_lengths) + arc_orders.size - 1)
+    output_dtype = (
+        vertex_ijs.dtype
+        if arc_orders.size == 1
+        else np.result_type(vertex_ijs.dtype, np.float64)
+    )
+    s_vertex_ijs = np.full(
+        (output_size, vertex_ijs.shape[1]), np.nan, dtype=output_dtype
+    )
     s_arc_endpts = np.zeros((s_arc_orders.size, 2), dtype=np.int32)
-    s_vertex_ijs = None
 
-    for iarc in range(arc_orders.size):
-        this_ijs = vertex_ijs[arc_endpts[iarc, 0] : arc_endpts[iarc, 1] + 1, :]
-        if s_vertex_ijs is None:
-            s_vertex_ijs = this_ijs
-        else:
-            s_vertex_ijs = np.concat(
-                [s_vertex_ijs, np.array([[np.nan, np.nan]]), this_ijs], axis=0
-            )
-        if (iarc < arc_orders.size - 1) and (arc_orders[iarc] == arc_orders[iarc + 1]):
-            continue
-        s_arc_endpts[s_arc_orders == arc_orders[iarc], 1] = s_vertex_ijs.shape[0] - 1
-        if arc_orders[iarc] < np.max(s_arc_orders):
-            s_arc_endpts[s_arc_orders == arc_orders[iarc + 1], 0] = (
-                s_vertex_ijs.shape[0] + 1
-            )
-    assert s_vertex_ijs is not None  # Empty graphs should have been handled above
+    cursor = 0
+    group_id = 0
+    for iarc, (start, end) in enumerate(arc_endpts):
+        if iarc in first_group_ids:
+            group_id = int(np.searchsorted(first_group_ids, iarc))
+            s_arc_endpts[group_id, 0] = cursor
+        length = int(end - start + 1)
+        s_vertex_ijs[cursor : cursor + length] = vertex_ijs[start : end + 1]
+        cursor += length
+        s_arc_endpts[group_id, 1] = cursor - 1
+        if iarc < arc_orders.size - 1:
+            cursor += 1
 
     return s_arc_orders, s_vertex_ijs, s_arc_endpts
 
 
-def _used_graph_vertices(
-    ijs: npt.NDArray[np.number], endpts: npt.NDArray[np.integer]
-) -> tuple[npt.NDArray[np.number], npt.NDArray[np.bool_]]:
+@dataclass
+class _GraphVertexAnalysis:
     """
-    Extracts the unique vertices referenced by the arcs of a graph.
+    Reusable vertex metadata for one flow graph.
+
+    Attributes
+    ----------
+    verts : NDArray[int | float]
+        Unique vertex coordinates referenced by at least one graph arc.
+    is_endpt : NDArray[bool]
+        Whether any occurrence of each vertex in `verts` is an arc endpoint.
+    vert_cnts : NDArray[int]
+        Number of occurrences of each vertex within the graph's arc ranges.
+    vert_inv_ids : NDArray[int]
+        Maps each row of the original vertex array to its row in `verts`.
+        Stored vertices that are not referenced by an arc are assigned `-1`.
+    """
+
+    verts: npt.NDArray[np.number]
+    is_endpt: npt.NDArray[np.bool_]
+    vert_cnts: npt.NDArray[np.intp]
+    vert_inv_ids: npt.NDArray[np.intp]
+
+
+@dataclass
+class _SharedVertexAnalysis:
+    """
+    Vertex metadata shared by a pair of flow graphs.
+
+    Attributes
+    ----------
+    verts : NDArray[int | float]
+        Unique vertex coordinates referenced by both graphs.
+    g1_vert_ids : NDArray[int]
+        Maps each row in `verts` to its unique-vertex ID in the first graph.
+    g2_vert_ids : NDArray[int]
+        Maps each row in `verts` to its unique-vertex ID in the second graph.
+    g1_is_endpt : NDArray[bool]
+        Whether each shared vertex is an endpoint in the first graph.
+    g2_is_endpt : NDArray[bool]
+        Whether each shared vertex is an endpoint in the second graph.
+    g1_cnts : NDArray[int]
+        Number of occurrences of each shared vertex in the first graph.
+    g2_cnts : NDArray[int]
+        Number of occurrences of each shared vertex in the second graph.
+    """
+
+    verts: npt.NDArray[np.number]
+    g1_vert_ids: npt.NDArray[np.intp]
+    g2_vert_ids: npt.NDArray[np.intp]
+    g1_is_endpt: npt.NDArray[np.bool_]
+    g2_is_endpt: npt.NDArray[np.bool_]
+    g1_cnts: npt.NDArray[np.intp]
+    g2_cnts: npt.NDArray[np.intp]
+
+
+def _analyse_graph_vertices(
+    verts: npt.NDArray[np.number], endpts: npt.NDArray[np.integer]
+) -> _GraphVertexAnalysis:
+    """
+    Builds reusable vertex IDs, endpoint roles, and occurrence counts.
+
+    Only rows referenced by an inclusive range in `endpts` contribute to the unique vertices, roles, and counts. The inverse-ID array retains the shape of the original stored vertex array so later operations can work directly with arc endpoint indices.
 
     Parameters
     ----------
-    ijs : NDArray[int | float]
-        V-by-n array containing the coordinates of all stored vertices.
+    verts : NDArray[int | float]
+        V-by-n array of stored vertex coordinates.
     endpts : NDArray[int]
-        A-by-2 array containing the inclusive starting and ending vertex indices of each arc.
+        A-by-2 array of inclusive arc ranges into `verts`.
 
     Returns
     -------
-    unique_ijs : NDArray[int | float]
-        U-by-n array containing the unique coordinates referenced by at least one arc.
-    unique_is_endpts : NDArray[bool]
-        U-by-(1) boolean array indicating whether each unique coordinate is an endpoint of at least one arc.
+    _GraphVertexAnalysis
+        Unique referenced vertices and their reusable graph metadata.
     """
-
-    # Skip empty graphs
     endpts = np.asarray(endpts)
+    nverts = verts.shape[0]
     if endpts.shape[0] == 0:
-        return (
-            np.empty((0, ijs.shape[1]), dtype=ijs.dtype),
-            np.empty((0,), dtype=bool),
+        return _GraphVertexAnalysis(
+            verts=np.empty((0, verts.shape[1]), dtype=verts.dtype),
+            is_endpt=np.empty((0,), dtype=bool),
+            vert_cnts=np.empty((0,), dtype=np.intp),
+            vert_inv_ids=np.full(verts.shape[0], -1, dtype=np.intp),
         )
 
-    # Expand inclusive endpoint ranges to exclude unreferenced entries in `ijs`
-    used_ids = np.concatenate([np.arange(start, end + 1) for start, end in endpts])
+    # Expand the inclusive arc ranges, excluding stored rows unused by any arc
+    used_ids: npt.NDArray[np.integer] = np.concatenate(
+        [np.arange(start, end + 1) for start, end in endpts]
+    )
+    endpt_ids = np.concatenate((endpts[:, 0], endpts[:, 1]))
+    used_is_endpt = np.isin(used_ids, endpt_ids)
 
-    # Identify endpoints before coordinates shared by multiple arcs are merged
-    endpoint_ids = np.concatenate((endpts[:, 0], endpts[:, 1]))
-    is_endpoint = np.isin(used_ids, endpoint_ids)
+    # `vert_inv` maps each used occurrence to its deduplicated vertex
+    verts, vert_inv, vert_cnts = np.unique(
+        verts[used_ids], axis=0, return_inverse=True, return_counts=True
+    )
+    # A repeated coordinate is an endpoint if any of its occurrences is one
+    is_endpt = np.zeros(verts.shape[0], dtype=bool)
+    np.logical_or.at(is_endpt, vert_inv, used_is_endpt)
 
-    coords = ijs[used_ids]
+    # Restore a lookup indexed like the original stored vertex array
+    vert_inv_ids = np.full(nverts, -1, dtype=np.intp)
+    vert_inv_ids[used_ids] = vert_inv
+    return _GraphVertexAnalysis(
+        verts=verts,
+        is_endpt=is_endpt,
+        vert_cnts=vert_cnts.astype(np.intp, copy=False),
+        vert_inv_ids=vert_inv_ids,
+    )
 
-    # Mark coordinates as endpoints when any occurrence is an endpoint
-    unique_coords, inverse = np.unique(coords, axis=0, return_inverse=True)
-    unique_is_endpoint = np.zeros(len(unique_coords), dtype=bool)
-    np.logical_or.at(unique_is_endpoint, inverse, is_endpoint)
 
-    return unique_coords, unique_is_endpoint
+def _find_shared_graph_vertices(
+    g1: _GraphVertexAnalysis, g2: _GraphVertexAnalysis
+) -> _SharedVertexAnalysis:
+    """
+    Intersects two reusable graph-vertex analyses.
+
+    Parameters
+    ----------
+    g1 : _GraphVertexAnalysis
+        Unique-vertex metadata for the first graph.
+    g2 : _GraphVertexAnalysis
+        Unique-vertex metadata for the second graph.
+
+    Returns
+    -------
+    _SharedVertexAnalysis
+        Shared vertices, their unique-vertex IDs in both graphs, endpoint roles, and occurrence counts.
+
+    Notes
+    -----
+    Vertex coordinate rows are viewed as fixed-width byte values so NumPy can perform a 1D set intersection without Python tuple conversion.
+    """
+    dtype = np.result_type(g1.verts.dtype, g2.verts.dtype)
+    g1_verts = np.ascontiguousarray(g1.verts, dtype=dtype)
+    g2_verts = np.ascontiguousarray(g2.verts, dtype=dtype)
+    # Encode each vertex row as one fixed-width value for `intersect1d`.
+    row_dtype = np.dtype((np.void, dtype.itemsize * g1_verts.shape[1]))
+    g1_keys = g1_verts.view(row_dtype).ravel()
+    g2_keys = g2_verts.view(row_dtype).ravel()
+    _, g1_ids, g2_ids = np.intersect1d(g1_keys, g2_keys, return_indices=True)
+    return _SharedVertexAnalysis(
+        verts=g1_verts[g1_ids],
+        g1_vert_ids=g1_ids.astype(np.intp, copy=False),
+        g2_vert_ids=g2_ids.astype(np.intp, copy=False),
+        g1_is_endpt=g1.is_endpt[g1_ids],
+        g2_is_endpt=g2.is_endpt[g2_ids],
+        g1_cnts=g1.vert_cnts[g1_ids],
+        g2_cnts=g2.vert_cnts[g2_ids],
+    )
 
 
 def find_graph_overlaps(
@@ -780,90 +893,154 @@ def find_graph_overlaps(
 
     Returns
     -------
-    vert_vert_ijs : NDArray[int | float]
+    endpt_endpt_ijs : NDArray[int | float]
         Coordinates that are endpoints in both graphs.
     intr_intr_ijs : NDArray[int | float]
         Coordinates that are interior vertices in both graphs.
-    g1_intr_g2_vert_ijs : NDArray[int | float]
+    g1_intr_g2_endpt_ijs : NDArray[int | float]
         Coordinates that are interior vertices in the first graph and endpoints in the second graph.
-    g1_vert_g2_intr_ijs : NDArray[int | float]
+    g1_endpt_g2_intr_ijs : NDArray[int | float]
         Coordinates that are endpoints in the first graph and interior vertices in the second graph.
     """
-    g1_coords, g1_is_endpts = _used_graph_vertices(g1_ijs, g1_endpts)
-    g2_coords, g2_is_endpts = _used_graph_vertices(g2_ijs, g2_endpts)
-
-    # Use a common type so the row keys are directly comparable
-    dtype = np.result_type(g1_coords.dtype, g2_coords.dtype)
-    g1_coords = np.ascontiguousarray(g1_coords, dtype=dtype)
-    g2_coords = np.ascontiguousarray(g2_coords, dtype=dtype)
-
-    # View each coordinate row as one value for a sparse set intersection
-    row_dtype = np.dtype((np.void, dtype.itemsize * g1_coords.shape[1]))
-    g1_keys = g1_coords.view(row_dtype).ravel()
-    g2_keys = g2_coords.view(row_dtype).ravel()
-
-    _, g1_ids, g2_ids = np.intersect1d(g1_keys, g2_keys, return_indices=True)
-
-    overlaps: npt.NDArray[np.number] = g1_coords[g1_ids]
-    g1_ep = g1_is_endpts[g1_ids]
-    g2_ep = g2_is_endpts[g2_ids]
+    shared = _find_shared_graph_vertices(
+        _analyse_graph_vertices(g1_ijs, g1_endpts),
+        _analyse_graph_vertices(g2_ijs, g2_endpts),
+    )
+    overlaps = shared.verts
 
     # Partition the overlaps by their roles in the two graphs
-    vert_vert = overlaps[g1_ep & g2_ep]
-    intr_intr = overlaps[~g1_ep & ~g2_ep]
-    g1_intr_g2_vert = overlaps[~g1_ep & g2_ep]
-    g1_vert_g2_intr = overlaps[g1_ep & ~g2_ep]
+    endpt_endpt = overlaps[shared.g1_is_endpt & shared.g2_is_endpt]
+    intr_intr = overlaps[~shared.g1_is_endpt & ~shared.g2_is_endpt]
+    g1_intr_g2_endpt = overlaps[~shared.g1_is_endpt & shared.g2_is_endpt]
+    g1_endpt_g2_intr = overlaps[shared.g1_is_endpt & ~shared.g2_is_endpt]
 
-    return (vert_vert, intr_intr, g1_intr_g2_vert, g1_vert_g2_intr)
+    return (endpt_endpt, intr_intr, g1_intr_g2_endpt, g1_endpt_g2_intr)
 
 
-def _find_overlap_neighbours(
-    ijs: npt.NDArray[np.number],
+def _find_shared_vertex_neighbours(
+    analysis: _GraphVertexAnalysis,
     endpts: npt.NDArray[np.integer],
-    overlaps: npt.NDArray[np.number],
+    shared_vert_ids: npt.NDArray[np.intp],
+    context: npt.NDArray[np.bool_],
 ) -> tuple[npt.NDArray[np.bool_], npt.NDArray[np.bool_]]:
-    """Finds overlaps preceded or followed by another overlap within an arc."""
-    prev_alsos = np.zeros(overlaps.shape[0], dtype=bool)
-    after_alsos = np.zeros(overlaps.shape[0], dtype=bool)
-    if overlaps.shape[0] == 0:
+    """
+    Finds adjacency between shared vertices using integer vertex IDs.
+
+    Parameters
+    ----------
+    analysis : _GraphVertexAnalysis
+        Unique-vertex metadata for the graph being inspected.
+    endpts : NDArray[int]
+        A-by-2 array of inclusive arc ranges in the graph's stored vertex array.
+    shared_vert_ids : NDArray[int]
+        Unique-vertex IDs in ``analysis`` for every vertex shared by the two
+        graphs.
+    context : NDArray[bool]
+        Mask over the shared vertices selecting those that may participate in
+        a shared run.
+
+    Returns
+    -------
+    prev_alsos : NDArray[bool]
+        Whether each shared vertex is immediately preceded in an arc by another
+        context vertex.
+    after_alsos : NDArray[bool]
+        Whether each shared vertex is immediately followed in an arc by another
+        context vertex.
+
+    Notes
+    -----
+    Adjacency is evaluated only between consecutive rows belonging to the same
+    arc. Integer lookups avoid repeatedly hashing coordinate tuples.
+    """
+    prev_alsos = np.zeros(shared_vert_ids.shape[0], dtype=bool)
+    after_alsos = np.zeros(shared_vert_ids.shape[0], dtype=bool)
+    if (shared_vert_ids.size == 0) or (endpts.shape[0] == 0):
         return prev_alsos, after_alsos
 
-    dtype = np.result_type(ijs.dtype, overlaps.dtype)
-    overlap_coords = np.ascontiguousarray(overlaps, dtype=dtype)
-    overlap_ids_by_coord = {tuple(coord): i for i, coord in enumerate(overlap_coords)}
+    # Translate graph-local unique IDs to positions in the shared arrays.
+    unique_to_shared = np.full(analysis.verts.shape[0], -1, dtype=np.intp)
+    unique_to_shared[shared_vert_ids] = np.arange(shared_vert_ids.size)
+    vert_shared_ids = np.full(analysis.vert_inv_ids.shape, -1, dtype=np.intp)
+    used = analysis.vert_inv_ids >= 0
+    vert_shared_ids[used] = unique_to_shared[analysis.vert_inv_ids[used]]
 
-    for start, end in endpts:
-        arc_coords = np.ascontiguousarray(ijs[start : end + 1], dtype=dtype)
-        overlap_ids = np.array(
-            [overlap_ids_by_coord.get(tuple(coord), -1) for coord in arc_coords],
-            dtype=np.intp,
-        )
-        matches = overlap_ids >= 0
-
-        # Record adjacency only between consecutive vertices of the same arc
-        prev_matches = matches[1:] & matches[:-1]
-        np.logical_or.at(prev_alsos, overlap_ids[1:][prev_matches], True)
-        np.logical_or.at(after_alsos, overlap_ids[:-1][prev_matches], True)
-
+    # A difference array marks consecutive stored rows belonging to one arc.
+    segment_counts = np.zeros(analysis.vert_inv_ids.size, dtype=np.int32)
+    np.add.at(segment_counts, endpts[:, 0], 1)
+    np.add.at(segment_counts, endpts[:, 1], -1)
+    same_arc = np.cumsum(segment_counts)[:-1] > 0
+    left = vert_shared_ids[:-1]
+    right = vert_shared_ids[1:]
+    valid = same_arc & (left >= 0) & (right >= 0)
+    valid_ids = np.flatnonzero(valid)
+    if valid_ids.size:
+        valid_ids = valid_ids[context[left[valid_ids]] & context[right[valid_ids]]]
+        np.logical_or.at(after_alsos, left[valid_ids], True)
+        np.logical_or.at(prev_alsos, right[valid_ids], True)
     return prev_alsos, after_alsos
 
 
-def _count_graph_vertex_occurrences(
+def _split_arcs_at_vertex_ids(
+    orders: npt.NDArray[np.integer],
     ijs: npt.NDArray[np.number],
     endpts: npt.NDArray[np.integer],
-    coords: npt.NDArray[np.number],
-) -> npt.NDArray[np.intp]:
+    analysis: _GraphVertexAnalysis,
+    split_coord_ids: npt.NDArray[np.intp],
+) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.number], npt.NDArray[np.integer]]:
     """
-    Counts coordinate occurrences within the inclusive ranges of all arcs.
+    Splits all requested interior vertices while rebuilding arrays once.
+
+    Parameters
+    ----------
+    orders : NDArray[int]
+        Order of every input arc.
+    ijs : NDArray[int | float]
+        V-by-n array of stored vertex coordinates.
+    endpts : NDArray[int]
+        A-by-2 array of inclusive arc ranges into `ijs`.
+    analysis : _GraphVertexAnalysis
+        Reusable metadata previously calculated from `ijs` and `endpts`.
+    split_coord_ids : NDArray[int]
+        Unique-vertex IDs in `analysis` that should become arc endpoints.
+
+    Returns
+    -------
+    orders : NDArray[int]
+        Orders of the rebuilt arcs, with the source order copied to every split portion.
+    ijs : NDArray[int | float]
+        Compact vertex array containing the rebuilt arcs.
+    endpts : NDArray[int]
+        Inclusive ranges of the rebuilt arcs in the returned vertex array.
+
+    Notes
+    -----
+    Every matching interior occurrence is split. The function collects views of all resulting portions and concatenates them once, avoiding repeated growth of the vertex, endpoint, and order arrays.
     """
-    counts = np.zeros(coords.shape[0], dtype=np.intp)
-    for start, end in endpts:
-        arc_coords = ijs[start : end + 1]
-        counts += np.sum(
-            np.all(arc_coords[:, np.newaxis, :] == coords[np.newaxis, :, :], axis=2),
-            axis=0,
-        )
-    return counts
+    if split_coord_ids.size == 0:
+        return orders, ijs, endpts
+
+    # Convert unique-coordinate IDs to a mask over stored vertex rows
+    split_vertices = np.isin(analysis.vert_inv_ids, split_coord_ids)
+    chunks: list[npt.NDArray[np.number]] = []
+    new_orders: list[np.generic | int] = []
+    lengths: list[int] = []
+    for order, (start, end) in zip(orders, endpts):
+        # Existing arc endpoints are boundaries already; split only interiors
+        interior = np.flatnonzero(split_vertices[start + 1 : end]) + start + 1
+        boundaries = np.concatenate(([start], interior, [end]))
+        for left, right in zip(boundaries[:-1], boundaries[1:]):
+            chunk = ijs[left : right + 1]
+            chunks.append(chunk)
+            lengths.append(chunk.shape[0])
+            new_orders.append(order)
+
+    # Materialise the compact graph once and derive its inclusive arc ranges
+    new_ijs = np.concatenate(chunks, axis=0)
+    ends = np.cumsum(lengths, dtype=np.intp) - 1
+    starts = np.concatenate(([0], ends[:-1] + 1))
+    new_endpts = np.column_stack((starts, ends)).astype(endpts.dtype, copy=False)
+    return np.asarray(new_orders, dtype=orders.dtype), new_ijs, new_endpts
 
 
 def solve_graph_overlaps(
@@ -885,9 +1062,7 @@ def solve_graph_overlaps(
     """
     Splits two graphs at shared vertices to align their arc endpoints.
 
-    Vertices that are endpoints in only one graph are inserted as endpoints in
-    the other graph. Interior overlaps are inserted into both graphs unless
-    they belong to a shared arc and `allows_arcs_overlap` is `True`.
+    Vertices that are endpoints in only one graph are inserted as endpoints in the other graph. Interior overlaps are inserted into both graphs unless they belong to a shared arc and `allows_arcs_overlap` is `True`.
 
     Parameters
     ----------
@@ -906,7 +1081,7 @@ def solve_graph_overlaps(
     allows_arcs_overlap : bool, optional
         Whether shared sequences of interior vertices may remain overlapping without being split into separate arcs.
         If true, consecutive overlap of vertices are isolated as a new arc, which will be identical between the two input graphs (aside form the directivity).
-        The default options is `True`.
+        The default option is `True`.
 
     Returns
     -------
@@ -923,64 +1098,47 @@ def solve_graph_overlaps(
     g2_endpts : NDArray[int]
         Updated inclusive endpoint indices of the arcs in the second graph.
     """
-    _, overlaps, g1_intr_g2_vert, g1_vert_g2_intr = find_graph_overlaps(
-        g1_ijs, g1_endpts, g2_ijs, g2_endpts
+    g1_analysis = _analyse_graph_vertices(g1_ijs, g1_endpts)
+    g2_analysis = _analyse_graph_vertices(g2_ijs, g2_endpts)
+    shared = _find_shared_graph_vertices(g1_analysis, g2_analysis)
+    g1_ep = shared.g1_is_endpt
+    g2_ep = shared.g2_is_endpt
+    intr_intr = ~g1_ep & ~g2_ep
+    g1_intr_g2_vert = ~g1_ep & g2_ep
+    g1_vert_g2_intr = g1_ep & ~g2_ep
+
+    split_both = intr_intr.copy()
+    if allows_arcs_overlap and np.any(intr_intr):
+        # Coordinates already duplicated across arcs, together with mismatched endpoints that this call will split, bound an existing shared run
+        context = intr_intr | (
+            (g1_ep & g2_ep & (shared.g1_cnts > 1) & (shared.g2_cnts > 1))
+            | (g1_intr_g2_vert & (shared.g2_cnts > 1))
+            | (g1_vert_g2_intr & (shared.g1_cnts > 1))
+        )
+        g1_prev, g1_after = _find_shared_vertex_neighbours(
+            g1_analysis, g1_endpts, shared.g1_vert_ids, context
+        )
+        g2_prev, g2_after = _find_shared_vertex_neighbours(
+            g2_analysis, g2_endpts, shared.g2_vert_ids, context
+        )
+        split_both = intr_intr & ~(g1_prev & g1_after & g2_prev & g2_after)
+
+    g1_split = g1_intr_g2_vert | split_both
+    g2_split = g1_vert_g2_intr | split_both
+    g1_orders, g1_ijs, g1_endpts = _split_arcs_at_vertex_ids(
+        g1_orders,
+        g1_ijs,
+        g1_endpts,
+        g1_analysis,
+        shared.g1_vert_ids[g1_split],
     )
-
-    # Match endpoints already present in the first graph by splitting the second
-    for new_endpt in g1_vert_g2_intr:
-        g2_orders, g2_ijs, g2_endpts = insert_endpt(
-            g2_orders, g2_ijs, g2_endpts, new_endpt
-        )
-
-    # Match endpoints already present in the second graph by splitting the first
-    for new_endpt in g1_intr_g2_vert:
-        g1_orders, g1_ijs, g1_endpts = insert_endpt(
-            g1_orders, g1_ijs, g1_endpts, new_endpt
-        )
-
-    if allows_arcs_overlap:
-        # Reclassify after endpoint-mismatch splitting.
-        # Endpoint/endpoint coordinates still provide the boundary context needed to recognise interior vertices as part of an existing shared run on later calls.
-        vert_vert, overlaps, _, _ = find_graph_overlaps(
-            g1_ijs, g1_endpts, g2_ijs, g2_endpts
-        )
-        # Endpoint coordinates bound an already-normalised shared run only when splitting has duplicated them across arcs in both graphs. 
-        # Natural outer endpoints that occur once must not hide the boundaries that still need to be split on the first pass.
-        g1_vert_vert_counts = _count_graph_vertex_occurrences(
-            g1_ijs, g1_endpts, vert_vert
-        )
-        g2_vert_vert_counts = _count_graph_vertex_occurrences(
-            g2_ijs, g2_endpts, vert_vert
-        )
-        shared_endpts = vert_vert[(g1_vert_vert_counts > 1) & (g2_vert_vert_counts > 1)]
-        shareds = np.unique(np.concatenate((shared_endpts, overlaps), axis=0), axis=0)
-
-        # Locate shared runs without assuming coordinates occur only once.
-        g1_prev_shareds, g1_after_shareds = _find_overlap_neighbours(
-            g1_ijs, g1_endpts, shareds
-        )
-        g2_prev_shareds, g2_after_shareds = _find_overlap_neighbours(
-            g2_ijs, g2_endpts, shareds
-        )
-
-        shared_ids = {tuple(coord): i for i, coord in enumerate(shareds)}
-        overlap_ids = np.array(
-            [shared_ids[tuple(coord)] for coord in overlaps], dtype=np.intp
-        )
-        need_endpts = ~(
-            g1_prev_shareds[overlap_ids]
-            & g1_after_shareds[overlap_ids]
-            & g2_prev_shareds[overlap_ids]
-            & g2_after_shareds[overlap_ids]
-        )
-
-    # Split isolated crossings, or every interior overlap when arcs may not overlap
-    for ivert, vert in enumerate(overlaps):
-        if allows_arcs_overlap and (not need_endpts[ivert]):  # type: ignore : Lazy evaluation should guarantee that unbounded need_endpts is never used
-            continue
-        g1_orders, g1_ijs, g1_endpts = insert_endpt(g1_orders, g1_ijs, g1_endpts, vert)
-        g2_orders, g2_ijs, g2_endpts = insert_endpt(g2_orders, g2_ijs, g2_endpts, vert)
+    g2_orders, g2_ijs, g2_endpts = _split_arcs_at_vertex_ids(
+        g2_orders,
+        g2_ijs,
+        g2_endpts,
+        g2_analysis,
+        shared.g2_vert_ids[g2_split],
+    )
     return g1_orders, g1_ijs, g1_endpts, g2_orders, g2_ijs, g2_endpts
 
 
