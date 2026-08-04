@@ -220,6 +220,126 @@ def test_remove_unused_vertices_handles_empty_graph():
     assert compact_endpts.dtype == endpts.dtype
 
 
+def test_construct_flowgraph_can_return_adjacent_arc_ranges():
+    dir_scheme = D8Directions(transform_codes=lambda x: x)
+    dirs = np.array([[3, 3, 3], [3, 3, 3], [1, 1, 0]])
+    valids = np.array([[T, F, T], [T, T, T], [T, T, T]])
+
+    orders, vertices, endpts = flowdir.construct_flowgraph(
+        dirs,
+        dir_scheme=dir_scheme,
+        backend="python",
+        min_order=1,
+        valids=valids,
+        remove_unused=True,
+    )
+
+    assert orders.shape[0] == endpts.shape[0]
+    np.testing.assert_array_equal(endpts[1:, 0], endpts[:-1, 1] + 1)
+    assert vertices.shape[0] == np.sum(endpts[:, 1] - endpts[:, 0] + 1)
+
+
+def test_insert_endpt_can_remove_unused_vertices():
+    orders = np.array([1], dtype=np.int8)
+    vertices = np.array([[99, 99], [0, 0], [1, 0], [2, 0], [98, 98]])
+    endpts = np.array([[1, 3]], dtype=np.int32)
+
+    out_orders, out_vertices, out_endpts = graphs_module.insert_endpt(
+        orders, vertices, endpts, 2, remove_unused=True
+    )
+
+    np.testing.assert_array_equal(out_orders, [1, 1])
+    np.testing.assert_array_equal(
+        out_vertices, [[0, 0], [1, 0], [1, 0], [2, 0]]
+    )
+    np.testing.assert_array_equal(out_endpts, [[0, 1], [2, 3]])
+
+
+def test_solve_graph_overlaps_can_remove_unused_vertices():
+    orders = np.array([1], dtype=np.int8)
+    g1_vertices = np.array([[99, 99], [0, 0], [1, 0], [98, 98]])
+    g2_vertices = np.array([[97, 97], [0, 1], [1, 1], [96, 96]])
+    endpts = np.array([[1, 2]], dtype=np.int32)
+
+    result = graphs_module.solve_graph_overlaps(
+        orders,
+        g1_vertices,
+        endpts,
+        orders,
+        g2_vertices,
+        endpts,
+        remove_unused=True,
+    )
+
+    _, out_g1_vertices, out_g1_endpts, _, out_g2_vertices, out_g2_endpts = result
+    np.testing.assert_array_equal(out_g1_vertices, [[0, 0], [1, 0]])
+    np.testing.assert_array_equal(out_g2_vertices, [[0, 1], [1, 1]])
+    np.testing.assert_array_equal(out_g1_endpts, [[0, 1]])
+    np.testing.assert_array_equal(out_g2_endpts, [[0, 1]])
+
+
+def test_simplify_flowgraph_can_remove_unused_vertices(monkeypatch):
+    from formosa.geomorphology.flowdir.graphs import graphs
+
+    orders = np.array([1, 2], dtype=np.int8)
+    vertices = np.array([[0, 0], [1, 0]])
+    endpts = np.array([[0, 0], [1, 1]], dtype=np.int32)
+    simplified_vertices = np.array(
+        [[0, 0], [1, 0], [99, 99], [2, 0], [3, 0]]
+    )
+    simplified_endpts = np.array([[0, 1], [3, 4]], dtype=np.int32)
+    keeps = np.ones(vertices.shape[0], dtype=bool)
+
+    def fake_simplify(*args, **kwargs):
+        return orders, simplified_vertices, simplified_endpts, keeps
+
+    monkeypatch.setattr(graphs, "_simplify_single_flowgraph", fake_simplify)
+    out_orders, out_vertices, out_endpts, out_keeps = flowdir.simplify_flowgraph(
+        orders, vertices, endpts, remove_unused=True
+    )
+
+    np.testing.assert_array_equal(out_orders, orders)
+    np.testing.assert_array_equal(out_keeps, keeps)
+    np.testing.assert_array_equal(
+        out_vertices, [[0, 0], [1, 0], [2, 0], [3, 0]]
+    )
+    np.testing.assert_array_equal(out_endpts, [[0, 1], [2, 3]])
+
+
+@pytest.mark.parametrize("collection_type", [list, tuple])
+def test_simplify_multiple_flowgraphs_can_remove_unused_vertices(
+    monkeypatch, collection_type
+):
+    orders = collection_type([np.array([1], dtype=np.int8)] * 2)
+    vertices = collection_type([np.array([[0, 0], [1, 0]])] * 2)
+    endpts = collection_type([np.array([[0, 1]], dtype=np.int32)] * 2)
+    simplified_vertices = collection_type(
+        [
+            np.array([[99, 99], [0, 0], [1, 0]]),
+            np.array([[2, 0], [3, 0], [98, 98]]),
+        ]
+    )
+    simplified_endpts = collection_type(
+        [np.array([[1, 2]], dtype=np.int32), np.array([[0, 1]], dtype=np.int32)]
+    )
+    keeps = collection_type([np.ones(2, dtype=bool)] * 2)
+
+    def fake_simplify(*args, **kwargs):
+        return orders, simplified_vertices, simplified_endpts, keeps
+
+    monkeypatch.setattr(graphs_module, "_simplify_multiple_flowgraphs", fake_simplify)
+    _, out_vertices, out_endpts, _ = flowdir.simplify_flowgraph(
+        orders, vertices, endpts, remove_unused=True
+    )
+
+    assert isinstance(out_vertices, collection_type)
+    assert isinstance(out_endpts, collection_type)
+    np.testing.assert_array_equal(out_vertices[0], [[0, 0], [1, 0]])
+    np.testing.assert_array_equal(out_vertices[1], [[2, 0], [3, 0]])
+    np.testing.assert_array_equal(out_endpts[0], [[0, 1]])
+    np.testing.assert_array_equal(out_endpts[1], [[0, 1]])
+
+
 def test_locate_invalid_graph_topogtaphy():
     vs = np.array([[0, 0], [1, 1], [1, 0], [0, 1]])
     endpts = np.array([[0, 1], [2, 3]])
