@@ -35,6 +35,7 @@ import formosa.geomorphology.flowdir as flowdir
 from formosa.geomorphology.flowdir.raster import raster as raster_module
 from formosa.geomorphology.flowdir.graphs import graphs as graphs_module
 from formosa.geomorphology.flowdir_f import flowdir_graphs as graphs_f
+from formosa.geomorphology.flowdir_f import flowdir_raster as raster_f
 from formosa.geomorphology.flowdir_f import utils as utils_f
 
 T = True
@@ -87,6 +88,47 @@ def test_fortran_direction_utilities_infer_input_shapes():
     lookup = utils_f.fill_offset_lookup(offsets, codes)
     assert np.array_equal(lookup[1], [0, 1])
     assert np.array_equal(lookup[5], [0, -1])
+
+
+def test_flat_synthetic_gradients_follow_breadth_first_layers():
+    labels = np.ones((5, 5), dtype=np.int32, order="F")
+    offsets = D8Directions().offsets.astype(np.int32, order="F")
+    centre = np.zeros(labels.shape, dtype=bool, order="F")
+    centre[2, 2] = True
+
+    pulling, err_code = raster_f.create_pulling_syn_grad(labels, centre, offsets)
+    assert err_code == 0
+    np.testing.assert_array_equal(
+        pulling,
+        np.array(
+            [
+                [3, 3, 3, 3, 3],
+                [3, 2, 2, 2, 3],
+                [3, 2, 1, 2, 3],
+                [3, 2, 2, 2, 3],
+                [3, 3, 3, 3, 3],
+            ],
+            dtype=np.int32,
+        ),
+    )
+
+    pushing, err_code = raster_f.create_pushing_syn_grad(labels, centre, offsets)
+    assert err_code == 0
+    np.testing.assert_array_equal(pushing, 4 - pulling)
+
+
+def test_flat_synthetic_gradients_handle_empty_inputs():
+    labels = np.zeros((2, 3), dtype=np.int32, order="F")
+    edges = np.zeros(labels.shape, dtype=bool, order="F")
+    offsets = D8Directions().offsets.astype(np.int32, order="F")
+
+    pushing, pushing_err = raster_f.create_pushing_syn_grad(labels, edges, offsets)
+    pulling, pulling_err = raster_f.create_pulling_syn_grad(labels, edges, offsets)
+
+    assert pushing_err == 0
+    assert pulling_err == 0
+    np.testing.assert_array_equal(pushing, 0)
+    np.testing.assert_array_equal(pulling, 0)
 
 
 def test_downstreamid_3x3():

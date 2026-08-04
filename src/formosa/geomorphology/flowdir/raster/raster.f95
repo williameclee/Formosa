@@ -402,35 +402,33 @@ contains
             !! Current distance from high edges, used to assign synthetic elevation values
         integer, allocatable :: maxdist(:)
             !! Maximum synthetic elevation value assigned to each flat region, used to adjust final z values to ensure they flow away from high edges
-        integer :: iedge, nedges
+        integer :: iedge, nedges, layer_end
             !! Index for iterating through high edge cells and total number of high edge cells in the queue
             !! As the algorithm proceeds, new cells will be added to the queue and nedges will be updated accordingly
         integer :: iofs
             !! Index for iterating through offsets
         integer :: ci, cj, ni, nj
             !! Rows/columns for current and neighbour cells
-        integer, parameter :: marker(2) = [-1, -1]
-            !! Special index used to mark the end of each iteration in the queue
-        logical*1 :: added_since_marker
-            !! Flag to track whether new cells have been added to the queue since the last marker, used to determine when to stop the algorithm
         logical*1, allocatable :: queued(:, :)
             !! Mask to track which cells have already been added to the queue, to avoid adding the same cell multiple times
         integer, allocatable :: high_edge_ijs(:, :)
             !! List of (i, j) indices for high edge cells to be processed in the algorithm, used as a queue for breadth-first search
         integer :: max_queue_size
-            !! Maximum size of the queue buffer for high edge cells ('high_edges_ijs', including the marker)
+            !! Maximum size of the queue buffer for high edge cells
 
         err_code = 0
-        max_queue_size = count(flats /= 0) + max(nrows, ncols)*(maxval(flats) - minval(flats) + 1)
+        ! Each labelled flat cell is queued at most once. Track breadth-first
+        ! layers with an index instead of storing layer markers in the queue.
+        max_queue_size = count(flats /= 0)
+        z = 0
+        if (max_queue_size == 0) return
         allocate (high_edge_ijs(2, max_queue_size), stat=err_code)
         if (err_code /= 0) then
             err_code = 2
             return
         end if
 
-        high_edge_ijs = 0
         nedges = 0
-        z = 0
         call mask2ij(high_edges, high_edge_ijs, size(high_edge_ijs, dim=2), nedges, err_code)
         if (err_code /= 0) return
         if (nedges == 0) then
@@ -438,9 +436,6 @@ contains
             deallocate (high_edge_ijs)
             return
         end if
-
-        nedges = nedges + 1
-        high_edge_ijs(:, nedges) = marker
 
         nflats = maxval(flats)
         allocate (maxdist(nflats), stat=err_code)
@@ -456,10 +451,8 @@ contains
             return
         end if
         queued = .false.
-        added_since_marker = .false.
-
         ! Mark initial seeds as queued
-        do iedge = 1, nedges - 1
+        do iedge = 1, nedges
             ci = high_edge_ijs(1, iedge)
             cj = high_edge_ijs(2, iedge)
             queued(ci, cj) = .true.
@@ -468,29 +461,12 @@ contains
         ! After this the first loop, z values decreases towards high edges (opposite of desired)
         dist = 1
         iedge = 1
+        layer_end = nedges
         do while (iedge <= nedges)
             ci = high_edge_ijs(1, iedge)
             cj = high_edge_ijs(2, iedge)
             iedge = iedge + 1
 
-            ! Check for marker to separate iterations
-            if (ci == marker(1) .and. cj == marker(2)) then
-                ! Break if no more cells to process
-                if (.not. added_since_marker) exit
-                ! Skip if encountered marker
-                dist = dist + 1
-                nedges = nedges + 1
-                ! Check buffer size
-                if (nedges > max_queue_size) then
-                    err_code = 3
-                    return
-                end if
-                high_edge_ijs(:, nedges) = marker
-                added_since_marker = .false.
-                cycle
-            end if
-
-            ! Check bounds after marker check
             if (ci < 1 .or. ci > nrows .or. cj < 1 .or. cj > ncols) then
                 err_code = 3
                 return
@@ -528,8 +504,12 @@ contains
                 end if
                 high_edge_ijs(:, nedges) = [ni, nj]
                 queued(ni, nj) = .true.
-                added_since_marker = .true.
             end do
+
+            if (iedge > layer_end) then
+                dist = dist + 1
+                layer_end = nedges
+            end if
         end do
         deallocate (high_edge_ijs)
         deallocate (queued)
@@ -570,11 +550,7 @@ contains
         ! Local variables
         integer :: iofs
             !! Index for iterating through offsets
-        integer, parameter :: marker(2) = [-1, -1]
-            !! Special marker to indicate the end of an iteration in the queue
-        logical*1 :: added_since_marker
-            !! Flag to track whether new cells have been added to the queue since the last marker, used to determine when to stop the algorithm
-        integer :: iedge, nedges
+        integer :: iedge, nedges, layer_end
             !! Index for iterating through low edge cells and total number of low edge cells in the queue
         integer :: dist
             !! Current distance from low edges, used to assign synthetic elevation values
@@ -585,10 +561,14 @@ contains
         integer, allocatable :: low_edges_ijs(:, :)
             !! List of (i, j) indices for low edge cells to be processed in the algorithm, used as a queue for breadth-first search
         integer :: max_queue_size
-            !! Maximum size of the queue buffer for low edge cells ('low_edges_ijs', including the marker)
+            !! Maximum size of the queue buffer for low edge cells
 
         err_code = 0
-        max_queue_size = count(flats /= 0) + max(nrows, ncols)*maxval(flats)
+        ! Each labelled flat cell is queued at most once. Track breadth-first
+        ! layers with an index instead of storing layer markers in the queue.
+        max_queue_size = count(flats /= 0)
+        z = 0
+        if (max_queue_size == 0) return
         allocate (low_edges_ijs(2, max_queue_size), stat=err_code)
         if (err_code /= 0) then
             err_code = 2
@@ -596,11 +576,10 @@ contains
         end if
         call mask2ij(low_edges, low_edges_ijs, size(low_edges_ijs, dim=2), nedges, err_code)
         if (err_code /= 0) return
-        nedges = nedges + 1
-        low_edges_ijs(:, nedges) = marker
-
-        ! Initialise z to zero
-        z = 0
+        if (nedges == 0) then
+            deallocate (low_edges_ijs)
+            return
+        end if
         allocate (queued(nrows, ncols), stat=err_code)
         if (err_code /= 0) then
             err_code = 2
@@ -609,7 +588,7 @@ contains
         queued = .false.
 
         ! Mark initial seeds as queued
-        do iedge = 1, nedges - 1
+        do iedge = 1, nedges
             ci = low_edges_ijs(1, iedge)
             cj = low_edges_ijs(2, iedge)
             queued(ci, cj) = .true.
@@ -618,29 +597,12 @@ contains
         ! Loop through all low_edges to find cells flowing into flats
         iedge = 1
         dist = 1
-        added_since_marker = .false.
+        layer_end = nedges
         do while (iedge <= nedges)
             ci = low_edges_ijs(1, iedge)
             cj = low_edges_ijs(2, iedge)
             iedge = iedge + 1
 
-            if (ci == marker(1) .and. cj == marker(2)) then
-                ! Break if no more cells to process
-                if (.not. added_since_marker) exit
-                ! Skip if encountered marker
-                dist = dist + 1
-                nedges = nedges + 1
-                ! Check buffer size
-                if (nedges > max_queue_size) then
-                    err_code = 3
-                    return
-                end if
-                low_edges_ijs(:, nedges) = marker
-                added_since_marker = .false.
-                cycle
-            end if
-
-            ! Check bounds after marker check
             if (ci < 1 .or. ci > nrows .or. cj < 1 .or. cj > ncols) then
                 err_code = 3
                 return
@@ -676,8 +638,12 @@ contains
                 end if
                 low_edges_ijs(:, nedges) = [ni, nj]
                 queued(ni, nj) = .true.
-                added_since_marker = .true.
             end do
+
+            if (iedge > layer_end) then
+                dist = dist + 1
+                layer_end = nedges
+            end if
         end do
         deallocate (queued)
         deallocate (low_edges_ijs)
