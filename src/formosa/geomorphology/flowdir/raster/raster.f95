@@ -1733,6 +1733,8 @@ contains
             !! When incrementing, each ID is of 'maxlen' apart such that 'path1id + ilen' is unique, which allows for more efficient confluence lookup.
         integer, allocatable :: path1(:, :), path2(:, :), visited(:, :)
         logical*1, allocatable :: is_max_dist(:, :)
+            !! Mask of cells whose maximum branch distance has been finalized
+        logical*1 :: same_basin, ci_is_max_dist, ni_is_max_dist
         integer :: alloc_stat
             !! Per-thread allocation status code
         integer :: inner_err_code
@@ -1760,12 +1762,14 @@ contains
         allocate (is_max_dist(nrows, ncols), stat=err_code)
         if (err_code /= 0) then
             err_code = 2
+            deallocate (diffs)
             return
         end if
-        maxbdists = 0.0
         is_max_dist = .false.
+        maxbdists = 0.0
         !$omp PARALLEL DEFAULT(SHARED) &
-        !$omp PRIVATE(ci, cj, ni, nj, nneighbour, dists) &
+        !$omp PRIVATE(ci, cj, ni, nj, nneighbour, dists, same_basin) &
+        !$omp PRIVATE(ci_is_max_dist, ni_is_max_dist) &
         !$omp PRIVATE(path1, path2, path1id, path2id, visited, alloc_stat, inner_err_code)
         allocate (path1(2, maxlen), path2(2, maxlen), &
                   visited(nrows, ncols), stat=alloc_stat)
@@ -1790,12 +1794,19 @@ contains
                     if (ni < 1 .or. ni > nrows .or. nj < 1 .or. nj > ncols) cycle
                     ! Check mask
                     if (.not. valids(ni, nj)) cycle
-                    if (is_max_dist(ci, cj) .and. is_max_dist(ni, nj)) cycle
+                    !$omp ATOMIC READ
+                    ci_is_max_dist = is_max_dist(ci, cj)
+                    !$omp END ATOMIC
+                    !$omp ATOMIC READ
+                    ni_is_max_dist = is_max_dist(ni, nj)
+                    !$omp END ATOMIC
+                    if (ci_is_max_dist .and. ni_is_max_dist) cycle
+                    same_basin = logical(basin_ids(ni, nj) == basin_ids(ci, cj), kind=1)
                     call inner_compute_confluence_dist( &
                         dists, ci, cj, ni, nj, dirs, x, y, diffs, &
                         maxpathlen=maxlen, path1=path1, path2=path2, &
                         visited=visited, id1=path1id, id2=path2id, &
-                        check_flag=logical(basin_ids(ni, nj) == basin_ids(ci, cj), kind=1), &
+                        check_flag=same_basin, &
                         err_code=inner_err_code)
                     if (inner_err_code /= 0) then
                         !$omp critical
@@ -1803,15 +1814,20 @@ contains
                         !$omp end critical
                         cycle
                     end if
+                    !$omp ATOMIC UPDATE
                     maxbdists(ci, cj) = max(maxbdists(ci, cj), dists(1))
+                    !$omp END ATOMIC
                     !$omp ATOMIC UPDATE
                     maxbdists(ni, nj) = max(maxbdists(ni, nj), dists(2))
                     !$omp END ATOMIC
 
-                    ! If different basin ids, mark as max distance computed
-                    if (basin_ids(ni, nj) /= basin_ids(ci, cj)) then
+                    if (.not. same_basin) then
+                        !$omp ATOMIC WRITE
                         is_max_dist(ci, cj) = .true.
+                        !$omp END ATOMIC
+                        !$omp ATOMIC WRITE
                         is_max_dist(ni, nj) = .true.
+                        !$omp END ATOMIC
                     end if
 
                     if (path1id > 2147483640 - 2*maxlen) then
