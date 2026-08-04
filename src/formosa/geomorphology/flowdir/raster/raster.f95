@@ -1444,7 +1444,7 @@ contains
             !! Queue of (i, j) indices awaiting processing
         integer :: alloc_stat
             !! Allocation status code
-        integer :: ci, cj, ni, nj, dir_code
+        integer :: ci, cj, ni, nj
             !! Rows/columns for current and downstream cells
         integer :: iseed, nseeds
             !! Current queue position and final occupied queue position
