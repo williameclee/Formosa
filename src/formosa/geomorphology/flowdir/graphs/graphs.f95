@@ -13,6 +13,8 @@
 !     - Made topology intersection scans count all violations past output capacity
 !   2026-08-03, En-Chi Lee (williameclee@gmail.com)
 !     - Explicitly handled Python uint8 -> FORTRAN INTEGER*1 conversion/interpretation in 'fill_offset_lookup'
+!   2026-08-04, En-Chi Lee (williameclee@gmail.com)
+!     - Moved error handling to Python
 !!!
 
 module flowdir_graphs
@@ -25,7 +27,7 @@ contains
     subroutine construct_flowgraph( &
         dirs, valids, orders, seeds, indegs, nrows, ncols, &
         offsets, codes, noffsets, preserve_junction, ncells, &
-        narcs, nvertices, arc_orders, vertex_ijs, arc_endpts)
+        narcs, nvertices, arc_orders, vertex_ijs, arc_endpts, err_code)
         implicit none
         ! Arguments
         integer, intent(in) :: nrows, ncols
@@ -62,6 +64,10 @@ contains
         integer, intent(out) :: arc_endpts(2, ncells)
             !! Where each arc starts and ends in the 'vertex_ijs' array
             !! Note only the first 'narcs' columns contain the actual data
+        integer, intent(out) :: err_code
+            !! Code indicating the status of the result
+            !!   - 0: Programme executed properly
+            !!   - 3: Vertex output buffer capacity was exceeded
         ! Local variables
         integer*1 :: noflow_code
             !! Code corresponding to noflow direction, used to identify sink cells
@@ -81,6 +87,10 @@ contains
             !! Flag of whether the downstream neighbour is a valid cell, and whether we have arrived at the end of the arc
         logical*1, allocatable :: seens(:, :)
             !! Mask to identify which cells have already been seen
+
+        err_code = 0
+        narcs = 0
+        nvertices = 0
 
         ! Create lookup tables for offsets
         allocate (offset_lookup(0:255, 2))
@@ -151,9 +161,8 @@ contains
                         end if
                     end if
                     if (ivertex > size(vertex_ijs, 2)) then
-                        print *, "[CONSTRUCT_FLOWGRAPH] Error: vertex buffer overflow "// &
-                            "(size:", ivertex, ", allocated:", size(vertex_ijs, 2), ")"
-                        stop
+                        err_code = 3
+                        exit
                     end if
                     vertex_ijs(:, ivertex) = [ni, nj]
                     arc_endpts(2, iarc) = ivertex
@@ -168,15 +177,16 @@ contains
 
                 seens(ni, nj) = .true.
                 if (ivertex > size(vertex_ijs, 2)) then
-                    print *, "[CONSTRUCT_FLOWGRAPH] Error: vertex buffer overflow "// &
-                        "(size:", ivertex, ", allocated:", size(vertex_ijs, 2), ")"
-                    stop
+                    err_code = 3
+                    exit
                 end if
                 vertex_ijs(:, ivertex) = [ni, nj]
                 ivertex = ivertex + 1
                 ci = ni
                 cj = nj
             end do
+
+            if (err_code /= 0) exit
 
             iarc = iarc + 1
         end do

@@ -9,6 +9,8 @@
 #     - Updated `geomorphology.flowdir` submodule path
 #   2026-08-03, En-Chi Lee (williameclee@gmail.com)
 #     - Added arguments `return_flat_index` and `oob_is_okay` to `compute_downstream_indices`
+#   2026-08-04, En-Chi Lee (williameclee@gmail.com)
+#     - Added unified FORTRAN error code handler
 
 import numpy as np
 
@@ -17,7 +19,34 @@ from formosa.geomorphology.flowdir.d8directions import D8Directions
 import warnings
 
 import numpy.typing as npt
-from typing import Optional
+from typing import Mapping, Optional, TypeVar
+
+
+def raise_fortran_error(
+    operation: str,
+    err_code: int,
+    errors: Optional[Mapping[int, tuple[type[Exception], str]]] = None,
+) -> None:
+    """
+    Raises the Python exception corresponding to a Fortran status code.
+
+    The default project convention is 0 for success, 1 for invalid input,
+    2 for allocation failure, and 3 for array or index overflow. A
+    routine-specific mapping may refine exception types and text
+    without changing those numeric meanings.
+    """
+    if err_code == 0:
+        return
+
+    error_map = errors or {
+        1: (ValueError, "invalid input"),
+        2: (MemoryError, "unable to allocate backend workspace"),
+        3: (RuntimeError, "array or index capacity exceeded"),
+    }
+    exception, detail = error_map.get(
+        int(err_code), (RuntimeError, "unknown backend failure")
+    )
+    raise exception(f"Fortran {operation} failed: {detail} (error code {err_code}).")
 
 
 def get_neighbour_values(

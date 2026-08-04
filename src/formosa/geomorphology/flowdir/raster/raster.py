@@ -32,7 +32,7 @@
 import numpy as np
 
 from formosa.geomorphology.flowdir.d8directions import D8Directions
-from formosa.geomorphology.flowdir.utils import get_neighbour_values
+from formosa.geomorphology.flowdir.utils import get_neighbour_values, raise_fortran_error
 
 try:
     from formosa.geomorphology.flowdir_f import flowdir_raster as raster_f
@@ -244,12 +244,13 @@ def label_flats(
     else:
         valids = np.ones(dem.shape, dtype=bool, order="F")
 
-    labels = raster_f.label_flats(
+    labels, err_code = raster_f.label_flats(
         dem.astype(np.float32, order="F"),
         seeds.astype(bool, order="F"),
         valids.astype(bool, order="F"),
         dir_scheme.offsets.astype(np.int32, order="F"),
     )
+    raise_fortran_error("label_flats", err_code)
 
     return labels.astype(np.int32, order="F")
 
@@ -363,11 +364,12 @@ def create_pushing_syn_grad(
         labels.shape == high_edges.shape
     ), f"Shapes for labels ({labels.shape}) and high_edges ({high_edges.shape}) do not match."
 
-    z_syn = raster_f.create_pushing_syn_grad(
+    z_syn, err_code = raster_f.create_pushing_syn_grad(
         labels.astype(np.int32, order="F"),
         high_edges.astype(bool, order="F"),
         dir_scheme.offsets.astype(np.int32, order="F"),
     )
+    raise_fortran_error("create_pushing_syn_grad", err_code)
     return z_syn.astype(np.int32, order="F")
 
 
@@ -403,11 +405,12 @@ def create_pulling_syn_grad(
     ValueError
         If the shapes of the input arrays do not match the expected dimensions.
     """
-    z_syn = raster_f.create_pulling_syn_grad(
+    z_syn, err_code = raster_f.create_pulling_syn_grad(
         labels.astype(np.int32, order="F"),
         low_edges.astype(bool, order="F"),
         dir_scheme.offsets.astype(np.int32, order="F"),
     )
+    raise_fortran_error("create_pulling_syn_grad", err_code)
     return z_syn
 
 
@@ -625,18 +628,6 @@ def count_indegree(
     return indegs.astype(np.int8, order="F")
 
 
-def _raise_acyclic_flowdir_error(err_code: int) -> None:
-    """
-    Translates a FORTRAN acyclic-flow status into a Python exception.
-    """
-    if err_code == 1:
-        raise RuntimeError("Acyclic-flow traversal queue overflowed.")
-    elif err_code == 2:
-        raise MemoryError("Unable to allocate acyclic-flow traversal workspace.")
-    elif err_code != 0:
-        raise RuntimeError(f"Unexpected acyclic-flow traversal error code: {err_code}.")
-
-
 def _find_acyclic_flowdirs_fortran(
     dirs: npt.NDArray[np.integer],
     indegs: npt.NDArray[np.integer],
@@ -660,7 +651,7 @@ def _find_acyclic_flowdirs_fortran(
         dir_scheme.offsets.astype(np.int32, order="F"),
         dir_scheme.codes.astype(np.uint8, order="F"),
     )
-    _raise_acyclic_flowdir_error(err_code)
+    raise_fortran_error("find_acyclic_flowdirs", err_code)
     return acyclics.astype(bool, order="F")
 
 
@@ -861,7 +852,7 @@ def compute_flow_accumulation(
             if weights is None:
                 weights = np.where(valids, 1.0, 0.0).astype(np.float32)
 
-            accums = raster_f.compute_flow_accumulation(
+            accums, err_code = raster_f.compute_flow_accumulation(
                 dirs.astype(np.uint8, order="F"),
                 valids.astype(bool, order="F"),
                 weights.astype(np.float32, order="F"),
@@ -869,6 +860,7 @@ def compute_flow_accumulation(
                 dir_scheme.offsets.astype(np.int32, order="F"),
                 dir_scheme.codes.astype(np.uint8, order="F"),
             )
+            raise_fortran_error("compute_flow_accumulation", err_code)
 
     return accums.astype(np.float32, order="F")
 
@@ -950,13 +942,14 @@ def compute_flow_strahler_order(
                 dirs=dirs, dir_scheme=dir_scheme, valids=valids, indegs=indegs
             )
         case "fortran":
-            orders = raster_f.compute_flow_strahler_order(
+            orders, err_code = raster_f.compute_flow_strahler_order(
                 dirs.astype(np.uint8, order="F"),
                 valids.astype(bool, order="F"),
                 indegs.astype(np.int8, order="F"),
                 dir_scheme.offsets.astype(np.int32, order="F"),
                 dir_scheme.codes.astype(np.uint8, order="F"),
             )
+            raise_fortran_error("compute_flow_strahler_order", err_code)
     orders[~valids] = 0
     return orders.astype(np.uint8, order="F")
 
@@ -1031,7 +1024,7 @@ def compute_dist2source(
     else:
         raise TypeError(f"Indegree must be a NumPy array (got {type(indegs)}).")
 
-    dists = raster_f.compute_dist2source(
+    dists, err_code = raster_f.compute_dist2source(
         dirs.astype(np.uint8, order="F"),
         valids.astype(bool, order="F"),
         x.astype(np.float32, order="F"),
@@ -1040,6 +1033,7 @@ def compute_dist2source(
         dir_scheme.offsets.astype(np.int32, order="F"),
         dir_scheme.codes.astype(np.uint8, order="F"),
     )
+    raise_fortran_error("compute_dist2source", err_code)
     return dists.astype(np.float32, order="F")
 
 
@@ -1092,12 +1086,13 @@ def label_watersheds(
                     f"Valid mask must be a NumPy array (got {type(valids)})."
                 )
 
-            watersheds = raster_f.label_watersheds(
+            watersheds, err_code = raster_f.label_watersheds(
                 dirs.astype(np.uint8, order="F"),
                 valids.astype(bool, order="F"),
                 dir_scheme.offsets.astype(np.int32, order="F"),
                 dir_scheme.codes.astype(np.uint8, order="F"),
             )
+            raise_fortran_error("label_watersheds", err_code)
     return watersheds.astype(np.int32, order="F")
 
 
@@ -1151,7 +1146,7 @@ def compute_dist2sink(
         y = np.arange(dirs.shape[0], dtype=np.float32)
         x, y = np.meshgrid(x, y, indexing="xy")
 
-    dists = raster_f.compute_dist2sink(
+    dists, err_code = raster_f.compute_dist2sink(
         dirs.astype(np.uint8, order="F"),
         x.astype(np.float32, order="F"),
         y.astype(np.float32, order="F"),
@@ -1159,6 +1154,7 @@ def compute_dist2sink(
         dir_scheme.offsets.astype(np.int32, order="F"),
         dir_scheme.codes.astype(np.uint8, order="F"),
     )
+    raise_fortran_error("compute_dist2sink", err_code)
     return dists.astype(np.float32, order="F")
 
 

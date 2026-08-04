@@ -20,6 +20,8 @@
 #     - Updated tests to match the updated `simplify_flowgraph` interface; also added additional tests for the new interface
 #   2026-08-03, En-Chi Lee (williameclee@gmail.com)
 #     - Added test cases for function `find_acyclic_flowdirs`
+#   2026-08-04, En-Chi Lee (williameclee@gmail.com)
+#     - Added test cases for FORTRAN error code handling
 
 import warnings
 from types import SimpleNamespace
@@ -406,6 +408,84 @@ def test_network_graph_3x3():
     for i, exp_ij in enumerate(exp_ijs):
         np.testing.assert_array_equal(
             vertex_ijs[arc_endpts[i, 0] : arc_endpts[i, 1] + 1], exp_ij
+        )
+
+
+def test_construct_flowgraph_fortran_returns_buffer_overflow_code():
+    dirs = np.array([[1, 1, 0]], dtype=np.uint8, order="F")
+    valids = np.ones((1, 3), dtype=bool, order="F")
+    orders = np.ones((1, 3), dtype=np.int16, order="F")
+    seeds = np.array([[True, False, False]], dtype=bool, order="F")
+    indegs = np.array([[0, 1, 1]], dtype=np.int8, order="F")
+    offsets = np.array([[0, 1], [0, 0]], dtype=np.int32, order="F")
+    codes = np.array([1, 0], dtype=np.uint8, order="F")
+
+    *_, err_code = graphs_f.construct_flowgraph(
+        dirs,
+        valids,
+        orders,
+        seeds,
+        indegs,
+        offsets,
+        codes,
+        True,
+        1,
+    )
+
+    assert err_code == 3
+
+
+def test_construct_flowgraph_translates_fortran_error(monkeypatch):
+    def fake_construct(*args):
+        return (
+            0,
+            0,
+            np.zeros(1, dtype=np.int16),
+            np.zeros((2, 2), dtype=np.int32),
+            np.zeros((2, 1), dtype=np.int32),
+            3,
+        )
+
+    monkeypatch.setattr(
+        graphs_module,
+        "graphs_f",
+        SimpleNamespace(construct_flowgraph=fake_construct),
+    )
+
+    with pytest.raises(RuntimeError, match=r"construct_flowgraph.*error code 3"):
+        flowdir.construct_flowgraph(
+            np.array([[0]], dtype=np.uint8),
+            orders=np.ones((1, 1), dtype=np.uint8),
+            min_order=1,
+            backend="fortran",
+        )
+
+
+@pytest.mark.parametrize(
+    ("err_code", "exception", "detail"),
+    [
+        (1, ValueError, "invalid input"),
+        (2, MemoryError, "allocate backend workspace"),
+        (3, RuntimeError, "array or index capacity exceeded"),
+        (99, RuntimeError, "unknown"),
+    ],
+)
+def test_label_flats_translates_fortran_errors(
+    monkeypatch, err_code, exception, detail
+):
+    def fake_label(*args):
+        return np.zeros((1, 1), dtype=np.int32), err_code
+
+    monkeypatch.setattr(
+        raster_module,
+        "raster_f",
+        SimpleNamespace(label_flats=fake_label),
+    )
+
+    with pytest.raises(exception, match=rf"label_flats.*{detail}.*{err_code}"):
+        raster_module.label_flats(
+            np.zeros((1, 1), dtype=np.float32),
+            np.ones((1, 1), dtype=bool),
         )
 
 
@@ -1221,7 +1301,12 @@ def test_simplify_multiple_flowgraphs_ignores_identical_arcs():
 
 @pytest.mark.parametrize(
     ("err_code", "exception"),
-    [(1, RuntimeError), (2, MemoryError), (99, RuntimeError)],
+    [
+        (1, ValueError),
+        (2, MemoryError),
+        (3, RuntimeError),
+        (99, RuntimeError),
+    ],
 )
 def test_find_acyclic_flowdirs_translates_fortran_errors(
     monkeypatch, err_code, exception
