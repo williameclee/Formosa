@@ -42,8 +42,7 @@ def _reference_max_branch_dist(dirs, valids, x, y, dir_scheme):
             if (ni, nj) in seen:
                 raise ValueError("cycle")
             cumulative.append(
-                cumulative[-1]
-                + np.hypot(x[ni, nj] - x[i, j], y[ni, nj] - y[i, j])
+                cumulative[-1] + np.hypot(x[ni, nj] - x[i, j], y[ni, nj] - y[i, j])
             )
             path.append((ni, nj))
             seen.add((ni, nj))
@@ -51,8 +50,7 @@ def _reference_max_branch_dist(dirs, valids, x, y, dir_scheme):
         return path, np.asarray(cumulative)
 
     paths = {
-        (int(i), int(j)): path_from(int(i), int(j))
-        for i, j in np.argwhere(valids)
+        (int(i), int(j)): path_from(int(i), int(j)) for i, j in np.argwhere(valids)
     }
     result = np.zeros(dirs.shape, dtype=np.float32)
     for (i, j), (path1, dist1) in paths.items():
@@ -66,7 +64,9 @@ def _reference_max_branch_dist(dirs, valids, x, y, dir_scheme):
                     (index for index, cell in enumerate(path1) if cell in path2_ids),
                     None,
                 )
-                branch_dist = dist1[-1] if confluence_index is None else dist1[confluence_index]
+                branch_dist = (
+                    dist1[-1] if confluence_index is None else dist1[confluence_index]
+                )
                 result[i, j] = max(result[i, j], branch_dist)
     return result
 
@@ -104,10 +104,42 @@ def test_max_branch_distance_matches_direct_path_reference():
         valids=valids,
         x=x,
         y=y,
-        watershed_labels=np.ones(shape, dtype=np.int32),
         dir_scheme=dir_scheme,
     )
     np.testing.assert_allclose(actual, expected, rtol=2e-6, atol=2e-6)
+
+
+def test_max_branch_distance_propagates_from_sink_to_non_sink_cells():
+    dir_scheme = D8Directions(transform_codes=lambda value: value)
+    dirs = np.array([[2, 3], [1, 0]], dtype=np.uint8, order="F")
+
+    actual = compute_dist2conf_max(
+        dirs,
+        valids=np.ones(dirs.shape, dtype=bool, order="F"),
+        dir_scheme=dir_scheme,
+    )
+
+    np.testing.assert_allclose(actual, [[np.sqrt(2), 1.0], [1.0, 0.0]])
+
+
+def test_max_branch_distance_parallel_metadata_propagation():
+    dir_scheme = D8Directions(transform_codes=lambda value: value)
+    code_by_offset = {
+        tuple(offset): int(code)
+        for code, offset in zip(dir_scheme.codes, dir_scheme.offsets)
+    }
+    ncols = 32768
+    dirs = np.full((2, ncols), code_by_offset[(0, 0)], dtype=np.uint8, order="F")
+    dirs[0, :] = code_by_offset[(1, 0)]
+
+    actual = compute_dist2conf_max(
+        dirs,
+        valids=np.ones(dirs.shape, dtype=bool, order="F"),
+        dir_scheme=dir_scheme,
+    )
+
+    np.testing.assert_array_equal(actual[0, :], 1.0)
+    np.testing.assert_array_equal(actual[1, :], 0.0)
 
 
 def test_max_branch_distance_reports_cycle():

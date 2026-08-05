@@ -1945,7 +1945,10 @@ contains
                     ! Calculate distance to sink based on its downstream's distance to sink
                     cid = topo_order(sorder)
                     dsid = ds_ids(cid)
-                    if (dsid == 0) sink_ids(cid) = cid; cycle
+                    if (dsid == 0) then
+                        sink_ids(cid) = cid
+                        cycle
+                    end if
                     depths(cid) = depths(dsid) + 1
                     sink_ids(cid) = sink_ids(dsid)
                     ci = mod(cid - 1, nrows) + 1
@@ -1961,7 +1964,10 @@ contains
                 do sorder = lvl_start, lvl_end
                     cid = topo_order(sorder)
                     dsid = ds_ids(cid)
-                    if (dsid == 0) sink_ids(cid) = cid; cycle
+                    if (dsid == 0) then
+                        sink_ids(cid) = cid
+                        cycle
+                    end if
                     depths(cid) = depths(dsid) + 1
                     sink_ids(cid) = sink_ids(dsid)
                     ci = mod(cid - 1, nrows) + 1
