@@ -19,13 +19,13 @@
 
 module utils
     use iso_c_binding, only: c_int8_t
-    implicit none
+    implicit none(type, external)
 contains
     pure function ij2id_checked(i, j, nrows, ncols) result(cell_id)
         !! Encodes a valid one-based grid coordinate as a linear cell ID.
         !! Zero is returned for an out-of-bounds coordinate and is never a
         !! valid cell ID.
-        implicit none
+        implicit none(type, external)
         integer, intent(in) :: i, j, nrows, ncols
         integer :: cell_id
 
@@ -42,7 +42,7 @@ contains
 
     pure subroutine id2ij_checked(cell_id, nrows, ncols, i, j, is_valid)
         !! Decodes a one-based linear cell ID, rejecting IDs outside the grid.
-        implicit none
+        implicit none(type, external)
         integer, intent(in) :: cell_id, nrows, ncols
         integer, intent(out) :: i, j
         logical(kind=1), intent(out) :: is_valid
@@ -61,7 +61,7 @@ contains
 
     pure subroutine mask2id(mask, ids, nids, cnt, err_code)
         !! Converts a mask to validated one-based linear cell IDs.
-        implicit none
+        implicit none(type, external)
         logical(kind=1), intent(in) :: mask(:, :)
         integer, intent(in) :: nids
         integer, intent(out) :: ids(nids), cnt, err_code
@@ -89,7 +89,7 @@ contains
         !! the actual number of valid indices found will be returned in
         !! 'cnt'. If the number of valid indices exceeds nij, the
         !! remaining will be ignored.
-        implicit none
+        implicit none(type, external)
         ! Arguments
         logical(kind=1), intent(in) :: mask(:, :)
             !! Input logical mask
@@ -130,7 +130,7 @@ contains
         !! offsets, find the code that corresponds to the no-flow
         !! direction (0, 0). If not found, return the provided default
         !! no-flow code or 0 if not provided.
-        implicit none
+        implicit none(type, external)
         ! Arguments
         integer, intent(in) :: offsets(:, :)
             !! List of offsets
@@ -167,7 +167,7 @@ contains
         !! For example, if code 1 corresponds to offset (1, 0), and code
         !! 2 corresponds to offset (-1, 0), then code 2 is the opposite
         !! code of code 1 and vice verse.
-        implicit none
+        implicit none(type, external)
         ! Arguments
         integer, intent(in) :: offsets(:, :)
             !! List of offsets
@@ -201,7 +201,7 @@ contains
         !! (-99, -99) to indicate invalid code.
         !! For example, if code 1 corresponds to offset (1, 0), then
         !! diffs(1, :) = (1, 0).
-        implicit none
+        implicit none(type, external)
         ! Arguments
         integer, intent(in) :: offsets(:, :)
             !! List of offsets

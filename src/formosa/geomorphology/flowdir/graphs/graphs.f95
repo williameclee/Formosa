@@ -21,17 +21,16 @@
 
 module flowdir_graphs
     use iso_c_binding, only: c_int8_t, c_int16_t
-    use omp_lib
-    use utils
-    use distances
-    implicit none
+    use utils, only: fill_offset_lookup, find_noflow_code, mask2ij
+    use distances, only: pt2linedist2_xy, lines_intersect_v2
+    implicit none(type, external)
     private :: argsort_arcs, record_topology_intersection
 contains
     subroutine construct_flowgraph( &
         dirs, valids, orders, seeds, indegs, nrows, ncols, &
         offsets, codes, noffsets, preserve_junction, ncells, &
         narcs, nvertices, arc_orders, vertex_ijs, arc_endpts, err_code)
-        implicit none
+        implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols
             !! Size of the grid
@@ -224,7 +223,7 @@ contains
     pure recursive subroutine simplify_arc_rdp( &
         xys, keeps, istart, iend, tol)
         ! Simplify a single arc segment recursively using the Ramer-Douglas-Peucker (RDP) algorithm.
-        implicit none
+        implicit none(type, external)
         ! Arguments
         real, intent(in) :: xys(:, :)
             !! x and y coordinates of each vertex
@@ -270,7 +269,7 @@ contains
     pure subroutine simplify_flowgraph( &
         vertex_xys, arc_endpts, vertex_keeps, nvertices, narcs, tol)
         ! Simplify all arcs in a flow graph using the Ramer-Douglas-Peucker (RDP) algorithm.
-        implicit none
+        implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nvertices, narcs
             !! Number of vertices and arcs
@@ -297,7 +296,7 @@ contains
 
     pure function argsort_arcs(bboxes) result(indices)
         ! Helper function for 'locate_invalid_graph_topology' to sort the arcs by the left edge of their bounding box.
-        implicit none
+        implicit none(type, external)
         ! Arguments
         real, intent(in) :: bboxes(:, :)
         ! Outputs
@@ -335,7 +334,7 @@ contains
         !! The total count is incremented even after 'intxs' is full. This lets
         !! the caller distinguish the number stored from the exact number found
         !! and retry with an exactly sized buffer when necessary.
-        implicit none
+        implicit none(type, external)
         integer, intent(in) :: record(5)
             !! Intersection record: arc IDs, segment IDs, and intersection flag
         integer, intent(inout) :: intxs(:, :)
@@ -352,7 +351,7 @@ contains
         !! Scans all candidate segment pairs and returns the total violation count.
         !!
         !! Only the first 'capacity' violations are stored in 'intxs'.
-        implicit none
+        implicit none(type, external)
         ! Arguments
         real, intent(in) :: vertex_ijs(:, :)
             !! Vertex coordinates arranged as '(2, nvertices)'

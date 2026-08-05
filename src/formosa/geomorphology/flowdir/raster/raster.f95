@@ -35,10 +35,10 @@
 
 module flowdir_raster
     use iso_c_binding, only: c_int8_t, c_int16_t
-    use omp_lib
-    use utils
-    use distances
-    implicit none
+    use utils, only: fill_offset_lookup, find_noflow_code, id2ij_checked, &
+        ij2id_checked, mask2id, mask2ij
+    use distances, only: l1dist_xy, l2dist_xy
+    implicit none(type, external)
     private :: resolve_flow_tree_links, build_flow_tree_topology
     private :: propagate_flow_tree_metadata, build_flow_tree_metadata
     private :: find_tree_confluence
@@ -50,7 +50,7 @@ contains
         !! the provided flow direction codes and offsets.
         !! Also identifies flat cells where no flow direction can be
         !! assigned.
-        implicit none
+        implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols
             !! Size of the grid
@@ -128,7 +128,7 @@ contains
         !! no-flow code.
         !! Note: This function is intended to be used for the synthetic
         !! terrain to resolve flats, which should be integer-typed.
-        implicit none
+        implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols
             !! Size of the grid
@@ -193,7 +193,7 @@ contains
         !! lower terrain (low edges) and those that are adjacent to
         !! higher terrain (high edges).
         !! From [R. Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009), Algorithm 3 (p. 133).
-        implicit none
+        implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols
             !! Size of the grid
@@ -265,7 +265,7 @@ contains
         !! considered for labelling. Each flat region will be assigned a
         !! unique integer label in the output  grid, while non-flat
         !! cells will be assigned 0.
-        implicit none
+        implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols
             !! Size of the grid
@@ -383,7 +383,7 @@ contains
         !! Produces a synthetic elevation that decreases away from 'high
         !! edges' of flats.
         !! Modified from [R. Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009), Algorithm 5 (p. 133--134).
-        implicit none
+        implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols
             !! Size of the grid
@@ -535,7 +535,7 @@ contains
         !! Produces a synthetic elevation that drains towards 'low
         !! edges' of flats.
         !! Modified from [R. Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009), Algorithm 6 (p. 134).
-        implicit none
+        implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols
             !! Size of the grid
@@ -662,7 +662,7 @@ contains
         offsets, codes, noffsets)
         !! Computes the number of upstream cells (indegs) for each cell
         !! in a flow direction grid.
-        implicit none
+        implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols
             !! Size of the grid
@@ -719,7 +719,7 @@ contains
         dirs, valids, areas, indegs, accumulations, nrows, ncols, &
         offsets, codes, noffsets, err_code)
         !! Computes flow accumulation for each cell in a flow direction grid.
-        implicit none
+        implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols
             !! Size of the grid
@@ -833,7 +833,7 @@ contains
         !! a breadth-first search starting from source cells.
         !! The distance in measured in the number of cells along the
         !! flow path (i.e. integer-typed L1 distance).
-        implicit none
+        implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols
             !! Size of the grid
@@ -943,7 +943,7 @@ contains
         offsets, codes, noffsets, err_code)
         !! Computes the distance downstream along flow directions for
         !! each cell in the flow direction grid.
-        implicit none
+        implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols
             !! Size of the grid
@@ -1052,7 +1052,7 @@ contains
     subroutine compute_dist2sink( &
         dists, dirs, x, y, valids, nrows, ncols, offsets, codes, noffsets, err_code)
         !! Computes the distance upstream along flow directions for each cell in the flow direction grid.
-        implicit none
+        implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols
             !! Number of raster rows and columns.
@@ -1199,7 +1199,7 @@ contains
     subroutine compute_flow_strahler_order( &
         dirs, valids, indegs, orders, nrows, ncols, &
         offsets, codes, noffsets, err_code)
-        implicit none
+        implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols
             !! Size of the grid
@@ -1344,7 +1344,7 @@ contains
 
     subroutine label_watersheds( &
         labels, dirs, valids, nrows, ncols, offsets, codes, noffsets, err_code)
-        implicit none
+        implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols
             !! Size of the grid
@@ -1487,7 +1487,7 @@ contains
 
     subroutine flood_upstream( &
         flooded, dirs, seeds, valids, nrows, ncols, offsets, codes, noffsets, err_code)
-        implicit none
+        implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols
             !! Size of the grid
@@ -1628,7 +1628,7 @@ contains
         !! successively removing their outgoing edges. Valid cells not reached
         !! by this traversal belong to a directed cycle and remain false in
         !! 'acyclics'.
-        implicit none
+        implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols
             !! Size of the grid
@@ -1756,7 +1756,7 @@ contains
         dirs, valids, offset_lookup, nrows, ncols, ds_ids, indegs)
         !! Resolve each valid cell's immediate downstream ID and simultaneously
         !! count the upstream children of every destination cell.
-        implicit none
+        implicit none(type, external)
         integer, intent(in) :: nrows, ncols
             !! Number of raster rows and columns.
         integer(c_int8_t), intent(in) :: dirs(nrows, ncols)
@@ -1809,7 +1809,7 @@ contains
         valids, ds_ids, indegs, nrows, ncols, &
         topo_order, topo_cnt, lvl_ends, nlvls, err_code)
         !! Build source-to-sink Kahn frontiers and reject directed cycles.
-        implicit none
+        implicit none(type, external)
         integer, intent(in) :: nrows, ncols
             !! Number of raster rows and columns.
         logical(kind=1), intent(in) :: valids(nrows, ncols)
@@ -1904,7 +1904,7 @@ contains
         depths, sink_ids, sink_dists)
         !! Propagates depth, sink identity, and metric distance from sinks towards
         !! sources in reverse dependency-frontier order.
-        implicit none
+        implicit none(type, external)
         integer, intent(in) :: nrows, ncols, nlvls
             !! Raster dimensions and number of dependency frontiers.
         integer, intent(in) :: ds_ids(nrows*ncols)
@@ -1998,7 +1998,7 @@ contains
         !! topo_order is returned because compute_max_branch_dist reuses it to
         !! construct lowest common ancestor (LCA) jump pointers before releasing 
         !! the full-grid workspace.
-        implicit none
+        implicit none(type, external)
         integer, intent(in) :: nrows, ncols
             !! Number of raster rows and columns.
         integer(c_int8_t), intent(in) :: dirs(nrows, ncols)
@@ -2080,7 +2080,7 @@ contains
         !! establishes this without a per-query sink comparison: every pair of
         !! adjacent cells in different trees has both endpoints marked as basin
         !! boundary cells and is skipped before calling this function.
-        implicit none
+        implicit none(type, external)
         integer, intent(in) :: cid1, cid2
             !! Linear IDs of the two cells to process.
         integer, intent(in) :: ds_ids(:)
@@ -2141,7 +2141,7 @@ contains
         !! The tree representation avoids tracing two complete flow paths for
         !! every neighbour pair. It also uses shared O(N) metadata rather than a
         !! full-grid visited/path workspace for every OpenMP thread.
-        implicit none
+        implicit none(type, external)
         ! Inputs
         integer, intent(in) :: nrows, ncols
             !! Size of the grid
@@ -2369,7 +2369,7 @@ contains
         s1ij, s2ij, dirs, x, y, &
         offset_lookup, check_flag, err_code)
         !! Traces flow paths from two seed cells downstream to compute their confluence distance.
-        implicit none
+        implicit none(type, external)
         ! Arguments
         integer, intent(in) :: s1ij(2), s2ij(2)
             !! (i, j) indices of the two seed cells from which to trace flow paths
@@ -2443,7 +2443,7 @@ contains
         !! cell, and the index at which the confluence occurs in Path 2 is then
         !! retrieved instantly via. This avoids an O(N) linear search over the
         !! path.
-        implicit none
+        implicit none(type, external)
         ! Inputs
         integer, intent(in) :: s1i, s1j, s2i, s2j
             !! Indices of the two seed cells from which to trace flow paths
