@@ -378,6 +378,50 @@ def test_confluence_distance_reports_cyclic_path():
     assert err_code == 1
 
 
+def test_confluence_distance_defaults_to_checking_for_confluence():
+    from formosa.geomorphology.flowdir_f import flowdir_raster as raster_f
+
+    dirs = np.array([[128, 0], [128, 0]], dtype=np.uint8, order="F")
+    x, y = np.meshgrid(
+        np.arange(dirs.shape[1], dtype=np.float32),
+        np.arange(dirs.shape[0], dtype=np.float32),
+        indexing="xy",
+    )
+    offset_lookup = np.zeros((256, 2), dtype=np.int32, order="F")
+    offset_lookup[128] = [0, 1]
+
+    default_dists, default_err = raster_f.compute_confluence_dist(
+        [1, 1], [2, 1], dirs, x, y, offset_lookup
+    )
+    explicit_dists, explicit_err = raster_f.compute_confluence_dist(
+        [1, 1], [2, 1], dirs, x, y, offset_lookup, True
+    )
+
+    assert default_err == explicit_err == 0
+    np.testing.assert_allclose(default_dists, explicit_dists)
+    np.testing.assert_allclose(default_dists, [1.0, 1.0])
+
+
+def test_confluence_distance_accepts_unsigned_direction_codes():
+    from formosa.geomorphology.flowdir_f import flowdir_raster as raster_f
+
+    dirs = np.array([[255, 0], [255, 0]], dtype=np.uint8, order="F")
+    x, y = np.meshgrid(
+        np.arange(dirs.shape[1], dtype=np.float32),
+        np.arange(dirs.shape[0], dtype=np.float32),
+        indexing="xy",
+    )
+    offset_lookup = np.zeros((256, 2), dtype=np.int32, order="F")
+    offset_lookup[255] = [0, 1]
+
+    dists, err_code = raster_f.compute_confluence_dist(
+        [1, 1], [2, 1], dirs, x, y, offset_lookup
+    )
+
+    assert err_code == 0
+    np.testing.assert_allclose(dists, [1.0, 1.0])
+
+
 if __name__ == "__main__":
     test_confluence_distance_2x2()
     test_confluence_distance_3x3()
