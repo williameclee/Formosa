@@ -11,6 +11,8 @@
 #     - Added properties `ridgedir` and `ridge_strahler_order`
 #   2026-07-01, En-Chi Lee (williameclee@gmail.com)
 #     - Added property `shape`
+#   2026-08-04, En-Chi Lee (williameclee@gmail.com)
+#     - Updated `compute_dist2conf_max` and related functions' interface to reflect FORTRAN backend changes
 
 from pathlib import Path
 import warnings
@@ -376,7 +378,6 @@ class DEMGrid:
             self.valid.astype(np.bool_, order="F"),
             self.x.astype(np.float32, order="F"),
             self.y.astype(np.float32, order="F"),
-            watershed_labels=self.watersheds.astype(np.int32, order="F"),
             dir_scheme=self.directions,
         )
         return self._bmax
