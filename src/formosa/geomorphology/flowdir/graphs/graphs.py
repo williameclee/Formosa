@@ -40,7 +40,10 @@ import numpy as np
 
 from formosa.geomorphology.flowdir.d8directions import D8Directions
 import formosa.geomorphology.flowdir.raster as raster
-from formosa.geomorphology.flowdir.utils import compute_downstream_indices
+from formosa.geomorphology.flowdir.utils import (
+    compute_downstream_indices,
+    raise_fortran_error,
+)
 
 try:
     from formosa.geomorphology.flowdir_f import flowdir_graphs as graphs_f
@@ -387,7 +390,7 @@ def construct_flowgraph(
                 )
             )
         case "fortran":
-            narcs, nvertices, arc_orders, vertex_ijs, arc_endpts = (
+            narcs, nvertices, arc_orders, vertex_ijs, arc_endpts, err_code = (
                 graphs_f.construct_flowgraph(
                     dirs.astype(np.uint8, order="F"),
                     valids.astype(bool, order="F"),
@@ -400,6 +403,7 @@ def construct_flowgraph(
                     ncells,
                 )
             )
+            raise_fortran_error("construct_flowgraph", err_code)
             # Convert from 1-based index to 0-based index
             vertex_ijs -= 1
             arc_endpts -= 1
@@ -1806,34 +1810,6 @@ def simplify_flowgraph(
     return simp_orders, simp_vertices, simp_endpts, keeps
 
 
-def _raise_topology_scan_error(err_code: int) -> None:
-    """Translates a FORTRAN topology-scanner status into a Python exception.
-
-    Parameters
-    ----------
-    err_code : int
-        Scanner status code. Zero indicates success, one invalid inputs, and
-        two a workspace-allocation failure.
-
-    Raises
-    ------
-    ValueError
-        If the scanner rejected its array shapes or output capacity.
-    MemoryError
-        If the scanner could not allocate its internal workspace.
-    RuntimeError
-        If the scanner returned an unknown nonzero status.
-    """
-    if err_code == 1:
-        raise ValueError("Invalid array shapes or output capacity passed.")
-    elif err_code == 2:
-        raise MemoryError("Unable to allocate topology-intersection workspace.")
-    elif err_code != 0:
-        raise RuntimeError(
-            f"Unexpected topology-intersection scanner error code: {err_code}."
-        )
-
-
 def _locate_invalid_graph_topology_fortran(
     vertex_xys: npt.NDArray[np.number],
     arc_endpts: npt.NDArray[np.integer],
@@ -1878,7 +1854,10 @@ def _locate_invalid_graph_topology_fortran(
     intxs, nintxs, err_code = graphs_f.scan_invalid_graph_topology(
         vertices_f, endpts_f, capacity
     )
-    _raise_topology_scan_error(err_code)
+    raise_fortran_error(
+        "scan_invalid_graph_topology",
+        err_code,
+    )
 
     if nintxs == 0:
         return None
@@ -1888,7 +1867,10 @@ def _locate_invalid_graph_topology_fortran(
         intxs, nintxs, err_code = graphs_f.scan_invalid_graph_topology(
             vertices_f, endpts_f, expected_nintxs
         )
-        _raise_topology_scan_error(err_code)
+        raise_fortran_error(
+            "scan_invalid_graph_topology",
+            err_code,
+        )
         if nintxs != expected_nintxs:
             raise RuntimeError(
                 "Topology-intersection count changed during exact-size retry."

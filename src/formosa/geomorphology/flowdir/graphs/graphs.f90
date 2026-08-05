@@ -12,39 +12,43 @@
 !   2026-07-29, En-Chi Lee (williameclee@gmail.com)
 !     - Made topology intersection scans count all violations past output capacity
 !   2026-08-03, En-Chi Lee (williameclee@gmail.com)
-!     - Explicitly handled Python uint8 -> FORTRAN INTEGER*1 conversion/interpretation in 'fill_offset_lookup'
+!     - Explicitly handled Python uint8 -> signed 8-bit Fortran conversion/interpretation in 'fill_offset_lookup'
+!   2026-08-04, En-Chi Lee (williameclee@gmail.com)
+!     - Added allocation error monitoring and moved error handling to Python
+!   2026-08-05, En-Chi Lee (williameclee@gmail.com)
+!     - Switched to 'iso_c_binding'
 !!!
 
 module flowdir_graphs
-    use omp_lib
-    use utils
-    use distances
-    implicit none
+    use iso_c_binding, only: c_int8_t, c_int16_t
+    use utils, only: fill_offset_lookup, find_noflow_code, mask2ij
+    use distances, only: pt2linedist2_xy, lines_intersect_v2
+    implicit none(type, external)
     private :: argsort_arcs, record_topology_intersection
 contains
     subroutine construct_flowgraph( &
         dirs, valids, orders, seeds, indegs, nrows, ncols, &
         offsets, codes, noffsets, preserve_junction, ncells, &
-        narcs, nvertices, arc_orders, vertex_ijs, arc_endpts)
-        implicit none
+        narcs, nvertices, arc_orders, vertex_ijs, arc_endpts, err_code)
+        implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols
             !! Size of the grid
-        integer*1, intent(in) :: dirs(nrows, ncols)
+        integer(c_int8_t), intent(in) :: dirs(nrows, ncols)
             !! Flow direction grid, using the provided codes
-        logical*1, intent(in) :: valids(nrows, ncols)
+        logical(kind=1), intent(in) :: valids(nrows, ncols)
             !! Validity mask (true for valid cells, false for cells that should not be processed, including those with low order)
-        integer*2, intent(in) :: orders(nrows, ncols)
+        integer(c_int16_t), intent(in) :: orders(nrows, ncols)
             !! Grid of Strahler stream order values for each cell
-        logical*1, intent(in) :: seeds(nrows, ncols)
+        logical(kind=1), intent(in) :: seeds(nrows, ncols)
             !! Mask to identify initial seed cells for the algorithm (valid cells with zero indegree)
-        integer*1, intent(in) :: indegs(nrows, ncols)
+        integer(c_int8_t), intent(in) :: indegs(nrows, ncols)
             !! Indegree of the cell
         integer, intent(in) :: noffsets
             !! Number of flow directions
         integer, intent(in) :: offsets(noffsets, 2)
             !! List of offsets for each flow direction
-        integer*1, intent(in) :: codes(noffsets)
+        integer(c_int8_t), intent(in) :: codes(noffsets)
             !! List of flow direction codes corresponding to the offsets
         logical, intent(in) :: preserve_junction
             !! Whether to stop an arc when another arc joins it
@@ -53,7 +57,7 @@ contains
         ! Outputs
         integer, intent(out) :: narcs, nvertices
             !! How many arcs and vertices there are
-        integer*2, intent(out) :: arc_orders(ncells)
+        integer(c_int16_t), intent(out) :: arc_orders(ncells)
             !! Order of each arc
             !! Note only the first 'narcs' elements contain the actual data
         integer, intent(out) :: vertex_ijs(2, 2*ncells)
@@ -62,14 +66,19 @@ contains
         integer, intent(out) :: arc_endpts(2, ncells)
             !! Where each arc starts and ends in the 'vertex_ijs' array
             !! Note only the first 'narcs' columns contain the actual data
+        integer, intent(out) :: err_code
+            !! Code indicating the status of the result
+            !!   - 0: Programme executed properly
+            !!   - 2: Internal workspace allocation failed
+            !!   - 3: Vertex output buffer capacity was exceeded
         ! Local variables
-        integer*1 :: noflow_code
+        integer(c_int8_t) :: noflow_code
             !! Code corresponding to noflow direction, used to identify sink cells
         integer, allocatable :: offset_lookup(:, :)
             !! Lookup table for offsets corresponding to each flow direction code, used to find downstream cell indices
         integer, allocatable :: seed_ijs(:, :)
             !! Buffer for storing (i, j) indices of seed cells
-        integer*2 :: order
+        integer(c_int16_t) :: order
             !! Order of the current arc
         integer :: nseeds, iseed
             !! Number of seeds and index for iterating through seeds
@@ -79,21 +88,43 @@ contains
             !! Rows/columns for seed, current, and neighbour cells
         logical :: ds_is_valid, is_end_vertex
             !! Flag of whether the downstream neighbour is a valid cell, and whether we have arrived at the end of the arc
-        logical*1, allocatable :: seens(:, :)
+        logical(kind=1), allocatable :: seens(:, :)
             !! Mask to identify which cells have already been seen
+        integer :: alloc_stat
+            !! Allocation status code
+
+        err_code = 0
+        narcs = 0
+        nvertices = 0
 
         ! Create lookup tables for offsets
-        allocate (offset_lookup(0:255, 2))
-        offset_lookup = fill_offset_lookup(offsets, codes, noffsets)
+        allocate (offset_lookup(0:255, 2), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = 2
+            return
+        end if
+        offset_lookup = fill_offset_lookup(offsets, codes)
 
         ! Find index of seeds
-        allocate (seed_ijs(2, ncells))
-        call mask2ij(seeds, nrows, ncols, seed_ijs, ncells, nseeds)
+        allocate (seed_ijs(2, ncells), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = 2
+            deallocate (offset_lookup)
+            return
+        end if
+        call mask2ij(seeds, seed_ijs, ncells, nseeds, err_code)
+        if (err_code /= 0) return
 
         ! Find noflow code
-        noflow_code = find_noflow_code(offsets, codes, noffsets)
+        noflow_code = find_noflow_code(offsets, codes)
 
-        allocate (seens(nrows, ncols))
+        allocate (seens(nrows, ncols), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = 2
+            deallocate (offset_lookup)
+            deallocate (seed_ijs)
+            return
+        end if
         seens = .false.
         iseed = 1
         iarc = 1
@@ -151,9 +182,8 @@ contains
                         end if
                     end if
                     if (ivertex > size(vertex_ijs, 2)) then
-                        print *, "[CONSTRUCT_FLOWGRAPH] Error: vertex buffer overflow "// &
-                            "(size:", ivertex, ", allocated:", size(vertex_ijs, 2), ")"
-                        stop
+                        err_code = 3
+                        exit
                     end if
                     vertex_ijs(:, ivertex) = [ni, nj]
                     arc_endpts(2, iarc) = ivertex
@@ -168,15 +198,16 @@ contains
 
                 seens(ni, nj) = .true.
                 if (ivertex > size(vertex_ijs, 2)) then
-                    print *, "[CONSTRUCT_FLOWGRAPH] Error: vertex buffer overflow "// &
-                        "(size:", ivertex, ", allocated:", size(vertex_ijs, 2), ")"
-                    stop
+                    err_code = 3
+                    exit
                 end if
                 vertex_ijs(:, ivertex) = [ni, nj]
                 ivertex = ivertex + 1
                 ci = ni
                 cj = nj
             end do
+
+            if (err_code /= 0) exit
 
             iarc = iarc + 1
         end do
@@ -189,19 +220,19 @@ contains
         nvertices = ivertex - 1
     end subroutine construct_flowgraph
 
-    recursive subroutine simplify_arc_rdp( &
+    pure recursive subroutine simplify_arc_rdp( &
         xys, keeps, istart, iend, tol)
         ! Simplify a single arc segment recursively using the Ramer-Douglas-Peucker (RDP) algorithm.
-        implicit none
+        implicit none(type, external)
         ! Arguments
-        real, intent(in) :: xys(:, :)
+        real, intent(in), contiguous :: xys(:, :)
             !! x and y coordinates of each vertex
         integer, intent(in) :: istart, iend
             !! Where the segment starts and ends in the 'xys' array
         real, intent(in) :: tol
             !! Tolerence threshold
         ! Outputs
-        logical*1, intent(inout) :: keeps(:)
+        logical(kind=1), intent(inout), contiguous :: keeps(:)
             !! Boolean mask indicating which vertices should be kept
         ! Local variables
         integer :: i
@@ -235,10 +266,10 @@ contains
         call simplify_arc_rdp(xys, keeps, i_max_err2, iend, tol)
     end subroutine simplify_arc_rdp
 
-    subroutine simplify_flowgraph( &
+    pure subroutine simplify_flowgraph( &
         vertex_xys, arc_endpts, vertex_keeps, nvertices, narcs, tol)
         ! Simplify all arcs in a flow graph using the Ramer-Douglas-Peucker (RDP) algorithm.
-        implicit none
+        implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nvertices, narcs
             !! Number of vertices and arcs
@@ -249,7 +280,7 @@ contains
         real, intent(in) :: tol
             !! Tolerence threshold
         ! Outputs
-        logical*1, intent(out) :: vertex_keeps(nvertices)
+        logical(kind=1), intent(out) :: vertex_keeps(nvertices)
             !! Boolean mask indicating which vertices should be kept across all arcs
         ! Local variables
         integer :: iarc
@@ -265,9 +296,9 @@ contains
 
     pure function argsort_arcs(bboxes) result(indices)
         ! Helper function for 'locate_invalid_graph_topology' to sort the arcs by the left edge of their bounding box.
-        implicit none
+        implicit none(type, external)
         ! Arguments
-        real, intent(in) :: bboxes(:, :)
+        real, intent(in), contiguous :: bboxes(:, :)
         ! Outputs
         integer :: indices(size(bboxes, 2))
         ! Local variables
@@ -297,16 +328,16 @@ contains
         end do
     end function argsort_arcs
 
-    subroutine record_topology_intersection(record, intxs, nintxs)
+    pure subroutine record_topology_intersection(record, intxs, nintxs)
         !! Counts one detected topology violation and stores it if capacity remains.
         !!
         !! The total count is incremented even after 'intxs' is full. This lets
         !! the caller distinguish the number stored from the exact number found
         !! and retry with an exactly sized buffer when necessary.
-        implicit none
+        implicit none(type, external)
         integer, intent(in) :: record(5)
             !! Intersection record: arc IDs, segment IDs, and intersection flag
-        integer, intent(inout) :: intxs(:, :)
+        integer, intent(inout), contiguous :: intxs(:, :)
             !! Output buffer containing up to 'size(intxs, 2)' records
         integer, intent(inout) :: nintxs
             !! Total number of violations encountered, including unstored ones
@@ -315,16 +346,16 @@ contains
         if (nintxs <= size(intxs, 2)) intxs(:, nintxs) = record
     end subroutine record_topology_intersection
 
-    subroutine scan_invalid_graph_topology( &
+    pure subroutine scan_invalid_graph_topology( &
         vertex_ijs, arc_endpts, capacity, intxs, nintxs, err_code)
         !! Scans all candidate segment pairs and returns the total violation count.
         !!
         !! Only the first 'capacity' violations are stored in 'intxs'.
-        implicit none
+        implicit none(type, external)
         ! Arguments
-        real, intent(in) :: vertex_ijs(:, :)
+        real, intent(in), contiguous :: vertex_ijs(:, :)
             !! Vertex coordinates arranged as '(2, nvertices)'
-        integer, intent(in) :: arc_endpts(:, :)
+        integer, intent(in), contiguous :: arc_endpts(:, :)
             !! Inclusive, one-based arc endpoint indices arranged as '(2, narcs)'
         integer, intent(in) :: capacity
             !! Maximum number of intersection records that can be stored

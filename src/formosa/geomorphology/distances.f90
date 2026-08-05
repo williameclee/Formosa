@@ -6,36 +6,39 @@
 !     - Implemented point-to-line distance functions 'pt2linedist_xy' and 'pt2linedist2_xy'
 !   2026-07-10, En-Chi Lee (williameclee@gmail.com)
 !     - Implemented 2D line intersection test function 'lines_intersect_v2'
+!   2026-08-05, En-Chi Lee (williameclee@gmail.com)
+!     - Switched to 'iso_c_binding'
 !!!
 
 module distances
-    implicit none
+    use iso_c_binding, only: c_int8_t
+    implicit none(type, external)
     interface l1dist_xy
         module procedure l1dist_xy_int
         module procedure l1dist_xy_real
     end interface l1dist_xy
 contains
-    function l1dist_xy_int(x1, y1, x2, y2) result(dist)
+    pure function l1dist_xy_int(x1, y1, x2, y2) result(dist)
         !! Calculates the L1 distance between two 2D points.
-        implicit none
+        implicit none(type, external)
         ! Arguments
         integer, intent(in) :: x1, y1, x2, y2
         integer :: dist
         dist = abs(x1 - x2) + abs(y1 - y2)
     end function l1dist_xy_int
 
-    function l1dist_xy_real(x1, y1, x2, y2) result(dist)
+    pure function l1dist_xy_real(x1, y1, x2, y2) result(dist)
         !! Calculates the L1 distance between two 2D points.
-        implicit none
+        implicit none(type, external)
         ! Arguments
         real, intent(in) :: x1, y1, x2, y2
         real :: dist
         dist = abs(x1 - x2) + abs(y1 - y2)
     end function l1dist_xy_real
 
-    function l2dist_xy(x1, y1, x2, y2) result(dist)
+    pure function l2dist_xy(x1, y1, x2, y2) result(dist)
         !! Calculates the L2 distance between two 2D points.
-        implicit none
+        implicit none(type, external)
         ! Arguments
         real, intent(in) :: x1, y1, x2, y2
         real :: dist
@@ -44,9 +47,9 @@ contains
         dist = sqrt((x1 - x2)**2 + (y1 - y2)**2)
     end function l2dist_xy
 
-    function pt2linedist2_xy(x1, y1, x2, y2, x3, y3) result(dist2)
+    pure function pt2linedist2_xy(x1, y1, x2, y2, x3, y3) result(dist2)
         ! Calculates the squared distance of a point to a line segment defined by two points on a 2D plane.
-        implicit none
+        implicit none(type, external)
         ! Arguments
         real, intent(in) :: x1, y1, x2, y2
             !! x and y coordinates of the two endpoints of the line segment
@@ -71,9 +74,9 @@ contains
         dist2 = (x3 - (x1 + lx*t))**2 + (y3 - (y1 + ly*t))**2
     end function pt2linedist2_xy
 
-    function pt2linedist_xy(x1, y1, x2, y2, x3, y3) result(dist)
+    pure function pt2linedist_xy(x1, y1, x2, y2, x3, y3) result(dist)
         ! Calculates the distance of a point to a line segment defined by two points on a 2D plane.
-        implicit none
+        implicit none(type, external)
         ! Arguments
         real, intent(in) :: x1, y1, x2, y2
             !! x and y coordinates of the two endpoints of the line segment
@@ -87,11 +90,11 @@ contains
     end function pt2linedist_xy
 
     pure function bboxes_overlap(p1, p2, p3, p4) result(flag_overlap)
-        implicit none
+        implicit none(type, external)
         ! Arguments
         real, intent(in) :: p1(2), p2(2), p3(2), p4(2)
         ! Outputs
-        logical*1 :: flag_overlap
+        logical(kind=1) :: flag_overlap
 
         flag_overlap = &
             (max(min(p1(1), p2(1)), min(p3(1), p4(1))) <= min(max(p1(1), p2(1)), max(p3(1), p4(1)))) .and. &
@@ -107,14 +110,14 @@ contains
         !!  3 : identical segment
         !!  4 : endpoint-on-interior (T-junction)
         !!  5 : degenerate segment (some line is actually a point)
-        implicit none
+        implicit none(type, external)
         ! Arguments
         real, intent(in) :: l1a(2), l1b(2), l2a(2), l2b(2)
         ! Outputs
-        integer*1 :: flag
+        integer(c_int8_t) :: flag
         ! Local variables
-        logical*1 :: eq_l1al2a, eq_l1al2b, eq_l1bl2a, eq_l1bl2b
-        integer*1 :: o1, o2, o3, o4
+        logical(kind=1) :: eq_l1al2a, eq_l1al2b, eq_l1bl2a, eq_l1bl2b
+        integer(c_int8_t) :: o1, o2, o3, o4
         real :: a0, a1, c0, c1, tmp, overlap0, overlap1
 
         flag = -1
@@ -199,11 +202,11 @@ contains
         end if
     contains
         pure function orient_v2(p1, p2, p3) result(o)
-            implicit none
+            implicit none(type, external)
             ! Arguments
             real, intent(in) :: p1(2), p2(2), p3(2)
             ! Outputs
-            integer*1 :: o
+            integer(c_int8_t) :: o
             ! Local variables
             real :: xprod
 
@@ -219,7 +222,7 @@ contains
         end function orient_v2
 
         pure function on_segment(a, b, p) result(on_flag)
-            implicit none
+            implicit none(type, external)
             ! Arguments
             real, intent(in) :: a(2), b(2), p(2)
             ! Outputs

@@ -20,8 +20,14 @@
 #     - Updated tests to match the updated `simplify_flowgraph` interface; also added additional tests for the new interface
 #   2026-08-03, En-Chi Lee (williameclee@gmail.com)
 #     - Added test cases for function `find_acyclic_flowdirs`
+#   2026-08-04, En-Chi Lee (williameclee@gmail.com)
+#     - Added test cases for FORTRAN error code handling
+#   2026-08-05, En-Chi Lee (williameclee@gmail.com)
+#     - Added a regression check for nonstandard old-style Fortran kind declarations
 
+import re
 import warnings
+from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
@@ -32,9 +38,129 @@ import formosa.geomorphology.flowdir as flowdir
 from formosa.geomorphology.flowdir.raster import raster as raster_module
 from formosa.geomorphology.flowdir.graphs import graphs as graphs_module
 from formosa.geomorphology.flowdir_f import flowdir_graphs as graphs_f
+from formosa.geomorphology.flowdir_f import flowdir_raster as raster_f
+from formosa.geomorphology.flowdir_f import utils as utils_f
 
 T = True
 F = False
+
+
+def test_all_fortran_allocations_check_status():
+    source_root = Path(__file__).parents[1] / "src" / "formosa" / "geomorphology"
+    unguarded = []
+    for source_path in source_root.rglob("*.f95"):
+        lines = source_path.read_text().splitlines()
+        for line_number, line in enumerate(lines, start=1):
+            if not line.lower().lstrip().startswith("allocate ("):
+                continue
+            statement = line.strip()
+            next_index = line_number
+            while statement.endswith("&") and next_index < len(lines):
+                statement = f"{statement} {lines[next_index].strip()}"
+                next_index += 1
+            if "stat=" not in statement.lower():
+                unguarded.append(f"{source_path.relative_to(source_root)}:{line_number}")
+                continue
+            stat_var = statement.lower().split("stat=", 1)[1].split(")", 1)[0].strip()
+            status_check = f"if ({stat_var} /= 0)"
+            following_lines = " ".join(lines[next_index : next_index + 4]).lower()
+            if status_check not in following_lines:
+                unguarded.append(f"{source_path.relative_to(source_root)}:{line_number}")
+
+    assert unguarded == []
+
+
+def test_fortran_sources_avoid_old_style_kind_declarations():
+    source_root = Path(__file__).parents[1] / "src" / "formosa" / "geomorphology"
+    old_style_declaration = re.compile(
+        r"^\s*(integer|logical|real|complex)\s*\*\s*\d+", re.IGNORECASE
+    )
+    violations = []
+
+    for source_path in source_root.rglob("*.f95"):
+        for line_number, line in enumerate(source_path.read_text().splitlines(), start=1):
+            if old_style_declaration.match(line):
+                violations.append(f"{source_path.relative_to(source_root)}:{line_number}")
+
+    assert violations == []
+
+
+def test_mask2ij_returns_output_capacity_error():
+    indices, count, err_code = utils_f.mask2ij(
+        np.ones((2, 2), dtype=bool, order="F"),
+        2,
+    )
+
+    assert count == 2
+    assert err_code == 3
+    assert indices.shape == (2, 2)
+
+
+def test_checked_linear_cell_ids_reject_invalid_coordinates_and_ids():
+    assert utils_f.ij2id_checked(1, 1, 3, 4) == 1
+    assert utils_f.ij2id_checked(3, 4, 3, 4) == 12
+    assert utils_f.ij2id_checked(0, 1, 3, 4) == 0
+    assert utils_f.ij2id_checked(4, 1, 3, 4) == 0
+    assert utils_f.ij2id_checked(1, 0, 3, 4) == 0
+    assert utils_f.ij2id_checked(1, 5, 3, 4) == 0
+
+    assert utils_f.id2ij_checked(1, 3, 4) == (1, 1, True)
+    assert utils_f.id2ij_checked(12, 3, 4) == (3, 4, True)
+    assert utils_f.id2ij_checked(0, 3, 4) == (0, 0, False)
+    assert utils_f.id2ij_checked(13, 3, 4) == (0, 0, False)
+
+
+def test_fortran_direction_utilities_infer_input_shapes():
+    offsets = np.array([[0, 0], [0, 1], [0, -1]], dtype=np.int32, order="F")
+    codes = np.array([0, 1, 5], dtype=np.int8)
+
+    assert utils_f.find_noflow_code(offsets, codes) == 0
+    assert np.array_equal(utils_f.find_opposite_codes(offsets, codes), [0, 5, 1])
+
+    lookup = utils_f.fill_offset_lookup(offsets, codes)
+    assert np.array_equal(lookup[1], [0, 1])
+    assert np.array_equal(lookup[5], [0, -1])
+
+
+def test_flat_synthetic_gradients_follow_breadth_first_layers():
+    labels = np.ones((5, 5), dtype=np.int32, order="F")
+    offsets = D8Directions().offsets.astype(np.int32, order="F")
+    centre = np.zeros(labels.shape, dtype=bool, order="F")
+    centre[2, 2] = True
+
+    pulling, err_code = raster_f.create_pulling_syn_grad(labels, centre, offsets)
+    assert err_code == 0
+    np.testing.assert_array_equal(
+        pulling,
+        np.array(
+            [
+                [3, 3, 3, 3, 3],
+                [3, 2, 2, 2, 3],
+                [3, 2, 1, 2, 3],
+                [3, 2, 2, 2, 3],
+                [3, 3, 3, 3, 3],
+            ],
+            dtype=np.int32,
+        ),
+    )
+
+    pushing, err_code = raster_f.create_pushing_syn_grad(labels, centre, offsets)
+    assert err_code == 0
+    np.testing.assert_array_equal(pushing, 4 - pulling)
+
+
+def test_flat_synthetic_gradients_handle_empty_inputs():
+    labels = np.zeros((2, 3), dtype=np.int32, order="F")
+    edges = np.zeros(labels.shape, dtype=bool, order="F")
+    offsets = D8Directions().offsets.astype(np.int32, order="F")
+
+    pushing, pushing_err = raster_f.create_pushing_syn_grad(labels, edges, offsets)
+    pulling, pulling_err = raster_f.create_pulling_syn_grad(labels, edges, offsets)
+
+    assert pushing_err == 0
+    assert pulling_err == 0
+    np.testing.assert_array_equal(pushing, 0)
+    np.testing.assert_array_equal(pulling, 0)
 
 
 def test_downstreamid_3x3():
@@ -406,6 +532,100 @@ def test_network_graph_3x3():
     for i, exp_ij in enumerate(exp_ijs):
         np.testing.assert_array_equal(
             vertex_ijs[arc_endpts[i, 0] : arc_endpts[i, 1] + 1], exp_ij
+        )
+
+
+def test_construct_flowgraph_fortran_returns_buffer_overflow_code():
+    dirs = np.array([[1, 1, 0]], dtype=np.uint8, order="F")
+    valids = np.ones((1, 3), dtype=bool, order="F")
+    orders = np.ones((1, 3), dtype=np.int16, order="F")
+    seeds = np.array([[True, False, False]], dtype=bool, order="F")
+    indegs = np.array([[0, 1, 1]], dtype=np.int8, order="F")
+    offsets = np.array([[0, 1], [0, 0]], dtype=np.int32, order="F")
+    codes = np.array([1, 0], dtype=np.uint8, order="F")
+
+    *_, err_code = graphs_f.construct_flowgraph(
+        dirs,
+        valids,
+        orders,
+        seeds,
+        indegs,
+        offsets,
+        codes,
+        True,
+        1,
+    )
+
+    assert err_code == 3
+
+
+def test_construct_flowgraph_translates_fortran_error(monkeypatch):
+    def fake_construct(*args):
+        return (
+            0,
+            0,
+            np.zeros(1, dtype=np.int16),
+            np.zeros((2, 2), dtype=np.int32),
+            np.zeros((2, 1), dtype=np.int32),
+            3,
+        )
+
+    monkeypatch.setattr(
+        graphs_module,
+        "graphs_f",
+        SimpleNamespace(construct_flowgraph=fake_construct),
+    )
+
+    with pytest.raises(RuntimeError, match=r"construct_flowgraph.*error code 3"):
+        flowdir.construct_flowgraph(
+            np.array([[0]], dtype=np.uint8),
+            orders=np.ones((1, 1), dtype=np.uint8),
+            min_order=1,
+            backend="fortran",
+        )
+
+
+@pytest.mark.parametrize(
+    ("err_code", "exception", "detail"),
+    [
+        (1, ValueError, "invalid input"),
+        (2, MemoryError, "allocate backend workspace"),
+        (3, RuntimeError, "array or index capacity exceeded"),
+        (99, RuntimeError, "unknown"),
+    ],
+)
+def test_label_flats_translates_fortran_errors(
+    monkeypatch, err_code, exception, detail
+):
+    def fake_label(*args):
+        return np.zeros((1, 1), dtype=np.int32), err_code
+
+    monkeypatch.setattr(
+        raster_module,
+        "raster_f",
+        SimpleNamespace(label_flats=fake_label),
+    )
+
+    with pytest.raises(exception, match=rf"label_flats.*{detail}.*{err_code}"):
+        raster_module.label_flats(
+            np.zeros((1, 1), dtype=np.float32),
+            np.ones((1, 1), dtype=bool),
+        )
+
+
+def test_max_branch_distance_translates_allocation_failure(monkeypatch):
+    def fake_compute(*args):
+        return np.zeros((1, 1), dtype=np.float32), 2
+
+    monkeypatch.setattr(
+        raster_module,
+        "raster_f",
+        SimpleNamespace(compute_max_branch_dist=fake_compute),
+    )
+
+    with pytest.raises(MemoryError, match=r"compute_max_branch_dist.*error code 2"):
+        raster_module.compute_dist2conf_max(
+            np.zeros((1, 1), dtype=np.uint8),
         )
 
 
@@ -1221,7 +1441,12 @@ def test_simplify_multiple_flowgraphs_ignores_identical_arcs():
 
 @pytest.mark.parametrize(
     ("err_code", "exception"),
-    [(1, RuntimeError), (2, MemoryError), (99, RuntimeError)],
+    [
+        (1, ValueError),
+        (2, MemoryError),
+        (3, RuntimeError),
+        (99, RuntimeError),
+    ],
 )
 def test_find_acyclic_flowdirs_translates_fortran_errors(
     monkeypatch, err_code, exception
