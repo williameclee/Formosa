@@ -24,15 +24,17 @@
 !     - Splitted 'flowdir_f' into submodules
 !   2026-08-03, En-Chi Lee (williameclee@gmail.com)
 !     - Implemented 'find_acyclic_flowdirs'
-!     - Explicitly handled Python uint8 -> FORTRAN INTEGER*1 conversion/interpretation in 'fill_offset_lookup'
+!     - Explicitly handled Python uint8 -> signed 8-bit Fortran conversion/interpretation in 'fill_offset_lookup'
 !   2026-08-04, En-Chi Lee (williameclee@gmail.com)
 !     - Added allocation error monitoring and moved error handling to Python
 !     - Used function 'mask2id' as the linear-index version of 'mask2ij'
 !   2026-08-05, En-Chi Lee (williameclee@gmail.com)
 !     - Overhauled algorithm for 'compute_max_branch_dist'
+!     - Switched to 'iso_c_binding'
 !!!
 
 module flowdir_raster
+    use iso_c_binding, only: c_int8_t, c_int16_t
     use omp_lib
     use utils
     use distances
@@ -54,21 +56,21 @@ contains
             !! Size of the grid
         real, intent(in) :: z(nrows, ncols)
             !! Elevation grid
-        logical*1, intent(in) :: valids(nrows, ncols)
+        logical(kind=1), intent(in) :: valids(nrows, ncols)
             !! Validity mask (true for valid cells, false for no-data)
         integer, intent(in) :: noffsets
             !! Number of flow directions
         integer, intent(in) :: offsets(noffsets, 2)
             !! List of offsets for each flow direction
-        integer*1, intent(in) :: codes(noffsets)
+        integer(c_int8_t), intent(in) :: codes(noffsets)
             !! List of flow direction codes corresponding to the offsets
         ! Outputs
-        integer*1, intent(out) :: dirs(nrows, ncols)
+        integer(c_int8_t), intent(out) :: dirs(nrows, ncols)
             !! Flow direction grid, using the provided codes
-        logical*1, intent(out) :: is_flat(nrows, ncols)
+        logical(kind=1), intent(out) :: is_flat(nrows, ncols)
             !! Mask indicating which cells are part of flats (i.e. direction is no-flow)
         ! Local variables
-        integer*1 :: noflow_code
+        integer(c_int8_t) :: noflow_code
             !! Code corresponding to no-flow direction, to be determined from offsets and codes
         integer :: ci, cj, ni, nj
             !! (Cell-private) Rows/columns for current and neighbour cells
@@ -138,13 +140,13 @@ contains
             !! Number of flow directions
         integer, intent(in) :: offsets(noffsets, 2)
             !! List of offsets for each flow direction
-        integer*1, intent(in) :: codes(noffsets)
+        integer(c_int8_t), intent(in) :: codes(noffsets)
             !! List of flow direction codes corresponding to the offsets
         ! Outputs
-        integer*1, intent(out) :: dirs(nrows, ncols)
+        integer(c_int8_t), intent(out) :: dirs(nrows, ncols)
             !! Flow direction grid, using the provided codes
         ! Local variables
-        integer*1 :: noflow_code
+        integer(c_int8_t) :: noflow_code
             !! Code corresponding to no-flow direction, to be determined from offsets and codes
         integer :: ci, cj, ni, nj
             !! (Cell-private) Rows/columns for current and neighbour cells
@@ -197,21 +199,21 @@ contains
             !! Size of the grid
         real, intent(in) :: z(nrows, ncols)
             !! Elevation grid
-        integer*1, intent(in) :: dirs(nrows, ncols)
+        integer(c_int8_t), intent(in) :: dirs(nrows, ncols)
             !! Flow direction grid, using the provided codes
-        logical*1, intent(in) :: valids(nrows, ncols)
+        logical(kind=1), intent(in) :: valids(nrows, ncols)
             !! Validity mask (true for valid cells, false for no-data)
         integer, intent(in) :: noffsets
             !! Number of flow directions
         integer, intent(in) :: offsets(noffsets, 2)
             !! List of offsets for each flow direction
-        integer*1, intent(in) :: codes(noffsets)
+        integer(c_int8_t), intent(in) :: codes(noffsets)
             !! List of flow direction codes corresponding to the offsets
         ! Outputs
-        logical*1, intent(out) :: is_low_edge(nrows, ncols), is_high_edge(nrows, ncols)
+        logical(kind=1), intent(out) :: is_low_edge(nrows, ncols), is_high_edge(nrows, ncols)
             !! Whether each cell is a 'low edge' or a 'high edge of a flat.
         ! Local variables
-        integer*1 :: noflow_code
+        integer(c_int8_t) :: noflow_code
             !! Code corresponding to no-flow direction, to be determined from offsets and codes
         integer :: ci, cj, ni, nj
             !! (Cell-private) Rows/columns for current and neighbour cells
@@ -269,9 +271,9 @@ contains
             !! Size of the grid
         real, intent(in) :: z(nrows, ncols)
             !! Elevation grid
-        logical*1, intent(in) :: seeds(nrows, ncols)
+        logical(kind=1), intent(in) :: seeds(nrows, ncols)
             !! Seed mask indicating starting points for labelling flat regions
-        logical*1, intent(in) :: valids(nrows, ncols)
+        logical(kind=1), intent(in) :: valids(nrows, ncols)
             !! Validity mask (true for valid cells, false for no-data)
         integer, intent(in) :: noffsets
             !! Number of flow directions
@@ -387,7 +389,7 @@ contains
             !! Size of the grid
         integer, intent(in) :: flats(nrows, ncols)
             !! Label grid indicating individual flat regions (or 0 for non-flat cells)
-        logical*1, intent(in) :: high_edges(nrows, ncols)
+        logical(kind=1), intent(in) :: high_edges(nrows, ncols)
             !! Mask indicating which cells are 'high edges'
         integer, intent(in) :: noffsets
             !! Number of flow directions
@@ -415,7 +417,7 @@ contains
             !! Index for iterating through offsets
         integer :: ci, cj, ni, nj
             !! Rows/columns for current and neighbour cells
-        logical*1, allocatable :: queued(:, :)
+        logical(kind=1), allocatable :: queued(:, :)
             !! Mask to track which cells have already been added to the queue, to avoid adding the same cell multiple times
         integer, allocatable :: high_edge_ijs(:, :)
             !! List of (i, j) indices for high edge cells to be processed in the algorithm, used as a queue for breadth-first search
@@ -539,7 +541,7 @@ contains
             !! Size of the grid
         integer, intent(in) :: flats(nrows, ncols)
             !! Label grid indicating individual flat regions (or 0 for non-flat cells)
-        logical*1, intent(in) :: low_edges(nrows, ncols)
+        logical(kind=1), intent(in) :: low_edges(nrows, ncols)
             !! Mask indicating which cells are 'low edges'
         integer, intent(in) :: noffsets
             !! Number of flow directions
@@ -562,7 +564,7 @@ contains
             !! Current distance from low edges, used to assign synthetic elevation values
         integer :: ci, cj, ni, nj
             !! Rows/columns for current and neighbour cells
-        logical*1, allocatable :: queued(:, :)
+        logical(kind=1), allocatable :: queued(:, :)
             !! Mask to track which cells have already been added to the queue, to avoid adding the same cell multiple times
         integer, allocatable :: low_edges_ijs(:, :)
             !! List of (i, j) indices for low edge cells to be processed in the algorithm, used as a queue for breadth-first search
@@ -664,18 +666,18 @@ contains
         ! Arguments
         integer, intent(in) :: nrows, ncols
             !! Size of the grid
-        integer*1, intent(in) :: dirs(nrows, ncols)
+        integer(c_int8_t), intent(in) :: dirs(nrows, ncols)
             !! Flow direction grid, using the provided codes
-        logical*1, intent(in) :: valids(nrows, ncols)
+        logical(kind=1), intent(in) :: valids(nrows, ncols)
             !! Validity mask (true for valid cells, false for no-data)
         integer, intent(in) :: noffsets
             !! Number of flow directions
         integer, intent(in) :: offsets(noffsets, 2)
             !! List of offsets for each flow direction
-        integer*1, intent(in) :: codes(noffsets)
+        integer(c_int8_t), intent(in) :: codes(noffsets)
             !! List of flow direction codes corresponding to the offsets
         ! Outputs
-        integer*1, intent(out) :: indegs(nrows, ncols)
+        integer(c_int8_t), intent(out) :: indegs(nrows, ncols)
             !! Grid of indegree values, i.e. number of upstream cells that flow into each cell
         ! Local variables
         integer :: iofs
@@ -705,7 +707,7 @@ contains
                     if (ni == ci .and. nj == cj) cycle
                     ! Check if neighbour flows into current cell
                     if (dirs(ni, nj) == codes(iofs)) then
-                        indegs(ci, cj) = indegs(ci, cj) + int(1, kind=1)
+                        indegs(ci, cj) = indegs(ci, cj) + int(1, kind=c_int8_t)
                     end if
                 end do
             end do
@@ -721,20 +723,20 @@ contains
         ! Arguments
         integer, intent(in) :: nrows, ncols
             !! Size of the grid
-        integer*1, intent(in) :: dirs(nrows, ncols)
+        integer(c_int8_t), intent(in) :: dirs(nrows, ncols)
             !! Flow direction grid, using the provided codes
-        logical*1, intent(in) :: valids(nrows, ncols)
+        logical(kind=1), intent(in) :: valids(nrows, ncols)
             !! Validity mask (true for valid cells, false for no-data)
         real, intent(in) :: areas(nrows, ncols)
             !! Area of each cell, used as the initial accumulation value for each cell
-        integer*1, intent(inout) :: indegs(nrows, ncols)
+        integer(c_int8_t), intent(inout) :: indegs(nrows, ncols)
             !! Indegree grid, i.e. number of upstream cells that flow into each cell.
             !! This will be modified in-place during the algorithm to track which cells have been processed.
         integer, intent(in) :: noffsets
             !! Number of flow directions
         integer, intent(in) :: offsets(noffsets, 2)
             !! List of offsets for each flow direction
-        integer*1, intent(in) :: codes(noffsets)
+        integer(c_int8_t), intent(in) :: codes(noffsets)
             !! List of flow direction codes corresponding to the offsets
         ! Outputs
         real, intent(out) :: accumulations(nrows, ncols)
@@ -755,7 +757,7 @@ contains
             !! Buffer for storing (i, j) indices of cells to be processed in the flooding algorithm
         integer :: max_queue_size
             !! Maximum size of the flooding buffer ('flood_ijs')
-        logical*1, allocatable :: flood_seeds(:, :)
+        logical(kind=1), allocatable :: flood_seeds(:, :)
             !! Mask to identify initial seed cells for the flooding algorithm (valid cells with zero in-degrees)
 
         ! Guard nrows*ncols before using it as a default-integer allocation
@@ -809,7 +811,7 @@ contains
             ! Update accumulation of downstream cell
             accumulations(ni, nj) = accumulations(ni, nj) + accumulations(ci, cj)
             ! Decrement indegree of downstream cell
-            indegs(ni, nj) = indegs(ni, nj) - int(1, kind=1)
+            indegs(ni, nj) = indegs(ni, nj) - int(1, kind=c_int8_t)
             ! If indegree is zero, add to flooding buffer
             if (indegs(ni, nj) > 0) cycle
             ntofills = ntofills + 1
@@ -835,18 +837,18 @@ contains
         ! Arguments
         integer, intent(in) :: nrows, ncols
             !! Size of the grid
-        integer*1, intent(in) :: dirs(nrows, ncols)
+        integer(c_int8_t), intent(in) :: dirs(nrows, ncols)
             !! Flow direction grid, using the provided codes
-        logical*1, intent(in) :: valids(nrows, ncols)
+        logical(kind=1), intent(in) :: valids(nrows, ncols)
             !! Validity mask (true for valid cells, false for no-data)
-        integer*1, intent(inout) :: indegs(nrows, ncols)
+        integer(c_int8_t), intent(inout) :: indegs(nrows, ncols)
             !! Indegree grid, i.e. number of upstream cells that flow into each cell
             !! This will be modified in-place during the algorithm to track which cells have been processed.
         integer, intent(in) :: noffsets
             !! Number of flow directions
         integer, intent(in) :: offsets(noffsets, 2)
             !! List of offsets for each flow direction
-        integer*1, intent(in) :: codes(noffsets)
+        integer(c_int8_t), intent(in) :: codes(noffsets)
             !! List of flow direction codes corresponding to the offsets
         ! Outputs
         integer, intent(out) :: dists(nrows, ncols)
@@ -864,7 +866,7 @@ contains
             !! Index for iterating through cells to fill and total number of cells to fill
         integer :: ci, cj, ni, nj
             !! Rows/columns for current and neighbour cells
-        logical*1, allocatable :: tofill_seeds(:, :)
+        logical(kind=1), allocatable :: tofill_seeds(:, :)
             !! Mask to identify initial seed cells for the flooding algorithm (valid cells with zero indegree)
         integer, allocatable :: tofill_ijs(:, :)
             !! Buffer for storing (i, j) indices of cells to be processed in the flooding algorithm
@@ -921,7 +923,7 @@ contains
             ! Update distance of downstream cell
             dists(ni, nj) = max(dists(ci, cj), dists(ci, cj) + l1dist_xy(ni, nj, ci, cj))
             ! Decrement indegree of downstream cell
-            indegs(ni, nj) = indegs(ni, nj) - int(1, kind=1)
+            indegs(ni, nj) = indegs(ni, nj) - int(1, kind=c_int8_t)
             ! If indegree is zero, add to tofill buffer
             if (indegs(ni, nj) == 0) then
                 ntofills = ntofills + 1
@@ -945,20 +947,20 @@ contains
         ! Arguments
         integer, intent(in) :: nrows, ncols
             !! Size of the grid
-        integer*1, intent(in) :: dirs(nrows, ncols)
+        integer(c_int8_t), intent(in) :: dirs(nrows, ncols)
             !! Flow direction grid, using the provided codes
-        logical*1, intent(in) :: valids(nrows, ncols)
+        logical(kind=1), intent(in) :: valids(nrows, ncols)
             !! Validity mask (true for valid cells, false for no-data)
         real, intent(in) :: x(nrows, ncols), y(nrows, ncols)
             !! Grids of x and y coordinates for each cell, used to calculate distances between cells
-        integer*1, intent(inout) :: indegs(nrows, ncols)
+        integer(c_int8_t), intent(inout) :: indegs(nrows, ncols)
             !! Indegree grid, i.e. number of upstream cells that flow into each cell
             !! This will be modified in-place during the algorithm to track which cells have been processed.
         integer, intent(in) :: noffsets
             !! Number of flow directions
         integer, intent(in) :: offsets(noffsets, 2)
             !! List of offsets for each flow direction
-        integer*1, intent(in) :: codes(noffsets)
+        integer(c_int8_t), intent(in) :: codes(noffsets)
             !! List of flow direction codes corresponding to the offsets
         ! Outputs
         real, intent(out) :: dists(nrows, ncols)
@@ -975,7 +977,7 @@ contains
             !! Index for iterating through cells to fill and total number of cells to fill
         integer :: ci, cj, ni, nj
             !! Rows/columns for current and neighbour cells
-        logical*1, allocatable :: seeds(:, :)
+        logical(kind=1), allocatable :: seeds(:, :)
             !! Mask to identify initial seed cells for the flooding algorithm (valid cells with zero indegree)
         integer, allocatable :: tofill_ijs(:, :)
             !! Buffer for storing (i, j) indices of cells to be processed in the flooding algorithm
@@ -1032,7 +1034,7 @@ contains
             ! Update distance of downstream cell
             dists(ni, nj) = max(dists(ci, cj), dists(ci, cj) + l2dist_xy(x(ni, nj), y(ni, nj), x(ci, cj), y(ci, cj)))
             ! Decrement indegree of downstream cell
-            indegs(ni, nj) = indegs(ni, nj) - int(1, kind=1)
+            indegs(ni, nj) = indegs(ni, nj) - int(1, kind=c_int8_t)
             ! If indegree is zero, add to tofill buffer
             if (indegs(ni, nj) == 0) then
                 ntofills = ntofills + 1
@@ -1054,17 +1056,17 @@ contains
         ! Arguments
         integer, intent(in) :: nrows, ncols
             !! Number of raster rows and columns.
-        integer*1, intent(in) :: dirs(nrows, ncols)
+        integer(c_int8_t), intent(in) :: dirs(nrows, ncols)
             !! Flow-direction grid encoded using codes.
         real, intent(in) :: x(nrows, ncols), y(nrows, ncols)
             !! Map-space coordinates used to calculate flow-edge distances.
-        logical*1, intent(in) :: valids(nrows, ncols)
+        logical(kind=1), intent(in) :: valids(nrows, ncols)
             !! True for cells participating in the flow forest; false for no-data.
         integer, intent(in) :: noffsets
             !! Number of supported flow-direction codes.
         integer, intent(in) :: offsets(noffsets, 2)
             !! Row/column displacement corresponding to each direction code.
-        integer*1, intent(in) :: codes(noffsets)
+        integer(c_int8_t), intent(in) :: codes(noffsets)
             !! External direction codes corresponding to offsets.
         ! Outputs
         real, intent(out) :: dists(nrows, ncols)
@@ -1077,20 +1079,20 @@ contains
         ! Local variables
         integer :: iofs
             !! Index for iterating through offsets
-        integer*1 :: noflow_code
+        integer(c_int8_t) :: noflow_code
             !! Code corresponding to noflow direction, used to identify sink cells
         integer :: iseed, nseeds, ifill, nfills
             !! Index for iterating through seed cells and buffer, and total number of seed cells and buffer fills
         integer :: si, sj, ci, cj, ui, uj
             !! Rows/columns for seed, current and upstream cells
-        logical*1, allocatable :: seeds(:, :)
+        logical(kind=1), allocatable :: seeds(:, :)
             !! Mask to identify seed cells for the algorithm (valid cells with noflow direction)
         integer, allocatable :: seed_ids(:)
             !! Buffer for storing linear IDs of seed cells to be processed in the algorithm
         integer, allocatable :: tofill_ids(:)
             !! Buffer for storing linear cell IDs in the breadth-first search from sink cells
         integer :: cell_id
-        logical*1 :: id_is_valid
+        logical(kind=1) :: id_is_valid
         integer :: max_queue_size
             !! Maximum number of linear cell IDs in the seed and traversal queues
         integer :: alloc_stat
@@ -1201,21 +1203,21 @@ contains
         ! Arguments
         integer, intent(in) :: nrows, ncols
             !! Size of the grid
-        integer*1, intent(in) :: dirs(nrows, ncols)
+        integer(c_int8_t), intent(in) :: dirs(nrows, ncols)
             !! Flow direction grid, using the provided codes
-        logical*1, intent(in) :: valids(nrows, ncols)
+        logical(kind=1), intent(in) :: valids(nrows, ncols)
             !! Validity mask (true for valid cells, false for no-data)
-        integer*1, intent(inout) :: indegs(nrows, ncols)
+        integer(c_int8_t), intent(inout) :: indegs(nrows, ncols)
             !! Indegree grid, i.e. number of upstream cells that flow into each cell
             !! This will be modified in-place during the algorithm to track which cells have been processed.
         integer, intent(in) :: noffsets
             !! Number of flow directions
         integer, intent(in) :: offsets(noffsets, 2)
             !! List of offsets for each flow direction
-        integer*1, intent(in) :: codes(noffsets)
+        integer(c_int8_t), intent(in) :: codes(noffsets)
             !! List of flow direction codes corresponding to the offsets
         ! Outputs
-        integer*2, intent(out) :: orders(nrows, ncols)
+        integer(c_int16_t), intent(out) :: orders(nrows, ncols)
             !! Grid of Strahler stream order values for each cell
         integer, intent(out) :: err_code
             !! Code indicating the status of the result
@@ -1231,11 +1233,11 @@ contains
             !! Index for iterating through cells to fill and total number of cells to fill
         integer :: ci, cj, ni, nj, ui, uj
             !! Rows/columns for current and neighbour downstream and upstream cells
-        integer*2 :: max_uorder
+        integer(c_int16_t) :: max_uorder
             !! Maximum Strahler stream order value of a cell's upstream neighbours
-        logical*1 :: increase_order
+        logical(kind=1) :: increase_order
             !! Whether the current cell's order should be increased
-        logical*1, allocatable :: seeds(:, :)
+        logical(kind=1), allocatable :: seeds(:, :)
             !! Mask to identify initial seed cells for the algorithm (valid cells with zero indegree)
         integer, allocatable :: tofill_ijs(:, :)
             !! Buffer for storing (i, j) indices of cells to be processed in the breadth-first search from source cells
@@ -1265,7 +1267,7 @@ contains
         end if
         seeds = valids .and. (indegs == 0)
         err_code = 0
-        orders = merge(int(1, kind=2), int(0, kind=2), seeds)
+        orders = merge(int(1, kind=c_int16_t), int(0, kind=c_int16_t), seeds)
         call mask2ij(seeds, tofill_ijs, max_queue_size, ntofills, err_code)
         if (err_code /= 0) return
         deallocate (seeds)
@@ -1305,7 +1307,7 @@ contains
                 end do
 
                 if (increase_order) then
-                    orders(ci, cj) = max_uorder + int(1, kind=2)
+                    orders(ci, cj) = max_uorder + int(1, kind=c_int16_t)
                 else
                     orders(ci, cj) = max_uorder
                 end if
@@ -1324,7 +1326,7 @@ contains
             if (indegs(ni, nj) == 0) cycle
 
             ! Decrement indegree of downstream cell
-            indegs(ni, nj) = indegs(ni, nj) - int(1, kind=1)
+            indegs(ni, nj) = indegs(ni, nj) - int(1, kind=c_int8_t)
             ! If indegree is zero, add to tofill buffer
             if (indegs(ni, nj) > 0) cycle
 
@@ -1346,15 +1348,15 @@ contains
         ! Arguments
         integer, intent(in) :: nrows, ncols
             !! Size of the grid
-        integer*1, intent(in) :: dirs(nrows, ncols)
+        integer(c_int8_t), intent(in) :: dirs(nrows, ncols)
             !! Flow direction grid, using the provided codes
-        logical*1, intent(in) :: valids(nrows, ncols)
+        logical(kind=1), intent(in) :: valids(nrows, ncols)
             !! Validity mask (true for valid cells, false for no-data)
         integer, intent(in) :: noffsets
             !! Number of flow directions
         integer, intent(in) :: offsets(noffsets, 2)
             !! List of offsets for each flow direction
-        integer*1, intent(in) :: codes(noffsets)
+        integer(c_int8_t), intent(in) :: codes(noffsets)
             !! List of flow direction codes corresponding to the offsets
         ! Outputs
         integer, intent(out) :: labels(nrows, ncols)
@@ -1368,18 +1370,18 @@ contains
         ! Local variables
         integer :: iofs
             !! Index for iterating through offsets
-        integer*1 :: noflow_code
+        integer(c_int8_t) :: noflow_code
             !! Code corresponding to noflow direction, used to identify seed cells
         integer :: iseed, nseeds, ifill, nfills
             !! Index for iterating through seed cells and buffer, and total number of seed cells and buffer fills
         integer :: si, sj, ci, cj, ui, uj
             !! Rows/columns for seed, current and upstream indices
-        logical*1, allocatable :: seeds(:, :)
+        logical(kind=1), allocatable :: seeds(:, :)
             !! Mask to identify seed cells for the algorithm (valid cells with noflow direction)
         integer, allocatable :: seed_ids(:), tofill_ids(:)
             !! Buffers for storing linear IDs of seed cells and queued cells
         integer :: cell_id
-        logical*1 :: id_is_valid
+        logical(kind=1) :: id_is_valid
         integer :: max_queue_size
             !! Maximum number of linear cell IDs in the seed and traversal queues
         integer :: alloc_stat
@@ -1489,18 +1491,18 @@ contains
         ! Arguments
         integer, intent(in) :: nrows, ncols
             !! Size of the grid
-        integer*1, intent(in) :: dirs(nrows, ncols)
+        integer(c_int8_t), intent(in) :: dirs(nrows, ncols)
             !! Flow direction grid, using the provided codes
-        logical*1, intent(in) :: valids(nrows, ncols), seeds(nrows, ncols)
+        logical(kind=1), intent(in) :: valids(nrows, ncols), seeds(nrows, ncols)
             !! Validity mask (true for valid cells, false for no-data) and seed mask (true for seed cells, false for non-seed cells)
         integer, intent(in) :: noffsets
             !! Number of flow directions
         integer, intent(in) :: offsets(noffsets, 2)
             !! List of offsets for each flow direction
-        integer*1, intent(in) :: codes(noffsets)
+        integer(c_int8_t), intent(in) :: codes(noffsets)
             !! List of flow direction codes corresponding to the offsets
         ! Outputs
-        logical*1, intent(out) :: flooded(nrows, ncols)
+        logical(kind=1), intent(out) :: flooded(nrows, ncols)
             !! Mask indicating which cells are flooded (true for flooded cells, false for non-flooded cells)
         integer, intent(out) :: err_code
             !! Code indicating the status of the result
@@ -1510,7 +1512,7 @@ contains
         ! Local variables
         integer :: iofs
             !! Index for iterating through offsets
-        integer*1 :: noflow_code
+        integer(c_int8_t) :: noflow_code
             !! Code corresponding to noflow direction, used to identify seed cells
         integer :: iseed, nseeds, ifill, nfills
             !! Index for iterating through seed cells and buffer, and total number of seed cells and buffer fills
@@ -1519,7 +1521,7 @@ contains
         integer, allocatable :: seed_ids(:), tofill_ids(:)
             !! Buffers for storing linear IDs of seed cells and queued cells
         integer :: cell_id
-        logical*1 :: id_is_valid
+        logical(kind=1) :: id_is_valid
         integer :: max_queue_size
             !! Maximum number of linear cell IDs in the seed and traversal queues
         integer :: alloc_stat
@@ -1630,20 +1632,20 @@ contains
         ! Arguments
         integer, intent(in) :: nrows, ncols
             !! Size of the grid
-        integer*1, intent(in) :: dirs(nrows, ncols)
+        integer(c_int8_t), intent(in) :: dirs(nrows, ncols)
             !! Flow direction grid, using the provided codes
-        integer*1, intent(in) :: indegs(nrows, ncols)
+        integer(c_int8_t), intent(in) :: indegs(nrows, ncols)
             !! Indegree grid for the valid flow field
-        logical*1, intent(in) :: valids(nrows, ncols)
+        logical(kind=1), intent(in) :: valids(nrows, ncols)
             !! Validity mask (true for valid cells, false for no-data)
         integer, intent(in) :: noffsets
             !! Number of flow directions
         integer, intent(in) :: offsets(noffsets, 2)
             !! List of offsets for each flow direction
-        integer*1, intent(in) :: codes(noffsets)
+        integer(c_int8_t), intent(in) :: codes(noffsets)
             !! List of flow direction codes corresponding to the offsets
         ! Outputs
-        logical*1, intent(out) :: acyclics(nrows, ncols)
+        logical(kind=1), intent(out) :: acyclics(nrows, ncols)
             !! Mask indicating valid cells removed by Kahn's algorithm
             !! (true for acyclic cells, false otherwise)
         integer, intent(out) :: err_code
@@ -1654,9 +1656,9 @@ contains
         ! Local variables
         integer, allocatable :: offset_lookup(:, :)
             !! Lookup table for offsets corresponding to each flow direction code, used to find downstream cell indices
-        integer*1, allocatable :: rem_indegs(:, :)
+        integer(c_int8_t), allocatable :: rem_indegs(:, :)
             !! Remaining indegrees after removing edges from processed cells
-        logical*1, allocatable :: seeds(:, :)
+        logical(kind=1), allocatable :: seeds(:, :)
             !! Mask of valid zero-indegree cells used to initialise the queue
         integer, allocatable :: seed_ijs(:, :)
             !! Queue of (i, j) indices awaiting processing
@@ -1728,7 +1730,7 @@ contains
             if (ni == ci .and. nj == cj) cycle
 
             ! Decrement indegree of downstream cell
-            rem_indegs(ni, nj) = rem_indegs(ni, nj) - int(1, kind=1)
+            rem_indegs(ni, nj) = rem_indegs(ni, nj) - int(1, kind=c_int8_t)
             ! If indegree is zero, add to tofill buffer
             if (rem_indegs(ni, nj) /= 0) cycle
 
@@ -1757,15 +1759,15 @@ contains
         implicit none
         integer, intent(in) :: nrows, ncols
             !! Number of raster rows and columns.
-        integer*1, intent(in) :: dirs(nrows, ncols)
+        integer(c_int8_t), intent(in) :: dirs(nrows, ncols)
             !! Flow-direction code for every raster cell.
-        logical*1, intent(in) :: valids(nrows, ncols)
+        logical(kind=1), intent(in) :: valids(nrows, ncols)
             !! True for cells belonging to the flow tree; false for no-data.
         integer, intent(in) :: offset_lookup(0:255, 2)
             !! Row/column offset indexed by the unsigned direction code.
         integer, intent(out) :: ds_ids(nrows*ncols)
             !! Immediate downstream cell ID, or zero at a sink.
-        integer*1, intent(out) :: indegs(nrows*ncols)
+        integer(c_int8_t), intent(out) :: indegs(nrows*ncols)
             !! Number of valid upstream children targeting each cell.
         integer :: code
             !! Unsigned integer representation of the current direction code.
@@ -1796,7 +1798,7 @@ contains
                 if (dsid == 0 .or. dsid == cid) cycle
                 ds_ids(cid) = dsid
                 !$omp ATOMIC UPDATE
-                indegs(dsid) = indegs(dsid) + int(1, kind=1)
+                indegs(dsid) = indegs(dsid) + int(1, kind=c_int8_t)
                 !$omp END ATOMIC
             end do
         end do
@@ -1810,11 +1812,11 @@ contains
         implicit none
         integer, intent(in) :: nrows, ncols
             !! Number of raster rows and columns.
-        logical*1, intent(in) :: valids(nrows, ncols)
+        logical(kind=1), intent(in) :: valids(nrows, ncols)
             !! True for cells belonging to the flow tree; false for no-data.
         integer, intent(in) :: ds_ids(nrows*ncols)
             !! Immediate downstream ID for every cell; zero at sinks.
-        integer*1, intent(inout) :: indegs(nrows*ncols)
+        integer(c_int8_t), intent(inout) :: indegs(nrows*ncols)
             !! Remaining unprocessed upstream-child count for Kahn traversal.
         integer, intent(out) :: topo_order(nrows*ncols)
             !! Valid cell IDs ordered from upstream sources towards sinks.
@@ -1885,7 +1887,7 @@ contains
                 cid = topo_order(sorder)
                 dsid = ds_ids(cid)
                 if (dsid == 0) cycle
-                indegs(dsid) = indegs(dsid) - int(1, kind=1)
+                indegs(dsid) = indegs(dsid) - int(1, kind=c_int8_t)
                 if (indegs(dsid) /= 0) cycle
                 next_lvl_end = next_lvl_end + 1
                 topo_order(next_lvl_end) = dsid
@@ -1999,9 +2001,9 @@ contains
         implicit none
         integer, intent(in) :: nrows, ncols
             !! Number of raster rows and columns.
-        integer*1, intent(in) :: dirs(nrows, ncols)
+        integer(c_int8_t), intent(in) :: dirs(nrows, ncols)
             !! Flow-direction code for every raster cell.
-        logical*1, intent(in) :: valids(nrows, ncols)
+        logical(kind=1), intent(in) :: valids(nrows, ncols)
             !! True for cells belonging to the flow tree; false for no-data.
         real, intent(in) :: x(nrows, ncols), y(nrows, ncols)
             !! Map-space coordinates used to calculate metric edge lengths.
@@ -2021,7 +2023,7 @@ contains
             !! Number of valid entries written to topo_order.
         integer, intent(out) :: err_code
             !! Zero on success, one for a cycle, or two for allocation failure.
-        integer*1, allocatable :: indegs(:)
+        integer(c_int8_t), allocatable :: indegs(:)
             !! Mutable upstream-child counts consumed by Kahn traversal.
         integer, allocatable :: lvl_ends(:)
             !! Inclusive topo_order end position for each dependency frontier.
@@ -2143,17 +2145,17 @@ contains
         ! Inputs
         integer, intent(in) :: nrows, ncols
             !! Size of the grid
-        integer*1, intent(in) :: dirs(nrows, ncols)
+        integer(c_int8_t), intent(in) :: dirs(nrows, ncols)
             !! Flow direction grid, using the provided codes
         real, intent(in) :: x(nrows, ncols), y(nrows, ncols)
             !! Grids of x and y coordinates for each cell, used to calculate distances between cells
-        logical*1, intent(in) :: valids(nrows, ncols)
+        logical(kind=1), intent(in) :: valids(nrows, ncols)
             !! Validity mask (true for valid cells, false for no-data)
         integer, intent(in) :: noffsets
             !! Number of flow directions
         integer, intent(in) :: offsets(noffsets, 2)
             !! List of offsets for each flow direction
-        integer*1, intent(in) :: codes(noffsets)
+        integer(c_int8_t), intent(in) :: codes(noffsets)
             !! List of flow direction codes corresponding to the offsets
         ! Outputs
         real, intent(out) :: maxbdists(nrows, ncols)
@@ -2178,7 +2180,7 @@ contains
             !! Valid cell IDs ordered from upstream sources towards sinks.
         real, allocatable :: sink_dists(:)
             !! Cumulative metric distance from each cell to its sink.
-        logical*1, allocatable :: is_boundary(:)
+        logical(kind=1), allocatable :: is_boundary(:)
             !! True when a cell touches a valid cell belonging to another sink.
         real :: dist1, dist2
             !! Branch distances from the two endpoints of the current grid edge.
@@ -2371,13 +2373,13 @@ contains
         ! Arguments
         integer, intent(in) :: s1ij(2), s2ij(2)
             !! (i, j) indices of the two seed cells from which to trace flow paths
-        integer*1, intent(in) :: dirs(:, :)
+        integer(c_int8_t), intent(in) :: dirs(:, :)
             !! Gird of flow direction codes and the corresponding offset lookup table
         real, intent(in) :: x(:, :), y(:, :)
             !! Coordinates of cell centres for distance calculation
         integer, intent(in) :: offset_lookup(0:255, 2)
             !! Lookup table for offsets corresponding to each flow direction code, used to find downstream cell indices
-        logical*1, intent(in), optional :: check_flag
+        logical(kind=1), intent(in), optional :: check_flag
             !! Whether to check for confluence at each step
         ! Outputs
         real, intent(out) :: dists(2)
@@ -2389,7 +2391,7 @@ contains
             !!   - 2: Internal workspace allocation failed
             !!   - 3: A traced flow path exceeded its allocated capacity
         ! Local variables
-        logical*1 :: check_flag_
+        logical(kind=1) :: check_flag_
         integer :: maxpathlen
             !! Maximum path length to search before giving up and assuming no confluence
             !! It should be large enough to allow confluence but prevent infinite loops in case of errors.
@@ -2441,13 +2443,13 @@ contains
         ! Inputs
         integer, intent(in) :: s1i, s1j, s2i, s2j
             !! Indices of the two seed cells from which to trace flow paths
-        integer*1, intent(in) :: dirs(:, :)
+        integer(c_int8_t), intent(in) :: dirs(:, :)
             !! Gird of flow direction codes and the corresponding offset lookup table
         real, contiguous, intent(in) :: x(:, :), y(:, :)
             !! Coordinates of cell centres for distance calculation
         integer, intent(in) :: offset_lookup(0:255, 2)
             !! Lookup table for offsets corresponding to each flow direction code, used to find downstream cell indices
-        logical*1, intent(in), optional :: check_flag
+        logical(kind=1), intent(in), optional :: check_flag
             !! Flag for whether to check for confluence at each step (can be turned off for performance if many confluences are expected)
         integer, intent(in) :: maxpathlen
             !! Maximum path length to search before giving up and assuming no confluence
@@ -2473,9 +2475,9 @@ contains
             !! Indices of confluence in paths (or max path length if no confluence found)
         integer :: n1i, n1j, n2i, n2j
             !! Indices of next cell in path for each seed
-        integer*1 :: code1, code2
-            !! Flow direction codes for current cells in paths
-        logical*1 :: is_active1, is_active2, local_check_flag
+        integer :: code1, code2
+            !! Unsigned representations of flow direction codes for current cells in paths
+        logical(kind=1) :: is_active1, is_active2, local_check_flag
             !! Flags for whether each path is still active (has not reached max length or invalid cell) and local copy of check_flag for performance
 
         !! Initialisation and checks
@@ -2629,15 +2631,15 @@ contains
     !     logical, dimension(nrows, ncols), intent(in) :: valids
     !     integer, intent(in) :: noffsets
     !     integer, dimension(noffsets, 2), intent(in) :: offsets
-    !     integer*1, dimension(noffsets), intent(in) :: codes
+    !     integer(c_int8_t), dimension(noffsets), intent(in) :: codes
     !     ! Outputs
-    !     integer*1, dimension(nrows, ncols), intent(out) :: flowdirs
+    !     integer(c_int8_t), dimension(nrows, ncols), intent(out) :: flowdirs
 
     !     logical, allocatable :: processed(:, :)
-    !     integer*1, allocatable :: indegs(:, :)
+    !     integer(c_int8_t), allocatable :: indegs(:, :)
     !     integer, allocatable :: dists(:, :)
-    !     integer*1, dimension(noffsets) :: opp_codes
-    !     integer*1 :: noflow_code = 0
+    !     integer(c_int8_t), dimension(noffsets) :: opp_codes
+    !     integer(c_int8_t) :: noflow_code = 0
 
     !     integer :: sij(2) ! Seed indices
 

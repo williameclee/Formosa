@@ -12,12 +12,15 @@
 !   2026-07-29, En-Chi Lee (williameclee@gmail.com)
 !     - Made topology intersection scans count all violations past output capacity
 !   2026-08-03, En-Chi Lee (williameclee@gmail.com)
-!     - Explicitly handled Python uint8 -> FORTRAN INTEGER*1 conversion/interpretation in 'fill_offset_lookup'
+!     - Explicitly handled Python uint8 -> signed 8-bit Fortran conversion/interpretation in 'fill_offset_lookup'
 !   2026-08-04, En-Chi Lee (williameclee@gmail.com)
 !     - Added allocation error monitoring and moved error handling to Python
+!   2026-08-05, En-Chi Lee (williameclee@gmail.com)
+!     - Switched to 'iso_c_binding'
 !!!
 
 module flowdir_graphs
+    use iso_c_binding, only: c_int8_t, c_int16_t
     use omp_lib
     use utils
     use distances
@@ -32,21 +35,21 @@ contains
         ! Arguments
         integer, intent(in) :: nrows, ncols
             !! Size of the grid
-        integer*1, intent(in) :: dirs(nrows, ncols)
+        integer(c_int8_t), intent(in) :: dirs(nrows, ncols)
             !! Flow direction grid, using the provided codes
-        logical*1, intent(in) :: valids(nrows, ncols)
+        logical(kind=1), intent(in) :: valids(nrows, ncols)
             !! Validity mask (true for valid cells, false for cells that should not be processed, including those with low order)
-        integer*2, intent(in) :: orders(nrows, ncols)
+        integer(c_int16_t), intent(in) :: orders(nrows, ncols)
             !! Grid of Strahler stream order values for each cell
-        logical*1, intent(in) :: seeds(nrows, ncols)
+        logical(kind=1), intent(in) :: seeds(nrows, ncols)
             !! Mask to identify initial seed cells for the algorithm (valid cells with zero indegree)
-        integer*1, intent(in) :: indegs(nrows, ncols)
+        integer(c_int8_t), intent(in) :: indegs(nrows, ncols)
             !! Indegree of the cell
         integer, intent(in) :: noffsets
             !! Number of flow directions
         integer, intent(in) :: offsets(noffsets, 2)
             !! List of offsets for each flow direction
-        integer*1, intent(in) :: codes(noffsets)
+        integer(c_int8_t), intent(in) :: codes(noffsets)
             !! List of flow direction codes corresponding to the offsets
         logical, intent(in) :: preserve_junction
             !! Whether to stop an arc when another arc joins it
@@ -55,7 +58,7 @@ contains
         ! Outputs
         integer, intent(out) :: narcs, nvertices
             !! How many arcs and vertices there are
-        integer*2, intent(out) :: arc_orders(ncells)
+        integer(c_int16_t), intent(out) :: arc_orders(ncells)
             !! Order of each arc
             !! Note only the first 'narcs' elements contain the actual data
         integer, intent(out) :: vertex_ijs(2, 2*ncells)
@@ -70,13 +73,13 @@ contains
             !!   - 2: Internal workspace allocation failed
             !!   - 3: Vertex output buffer capacity was exceeded
         ! Local variables
-        integer*1 :: noflow_code
+        integer(c_int8_t) :: noflow_code
             !! Code corresponding to noflow direction, used to identify sink cells
         integer, allocatable :: offset_lookup(:, :)
             !! Lookup table for offsets corresponding to each flow direction code, used to find downstream cell indices
         integer, allocatable :: seed_ijs(:, :)
             !! Buffer for storing (i, j) indices of seed cells
-        integer*2 :: order
+        integer(c_int16_t) :: order
             !! Order of the current arc
         integer :: nseeds, iseed
             !! Number of seeds and index for iterating through seeds
@@ -86,7 +89,7 @@ contains
             !! Rows/columns for seed, current, and neighbour cells
         logical :: ds_is_valid, is_end_vertex
             !! Flag of whether the downstream neighbour is a valid cell, and whether we have arrived at the end of the arc
-        logical*1, allocatable :: seens(:, :)
+        logical(kind=1), allocatable :: seens(:, :)
             !! Mask to identify which cells have already been seen
         integer :: alloc_stat
             !! Allocation status code
@@ -230,7 +233,7 @@ contains
         real, intent(in) :: tol
             !! Tolerence threshold
         ! Outputs
-        logical*1, intent(inout) :: keeps(:)
+        logical(kind=1), intent(inout) :: keeps(:)
             !! Boolean mask indicating which vertices should be kept
         ! Local variables
         integer :: i
@@ -278,7 +281,7 @@ contains
         real, intent(in) :: tol
             !! Tolerence threshold
         ! Outputs
-        logical*1, intent(out) :: vertex_keeps(nvertices)
+        logical(kind=1), intent(out) :: vertex_keeps(nvertices)
             !! Boolean mask indicating which vertices should be kept across all arcs
         ! Local variables
         integer :: iarc

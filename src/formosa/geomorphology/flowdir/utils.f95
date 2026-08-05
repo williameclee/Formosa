@@ -9,13 +9,16 @@
 !   2026-07-12, En-Chi Lee (williameclee@gmail.com)
 !     - Moved 'flowdir_utils' module here 'utils'
 !   2026-08-03, En-Chi Lee (williameclee@gmail.com)
-!     - Explicitly handled Python uint8 -> FORTRAN INTEGER*1 conversion/interpretation in 'fill_offset_lookup'
+!     - Explicitly handled Python uint8 -> signed 8-bit Fortran conversion/interpretation in 'fill_offset_lookup'
 !   2026-08-04, En-Chi Lee (williameclee@gmail.com)
 !     - Refactored 'mask2ij' to propagate buffer overflow error
 !     - Added function 'mask2id' as the linear-index version of 'mask2ij'; also added related linear index check functions
+!   2026-08-05, En-Chi Lee (williameclee@gmail.com)
+!     - Switched to 'iso_c_binding'
 !!!
 
 module utils
+    use iso_c_binding, only: c_int8_t
     implicit none
 contains
     pure function ij2id_checked(i, j, nrows, ncols) result(cell_id)
@@ -42,7 +45,7 @@ contains
         implicit none
         integer, intent(in) :: cell_id, nrows, ncols
         integer, intent(out) :: i, j
-        logical*1, intent(out) :: is_valid
+        logical(kind=1), intent(out) :: is_valid
 
         is_valid = nrows >= 1 .and. ncols >= 1
         if (is_valid) is_valid = ncols <= huge(cell_id)/nrows
@@ -59,7 +62,7 @@ contains
     pure subroutine mask2id(mask, ids, nids, cnt, err_code)
         !! Converts a mask to validated one-based linear cell IDs.
         implicit none
-        logical*1, intent(in) :: mask(:, :)
+        logical(kind=1), intent(in) :: mask(:, :)
         integer, intent(in) :: nids
         integer, intent(out) :: ids(nids), cnt, err_code
         integer :: ci, cj
@@ -88,7 +91,7 @@ contains
         !! remaining will be ignored.
         implicit none
         ! Arguments
-        logical*1, intent(in) :: mask(:, :)
+        logical(kind=1), intent(in) :: mask(:, :)
             !! Input logical mask
         integer, intent(in) :: nij
             !! Maximum number of indices to return
@@ -131,11 +134,11 @@ contains
         ! Arguments
         integer, intent(in) :: offsets(:, :)
             !! List of offsets
-        integer*1, intent(in) :: codes(:)
+        integer(c_int8_t), intent(in) :: codes(:)
             !! List of codes corresponding to the offsets
-        integer*1, intent(in), optional :: default_noflow_code
+        integer(c_int8_t), intent(in), optional :: default_noflow_code
             !! Optional default no-flow code to use if not found in offsets (default: 0)
-        integer*1 :: noflow_code
+        integer(c_int8_t) :: noflow_code
             !! No-flow code to be returned
         ! Local variables
         integer :: iofs
@@ -168,9 +171,9 @@ contains
         ! Arguments
         integer, intent(in) :: offsets(:, :)
             !! List of offsets
-        integer*1, intent(in) :: codes(:)
+        integer(c_int8_t), intent(in) :: codes(:)
             !! List of codes corresponding to the offsets
-        integer*1 :: opp_codes(size(codes))
+        integer(c_int8_t) :: opp_codes(size(codes))
             !! List of opposite codes corresponding to the offsets (same order as input codes)
         ! Local variables
         integer :: iofs, jofs
@@ -202,7 +205,7 @@ contains
         ! Arguments
         integer, intent(in) :: offsets(:, :)
             !! List of offsets
-        integer*1, intent(in) :: codes(:)
+        integer(c_int8_t), intent(in) :: codes(:)
             !! List of codes corresponding to the offsets
         ! Outputs
         integer :: diffs(0:255, 2)
@@ -213,7 +216,7 @@ contains
         ! Create lookup tables for offsets
         diffs = -99 ! Initialise to invalid value
         do iofs = 1, size(codes)
-            ! F2PY exposes uint8 arrays as signed INTEGER*1 values. Preserve
+            ! F2PY exposes uint8 arrays as signed 8-bit integer values. Preserve
             ! their bit pattern so codes 128:255 address the intended slots.
             code = iand(int(codes(iofs)), 255)
             ! Fill in the offset for the corresponding code index

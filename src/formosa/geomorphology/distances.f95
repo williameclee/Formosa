@@ -6,9 +6,12 @@
 !     - Implemented point-to-line distance functions 'pt2linedist_xy' and 'pt2linedist2_xy'
 !   2026-07-10, En-Chi Lee (williameclee@gmail.com)
 !     - Implemented 2D line intersection test function 'lines_intersect_v2'
+!   2026-08-05, En-Chi Lee (williameclee@gmail.com)
+!     - Switched to 'iso_c_binding'
 !!!
 
 module distances
+    use iso_c_binding, only: c_int8_t
     implicit none
     interface l1dist_xy
         module procedure l1dist_xy_int
@@ -91,7 +94,7 @@ contains
         ! Arguments
         real, intent(in) :: p1(2), p2(2), p3(2), p4(2)
         ! Outputs
-        logical*1 :: flag_overlap
+        logical(kind=1) :: flag_overlap
 
         flag_overlap = &
             (max(min(p1(1), p2(1)), min(p3(1), p4(1))) <= min(max(p1(1), p2(1)), max(p3(1), p4(1)))) .and. &
@@ -111,10 +114,10 @@ contains
         ! Arguments
         real, intent(in) :: l1a(2), l1b(2), l2a(2), l2b(2)
         ! Outputs
-        integer*1 :: flag
+        integer(c_int8_t) :: flag
         ! Local variables
-        logical*1 :: eq_l1al2a, eq_l1al2b, eq_l1bl2a, eq_l1bl2b
-        integer*1 :: o1, o2, o3, o4
+        logical(kind=1) :: eq_l1al2a, eq_l1al2b, eq_l1bl2a, eq_l1bl2b
+        integer(c_int8_t) :: o1, o2, o3, o4
         real :: a0, a1, c0, c1, tmp, overlap0, overlap1
 
         flag = -1
@@ -203,7 +206,7 @@ contains
             ! Arguments
             real, intent(in) :: p1(2), p2(2), p3(2)
             ! Outputs
-            integer*1 :: o
+            integer(c_int8_t) :: o
             ! Local variables
             real :: xprod
 

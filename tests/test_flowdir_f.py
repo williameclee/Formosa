@@ -22,7 +22,10 @@
 #     - Added test cases for function `find_acyclic_flowdirs`
 #   2026-08-04, En-Chi Lee (williameclee@gmail.com)
 #     - Added test cases for FORTRAN error code handling
+#   2026-08-05, En-Chi Lee (williameclee@gmail.com)
+#     - Added a regression check for nonstandard old-style Fortran kind declarations
 
+import re
 import warnings
 from pathlib import Path
 from types import SimpleNamespace
@@ -65,6 +68,21 @@ def test_all_fortran_allocations_check_status():
                 unguarded.append(f"{source_path.relative_to(source_root)}:{line_number}")
 
     assert unguarded == []
+
+
+def test_fortran_sources_avoid_old_style_kind_declarations():
+    source_root = Path(__file__).parents[1] / "src" / "formosa" / "geomorphology"
+    old_style_declaration = re.compile(
+        r"^\s*(integer|logical|real|complex)\s*\*\s*\d+", re.IGNORECASE
+    )
+    violations = []
+
+    for source_path in source_root.rglob("*.f95"):
+        for line_number, line in enumerate(source_path.read_text().splitlines(), start=1):
+            if old_style_declaration.match(line):
+                violations.append(f"{source_path.relative_to(source_root)}:{line_number}")
+
+    assert violations == []
 
 
 def test_mask2ij_returns_output_capacity_error():
