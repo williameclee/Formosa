@@ -2416,7 +2416,11 @@ contains
         end if
         visited = 0
 
-        check_flag_ = (.not. present(check_flag)) .or. check_flag
+        if (present(check_flag)) then
+            check_flag_ = check_flag
+        else
+            check_flag_ = .true.
+        end if
 
         call inner_compute_confluence_dist( &
             dists, &
@@ -2481,7 +2485,11 @@ contains
             !! Flags for whether each path is still active (has not reached max length or invalid cell) and local copy of check_flag for performance
 
         !! Initialisation and checks
-        local_check_flag = (.not. present(check_flag)) .or. check_flag
+        if (present(check_flag)) then
+            local_check_flag = check_flag
+        else
+            local_check_flag = .true.
+        end if
         iconf1 = maxpathlen
         iconf2 = maxpathlen
 
@@ -2510,7 +2518,7 @@ contains
             path1_prc: block
                 if (.not. is_active1) exit path1_prc
                 ! Make sure code is valid
-                code1 = dirs(path1(1, npath1), path1(2, npath1))
+                code1 = iand(int(dirs(path1(1, npath1), path1(2, npath1))), 255)
                 if (code1 < lbound(offset_lookup, 1) .or. code1 > ubound(offset_lookup, 1)) then
                     iconf1 = npath1
                     is_active1 = .false.
@@ -2559,7 +2567,7 @@ contains
             path2_prc: block
                 if (.not. is_active2) exit path2_prc
                 ! Make sure code is valid
-                code2 = dirs(path2(1, npath2), path2(2, npath2))
+                code2 = iand(int(dirs(path2(1, npath2), path2(2, npath2))), 255)
                 if (code2 < lbound(offset_lookup, 1) .or. code2 > ubound(offset_lookup, 1)) then
                     iconf2 = npath2
                     is_active2 = .false.
