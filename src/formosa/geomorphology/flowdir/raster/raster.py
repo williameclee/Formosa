@@ -27,6 +27,8 @@
 #     - Fixed Python/FORTRAN backend behaviour parity in `compute_flow_strahler_order`.
 #   2026-08-03, En-Chi Lee (williameclee@gmail.com)
 #     - Implemented functions `find_acyclic_flowdirs` and `find_cyclic_flowdirs` with both FORTRAN and Python backends
+#   2026-08-04, En-Chi Lee (williameclee@gmail.com)
+#     - Updated `compute_dist2conf_max` and related functions' interface to reflect FORTRAN backend changes
 
 
 import numpy as np
@@ -1163,40 +1165,50 @@ def compute_dist2conf_max(
     valids: Optional[npt.NDArray[np.bool_]] = None,
     x: Optional[npt.NDArray[np.number]] = None,
     y: Optional[npt.NDArray[np.number]] = None,
-    watershed_labels: Optional[npt.NDArray[np.integer]] = None,
     dir_scheme: D8Directions = D8Directions(),
 ) -> npt.NDArray[np.float32]:
     """
     Computes the maximum distance to confluence for each cell with its neighbours in the flow direction grid.
+
     If the cell does not share a confluence with any of its neighbours, the distance to sink is returned instead.
-    This field can be used as an proxy for the ridge network, where cells with a larger distance to confluence are more likely to be part of the ridge network.
+    This field can be used as a proxy for the ridge network, where cells with a larger distance to confluence are more likely to be part of the ridge network.
     See `compute_flow_dist2ridge` for computing the distance to ridge based on this field.
 
     Parameters
     ----------
     dirs : NDArray[uint8]
-        A 2D array representing the flow directions for each cell.
+        2D array representing the flow directions for each cell.
     valids : NDArray[bool], optional
-        A boolean mask array where `True` indicates valid cells. If `None`, all cells are considered valid.
-        Default is `None`.
+        Boolean mask array where `True` indicates valid cells. If `None`, all cells are considered valid.
+        Default input is `None`.
     x : NDArray[int | float], optional
-        A 2D array representing the x-coordinates of each cell. If `None`, a default grid will be created.
-        Default is `None`.
+        2D array representing the x-coordinates of each cell. If `None`, a default grid will be created.
+        Default input is `None`.
     y : NDArray[int | float], optional
-        A 2D array representing the y-coordinates of each cell. If `None`, a default grid will be created.
-        Default is `None`.
-    watershed_labels : NDArray[int], optional
-        A 2D array representing labels for different watersheds in the flow direction grid. Since celss in different watersheds do not share confluences, providing watershed labels can skip unnecessary comparisons.
-        If `None`, all cells are assigned the same label.
-        Default is `None`.
+        2D array representing the y-coordinates of each cell. If `None`, a default grid will be created.
+        Default input is `None`.
     dir_scheme : D8Directions, optional
-        An instance of `D8Directions` defining the flow direction scheme.
-        Default is `D8Directions()`.
+        Instance of `D8Directions` defining the flow direction scheme.
+        Default scheme is `D8Directions()`.
 
     Returns
     -------
     NDArray[float32]
-        A 2D array representing the maximum distance to confluence for each cell.
+        2D array representing the maximum distance to confluence for each cell.
+
+    Notes
+    -----
+    The FORTRAN backend represents the single-flow-direction raster as a forest:
+    each valid cell has at most one downstream parent and each root is a sink.
+    It computes parent, depth, sink, and cumulative-distance metadata once, then
+    answers neighbouring-cell confluence queries using lowest-common-ancestor
+    searches. A cyclic valid flow field is rejected rather than traversed
+    indefinitely.
+
+    Inputs are converted with :func:`numpy.asfortranarray` because the compiled
+    routine consumes column-major arrays. Unlike an unconditional `astype`,
+    this returns the original array when its dtype and layout already match,
+    avoiding unnecessary full-grid copies.
     """
     if valids is None:
         valids = np.ones(dirs.shape, dtype=bool)
@@ -1214,26 +1226,22 @@ def compute_dist2conf_max(
         x = np.arange(dirs.shape[1], dtype=np.float32)
         y = np.arange(dirs.shape[0], dtype=np.float32)
         x, y = np.meshgrid(x, y, indexing="xy")
-    if watershed_labels is None:
-        watershed_labels = np.ones(dirs.shape, dtype=np.int32)
-    elif isinstance(watershed_labels, np.ndarray):
-        assert (
-            watershed_labels.shape == dirs.shape
-        ), f"Shape for flow direction ({dirs.shape}) and labels ({watershed_labels.shape}) do not match."
-    else:
-        raise TypeError(f"Labels must be a NumPy array (got {type(watershed_labels)}).")
 
+    # Preserve already-compatible arrays. DEMGrid flow-direction and validity
+    # arrays are commonly Fortran-contiguous, so unconditional astype calls here
+    # would copy them despite requiring no representation change.
     bmax, err_code = raster_f.compute_max_branch_dist(
-        dirs.astype(np.uint8, order="F"),
-        valids.astype(bool, order="F"),
-        x.astype(np.float32, order="F"),
-        y.astype(np.float32, order="F"),
-        watershed_labels.astype(np.int32, order="F"),
-        dir_scheme.offsets.astype(np.int32, order="F"),
-        dir_scheme.codes.astype(np.uint8, order="F"),
+        np.asfortranarray(dirs, dtype=np.uint8),
+        np.asfortranarray(valids, dtype=bool),
+        np.asfortranarray(x, dtype=np.float32),
+        np.asfortranarray(y, dtype=np.float32),
+        np.asfortranarray(dir_scheme.offsets, dtype=np.int32),
+        np.asfortranarray(dir_scheme.codes, dtype=np.uint8),
     )
     raise_fortran_error("compute_max_branch_dist", err_code)
-    return bmax.astype(np.float32, order="F")
+    # f2py normally returns the requested representation already; this is then
+    # a no-copy normalization while still protecting the public dtype/layout.
+    return np.asfortranarray(bmax, dtype=np.float32)
 
 
 def compute_ridgedir(
@@ -1242,14 +1250,12 @@ def compute_ridgedir(
     valids: Optional[npt.NDArray[np.bool_]] = None,
     x: Optional[npt.NDArray[np.number]] = None,
     y: Optional[npt.NDArray[np.number]] = None,
-    watershed_labels: Optional[npt.NDArray[np.integer]] = None,
 ) -> npt.NDArray[np.uint8]:
     bmax = compute_dist2conf_max(
         dirs,
         valids=valids,
         x=x,
         y=y,
-        watershed_labels=watershed_labels,
         dir_scheme=dir_scheme,
     )
     bmaxdirs, _, _ = compute_flowdir(
@@ -1264,38 +1270,37 @@ def compute_dist2ridge(
     valids: Optional[npt.NDArray[np.bool_]] = None,
     x: Optional[npt.NDArray[np.number]] = None,
     y: Optional[npt.NDArray[np.number]] = None,
-    watershed_labels: Optional[npt.NDArray[np.integer]] = None,
     dir_is_ridge: bool = False,
 ) -> npt.NDArray[np.float32]:
     """
     Computes the 'distance to ridge' for each cell in the flow direction grid.
+
     The ridge network/intensity is defined as the maximum distance to confluence (see `compute_flow_dist2conf_max`), and the distance to ridge is computed as the downstream distance traversing the inverse of the intensity.
 
     Parameters
     ----------
     dirs : NDArray[int]
-        A 2D array representing the flow directions for each cell.
+        2D array representing the flow directions for each cell.
     dir_scheme : D8Directions, optional
-        An instance of `D8Directions` defining the flow direction scheme.
-        Default is `D8Directions()`.
+        Instance of `D8Directions` defining the flow direction scheme.
+        Default scheme is `D8Directions()`.
     valids : NDArray[bool], optional
-        A boolean mask array where `True` indicates valid cells. If `None`, all cells are considered valid.
-        Default is `None`.
+        Boolean mask array where `True` indicates valid cells.
+        If `None`, all cells are considered valid.
+        Default input is `None`.
     x : NDArray[int | float], optional
-        A 2D array representing the x-coordinates of each cell. If `None`, a default grid will be created.
-        Default is `None`.
+        2D array representing the x-coordinates of each cell.
+        If `None`, a default grid will be created.
+        Default input is `None`.
     y : NDArray[int | float], optional
-        A 2D array representing the y-coordinates of each cell. If `None`, a default grid will be created.
-        Default is `None`.
-    watershed_labels : NDArray[int], optional
-        A 2D array representing labels for different watersheds in the flow direction grid. Since celss in different watersheds do not share confluences, providing watershed labels can skip unnecessary comparisons.
-        If `None`, all cells are assigned the same label.
-        Default is `None`.
+        2D array representing the y-coordinates of each cell.
+        If `None`, a default grid will be created.
+        Default input is `None`.
 
     Returns
     -------
     bmaxdists : NDArray[float32]
-        A 2D array representing the distance to ridge for each cell.
+        2D array representing the distance to ridge for each cell.
     """
     if dir_is_ridge:
         bmaxdirs = dirs
@@ -1306,7 +1311,6 @@ def compute_dist2ridge(
             valids=valids,
             x=x,
             y=y,
-            watershed_labels=watershed_labels,
         )
     bmaxdists = compute_dist2source(
         bmaxdirs, dir_scheme=dir_scheme, x=x, y=y, valids=valids
