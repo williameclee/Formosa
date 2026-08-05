@@ -15,6 +15,8 @@
 !     - Added function 'mask2id' as the linear-index version of 'mask2ij'; also added related linear index check functions
 !   2026-08-05, En-Chi Lee (williameclee@gmail.com)
 !     - Switched to 'iso_c_binding'
+!   2026-08-06, En-Chi Lee (williameclee@gmail.com)
+!     - Implemented priority queue
 !!!
 
 module utils
@@ -224,4 +226,117 @@ contains
             diffs(code, 2) = offsets(iofs, 2)
         end do
     end function fill_offset_lookup
+
+    pure logical function cell_id_is_lower(id1, id2, z) result(is_lower)
+        implicit none(type, external)
+        ! Arguments
+        integer, intent(in) :: id1, id2
+        real, intent(in) :: z(*)
+
+        if (z(id1) < z(id2)) then
+            is_lower = .true.
+        else
+            is_lower = .false.
+        end if
+    end function cell_id_is_lower
+
+    pure subroutine push_priority_queue(queue, queue_size, new, z, err_code)
+        implicit none(type, external)
+        ! Arguments
+        integer, intent(inout) :: queue(:)
+        integer, intent(inout) :: queue_size
+        integer, intent(in) :: new
+        real, intent(in) :: z(*)
+        integer, intent(out) :: err_code
+        ! Local variables
+        integer :: pos, parent_pos
+        integer :: tmp_id
+
+        err_code = 0
+
+        ! First make sure the queue is large enough
+        if (queue_size < 0) then
+            err_code = 1 ! Incorrect input
+            return
+        elseif (queue_size >= size(queue)) then
+            err_code = 3 ! Overflow
+            return
+        end if
+
+        ! Add the new cell
+        queue_size = queue_size + 1
+        pos = queue_size
+        queue(pos) = new
+
+        ! Move the new cell to the right position
+        do while (pos > 1)
+            parent_pos = pos/2
+            ! Swap with parent if current cell is lower
+            if (.not. (cell_id_is_lower(queue(pos), queue(parent_pos), z))) exit
+            tmp_id = queue(parent_pos)
+            queue(parent_pos) = queue(pos)
+            queue(pos) = tmp_id
+            pos = parent_pos
+        end do
+    end subroutine push_priority_queue
+
+    pure subroutine pop_priority_queue(queue, queue_size, popped, z, err_code)
+        implicit none(type, external)
+        ! Arguments
+        integer, intent(inout) :: queue(:)
+        integer, intent(inout) :: queue_size
+        real, intent(in) :: z(*)
+        ! Outputs
+        integer, intent(out)::popped
+        integer, intent(out) :: err_code
+        ! Local variables
+        integer :: pos, left_pos, right_pos, lower_pos
+        integer :: tmp_id
+
+        err_code = 0
+
+        ! Check the queue is normal
+        if (queue_size <= 0) then
+            err_code = 1 ! Incorrect input
+            popped = 0
+            return
+        elseif (queue_size > size(queue)) then
+            err_code = 3 ! Overflow
+            popped = 0
+            return
+        end if
+
+        popped = queue(1)
+        if (queue_size == 1) then
+            queue_size = 0
+            return
+        end if
+
+        ! Sort the rest of the queue
+        ! First move the last element to the top
+        pos = 1
+        queue(pos) = queue(queue_size)
+        queue_size = queue_size - 1
+        ! Now move it to the correct place
+        left_pos = pos*2
+        do while (left_pos <= queue_size)
+            right_pos = left_pos + 1
+
+            ! Find the lower of the two child to swap with
+            lower_pos = left_pos
+            if (right_pos <= queue_size) then
+                if (cell_id_is_lower(queue(right_pos), queue(left_pos), z)) lower_pos = right_pos
+            end if
+
+            ! Check if needs swapping
+            if (.not. cell_id_is_lower(queue(lower_pos), queue(pos), z)) exit
+            ! Swap
+            tmp_id = queue(lower_pos)
+            queue(lower_pos) = queue(pos)
+            queue(pos) = tmp_id
+
+            pos = lower_pos
+            left_pos = pos*2
+        end do
+    end subroutine pop_priority_queue
 end module utils

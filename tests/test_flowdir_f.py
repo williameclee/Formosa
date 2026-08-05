@@ -24,6 +24,8 @@
 #     - Added test cases for FORTRAN error code handling
 #   2026-08-05, En-Chi Lee (williameclee@gmail.com)
 #     - Added a regression check for nonstandard old-style Fortran kind declarations
+#   2026-08-06, OpenAI Codex
+#     - Added priority-queue ordering and error-handling tests
 
 import re
 import warnings
@@ -59,13 +61,17 @@ def test_all_fortran_allocations_check_status():
                 statement = f"{statement} {lines[next_index].strip()}"
                 next_index += 1
             if "stat=" not in statement.lower():
-                unguarded.append(f"{source_path.relative_to(source_root)}:{line_number}")
+                unguarded.append(
+                    f"{source_path.relative_to(source_root)}:{line_number}"
+                )
                 continue
             stat_var = statement.lower().split("stat=", 1)[1].split(")", 1)[0].strip()
             status_check = f"if ({stat_var} /= 0)"
             following_lines = " ".join(lines[next_index : next_index + 4]).lower()
             if status_check not in following_lines:
-                unguarded.append(f"{source_path.relative_to(source_root)}:{line_number}")
+                unguarded.append(
+                    f"{source_path.relative_to(source_root)}:{line_number}"
+                )
 
     assert unguarded == []
 
@@ -78,9 +84,13 @@ def test_fortran_sources_avoid_old_style_kind_declarations():
     violations = []
 
     for source_path in source_root.rglob("*.f95"):
-        for line_number, line in enumerate(source_path.read_text().splitlines(), start=1):
+        for line_number, line in enumerate(
+            source_path.read_text().splitlines(), start=1
+        ):
             if old_style_declaration.match(line):
-                violations.append(f"{source_path.relative_to(source_root)}:{line_number}")
+                violations.append(
+                    f"{source_path.relative_to(source_root)}:{line_number}"
+                )
 
     assert violations == []
 
@@ -120,6 +130,86 @@ def test_fortran_direction_utilities_infer_input_shapes():
     lookup = utils_f.fill_offset_lookup(offsets, codes)
     assert np.array_equal(lookup[1], [0, 1])
     assert np.array_equal(lookup[5], [0, -1])
+
+
+def _assert_min_heap(queue, queue_size, elevations):
+    for position in range(queue_size):
+        left = 2 * position + 1
+        right = left + 1
+        parent_elevation = elevations[queue[position] - 1]
+        if left < queue_size:
+            assert parent_elevation <= elevations[queue[left] - 1]
+        if right < queue_size:
+            assert parent_elevation <= elevations[queue[right] - 1]
+
+
+def _drain_priority_queue(queue, queue_size, elevations):
+    popped_ids = []
+    while queue_size.item() > 0:
+        popped, err_code = utils_f.pop_priority_queue(
+            queue,
+            queue_size,
+            elevations,
+        )
+        assert err_code == 0
+        popped_ids.append(popped)
+        _assert_min_heap(queue, queue_size.item(), elevations)
+    return popped_ids
+
+
+def test_priority_queue_pushes_into_empty_queue_and_pops_in_elevation_order():
+    z = np.array([5, 1, 4, 3, 2], dtype=np.float32)
+    queue = np.zeros(z.size, dtype=np.int32)
+    queue_size = np.array(0, dtype=np.int32)
+
+    for cell_id in range(1, z.size + 1):
+        err_code = utils_f.push_priority_queue(queue, queue_size, cell_id, z)
+        assert err_code == 0
+        _assert_min_heap(queue, queue_size.item(), z)
+
+    assert _drain_priority_queue(queue, queue_size, z) == [2, 5, 4, 3, 1]
+
+
+def test_priority_queue_matches_sorted_random_elevations():
+    rng = np.random.default_rng(20260806)
+    z = rng.permutation(257).astype(np.float32)
+    insertion_order = rng.permutation(z.size) + 1
+    queue = np.zeros(z.size, dtype=np.int32)
+    queue_size = np.array(0, dtype=np.int32)
+
+    for cell_id in insertion_order:
+        err_code = utils_f.push_priority_queue(queue, queue_size, int(cell_id), z)
+        assert err_code == 0
+
+    expected = (np.argsort(z) + 1).tolist()
+    assert _drain_priority_queue(queue, queue_size, z) == expected
+
+
+def test_priority_queue_handles_equal_elevations_and_reports_invalid_operations():
+    z = np.array([2, 1, 1, 3], dtype=np.float32)
+    queue = np.zeros(z.size, dtype=np.int32)
+    queue_size = np.array(0, dtype=np.int32)
+
+    for cell_id in range(1, z.size + 1):
+        assert utils_f.push_priority_queue(queue, queue_size, cell_id, z) == 0
+
+    popped_ids = _drain_priority_queue(queue, queue_size, z)
+    popped_elevations = z[np.asarray(popped_ids) - 1]
+    assert np.all(popped_elevations[:-1] <= popped_elevations[1:])
+
+    popped, err_code = utils_f.pop_priority_queue(queue, queue_size, z)
+    assert popped == 0
+    assert err_code == 1
+
+    one_cell_queue = np.zeros(1, dtype=np.int32)
+    one_cell_size = np.array(0, dtype=np.int32)
+    assert utils_f.push_priority_queue(one_cell_queue, one_cell_size, 1, z) == 0
+    assert utils_f.push_priority_queue(one_cell_queue, one_cell_size, 2, z) == 3
+    assert one_cell_size.item() == 1
+    assert one_cell_queue[0] == 1
+
+    invalid_size = np.array(-1, dtype=np.int32)
+    assert utils_f.push_priority_queue(one_cell_queue, invalid_size, 1, z) == 1
 
 
 def test_flat_synthetic_gradients_follow_breadth_first_layers():
@@ -1469,6 +1559,9 @@ def test_find_acyclic_flowdirs_translates_fortran_errors(
 
 
 if __name__ == "__main__":
+    test_priority_queue_pushes_into_empty_queue_and_pops_in_elevation_order()
+    test_priority_queue_matches_sorted_random_elevations()
+    test_priority_queue_handles_equal_elevations_and_reports_invalid_operations()
     test_downstreamid_3x3()
     test_downstreamid_4x4()
     test_flowgraph_3x3()
