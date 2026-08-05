@@ -62,7 +62,7 @@ contains
     pure subroutine mask2id(mask, ids, nids, cnt, err_code)
         !! Converts a mask to validated one-based linear cell IDs.
         implicit none(type, external)
-        logical(kind=1), intent(in) :: mask(:, :)
+        logical(kind=1), intent(in), contiguous :: mask(:, :)
         integer, intent(in) :: nids
         integer, intent(out) :: ids(nids), cnt, err_code
         integer :: ci, cj
@@ -91,7 +91,7 @@ contains
         !! remaining will be ignored.
         implicit none(type, external)
         ! Arguments
-        logical(kind=1), intent(in) :: mask(:, :)
+        logical(kind=1), intent(in), contiguous :: mask(:, :)
             !! Input logical mask
         integer, intent(in) :: nij
             !! Maximum number of indices to return
@@ -132,9 +132,9 @@ contains
         !! no-flow code or 0 if not provided.
         implicit none(type, external)
         ! Arguments
-        integer, intent(in) :: offsets(:, :)
+        integer, intent(in), contiguous :: offsets(:, :)
             !! List of offsets
-        integer(c_int8_t), intent(in) :: codes(:)
+        integer(c_int8_t), intent(in), contiguous :: codes(:)
             !! List of codes corresponding to the offsets
         integer(c_int8_t), intent(in), optional :: default_noflow_code
             !! Optional default no-flow code to use if not found in offsets (default: 0)
@@ -169,9 +169,9 @@ contains
         !! code of code 1 and vice verse.
         implicit none(type, external)
         ! Arguments
-        integer, intent(in) :: offsets(:, :)
+        integer, intent(in), contiguous :: offsets(:, :)
             !! List of offsets
-        integer(c_int8_t), intent(in) :: codes(:)
+        integer(c_int8_t), intent(in), contiguous :: codes(:)
             !! List of codes corresponding to the offsets
         integer(c_int8_t) :: opp_codes(size(codes))
             !! List of opposite codes corresponding to the offsets (same order as input codes)
@@ -203,9 +203,9 @@ contains
         !! diffs(1, :) = (1, 0).
         implicit none(type, external)
         ! Arguments
-        integer, intent(in) :: offsets(:, :)
+        integer, intent(in), contiguous :: offsets(:, :)
             !! List of offsets
-        integer(c_int8_t), intent(in) :: codes(:)
+        integer(c_int8_t), intent(in), contiguous :: codes(:)
             !! List of codes corresponding to the offsets
         ! Outputs
         integer :: diffs(0:255, 2)

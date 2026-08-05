@@ -901,7 +901,7 @@ contains
 
         !! Main loop to fill distances using a breadth-first search starting from source cells
         err_code = 0
-        dists = 0.0
+        dists = 0
         itofill = 1
         do while (itofill <= ntofills)
             ci = tofill_ijs(1, itofill)

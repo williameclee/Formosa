@@ -225,14 +225,14 @@ contains
         ! Simplify a single arc segment recursively using the Ramer-Douglas-Peucker (RDP) algorithm.
         implicit none(type, external)
         ! Arguments
-        real, intent(in) :: xys(:, :)
+        real, intent(in), contiguous :: xys(:, :)
             !! x and y coordinates of each vertex
         integer, intent(in) :: istart, iend
             !! Where the segment starts and ends in the 'xys' array
         real, intent(in) :: tol
             !! Tolerence threshold
         ! Outputs
-        logical(kind=1), intent(inout) :: keeps(:)
+        logical(kind=1), intent(inout), contiguous :: keeps(:)
             !! Boolean mask indicating which vertices should be kept
         ! Local variables
         integer :: i
@@ -298,7 +298,7 @@ contains
         ! Helper function for 'locate_invalid_graph_topology' to sort the arcs by the left edge of their bounding box.
         implicit none(type, external)
         ! Arguments
-        real, intent(in) :: bboxes(:, :)
+        real, intent(in), contiguous :: bboxes(:, :)
         ! Outputs
         integer :: indices(size(bboxes, 2))
         ! Local variables
@@ -337,7 +337,7 @@ contains
         implicit none(type, external)
         integer, intent(in) :: record(5)
             !! Intersection record: arc IDs, segment IDs, and intersection flag
-        integer, intent(inout) :: intxs(:, :)
+        integer, intent(inout), contiguous :: intxs(:, :)
             !! Output buffer containing up to 'size(intxs, 2)' records
         integer, intent(inout) :: nintxs
             !! Total number of violations encountered, including unstored ones
@@ -353,9 +353,9 @@ contains
         !! Only the first 'capacity' violations are stored in 'intxs'.
         implicit none(type, external)
         ! Arguments
-        real, intent(in) :: vertex_ijs(:, :)
+        real, intent(in), contiguous :: vertex_ijs(:, :)
             !! Vertex coordinates arranged as '(2, nvertices)'
-        integer, intent(in) :: arc_endpts(:, :)
+        integer, intent(in), contiguous :: arc_endpts(:, :)
             !! Inclusive, one-based arc endpoint indices arranged as '(2, narcs)'
         integer, intent(in) :: capacity
             !! Maximum number of intersection records that can be stored
