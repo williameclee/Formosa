@@ -403,7 +403,6 @@ class DEMGrid:
             valids=self.valid,
             x=self.x,
             y=self.y,
-            watershed_labels=self.watersheds,
         )
         return self._ridgedir
 
