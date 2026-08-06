@@ -277,7 +277,7 @@ class DEMGrid:
     def ocean_mask(self) -> npt.NDArray[np.bool_]:
         """
         Boolean mask representing cells connected to a sufficiently large ocean that touches the DEM edge.
-        
+
         The elevation at or at and below which is controlled by the `ocean_threshold` property, and the minimum ocean size (in number of cells) is controlled by the private `min_ocean_size` property that can be set during initialisation.
 
         See :func:`invalidate_ocean_basins` for more details.
@@ -356,7 +356,7 @@ class DEMGrid:
 
     def fill_depressions(self) -> "DEMGrid":
         """Fill enclosed depressions in-place using Priority-Flood."""
-        self.dem = fill_depressions(fill_pits(self.dem)[0], valids=self.valid)
+        self.dem = fill_depressions(self.dem, valids=self.valid)
         return self
 
     def invalidate_ocean_basins(
