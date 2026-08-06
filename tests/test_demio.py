@@ -9,6 +9,38 @@ import pytest
 from formosa.dem import DEMGrid, read_dem
 
 
+def test_demgrid_fill_depressions_preserves_boundary_outlets():
+    dem = np.full((5, 5), 9.0, dtype=np.float32)
+    boundary_outlets = ((0, 0), (0, 2), (2, 0), (2, 4), (4, 2), (4, 4))
+    for outlet in boundary_outlets:
+        dem[outlet] = 1.0
+    dem[2, 2] = 2.0
+    original = dem.copy()
+    x, y = np.meshgrid(np.arange(dem.shape[1]), np.arange(dem.shape[0]))
+    grid = DEMGrid(dem, x=x, y=y)
+
+    result = grid.fill_depressions()
+
+    assert result is grid
+    for outlet in boundary_outlets:
+        assert grid.dem[outlet] == original[outlet]
+    assert grid.dem[2, 2] == 9.0
+
+
+def test_demgrid_fill_depressions_leaves_boundary_only_grid_unchanged():
+    dem = np.array(
+        [[8.0, 1.0, 7.0, 2.0], [3.0, 6.0, 4.0, 5.0]],
+        dtype=np.float32,
+    )
+    original = dem.copy()
+    x, y = np.meshgrid(np.arange(dem.shape[1]), np.arange(dem.shape[0]))
+    grid = DEMGrid(dem, x=x, y=y)
+
+    grid.fill_depressions()
+
+    np.testing.assert_array_equal(grid.dem, original)
+
+
 def test_read_hgt_and_construct_demgrid(tmp_path):
     # The Rasterio SRTMHGT driver recognizes the standard 1201- or 3601-cell
     # tile sizes and derives the geographic extent from the filename.
