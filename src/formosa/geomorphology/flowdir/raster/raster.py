@@ -81,10 +81,9 @@ def fill_depressions(
         result back to the input dtype.
     valids : NDArray[bool], optional
         Boolean mask with the same shape as `dem`. Invalid cells are excluded
-        from the fill and retain their original elevations. Currently, only
-        valid cells on the outer array boundary are treated as Priority-Flood
-        outlets; valid cells adjacent to internal invalid regions are not.
-        If `None`, every cell is valid.
+        from the fill and retain their original elevations. Valid cells on the
+        outer array boundary or adjacent to invalid cells are treated as
+        Priority-Flood outlets. If `None`, every cell is valid.
     Returns
     -------
     NDArray[number]

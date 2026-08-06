@@ -66,7 +66,8 @@ contains
         ! Local variables
         integer :: nrows, ncols, noffsets
             !! Size of the grid
-        integer :: ci, cj, cid
+        integer :: ci, cj, cid, ni, nj, nid
+        integer :: iofs
 
         nrows = size(z, dim=1)
         ncols = size(z, dim=2)
@@ -113,7 +114,30 @@ contains
             if (err_code /= 0) return
             processed(ci, cj) = .true.
         end do
-        ! TODO: Queue neighbours of non-valid cells (which may be ocean, etc.)
+
+        ! Queue neighbours of non-valid cells (which may be ocean, etc.)
+        do cj = 1, ncols
+            do ci = 1, nrows
+                if (valids(ci, cj)) cycle
+                ! Push all neighbours to the queue
+                do iofs = 1, noffsets
+                    ! In opposite direction since we want to find cells that can flow to these invalid cells
+                    ni = ci - offsets(iofs, 1)
+                    nj = cj - offsets(iofs, 2)
+                    ! Check bounds
+                    if (ni < 1 .or. ni > nrows .or. nj < 1 .or. nj > ncols) cycle
+                    ! Skip if not valid or already processed
+                    if (.not. valids(ni, nj)) cycle
+                    if (processed(ni, nj)) cycle
+
+                    ! Push to the queue
+                    nid = ij2id_checked(ni, nj, nrows, ncols)
+                    call push_priority_queue(priority_queue, priority_queue_size, nid, z, err_code)
+                    if (err_code /= 0) return
+                    processed(ni, nj) = .true.
+                end do
+            end do
+        end do
     end subroutine fill_boundary_priority_queue
 
     subroutine fill_depression( &

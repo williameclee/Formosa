@@ -48,6 +48,41 @@ T = True
 F = False
 
 
+def _reconstruct_by_erosion(dem, valids=None):
+    """Slow test oracle for D8 reconstruction with masked cells as outlets."""
+    if valids is None:
+        valids = np.ones(dem.shape, dtype=bool)
+    reconstructed = dem.copy()
+    reconstructed[valids] = np.inf
+
+    for i in range(dem.shape[0]):
+        for j in range(dem.shape[1]):
+            if not valids[i, j]:
+                continue
+            i0, i1 = max(0, i - 1), min(dem.shape[0], i + 2)
+            j0, j1 = max(0, j - 1), min(dem.shape[1], j + 2)
+            is_outer_boundary = (
+                i == 0 or i == dem.shape[0] - 1 or j == 0 or j == dem.shape[1] - 1
+            )
+            is_mask_boundary = np.any(~valids[i0:i1, j0:j1])
+            if is_outer_boundary or is_mask_boundary:
+                reconstructed[i, j] = dem[i, j]
+
+    while True:
+        previous = reconstructed.copy()
+        for i in range(dem.shape[0]):
+            for j in range(dem.shape[1]):
+                if not valids[i, j]:
+                    continue
+                i0, i1 = max(0, i - 1), min(dem.shape[0], i + 2)
+                j0, j1 = max(0, j - 1), min(dem.shape[1], j + 2)
+                neighbour_valids = valids[i0:i1, j0:j1]
+                neighbour_values = previous[i0:i1, j0:j1][neighbour_valids]
+                reconstructed[i, j] = max(dem[i, j], np.min(neighbour_values))
+        if np.array_equal(reconstructed, previous):
+            return reconstructed
+
+
 def test_fill_depressions():
     dem = np.array(
         [[5.0, 5.0, 5.0], [5.0, 1.0, 5.0], [5.0, 5.0, 5.0]],
@@ -124,28 +159,11 @@ def test_fill_depressions_boundary_only_grids_are_unchanged(shape):
 
 
 def test_fill_depressions_matches_morphological_reconstruction_randomly():
-    def reconstruct_by_erosion(dem):
-        reconstructed = np.full(dem.shape, np.inf, dtype=np.float32)
-        reconstructed[0, :] = dem[0, :]
-        reconstructed[-1, :] = dem[-1, :]
-        reconstructed[:, 0] = dem[:, 0]
-        reconstructed[:, -1] = dem[:, -1]
-
-        while True:
-            previous = reconstructed.copy()
-            for i in range(dem.shape[0]):
-                for j in range(dem.shape[1]):
-                    i0, i1 = max(0, i - 1), min(dem.shape[0], i + 2)
-                    j0, j1 = max(0, j - 1), min(dem.shape[1], j + 2)
-                    reconstructed[i, j] = max(dem[i, j], np.min(previous[i0:i1, j0:j1]))
-            if np.array_equal(reconstructed, previous):
-                return reconstructed
-
     rng = np.random.default_rng(20260806)
     for _ in range(200):
         shape = tuple(rng.integers(3, 20, size=2))
         dem = rng.uniform(-100.0, 300.0, size=shape).astype(np.float32)
-        expected = reconstruct_by_erosion(dem)
+        expected = _reconstruct_by_erosion(dem)
 
         filled = flowdir.fill_depressions(dem)
 
@@ -190,7 +208,7 @@ def test_fill_depressions_fortran_preserves_invalid_cells():
     assert filled[1, 1] == dem[1, 1]
 
 
-def test_fill_depressions_fortran_does_not_treat_internal_invalids_as_outlets():
+def test_fill_depressions_treats_internal_invalids_as_outlets():
     dem = np.full((5, 5), 5.0, dtype=np.float32)
     dem[1:4, 1:4] = 1.0
     dem[2, 2] = -9999.0
@@ -199,8 +217,70 @@ def test_fill_depressions_fortran_does_not_treat_internal_invalids_as_outlets():
 
     filled = flowdir.fill_depressions(dem, valids=valids)
 
+    np.testing.assert_array_equal(filled, dem)
+
+
+def test_fill_depressions_treats_boundary_invalids_as_outlets():
+    dem = np.full((5, 5), -9999.0, dtype=np.float32)
+    dem[1:4, 1:4] = 5.0
+    dem[2, 2] = 1.0
+    valids = np.zeros(dem.shape, dtype=bool)
+    valids[1:4, 1:4] = True
+
+    filled = flowdir.fill_depressions(dem, valids=valids)
+
     np.testing.assert_array_equal(filled[valids], np.full(valids.sum(), 5.0))
+    np.testing.assert_array_equal(filled[~valids], dem[~valids])
+
+
+def test_fill_depressions_uses_diagonal_invalid_adjacency():
+    dem = np.full((5, 5), 10.0, dtype=np.float32)
+    dem[1, 1] = 1.0
+    dem[2, 2] = -9999.0
+    valids = np.ones(dem.shape, dtype=bool)
+    valids[2, 2] = False
+
+    filled = flowdir.fill_depressions(dem, valids=valids)
+
+    assert filled[1, 1] == 1.0
     assert filled[2, 2] == -9999.0
+
+
+def test_fill_depressions_deduplicates_outlets_adjacent_to_many_invalids():
+    rows, cols = np.indices((9, 9))
+    valids = (rows + cols) % 2 == 0
+    dem = np.arange(81, dtype=np.float32).reshape(9, 9)
+    dem[~valids] = -9999.0
+
+    filled = flowdir.fill_depressions(dem, valids=valids)
+
+    np.testing.assert_array_equal(filled, dem)
+
+
+def test_fill_depressions_fills_valid_island_surrounded_by_invalids():
+    dem = np.full((9, 9), -9999.0, dtype=np.float32)
+    dem[2:7, 2:7] = 3.0
+    dem[3:6, 3:6] = 1.0
+    valids = np.zeros(dem.shape, dtype=bool)
+    valids[2:7, 2:7] = True
+
+    filled = flowdir.fill_depressions(dem, valids=valids)
+
+    np.testing.assert_array_equal(filled[valids], np.full(valids.sum(), 3.0))
+    np.testing.assert_array_equal(filled[~valids], dem[~valids])
+
+
+def test_fill_depressions_matches_masked_reconstruction_randomly():
+    rng = np.random.default_rng(314159)
+    for _ in range(100):
+        shape = tuple(rng.integers(3, 15, size=2))
+        dem = rng.uniform(-100.0, 300.0, size=shape).astype(np.float32)
+        valids = rng.random(shape) > 0.25
+        expected = _reconstruct_by_erosion(dem, valids=valids)
+
+        filled = flowdir.fill_depressions(dem, valids=valids)
+
+        np.testing.assert_array_equal(filled, expected)
 
 
 def test_fill_depressions_fortran_all_invalid_is_unchanged():
