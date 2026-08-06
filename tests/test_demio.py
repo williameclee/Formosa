@@ -1,3 +1,8 @@
+# Last modified
+#   2026-08-06, En-Chi Lee (williameclee@gmail.com)
+#     - Added tests for the new `.hgt` input format
+#     - Added tests for the ocean basin masking functions
+
 import numpy as np
 import pytest
 
@@ -79,3 +84,36 @@ def test_demgrid_detect_ocean_true_means_zero_elevation():
 
     assert grid.valid[0, 0]
     assert grid.ocean_threshold == 0
+
+
+def test_demgrid_lazy_ocean_mask_invalidates_detected_cells():
+    dem = np.full((5, 6), 5.0, dtype=np.float32)
+    dem[0:2, 0:2] = 0.0
+    dem[2, 3] = 0.0  # Enclosed low cell.
+    x, y = np.meshgrid(np.arange(dem.shape[1]), np.arange(dem.shape[0]))
+    grid = DEMGrid(dem, x=x, y=y, min_ocean_size=2)
+
+    ocean_mask = grid.ocean_mask
+
+    expected = np.zeros(dem.shape, dtype=bool)
+    expected[0:2, 0:2] = True
+    np.testing.assert_array_equal(ocean_mask, expected)
+    np.testing.assert_array_equal(grid.sea_mask, expected)
+    np.testing.assert_array_equal(grid.valid, ~expected)
+
+
+def test_demgrid_ocean_invalidation_is_idempotent_and_clears_caches():
+    dem = np.full((5, 6), 5.0, dtype=np.float32)
+    dem[0:2, 0:2] = 0.0
+    x, y = np.meshgrid(np.arange(dem.shape[1]), np.arange(dem.shape[0]))
+    grid = DEMGrid(dem, x=x, y=y)
+    _ = grid.slope
+    _ = grid.flowdir
+
+    grid.invalidate_ocean_basins(min_size=2)
+    first_valid = grid.valid.copy()
+
+    assert grid._slope is None
+    assert grid._flowdir is None
+    grid.invalidate_ocean_basins(min_size=2)
+    np.testing.assert_array_equal(grid.valid, first_valid)

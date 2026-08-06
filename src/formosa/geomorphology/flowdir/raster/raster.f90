@@ -69,6 +69,7 @@ contains
         integer :: si, sj
 
         ! Queue the boundary ocean cells
+        err_code = 0
         nseeds = 0
 
         ! Leftmost column

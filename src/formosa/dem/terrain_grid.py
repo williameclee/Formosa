@@ -286,13 +286,10 @@ class DEMGrid:
         if self._ocean_mask is None or self.ocean_threshold is None:
             if self.ocean_threshold is None:
                 self.ocean_threshold = 0
-            self._ocean_mask = _invalidate_ocean_basins(
-                self.dem,
-                valids=self.valid,
+            self.invalidate_ocean_basins(
                 ocean_level=self.ocean_threshold,
-                flood_below=self._ocean_flood_below,
                 min_size=self._min_ocean_size,
-                dir_scheme=self.directions,
+                flood_below=self._ocean_flood_below,
             )
 
         return self._ocean_mask
