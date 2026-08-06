@@ -315,10 +315,9 @@ class DEMGrid:
             )
         return self._strahler_order
 
-    def fill_depressions(self, method: str = "erosion") -> "DEMGrid":
-        self.dem = fill_depressions(
-            fill_pits(self.dem)[0], valids=self.valid, method=method
-        )
+    def fill_depressions(self) -> "DEMGrid":
+        """Fill enclosed depressions in-place using Priority-Flood."""
+        self.dem = fill_depressions(fill_pits(self.dem)[0], valids=self.valid)
         return self
 
     @property

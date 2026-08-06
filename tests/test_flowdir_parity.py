@@ -1,6 +1,8 @@
 # Last modified
 #   2026-08-03, En-Chi Lee (williameclee@gmail.com)
 #     - Added test cases for function `find_acyclic_flowdirs` and graph construction validity
+#   2026-08-06, En-Chi Lee (williameclee@gmail.com)
+#     - Added tests for the different depression-filling algorithms for the two backends.
 
 import numpy as np
 import pytest
@@ -8,8 +10,52 @@ import pytest
 from formosa import D8Directions
 from formosa.geomorphology import flowdir
 
+T = True
+F = False
 
 BACKENDS = ("python", "fortran")
+
+
+def test_fill_depressions_backends_match_randomly():
+    rng = np.random.default_rng(20260806)
+    for _ in range(200):
+        shape = tuple(rng.integers(3, 20, size=2))
+        dem = rng.uniform(-100.0, 300.0, size=shape).astype(np.float32)
+
+        python_filled = flowdir.fill_depressions(dem, backend="python")
+        fortran_filled = flowdir.fill_depressions(dem, backend="fortran")
+
+        np.testing.assert_array_equal(fortran_filled, python_filled)
+
+
+def test_fill_depressions_backends_match_random_masks():
+    rng = np.random.default_rng(314159)
+    for _ in range(100):
+        shape = tuple(rng.integers(3, 15, size=2))
+        dem = rng.uniform(-100.0, 300.0, size=shape).astype(np.float32)
+        valids = rng.random(shape) > 0.25
+
+        python_filled = flowdir.fill_depressions(dem, valids=valids, backend="python")
+        fortran_filled = flowdir.fill_depressions(dem, valids=valids, backend="fortran")
+
+        np.testing.assert_array_equal(fortran_filled, python_filled)
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_fill_depressions_backend_preserves_dtype_shape_and_input(backend):
+    source = np.array(
+        [[7, 7, 7, 7], [7, 1, 2, 7], [7, 3, 0, 7], [7, 7, 7, 7]],
+        dtype=np.float64,
+    )
+    dem = source[:, ::-1]
+    original = dem.copy()
+
+    filled = flowdir.fill_depressions(dem, backend=backend)
+
+    assert filled.shape == dem.shape
+    assert filled.dtype == dem.dtype
+    np.testing.assert_array_equal(dem, original)
+    np.testing.assert_array_equal(filled, np.full(dem.shape, 7.0))
 
 
 @pytest.fixture
@@ -99,9 +145,9 @@ def test_masked_tributary_does_not_affect_order(backend):
     )
     valids = np.array(
         [
-            [True, False, False],
-            [False, True, False],
-            [False, True, False],
+            [T, F, F],
+            [F, T, F],
+            [F, T, F],
         ]
     )
     expected = np.array(
@@ -157,7 +203,7 @@ def test_construct_flowgraph_is_backend_independent_of_masked_directions():
 def test_constructed_flowgraph_segments_follow_d8_adjacency(backend):
     dir_scheme = D8Directions(transform_codes=lambda x: x)
     dirs = np.array([[3, 3, 3], [3, 3, 3], [1, 1, 0]], dtype=np.uint8)
-    valids = np.array([[True, False, True], [True, True, True], [True, True, True]])
+    valids = np.array([[T, F, T], [T, T, T], [T, T, T]])
 
     _, vertex_ijs, arc_endpts = flowdir.construct_flowgraph(
         dirs,
@@ -296,9 +342,7 @@ def test_construct_flowgraph_allows_selection_boundary(
 def test_construct_flowgraph_covers_every_selected_edge_endpoint(backend):
     dir_scheme = D8Directions(transform_codes=lambda x: x)
     dirs = np.array([[3, 3, 3], [3, 3, 3], [1, 1, 0]], dtype=np.uint8)
-    valids = np.array(
-        [[True, False, True], [True, True, True], [True, True, True]]
-    )
+    valids = np.array([[T, F, T], [T, T, T], [T, T, T]])
     orders = np.ones(dirs.shape, dtype=np.uint8)
 
     _, graph_verts, graph_endpts = flowdir.construct_flowgraph(
@@ -311,9 +355,7 @@ def test_construct_flowgraph_covers_every_selected_edge_endpoint(backend):
     )
 
     represented = {
-        tuple(ij)
-        for start, end in graph_endpts
-        for ij in graph_verts[start : end + 1]
+        tuple(ij) for start, end in graph_endpts for ij in graph_verts[start : end + 1]
     }
     expected = {
         (0, 0),

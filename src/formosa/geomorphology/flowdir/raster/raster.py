@@ -1,40 +1,45 @@
 # Last modified
 #   2026-02-11, En-Chi Lee (williameclee@arizona.edu)
-#     - Rename flowdir functions to be more descriptive
+#     - Rename flowdir functions to be more descriptive.
 #   2026-06-09, En-Chi Lee (williameclee@gmail.com)
-#     - Added `compute_flow_dist2ridge` function to compute 'distance to ridges'
-#     - Added error for missing FORTRAN backend
-#     - Removed NumPy type `np.bool` to either `np.bool_` or `bool` for compatibility with newer Numpy versions
-#     - Renamed Fortran function call: `compute_masked_flowdir` -> `compute_synthetic_flowdir`
-#     - Added `valids` argument to `label_flats` function
+#     - Added `compute_flow_dist2ridge` function to compute 'distance to ridges'.
+#     - Added error for missing FORTRAN backend.
+#     - Removed NumPy type `np.bool` to either `np.bool_` or `bool` for compatibility with newer NumPy versions.
+#     - Renamed FORTRAN function call: `compute_masked_flowdir` -> `compute_synthetic_flowdir`.
+#     - Added `valids` argument to `label_flats` function.
 #   2026-06-10, En-Chi Lee (williameclee@gmail.com)
-#     - Small refactors and documentation cleanup
+#     - Small refactors and documentation cleanup.
 #   2026-06-11, En-Chi Lee (williameclee@gmail.com)
-#     - Moved Python backend implementations and auxiliary functions to separate files
-#     - Standardised variable, argument, and function names
+#     - Moved Python backend implementations and auxiliary functions to separate files.
+#     - Standardised variable, argument, and function names.
 #   2026-06-30, En-Chi Lee (williameclee@gmail.com)
-#     - Added `x` and `y` into `compute_dist2source` in `compute_dist2ridge`
-#     - Changed strahler order output to 8-bit unsigned integer
-#     - Added functions `compute_ridgedir` and `compute_ridge_strahler_order`
+#     - Added `x` and `y` into `compute_dist2source` in `compute_dist2ridge`.
+#     - Changed strahler order output to 8-bit unsigned integer.
+#     - Added functions `compute_ridgedir` and `compute_ridge_strahler_order`.
 #   2026-07-01, En-Chi Lee (williameclee@gmail.com)
-#     - Allowed specifying validity mask in `count_indegree`
-#     - Added function `construct_flowgraph`
+#     - Allowed specifying validity mask in `count_indegree`.
+#     - Added function `construct_flowgraph`.
 #   2026-07-08, En-Chi Lee (williameclee@gmail.com)
-#     - Renamed helper submodule from `aux` to `utils`
+#     - Renamed helper submodule from `aux` to `utils`.
 #   2026-07-14, En-Chi Lee (williameclee@gmail.com)
-#     - Splitted `geomorphology.flowdir` into submodules
+#     - Splitted `geomorphology.flowdir` into submodules.
 #   2026-07-30, En-Chi Lee (williameclee@gmail.com)
 #     - Fixed Python/FORTRAN backend behaviour parity in `compute_flow_strahler_order`.
 #   2026-08-03, En-Chi Lee (williameclee@gmail.com)
-#     - Implemented functions `find_acyclic_flowdirs` and `find_cyclic_flowdirs` with both FORTRAN and Python backends
+#     - Implemented functions `find_acyclic_flowdirs` and `find_cyclic_flowdirs` with both FORTRAN and Python backends.
 #   2026-08-04, En-Chi Lee (williameclee@gmail.com)
-#     - Updated `compute_dist2conf_max` and related functions' interface to reflect FORTRAN backend changes
+#     - Updated `compute_dist2conf_max` and related functions' interface to reflect FORTRAN backend changes.
+#   2026-08-06, En-Chi Lee (williameclee@gmail.com)
+#     - Replaced morphological reconstruction with FORTRAN Priority-Flood in `fill_depressions`.
 
 
 import numpy as np
 
 from formosa.geomorphology.flowdir.d8directions import D8Directions
-from formosa.geomorphology.flowdir.utils import get_neighbour_values, raise_fortran_error
+from formosa.geomorphology.flowdir.utils import (
+    get_neighbour_values,
+    raise_fortran_error,
+)
 
 try:
     from formosa.geomorphology.flowdir_f import flowdir_raster as raster_f
@@ -60,36 +65,83 @@ from typing import Literal, Iterable, Optional, overload
 def fill_depressions(
     dem: npt.NDArray[np.number],
     valids: Optional[npt.NDArray[np.bool_]] = None,
-    method: str = "erosion",
+    backend: Literal["fortran", "python"] = "fortran",
 ) -> npt.NDArray[np.number]:
-    assert method in [
-        "erosion",
-        "dilation",
-    ], f"METHOD must be either 'erosion' or 'dilation', got {method} instead"
+    """
+    Fills depressions in a digital elevation model.
 
-    from skimage import morphology
+    Interior cells that cannot drain to the edge of the array are raised to the
+    lowest elevation that provides an outlet. The FORTRAN backend uses
+    Priority-Flood, while the Python backend uses iterative morphological
+    reconstruction by erosion.
 
-    dem_seed = dem.copy()
-    if valids is not None:
-        if method == "erosion":
-            dem[~valids] = np.nanmin(dem[valids])
-            seed_value = np.nanmax(dem[valids]) + 1
-        else:
-            dem[~valids] = np.nanmax(dem[valids])
-            seed_value = np.nanmin(dem[valids]) - 1
+    Parameters
+    ----------
+    dem : NDArray[number]
+        Two-dimensional digital elevation model. The input is not modified.
+        The calculation uses 32-bit floating-point precision and converts the
+        result back to the input dtype.
+    valids : NDArray[bool], optional
+        Boolean mask with the same shape as `dem`. Invalid cells are excluded
+        from the fill and retain their original elevations. Valid cells on the
+        outer array boundary or adjacent to invalid cells are treated as
+        Priority-Flood outlets. If `None`, every cell is valid.
+    backend : {"fortran", "python"}, optional
+        Implementation to use. The default is `"fortran"`.
+    Returns
+    -------
+    NDArray[number]
+        Depression-filled DEM with the same shape and dtype as `dem`.
+
+    Raises
+    ------
+    ValueError
+        If an argument is invalid or the arrays have incompatible shapes.
+    ImportError
+        If the selected backend is unavailable.
+    MemoryError
+        If the FORTRAN backend cannot allocate its workspace.
+
+    Notes
+    -----
+    Elevations should be finite. NaN ordering is not defined by the FORTRAN
+    priority queue. Equal-elevation cells may be processed in any order without
+    changing the filled result.
+    """
+    dem = np.asarray(dem)
+    if dem.ndim != 2 or 0 in dem.shape:
+        raise ValueError(f"dem must be a non-empty 2D array, got shape {dem.shape}.")
+    if not np.issubdtype(dem.dtype, np.number):
+        raise TypeError(f"dem must have a numeric dtype, got {dem.dtype}.")
+    if backend not in ("fortran", "python"):
+        raise ValueError(
+            f"backend must be either 'fortran' or 'python', got {backend!r}."
+        )
+    if valids is None:
+        valids_array = np.ones(dem.shape, dtype=bool, order="F")
     else:
-        if method == "erosion":
-            seed_value = np.nanmax(dem) + 1
-        else:
-            seed_value = np.nanmin(dem) - 1
+        valids_array = np.asarray(valids, dtype=bool)
+        if valids_array.shape != dem.shape:
+            raise ValueError(
+                f"Shapes for dem ({dem.shape}) and valids "
+                f"({valids_array.shape}) do not match."
+            )
+        if not np.any(valids_array):
+            return dem.copy()
 
-    dem_mask = np.full(dem.shape, True, dtype=bool)
-    dem_mask[0, :] = False
-    dem_mask[-1, :] = False
-    dem_mask[:, 0] = False
-    dem_mask[:, -1] = False
-    dem_seed[dem_mask] = seed_value
-    return morphology.reconstruction(dem_seed, dem, method=method).astype(dem.dtype)
+    dem_float32 = dem.astype(np.float32, order="F")
+    if backend == "python":
+        from .raster_py import _fill_depressions_py
+
+        z_filled = _fill_depressions_py(dem_float32, valids=valids_array)
+    else:
+        z_filled, err_code = raster_f.fill_depression(
+            dem_float32,
+            valids_array.astype(bool, order="F"),
+            D8Directions().offsets.astype(np.int32, order="F"),
+        )
+        raise_fortran_error("fill_depression", err_code)
+    return z_filled.astype(dem.dtype, order="F")
 
 
 def compute_flowdir_simple(

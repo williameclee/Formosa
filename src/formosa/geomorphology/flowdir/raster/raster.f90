@@ -31,18 +31,180 @@
 !   2026-08-05, En-Chi Lee (williameclee@gmail.com)
 !     - Overhauled algorithm for 'compute_max_branch_dist'
 !     - Switched to 'iso_c_binding'
+!   2026-08-06, En-Chi Lee (williameclee@gmail.com)
+!     - Implemented naive priority-flood depression-filling algorithm
 !!!
 
 module flowdir_raster
     use iso_c_binding, only: c_int8_t, c_int16_t
     use utils, only: fill_offset_lookup, find_noflow_code, id2ij_checked, &
-        ij2id_checked, mask2id, mask2ij
+                     ij2id_checked, mask2id, mask2ij, &
+                     push_priority_queue, pop_priority_queue
     use distances, only: l1dist_xy, l2dist_xy
     implicit none(type, external)
+    private :: fill_boundary_priority_queue
     private :: resolve_flow_tree_links, build_flow_tree_topology
     private :: propagate_flow_tree_metadata, build_flow_tree_metadata
     private :: find_tree_confluence
 contains
+    pure subroutine fill_boundary_priority_queue( &
+        z, valids, processed, priority_queue, priority_queue_size, &
+        offsets, err_code)
+        implicit none(type, external)
+        ! Arguments
+        real, intent(in) :: z(:, :)
+            !! Elevation grid
+        logical(kind=1), intent(in) :: valids(:, :)
+            !! Validity mask (true for valid cells, false for no-data)
+        logical(kind=1), intent(inout) :: processed(:, :)
+        integer, intent(inout) :: priority_queue(:)
+        integer, intent(inout) :: priority_queue_size
+        integer, intent(in) :: offsets(:, :)
+            !! List of offsets for each flow direction
+        ! Outputs
+        integer, intent(out) :: err_code
+        ! Local variables
+        integer :: nrows, ncols, noffsets
+            !! Size of the grid
+        integer :: ci, cj, cid, ni, nj, nid
+        integer :: iofs
+
+        nrows = size(z, dim=1)
+        ncols = size(z, dim=2)
+        noffsets = size(offsets, dim=1)
+
+        ! Push all valid boundaries to the queue
+        ! Top row
+        ci = 1
+        do cj = 1, ncols
+            if (.not. valids(ci, cj)) cycle
+            if (processed(ci, cj)) cycle
+            cid = ij2id_checked(ci, cj, nrows, ncols)
+            call push_priority_queue(priority_queue, priority_queue_size, cid, z, err_code)
+            if (err_code /= 0) return
+            processed(ci, cj) = .true.
+        end do
+        ! Bottom row
+        ci = nrows
+        do cj = 1, ncols
+            if (.not. valids(ci, cj)) cycle
+            if (processed(ci, cj)) cycle
+            cid = ij2id_checked(ci, cj, nrows, ncols)
+            call push_priority_queue(priority_queue, priority_queue_size, cid, z, err_code)
+            if (err_code /= 0) return
+            processed(ci, cj) = .true.
+        end do
+        ! Leftmost column
+        cj = 1
+        do ci = 1, nrows
+            if (.not. valids(ci, cj)) cycle
+            if (processed(ci, cj)) cycle
+            cid = ij2id_checked(ci, cj, nrows, ncols)
+            call push_priority_queue(priority_queue, priority_queue_size, cid, z, err_code)
+            if (err_code /= 0) return
+            processed(ci, cj) = .true.
+        end do
+        ! Rightmost column
+        cj = ncols
+        do ci = 1, nrows
+            if (.not. valids(ci, cj)) cycle
+            if (processed(ci, cj)) cycle
+            cid = ij2id_checked(ci, cj, nrows, ncols)
+            call push_priority_queue(priority_queue, priority_queue_size, cid, z, err_code)
+            if (err_code /= 0) return
+            processed(ci, cj) = .true.
+        end do
+
+        ! Queue neighbours of non-valid cells (which may be ocean, etc.)
+        do cj = 1, ncols
+            do ci = 1, nrows
+                if (valids(ci, cj)) cycle
+                ! Push all neighbours to the queue
+                do iofs = 1, noffsets
+                    ! In opposite direction since we want to find cells that can flow to these invalid cells
+                    ni = ci - offsets(iofs, 1)
+                    nj = cj - offsets(iofs, 2)
+                    ! Check bounds
+                    if (ni < 1 .or. ni > nrows .or. nj < 1 .or. nj > ncols) cycle
+                    ! Skip if not valid or already processed
+                    if (.not. valids(ni, nj)) cycle
+                    if (processed(ni, nj)) cycle
+
+                    ! Push to the queue
+                    nid = ij2id_checked(ni, nj, nrows, ncols)
+                    call push_priority_queue(priority_queue, priority_queue_size, nid, z, err_code)
+                    if (err_code /= 0) return
+                    processed(ni, nj) = .true.
+                end do
+            end do
+        end do
+    end subroutine fill_boundary_priority_queue
+
+    subroutine fill_depression( &
+        z, z_filled, valids, nrows, ncols, offsets, noffsets, err_code)
+        implicit none(type, external)
+        ! Arguments
+        integer, intent(in) :: nrows, ncols
+            !! Size of the grid
+        real, intent(in) :: z(nrows, ncols)
+            !! Elevation grid
+        logical(kind=1), intent(in) :: valids(nrows, ncols)
+            !! Validity mask (true for valid cells, false for no-data)
+        integer, intent(in) :: noffsets
+            !! Number of flow directions
+        integer, intent(in) :: offsets(noffsets, 2)
+            !! List of offsets for each flow direction
+        ! Outputs
+        real, intent(out) :: z_filled(nrows, ncols)
+            !! Depression-filled elevation grid
+        integer, intent(out) :: err_code
+        ! Local variables
+        integer :: ci, cj, cid, ni, nj, nid
+        integer :: iofs
+        logical(kind=1) :: is_valid
+        logical(kind=1), allocatable :: processed(:, :)
+        integer, allocatable :: priority_queue(:)
+        integer :: priority_queue_size
+
+        allocate (processed(nrows, ncols), priority_queue(nrows*ncols), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            if (allocated(processed)) deallocate (processed)
+            if (allocated(priority_queue)) deallocate (priority_queue)
+            return
+        end if
+
+        z_filled = z
+        processed = .false.
+        priority_queue_size = 0
+
+        ! Push all valid boundaries to the queue
+        call fill_boundary_priority_queue( &
+            z, valids, processed, priority_queue, priority_queue_size, offsets, err_code)
+        if (err_code /= 0) return
+
+        ! Start processing the cells
+        do while (priority_queue_size > 0)
+            call pop_priority_queue(priority_queue, priority_queue_size, cid, z_filled, err_code)
+            if (err_code /= 0) return
+            call id2ij_checked(cid, nrows, ncols, ci, cj, is_valid)
+            do iofs = 1, noffsets
+                ni = ci + offsets(iofs, 1)
+                nj = cj + offsets(iofs, 2)
+                ! Check bounds
+                if (ni < 1 .or. ni > nrows .or. nj < 1 .or. nj > ncols) cycle
+                ! Skip if not valid or already processed
+                if (.not. valids(ni, nj)) cycle
+                if (processed(ni, nj)) cycle
+                z_filled(ni, nj) = max(z(ni, nj), z_filled(ci, cj))
+                processed(ni, nj) = .true.
+                nid = ij2id_checked(ni, nj, nrows, ncols)
+                call push_priority_queue(priority_queue, priority_queue_size, nid, z_filled, err_code)
+                if (err_code /= 0) return
+            end do
+        end do
+    end subroutine fill_depression
+
     subroutine compute_flowdir_simple( &
         z, valids, dirs, is_flat, nrows, ncols, &
         offsets, codes, noffsets)
@@ -1996,7 +2158,7 @@ contains
         !!   propagate_flow_tree_metadata  -- depths, sinks, and distances.
         !!
         !! topo_order is returned because compute_max_branch_dist reuses it to
-        !! construct lowest common ancestor (LCA) jump pointers before releasing 
+        !! construct lowest common ancestor (LCA) jump pointers before releasing
         !! the full-grid workspace.
         implicit none(type, external)
         integer, intent(in) :: nrows, ncols
@@ -2335,7 +2497,7 @@ contains
                     if (is_boundary(cid) .and. is_boundary(nid)) cycle
 
                     conf_id = find_tree_confluence( &
-                                    cid, nid, ds_ids, depths, sink_ids)
+                              cid, nid, ds_ids, depths, sink_ids)
                     if (conf_id == 0) then
                         ! Defensive fallback for an invalid/no-confluence query.
                         dist1 = sink_dists(cid)
