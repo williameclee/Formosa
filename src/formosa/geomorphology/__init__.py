@@ -14,6 +14,8 @@ from formosa.geomorphology.flowdir.d8directions import D8Directions
 from formosa.geomorphology.terrain import compute_slope
 from formosa.geomorphology.flowdir import (
     get_neighbour_values,
+    detect_ocean_basins_from_boundary,
+    invalidate_ocean_basins,
     fill_depressions,
     compute_flowdir,
     create_flowgraph,
