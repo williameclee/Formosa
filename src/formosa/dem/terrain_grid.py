@@ -69,7 +69,7 @@ class DEMGrid:
         astype: type | np.dtype | None = None,
     ):
         if isinstance(dem, (str, Path)):
-            # Read from a tiff file
+            # Read a supported raster DEM (including GeoTIFF and SRTM HGT).
             dem, x, y, transform = read_dem(dem)
             self._original_dem = dem
             self.dem = dem

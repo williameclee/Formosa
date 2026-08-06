@@ -1,3 +1,7 @@
+# Last modified
+#   2026-08-06, En-Chi Lee (williameclee@gmail.com)
+#     - Added support for `.hgt` files
+
 from pathlib import Path
 import numpy as np
 import rasterio
@@ -7,7 +11,7 @@ import numpy.typing as npt
 
 
 def read_dem(
-    tiff_path: Path | str,
+    raster_path: Path | str,
     band: int = 1,
     nan_value: float = np.nan,
 ) -> tuple[
@@ -17,12 +21,17 @@ def read_dem(
     rasterio.Affine,
 ]:
     """
-    Read a DEM from a GeoTIFF file.
+    Read a DEM from a raster file.
+
+    GeoTIFF and SRTM `.hgt` tiles are supported. HGT georeferencing is
+    inferred from the standard tile name (for example, `N25E121.hgt`), so
+    HGT files must retain that naming convention.
 
     Parameters
     ----------
-    tiff_path : Path | str
-        Path to the GeoTIFF file containing the DEM data.
+    raster_path : Path | str
+        Path to a supported raster DEM. For HGT input, the filename must
+        identify the tile's southwest corner.
     band : int, optional
         The band number to read from the GeoTIFF file (default is 1).
     nan_value : float, optional
@@ -40,7 +49,7 @@ def read_dem(
         Affine transformation mapping pixel coordinates to spatial coordinates.
     """
 
-    with rasterio.open(tiff_path) as src:
+    with rasterio.open(raster_path) as src:
         # Read the DEM band (assuming band 1 is elevation)
         Z = src.read(band)
 
