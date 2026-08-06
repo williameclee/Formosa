@@ -1,31 +1,32 @@
 # Last modified
 #   2026-06-11, En-Chi Lee (williameclee@gmail.com)
-#     - Updated function and argument names to match the standardised names
+#     - Updated function and argument names to match the standardised names.
 #   2026-07-01, En-Chi Lee (williameclee@gmail.com)
-#     - Added test cases for `compute_downstream_indices`, `create_flowgraph`, and `compute_flow_strahler_order`
+#     - Added test cases for `compute_downstream_indices`, `create_flowgraph`, and `compute_flow_strahler_order`.
 #   2026-07-02, En-Chi Lee (williameclee@gmail.com)
-#     - Added test case for `compute_downstream_indices` with validity mask
+#     - Added test case for `compute_downstream_indices` with validity mask.
 #   2026-07-09, En-Chi Lee (williameclee@gmail.com)
-#     - Added test case for the Fortran implementation of `construct_flowgraph`
+#     - Added test case for the Fortran implementation of `construct_flowgraph`.
 #   2026-07-12, En-Chi Lee (williameclee@gmail.com)
-#     - Added test cases for function `test_locate_invalid_graph_topogtaphy`
+#     - Added test cases for function `test_locate_invalid_graph_topogtaphy`.
 #   2026-07-14, En-Chi Lee (williameclee@gmail.com)
-#     - Updated `geomorphology.flowdir` to the new submodule name
+#     - Updated `geomorphology.flowdir` to the new submodule name.
 #   2026-07-29, En-Chi Lee (williameclee@gmail.com)
-#     - Added test cases for function `simplify_flowgraph`
-#     - Added complete topology-intersection scan-and-retry regression tests
+#     - Added test cases for function `simplify_flowgraph`.
+#     - Added complete topology-intersection scan-and-retry regression tests.
 #   2026-07-30, En-Chi Lee (williameclee@gmail.com)
-#     - Various minor refactors and type annotation enhancements
+#     - Various minor refactors and type annotation enhancements.
 #   2026-07-31, En-Chi Lee (williameclee@gmail.com)
-#     - Updated tests to match the updated `simplify_flowgraph` interface; also added additional tests for the new interface
+#     - Updated tests to match the updated `simplify_flowgraph` interface; also added additional tests for the new interface.
 #   2026-08-03, En-Chi Lee (williameclee@gmail.com)
-#     - Added test cases for function `find_acyclic_flowdirs`
+#     - Added test cases for function `find_acyclic_flowdirs`.
 #   2026-08-04, En-Chi Lee (williameclee@gmail.com)
-#     - Added test cases for FORTRAN error code handling
+#     - Added test cases for FORTRAN error code handling.
 #   2026-08-05, En-Chi Lee (williameclee@gmail.com)
-#     - Added a regression check for nonstandard old-style Fortran kind declarations
-#   2026-08-06, OpenAI Codex
-#     - Added priority-queue ordering and error-handling tests
+#     - Added a regression check for nonstandard old-style Fortran kind declarations.
+#   2026-08-06, En-Chi Lee (williameclee@gmail.com)
+#     - Added priority-queue ordering and error-handling tests.
+#     - Added tests for the priority-flood depression-filling algorithm.
 
 import re
 import warnings
@@ -45,6 +46,170 @@ from formosa.geomorphology.flowdir_f import utils as utils_f
 
 T = True
 F = False
+
+
+def test_fill_depressions():
+    dem = np.array(
+        [[5.0, 5.0, 5.0], [5.0, 1.0, 5.0], [5.0, 5.0, 5.0]],
+        dtype=np.float64,
+    )
+
+    filled = flowdir.fill_depressions(dem)
+
+    np.testing.assert_array_equal(filled, np.full((3, 3), 5.0))
+    assert filled.dtype == dem.dtype
+    assert dem[1, 1] == 1.0
+
+
+@pytest.mark.parametrize(
+    ("dem", "expected"),
+    [
+        (
+            [
+                [9, 9, 9, 9, 9],
+                [9, 3, 3, 3, 9],
+                [9, 3, 1, 3, 4],
+                [9, 3, 3, 3, 9],
+                [9, 9, 9, 9, 9],
+            ],
+            [
+                [9, 9, 9, 9, 9],
+                [9, 4, 4, 4, 9],
+                [9, 4, 4, 4, 4],
+                [9, 4, 4, 4, 9],
+                [9, 9, 9, 9, 9],
+            ],
+        ),
+        (
+            [[0, 0, 0, 0], [4, -3, -2, 0], [4, -4, -1, 0], [4, 4, 4, 4]],
+            [[0, 0, 0, 0], [4, 0, 0, 0], [4, 0, 0, 0], [4, 4, 4, 4]],
+        ),
+        (
+            [[5, 5, 5, 5], [5, 2, 2, 1], [5, 2, 0, 5], [5, 5, 5, 5]],
+            [[5, 5, 5, 5], [5, 2, 2, 1], [5, 2, 1, 5], [5, 5, 5, 5]],
+        ),
+    ],
+    ids=["single-spill-basin", "negative-basin", "open-channel"],
+)
+def test_fill_depressions_fortran_reference_terrains(dem, expected):
+    filled = flowdir.fill_depressions(np.asarray(dem, dtype=np.float32))
+
+    np.testing.assert_array_equal(filled, np.asarray(expected, dtype=np.float32))
+
+
+@pytest.mark.parametrize("dtype", [np.int16, np.float32, np.float64])
+def test_fill_depressions_preserves_shape_dtype_and_input(dtype):
+    source = np.array(
+        [[7, 7, 7, 7], [7, 1, 2, 7], [7, 3, 0, 7], [7, 7, 7, 7]],
+        dtype=dtype,
+    )
+    dem = source[:, ::-1]
+    original = dem.copy()
+
+    filled = flowdir.fill_depressions(dem)
+
+    assert filled.shape == dem.shape
+    assert filled.dtype == dem.dtype
+    np.testing.assert_array_equal(dem, original)
+    np.testing.assert_array_equal(filled, np.full(dem.shape, 7, dtype=dtype))
+
+
+@pytest.mark.parametrize("shape", [(1, 7), (6, 1), (2, 8), (9, 2)])
+def test_fill_depressions_boundary_only_grids_are_unchanged(shape):
+    dem = np.arange(np.prod(shape), dtype=np.float32).reshape(shape)
+
+    filled = flowdir.fill_depressions(dem)
+
+    np.testing.assert_array_equal(filled, dem)
+
+
+def test_fill_depressions_matches_morphological_reconstruction_randomly():
+    def reconstruct_by_erosion(dem):
+        reconstructed = np.full(dem.shape, np.inf, dtype=np.float32)
+        reconstructed[0, :] = dem[0, :]
+        reconstructed[-1, :] = dem[-1, :]
+        reconstructed[:, 0] = dem[:, 0]
+        reconstructed[:, -1] = dem[:, -1]
+
+        while True:
+            previous = reconstructed.copy()
+            for i in range(dem.shape[0]):
+                for j in range(dem.shape[1]):
+                    i0, i1 = max(0, i - 1), min(dem.shape[0], i + 2)
+                    j0, j1 = max(0, j - 1), min(dem.shape[1], j + 2)
+                    reconstructed[i, j] = max(dem[i, j], np.min(previous[i0:i1, j0:j1]))
+            if np.array_equal(reconstructed, previous):
+                return reconstructed
+
+    rng = np.random.default_rng(20260806)
+    for _ in range(200):
+        shape = tuple(rng.integers(3, 20, size=2))
+        dem = rng.uniform(-100.0, 300.0, size=shape).astype(np.float32)
+        expected = reconstruct_by_erosion(dem)
+
+        filled = flowdir.fill_depressions(dem)
+
+        np.testing.assert_array_equal(filled, expected)
+
+
+def test_fill_depressions_fortran_is_monotonic_and_idempotent_randomly():
+    rng = np.random.default_rng(8675309)
+    for _ in range(100):
+        shape = tuple(rng.integers(3, 20, size=2))
+        dem = rng.integers(-1000, 1000, size=shape).astype(np.float32)
+
+        filled = flowdir.fill_depressions(dem)
+        filled_twice = flowdir.fill_depressions(filled)
+
+        assert np.all(filled >= dem)
+        np.testing.assert_array_equal(filled[0, :], dem[0, :])
+        np.testing.assert_array_equal(filled[-1, :], dem[-1, :])
+        np.testing.assert_array_equal(filled[:, 0], dem[:, 0])
+        np.testing.assert_array_equal(filled[:, -1], dem[:, -1])
+        np.testing.assert_array_equal(filled_twice, filled)
+
+
+def test_fill_depressions_validates_mask_shape():
+    with pytest.raises(ValueError, match="do not match"):
+        flowdir.fill_depressions(
+            np.ones((3, 3), dtype=np.float32),
+            valids=np.ones((2, 2), dtype=bool),
+        )
+
+
+def test_fill_depressions_fortran_preserves_invalid_cells():
+    dem = np.array(
+        [[5.0, 5.0, 5.0], [5.0, -9999.0, 1.0], [5.0, 5.0, 5.0]],
+        dtype=np.float32,
+    )
+    valids = np.ones(dem.shape, dtype=bool)
+    valids[1, 1] = False
+
+    filled = flowdir.fill_depressions(dem, valids=valids)
+
+    assert filled[1, 1] == dem[1, 1]
+
+
+def test_fill_depressions_fortran_does_not_treat_internal_invalids_as_outlets():
+    dem = np.full((5, 5), 5.0, dtype=np.float32)
+    dem[1:4, 1:4] = 1.0
+    dem[2, 2] = -9999.0
+    valids = np.ones(dem.shape, dtype=bool)
+    valids[2, 2] = False
+
+    filled = flowdir.fill_depressions(dem, valids=valids)
+
+    np.testing.assert_array_equal(filled[valids], np.full(valids.sum(), 5.0))
+    assert filled[2, 2] == -9999.0
+
+
+def test_fill_depressions_fortran_all_invalid_is_unchanged():
+    dem = np.arange(12, dtype=np.float32).reshape(3, 4)
+
+    filled = flowdir.fill_depressions(dem, valids=np.zeros(dem.shape, dtype=bool))
+
+    np.testing.assert_array_equal(filled, dem)
+    assert filled is not dem
 
 
 def test_all_fortran_allocations_check_status():
