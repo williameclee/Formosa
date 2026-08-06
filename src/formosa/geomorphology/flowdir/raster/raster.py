@@ -756,7 +756,6 @@ def compute_flowdir(
     dir_scheme: D8Directions = D8Directions(),
     valids: Optional[npt.NDArray[np.bool_]] = None,
     fill_depression: bool = False,
-    fill_depression_method: str = "erosion",
     resolve_flat: bool = True,
     step_size: int = 4,
 ) -> tuple[
@@ -768,38 +767,35 @@ def compute_flowdir(
     Parameters
     ----------
     dem : NDArray[number]
-        A 2D array representing the digital elevation model (DEM).
+        2D array representing the digital elevation model (DEM).
     dir_scheme : D8Directions, optional
-        An instance of `D8Directions` defining the flow direction scheme.
+        Instance of `D8Directions` defining the flow direction scheme.
         Default is `D8Directions()`.
     valids : NDArray[bool], optional
-        A boolean mask array indicating valid cells in the DEM.
+        Boolean mask array indicating valid cells in the DEM.
         If `None`, all cells are considered valid.
         Default is `None`.
     fill_depression : bool, optional
         Whether to fill depressions in the DEM before computing flow directions.
         Default is False.
-    fill_depression_method : {'erosion', 'dilation'}, optional
-        The method to use for filling depressions, either 'erosion' or 'dilation'.
-        Default is 'erosion'.
     resolve_flat : bool, optional
         Whether to resolve flat areas using synthetic elevations.
         Default is True.
     step_size : int, optional
-        The increment in synthetic elevation per step away from low edges to avoid ties when combining synthetic elevations.
+        Increment in synthetic elevation per step away from low edges to avoid ties when combining synthetic elevations.
         Default is 4.
 
     Returns
     -------
     dirs : NDArray[uint8]
-        A 2D integer array representing the flow directions for each cell in the DEM.
+        2D integer array representing the flow directions for each cell in the DEM.
     flats : NDArray[bool]
-        A boolean mask array where True indicates cells that are part of flat areas.
+        Boolean mask array where True indicates cells that are part of flat areas.
     syn_grads : NDArray[int] | None
-        A 2D integer array representing the synthetic elevation that resolves flat areas, or None if resolve_flat is False.
+        2D integer array representing the synthetic elevation that resolves flat areas, or None if `resolve_flat` is `False`.
     """
     if fill_depression:
-        dem = fill_depressions(dem, valids=valids, method=fill_depression_method)
+        dem = fill_depressions(dem, valids=valids)
     if resolve_flat:
         dirs, flats, syn_grads = compute_flowdir_complete(
             dem, dir_scheme=dir_scheme, valids=valids, step_size=step_size
