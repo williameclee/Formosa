@@ -291,7 +291,7 @@ class DEMGrid:
                 min_size=self._min_ocean_size,
                 flood_below=self._ocean_flood_below,
             )
-
+        assert self._ocean_mask is not None
         return self._ocean_mask
 
     @property
