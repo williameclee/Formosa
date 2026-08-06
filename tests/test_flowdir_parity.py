@@ -10,6 +10,9 @@ import pytest
 from formosa import D8Directions
 from formosa.geomorphology import flowdir
 
+T = True
+F = False
+
 BACKENDS = ("python", "fortran")
 
 
@@ -142,9 +145,9 @@ def test_masked_tributary_does_not_affect_order(backend):
     )
     valids = np.array(
         [
-            [True, False, False],
-            [False, True, False],
-            [False, True, False],
+            [T, F, F],
+            [F, T, F],
+            [F, T, F],
         ]
     )
     expected = np.array(
@@ -200,7 +203,7 @@ def test_construct_flowgraph_is_backend_independent_of_masked_directions():
 def test_constructed_flowgraph_segments_follow_d8_adjacency(backend):
     dir_scheme = D8Directions(transform_codes=lambda x: x)
     dirs = np.array([[3, 3, 3], [3, 3, 3], [1, 1, 0]], dtype=np.uint8)
-    valids = np.array([[True, False, True], [True, True, True], [True, True, True]])
+    valids = np.array([[T, F, T], [T, T, T], [T, T, T]])
 
     _, vertex_ijs, arc_endpts = flowdir.construct_flowgraph(
         dirs,
@@ -339,9 +342,7 @@ def test_construct_flowgraph_allows_selection_boundary(
 def test_construct_flowgraph_covers_every_selected_edge_endpoint(backend):
     dir_scheme = D8Directions(transform_codes=lambda x: x)
     dirs = np.array([[3, 3, 3], [3, 3, 3], [1, 1, 0]], dtype=np.uint8)
-    valids = np.array(
-        [[True, False, True], [True, True, True], [True, True, True]]
-    )
+    valids = np.array([[T, F, T], [T, T, T], [T, T, T]])
     orders = np.ones(dirs.shape, dtype=np.uint8)
 
     _, graph_verts, graph_endpts = flowdir.construct_flowgraph(
@@ -354,9 +355,7 @@ def test_construct_flowgraph_covers_every_selected_edge_endpoint(backend):
     )
 
     represented = {
-        tuple(ij)
-        for start, end in graph_endpts
-        for ij in graph_verts[start : end + 1]
+        tuple(ij) for start, end in graph_endpts for ij in graph_verts[start : end + 1]
     }
     expected = {
         (0, 0),
