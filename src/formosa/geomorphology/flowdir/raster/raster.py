@@ -31,6 +31,7 @@
 #     - Updated `compute_dist2conf_max` and related functions' interface to reflect FORTRAN backend changes.
 #   2026-08-06, En-Chi Lee (williameclee@gmail.com)
 #     - Replaced morphological reconstruction with FORTRAN Priority-Flood in `fill_depressions`.
+#     - Implemented function `invalidate_ocean_basins`.
 
 
 import numpy as np
@@ -56,10 +57,174 @@ except ImportError as err:
 
     raster_f = _MissingFortranBackend(err)
 
-import warnings
-
+from typing import Literal, Optional
 import numpy.typing as npt
-from typing import Literal, Iterable, Optional, overload
+
+
+def detect_ocean_basins_from_boundary(
+    dem: npt.NDArray[np.number],
+    valids: Optional[npt.NDArray[np.bool_]] = None,
+    ocean_level: int | float = 0,
+    flood_below: bool = True,
+    dir_scheme: D8Directions = D8Directions(),
+) -> npt.NDArray[np.int32]:
+    """
+    Labels threshold-matching ocean basins connected to the raster boundary.
+
+    A nonzero label identifies one connected boundary basin. Invalid cells, cells above `ocean_level`, and qualifying cells disconnected from the boundary receive label zero.
+    When `flood_below` is false, only cells exactly equal to `ocean_level` are included.
+
+    Parameters
+    ----------
+    dem : NDArray[number]
+        2D digital elevation model.
+    valids : NDArray[bool], optional
+        Boolean mask indicating valid cells.
+        Invalid cells are excluded from ocean basin detection. If `None`, every cell with a finite elevation is valid.
+        Default input is `None`.
+    ocean_level : int | float, optional
+        Elevation threshold defining ocean cells.
+        Default value is `0`.
+    flood_below : bool, optional
+        Whether elevations strictly below `ocean_level` qualify as ocean cells.
+        When false, only cells exactly equal to `ocean_level` qualify.
+        Default option is `True`.
+    dir_scheme : D8Directions, optional
+        Instance of `D8Directions` defining neighbour offsets.
+        Default scheme is `D8Directions()`.
+
+    Returns
+    -------
+    NDArray[int32]
+        Ocean basin labels with the same shape as `dem`.
+
+    Raises
+    ------
+    ValueError
+        If `dem` is empty or not two-dimensional, or if `valids` shape does not
+        match `dem`.
+    TypeError
+        If `dem` does not have a numeric dtype.
+    RuntimeError
+        If the FORTRAN routine encounters an execution error.
+
+    Notes
+    -----
+    See also: :func:`invalidate_ocean_basins`
+    """
+    dem_array = np.asarray(dem)
+    if dem_array.ndim != 2 or 0 in dem_array.shape:
+        raise ValueError(
+            f"dem must be a non-empty 2D array, got shape {dem_array.shape}."
+        )
+    if not np.issubdtype(dem_array.dtype, np.number):
+        raise TypeError(f"dem must have a numeric dtype, got {dem_array.dtype}.")
+
+    finite = np.isfinite(dem_array)
+    if valids is None:
+        valids_array = finite
+    else:
+        valids_array = np.asarray(valids, dtype=bool)
+        if valids_array.shape != dem_array.shape:
+            raise ValueError(
+                f"Shapes for dem ({dem_array.shape}) and valids "
+                f"({valids_array.shape}) do not match."
+            )
+        valids_array = valids_array & finite
+
+    if not np.any(valids_array):
+        return np.zeros(dem_array.shape, dtype=np.int32, order="F")
+
+    basins, err_code = raster_f.detect_ocean_basins_from_boundary(
+        dem_array.astype(np.float32, order="F"),
+        valids_array.astype(bool, order="F"),
+        dir_scheme.offsets.astype(np.int32, order="F"),
+        np.float32(ocean_level),
+        bool(flood_below),
+    )
+    raise_fortran_error("detect_ocean_basins_from_boundary", err_code)
+    return np.asarray(basins, dtype=np.int32)
+
+
+def invalidate_ocean_basins(
+    dem: npt.NDArray[np.number],
+    valids: Optional[npt.NDArray[np.bool_]] = None,
+    ocean_level: int | float = 0,
+    flood_below: bool = True,
+    min_size: int = 1,
+    dir_scheme: D8Directions = D8Directions(),
+) -> npt.NDArray[np.bool_]:
+    """
+    Returns a validity mask with sufficiently large ocean basins invalidated.
+
+    `min_size` is an inclusive cell-count threshold. 
+    Only basins connected to the raster boundary are candidates; enclosed low-elevation basins remain valid.
+
+    Parameters
+    ----------
+    dem : NDArray[number]
+        2D digital elevation model.
+    valids : NDArray[bool], optional
+        Boolean mask indicating valid cells.
+        Invalid cells remain invalid in the output mask. If `None`, every cell with a finite elevation is valid initially.
+        Default input is `None`.
+    ocean_level : int | float, optional
+        Elevation threshold defining ocean cells.
+        Default value is `0`.
+    flood_below : bool, optional
+        Whether elevations strictly below `ocean_level` qualify as ocean cells.
+        When false, only cells exactly equal to `ocean_level` qualify. 
+        Default option is `True`.
+    min_size : int, optional
+        Minimum cell count threshold for ocean basin invalidation.
+        Ocean basins containing at least this number of cells are invalidated.
+        Default size is `1`.
+    dir_scheme : D8Directions, optional
+        Instance of `D8Directions` defining neighbour offsets.
+        Default scheme is `D8Directions()`.
+
+    Returns
+    -------
+    valids : NDArray[bool]
+        Validity mask with sufficiently large ocean basin cells *also* set to `False`.
+
+    Raises
+    ------
+    ValueError
+        If `min_size` is less than 1, `dem` is empty or not 2D, or if `valids` shape does not match `dem`.
+    TypeError
+        If `dem` does not have a numeric dtype.
+    RuntimeError
+        If the FORTRAN routine encounters an execution error.
+
+    Notes
+    -----
+    Ocean basins are detected using :func:`detect_ocean_basins_from_boundary`.
+    Basins with cell counts smaller than `min_size` or disconnected from the boundary remain valid.
+    """
+
+    if min_size < 1:
+        raise ValueError("minimum_basin_size must be at least 1.")
+
+    dem_array = np.asarray(dem)
+    basins = detect_ocean_basins_from_boundary(
+        dem_array,
+        valids=valids,
+        ocean_level=ocean_level,
+        flood_below=flood_below,
+        dir_scheme=dir_scheme,
+    )
+    if valids is None:
+        out_valids = np.isfinite(dem_array)
+    else:
+        out_valids = np.asarray(valids, dtype=bool).copy()
+        out_valids &= np.isfinite(dem_array)
+
+    counts = np.bincount(basins.ravel())
+    sufficiently_large = counts >= min_size
+    sufficiently_large[0] = False
+    out_valids[sufficiently_large[basins]] = False
+    return out_valids
 
 
 def fill_depressions(
