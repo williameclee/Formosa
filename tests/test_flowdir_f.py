@@ -27,6 +27,7 @@
 #   2026-08-06, En-Chi Lee (williameclee@gmail.com)
 #     - Added priority-queue ordering and error-handling tests.
 #     - Added tests for the priority-flood depression-filling algorithm.
+#     - Added tests for the ocean basin masking algorithms.
 
 import re
 import warnings
@@ -46,6 +47,153 @@ from formosa.geomorphology.flowdir_f import utils as utils_f
 
 T = True
 F = False
+
+
+def test_detect_ocean_basins_labels_separate_boundary_components():
+    dem = np.full((7, 9), 5.0, dtype=np.float32)
+    dem[0:3, 0:2] = 0.0
+    dem[4:7, 7:9] = -1.0
+    dem[3, 4] = 0.0  # Enclosed low cell is not an ocean basin.
+
+    basins = flowdir.detect_ocean_basins_from_boundary(dem)
+
+    left_label = basins[0, 0]
+    right_label = basins[-1, -1]
+    assert left_label > 0
+    assert right_label > 0
+    assert left_label != right_label
+    assert np.all(basins[0:3, 0:2] == left_label)
+    assert np.all(basins[4:7, 7:9] == right_label)
+    assert basins[3, 4] == 0
+    assert np.all(basins[dem == 5.0] == 0)
+
+
+def test_detect_ocean_basins_respects_valids_and_exact_level_mode():
+    dem = np.array(
+        [[0.0, -1.0, -1.0, 5.0], [0.0, -1.0, -1.0, 5.0]],
+        dtype=np.float32,
+    )
+    valids = np.ones(dem.shape, dtype=bool)
+    valids[1, 0] = False
+
+    exact = flowdir.detect_ocean_basins_from_boundary(
+        dem, valids=valids, flood_below=False
+    )
+    flooded = flowdir.detect_ocean_basins_from_boundary(
+        dem, valids=valids, flood_below=True
+    )
+
+    assert exact[0, 0] > 0
+    assert not np.any(exact[:, 1:3])
+    assert exact[1, 0] == 0
+    assert np.all(flooded[:, 1:3] > 0)
+    assert flooded[1, 0] == 0
+
+
+def test_invalidate_ocean_basins_filters_by_inclusive_size():
+    dem = np.full((7, 9), 5.0, dtype=np.float32)
+    dem[0:2, 0:3] = 0.0  # Six-cell boundary basin.
+    dem[5:7, 7:9] = 0.0  # Four-cell boundary basin.
+    dem[3, 3:6] = 0.0  # Enclosed basin is never an ocean candidate.
+    valids = np.ones(dem.shape, dtype=bool)
+    valids[6, 0] = False
+
+    result = flowdir.invalidate_ocean_basins(dem, valids=valids, min_size=6)
+
+    assert not np.any(result[0:2, 0:3])
+    assert np.all(result[5:7, 7:9])
+    assert np.all(result[3, 3:6])
+    assert not result[6, 0]
+    np.testing.assert_array_equal(valids[0:2, 0:3], np.ones((2, 3), dtype=bool))
+
+
+@pytest.mark.parametrize("minimum_basin_size", [0, -1])
+def test_invalidate_ocean_basins_rejects_nonpositive_size(minimum_basin_size):
+    with pytest.raises(ValueError, match="at least 1"):
+        flowdir.invalidate_ocean_basins(
+            np.zeros((2, 2), dtype=np.float32),
+            min_size=minimum_basin_size,
+        )
+
+
+@pytest.mark.parametrize("shape", [(1, 1), (1, 7), (6, 1), (2, 8), (9, 2)])
+def test_detect_ocean_basins_handles_boundary_only_grids(shape):
+    ocean = np.zeros(shape, dtype=np.float32)
+    land = np.ones(shape, dtype=np.float32)
+
+    ocean_basins = flowdir.detect_ocean_basins_from_boundary(ocean)
+    land_basins = flowdir.detect_ocean_basins_from_boundary(land)
+
+    assert np.all(ocean_basins == ocean_basins.flat[0])
+    assert ocean_basins.flat[0] > 0
+    assert not np.any(land_basins)
+
+
+def test_detect_ocean_basins_respects_connectivity_scheme():
+    dem = np.full((3, 3), 5.0, dtype=np.float32)
+    dem[0, 0] = 0.0
+    dem[1, 1] = 0.0
+    d4 = SimpleNamespace(
+        offsets=np.array([[-1, 0], [0, -1], [0, 1], [1, 0]], dtype=np.int32)
+    )
+
+    d8_basins = flowdir.detect_ocean_basins_from_boundary(dem)
+    d4_basins = flowdir.detect_ocean_basins_from_boundary(dem, dir_scheme=d4)  # type: ignore
+
+    assert d8_basins[1, 1] == d8_basins[0, 0]
+    assert d4_basins[0, 0] > 0
+    assert d4_basins[1, 1] == 0
+
+
+def test_detect_ocean_basins_excludes_nonfinite_and_all_invalid_cells():
+    dem = np.array([[0.0, np.nan], [np.inf, -np.inf]], dtype=np.float32)
+    basins = flowdir.detect_ocean_basins_from_boundary(dem)
+    all_invalid = flowdir.detect_ocean_basins_from_boundary(
+        np.zeros((2, 3), dtype=np.float32),
+        valids=np.zeros((2, 3), dtype=bool),
+    )
+
+    assert basins[0, 0] > 0
+    assert not np.any(basins[~np.isfinite(dem)])
+    assert not np.any(all_invalid)
+
+
+@pytest.mark.parametrize("dtype", [np.int16, np.float32, np.float64])
+def test_detect_ocean_basins_accepts_numeric_dtypes_and_noncontiguous_views(dtype):
+    source = np.zeros((8, 10), dtype=dtype)
+    dem = source[::2, ::2]
+    original = dem.copy()
+
+    basins = flowdir.detect_ocean_basins_from_boundary(dem)
+
+    assert basins.shape == dem.shape
+    assert basins.dtype == np.int32
+    assert np.all(basins > 0)
+    np.testing.assert_array_equal(dem, original)
+
+
+@pytest.mark.parametrize("min_size", [True, 1.5, "2"])
+def test_invalidate_ocean_basins_rejects_noninteger_size(min_size):
+    with pytest.raises(TypeError, match="integer"):
+        flowdir.invalidate_ocean_basins(
+            np.zeros((2, 2), dtype=np.float32), min_size=min_size
+        )
+
+
+@pytest.mark.parametrize("ocean_level", [np.nan, np.inf, -np.inf])
+def test_detect_ocean_basins_rejects_nonfinite_ocean_level(ocean_level):
+    with pytest.raises(ValueError, match="finite"):
+        flowdir.detect_ocean_basins_from_boundary(
+            np.zeros((2, 2), dtype=np.float32), ocean_level=ocean_level
+        )
+
+
+def test_detect_ocean_basins_rejects_nonboolean_flood_below_and_complex_dem():
+    dem = np.zeros((2, 2), dtype=np.float32)
+    with pytest.raises(TypeError, match="boolean"):
+        flowdir.detect_ocean_basins_from_boundary(dem, flood_below="false")  # type: ignore
+    with pytest.raises(TypeError, match="real-valued"):
+        flowdir.detect_ocean_basins_from_boundary(dem.astype(np.complex64))
 
 
 def test_fill_depressions():

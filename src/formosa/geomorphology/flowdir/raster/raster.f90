@@ -33,6 +33,7 @@
 !     - Switched to 'iso_c_binding'
 !   2026-08-06, En-Chi Lee (williameclee@gmail.com)
 !     - Implemented naive priority-flood depression-filling algorithm
+!     - Implemented boundary-bordering ocean basin identification algorithm
 !!!
 
 module flowdir_raster
@@ -42,11 +43,190 @@ module flowdir_raster
                      push_priority_queue, pop_priority_queue
     use distances, only: l1dist_xy, l2dist_xy
     implicit none(type, external)
-    private :: fill_boundary_priority_queue
+    private :: fill_boundary_ocean_queue, fill_boundary_priority_queue
     private :: resolve_flow_tree_links, build_flow_tree_topology
     private :: propagate_flow_tree_metadata, build_flow_tree_metadata
     private :: find_tree_confluence
 contains
+    pure subroutine fill_boundary_ocean_queue( &
+        z, valids, nrows, ncols, seed_ids, nseeds, ocean_lvl, flood_below, err_code)
+        implicit none(type, external)
+        ! Arguments
+        integer, intent(in) :: nrows, ncols
+            !! Size of the grid
+        real, intent(in) :: z(nrows, ncols)
+            !! Elevation grid
+        logical(kind=1), intent(in) :: valids(nrows, ncols)
+        real, intent(in) :: ocean_lvl
+            !! Elevation of the ocean
+        logical(kind=1), intent(in) :: flood_below
+            !! Whether elevation below the 'ovean_lvl' should also be considered part of the ocean
+        ! Outputs
+        integer, intent(out) :: seed_ids(:)
+        integer, intent(out) :: nseeds
+        integer, intent(out) :: err_code
+        ! Local variables
+        integer :: si, sj
+
+        ! Queue the boundary ocean cells
+        err_code = 0
+        nseeds = 0
+
+        ! Leftmost column
+        si = 1
+        do sj = 1, ncols
+            if (.not. valids(si, sj)) cycle
+            ! Skip if not ocean
+            if (z(si, sj) > ocean_lvl) cycle
+            if ((.not. flood_below) .and. (z(si, sj) < ocean_lvl)) cycle
+            if (nseeds >= size(seed_ids, dim=1)) then
+                err_code = 3
+                return
+            end if
+            nseeds = nseeds + 1
+            seed_ids(nseeds) = ij2id_checked(si, sj, nrows, ncols)
+        end do
+        ! Rightmost column
+        si = nrows
+        do sj = 1, ncols
+            if (.not. valids(si, sj)) cycle
+            if (z(si, sj) > ocean_lvl) cycle
+            if ((.not. flood_below) .and. (z(si, sj) < ocean_lvl)) cycle
+            if (nseeds >= size(seed_ids, dim=1)) then
+                err_code = 3
+                return
+            end if
+            nseeds = nseeds + 1
+            seed_ids(nseeds) = ij2id_checked(si, sj, nrows, ncols)
+        end do
+        ! Top row
+        sj = 1
+        do si = 2, nrows - 1
+            if (.not. valids(si, sj)) cycle
+            if (z(si, sj) > ocean_lvl) cycle
+            if ((.not. flood_below) .and. (z(si, sj) < ocean_lvl)) cycle
+            if (nseeds >= size(seed_ids, dim=1)) then
+                err_code = 3
+                return
+            end if
+            nseeds = nseeds + 1
+            seed_ids(nseeds) = ij2id_checked(si, sj, nrows, ncols)
+        end do
+        ! Bottom row
+        sj = ncols
+        do si = 2, nrows - 1
+            if (.not. valids(si, sj)) cycle
+            if (z(si, sj) > ocean_lvl) cycle
+            if ((.not. flood_below) .and. (z(si, sj) < ocean_lvl)) cycle
+            if (nseeds >= size(seed_ids, dim=1)) then
+                err_code = 3
+                return
+            end if
+            nseeds = nseeds + 1
+            seed_ids(nseeds) = ij2id_checked(si, sj, nrows, ncols)
+        end do
+    end subroutine fill_boundary_ocean_queue
+
+    pure subroutine detect_ocean_basins_from_boundary( &
+        z, valids, basins, nrows, ncols, offsets, noffsets, ocean_lvl, flood_below, err_code)
+        implicit none(type, external)
+        ! Arguments
+        integer, intent(in) :: nrows, ncols
+            !! Size of the grid
+        real, intent(in) :: z(nrows, ncols)
+            !! Elevation grid
+        logical(kind=1), intent(in) :: valids(nrows, ncols)
+        integer, intent(in) :: noffsets
+            !! Number of flow directions
+        integer, intent(in) :: offsets(noffsets, 2)
+            !! List of offsets for each flow direction
+        real, intent(in) :: ocean_lvl
+            !! Elevation of the ocean
+        logical(kind=1), intent(in) :: flood_below
+            !! Whether elevation below the 'ovean_lvl' should also be considered part of the ocean
+        ! Outputs
+        integer, intent(out) :: basins(nrows, ncols)
+            !! Basin ID grid
+        integer, intent(out) :: err_code
+        ! Local variables
+        logical(kind=1), allocatable :: processed(:, :)
+        integer :: ibasin
+        integer, allocatable :: seed_ids(:), basin_ids(:)
+        integer :: si, sj, sid, ci, cj, cid, ni, nj, nid
+        integer :: iseed, nseeds, icell, ncells
+        integer :: iofs
+        logical(kind=1) :: is_valid
+
+        allocate (seed_ids((nrows + ncols)*2 - 2), basin_ids(nrows*ncols), processed(nrows, ncols), stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            if (allocated(seed_ids)) deallocate (seed_ids)
+            if (allocated(processed)) deallocate (processed)
+            return
+        end if
+
+        ! Queue the boundary ocean cells
+        call fill_boundary_ocean_queue(z, valids, nrows, ncols, seed_ids, nseeds, ocean_lvl, flood_below, err_code)
+        if (err_code /= 0) return
+
+        basins = 0
+        if (nseeds == 0) return
+
+        ! Flood through the seeds
+        processed = .false.
+        ibasin = 0
+        iseed = 1
+        do while (iseed <= nseeds)
+            sid = seed_ids(iseed)
+            call id2ij_checked(sid, nrows, ncols, si, sj, is_valid)
+            if (.not. is_valid) then
+                iseed = iseed + 1
+                cycle
+            elseif (processed(si, sj)) then
+                iseed = iseed + 1
+                cycle
+            end if
+
+            ! A new basin is found
+            ibasin = ibasin + 1
+            basins(si, sj) = ibasin
+            processed(si, sj) = .true.
+
+            ! Start flooding
+            icell = 1
+            ncells = 1
+            cid = sid
+            basin_ids(icell) = cid
+
+            do while (icell <= ncells)
+                cid = basin_ids(icell)
+                call id2ij_checked(cid, nrows, ncols, ci, cj, is_valid)
+
+                ! Loop through neighbours
+                do iofs = 1, noffsets
+                    ni = ci + offsets(iofs, 1)
+                    nj = cj + offsets(iofs, 2)
+                    ! Check bounds
+                    if (ni < 1 .or. ni > nrows .or. nj < 1 .or. nj > ncols) cycle
+                    if (.not. valids(ni, nj)) cycle
+                    if (processed(ni, nj)) cycle
+                    ! Check if is ocean
+                    if (z(ni, nj) > ocean_lvl) cycle
+                    if ((.not. flood_below) .and. (z(ni, nj) < ocean_lvl)) cycle
+                    ncells = ncells + 1
+                    nid = ij2id_checked(ni, nj, nrows, ncols)
+                    basin_ids(ncells) = nid
+                    processed(ni, nj) = .true.
+                    basins(ni, nj) = ibasin
+                end do
+
+                icell = icell + 1
+            end do
+
+            iseed = iseed + 1
+        end do
+    end subroutine detect_ocean_basins_from_boundary
+
     pure subroutine fill_boundary_priority_queue( &
         z, valids, processed, priority_queue, priority_queue_size, &
         offsets, err_code)
