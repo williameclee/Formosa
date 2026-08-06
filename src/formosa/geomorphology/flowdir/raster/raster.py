@@ -119,6 +119,18 @@ def detect_ocean_basins_from_boundary(
         )
     if not np.issubdtype(dem_array.dtype, np.number):
         raise TypeError(f"dem must have a numeric dtype, got {dem_array.dtype}.")
+    if np.issubdtype(dem_array.dtype, np.complexfloating):
+        raise TypeError("dem must contain real-valued elevations.")
+    if isinstance(ocean_level, (bool, np.bool_)) or not np.isscalar(ocean_level):
+        raise TypeError("ocean_level must be a real numeric scalar.")
+    try:
+        ocean_lvl_float = float(ocean_level) # type: ignore
+    except (TypeError, ValueError) as exc:
+        raise TypeError("ocean_level must be a real numeric scalar.") from exc
+    if not np.isfinite(ocean_lvl_float):
+        raise ValueError("ocean_level must be finite.")
+    if not isinstance(flood_below, (bool, np.bool_)):
+        raise TypeError("flood_below must be a boolean.")
 
     finite = np.isfinite(dem_array)
     if valids is None:
@@ -139,7 +151,7 @@ def detect_ocean_basins_from_boundary(
         dem_array.astype(np.float32, order="F"),
         valids_array.astype(bool, order="F"),
         dir_scheme.offsets.astype(np.int32, order="F"),
-        np.float32(ocean_level),
+        np.float32(ocean_lvl_float),
         bool(flood_below),
     )
     raise_fortran_error("detect_ocean_basins_from_boundary", err_code)
@@ -203,8 +215,12 @@ def invalidate_ocean_basins(
     Basins with cell counts smaller than `min_size` or disconnected from the boundary remain valid.
     """
 
+    if isinstance(min_size, (bool, np.bool_)) or not isinstance(
+        min_size, (int, np.integer)
+    ):
+        raise TypeError("min_size must be an integer.")
     if min_size < 1:
-        raise ValueError("minimum_basin_size must be at least 1.")
+        raise ValueError("min_size must be at least 1.")
 
     dem_array = np.asarray(dem)
     basins = detect_ocean_basins_from_boundary(
