@@ -65,13 +65,15 @@ from typing import Literal, Iterable, Optional, overload
 def fill_depressions(
     dem: npt.NDArray[np.number],
     valids: Optional[npt.NDArray[np.bool_]] = None,
+    backend: Literal["fortran", "python"] = "fortran",
 ) -> npt.NDArray[np.number]:
     """
     Fills depressions in a digital elevation model.
 
     Interior cells that cannot drain to the edge of the array are raised to the
-    lowest elevation that provides an outlet using the FORTRAN Priority-Flood
-    implementation.
+    lowest elevation that provides an outlet. The FORTRAN backend uses
+    Priority-Flood, while the Python backend uses iterative morphological
+    reconstruction by erosion.
 
     Parameters
     ----------
@@ -84,6 +86,8 @@ def fill_depressions(
         from the fill and retain their original elevations. Valid cells on the
         outer array boundary or adjacent to invalid cells are treated as
         Priority-Flood outlets. If `None`, every cell is valid.
+    backend : {"fortran", "python"}, optional
+        Implementation to use. The default is `"fortran"`.
     Returns
     -------
     NDArray[number]
@@ -109,6 +113,10 @@ def fill_depressions(
         raise ValueError(f"dem must be a non-empty 2D array, got shape {dem.shape}.")
     if not np.issubdtype(dem.dtype, np.number):
         raise TypeError(f"dem must have a numeric dtype, got {dem.dtype}.")
+    if backend not in ("fortran", "python"):
+        raise ValueError(
+            f"backend must be either 'fortran' or 'python', got {backend!r}."
+        )
     if valids is None:
         valids_array = np.ones(dem.shape, dtype=bool, order="F")
     else:
@@ -121,12 +129,18 @@ def fill_depressions(
         if not np.any(valids_array):
             return dem.copy()
 
-    z_filled, err_code = raster_f.fill_depression(
-        dem.astype(np.float32, order="F"),
-        valids_array.astype(bool, order="F"),
-        D8Directions().offsets.astype(np.int32, order="F"),
-    )
-    raise_fortran_error("fill_depression", err_code)
+    dem_float32 = dem.astype(np.float32, order="F")
+    if backend == "python":
+        from .raster_py import _fill_depressions_py
+
+        z_filled = _fill_depressions_py(dem_float32, valids=valids_array)
+    else:
+        z_filled, err_code = raster_f.fill_depression(
+            dem_float32,
+            valids_array.astype(bool, order="F"),
+            D8Directions().offsets.astype(np.int32, order="F"),
+        )
+        raise_fortran_error("fill_depression", err_code)
     return z_filled.astype(dem.dtype, order="F")
 
 

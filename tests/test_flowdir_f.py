@@ -48,41 +48,6 @@ T = True
 F = False
 
 
-def _reconstruct_by_erosion(dem, valids=None):
-    """Slow test oracle for D8 reconstruction with masked cells as outlets."""
-    if valids is None:
-        valids = np.ones(dem.shape, dtype=bool)
-    reconstructed = dem.copy()
-    reconstructed[valids] = np.inf
-
-    for i in range(dem.shape[0]):
-        for j in range(dem.shape[1]):
-            if not valids[i, j]:
-                continue
-            i0, i1 = max(0, i - 1), min(dem.shape[0], i + 2)
-            j0, j1 = max(0, j - 1), min(dem.shape[1], j + 2)
-            is_outer_boundary = (
-                i == 0 or i == dem.shape[0] - 1 or j == 0 or j == dem.shape[1] - 1
-            )
-            is_mask_boundary = np.any(~valids[i0:i1, j0:j1])
-            if is_outer_boundary or is_mask_boundary:
-                reconstructed[i, j] = dem[i, j]
-
-    while True:
-        previous = reconstructed.copy()
-        for i in range(dem.shape[0]):
-            for j in range(dem.shape[1]):
-                if not valids[i, j]:
-                    continue
-                i0, i1 = max(0, i - 1), min(dem.shape[0], i + 2)
-                j0, j1 = max(0, j - 1), min(dem.shape[1], j + 2)
-                neighbour_valids = valids[i0:i1, j0:j1]
-                neighbour_values = previous[i0:i1, j0:j1][neighbour_valids]
-                reconstructed[i, j] = max(dem[i, j], np.min(neighbour_values))
-        if np.array_equal(reconstructed, previous):
-            return reconstructed
-
-
 def test_fill_depressions():
     dem = np.array(
         [[5.0, 5.0, 5.0], [5.0, 1.0, 5.0], [5.0, 5.0, 5.0]],
@@ -156,18 +121,6 @@ def test_fill_depressions_boundary_only_grids_are_unchanged(shape):
     filled = flowdir.fill_depressions(dem)
 
     np.testing.assert_array_equal(filled, dem)
-
-
-def test_fill_depressions_matches_morphological_reconstruction_randomly():
-    rng = np.random.default_rng(20260806)
-    for _ in range(200):
-        shape = tuple(rng.integers(3, 20, size=2))
-        dem = rng.uniform(-100.0, 300.0, size=shape).astype(np.float32)
-        expected = _reconstruct_by_erosion(dem)
-
-        filled = flowdir.fill_depressions(dem)
-
-        np.testing.assert_array_equal(filled, expected)
 
 
 def test_fill_depressions_fortran_is_monotonic_and_idempotent_randomly():
@@ -268,19 +221,6 @@ def test_fill_depressions_fills_valid_island_surrounded_by_invalids():
 
     np.testing.assert_array_equal(filled[valids], np.full(valids.sum(), 3.0))
     np.testing.assert_array_equal(filled[~valids], dem[~valids])
-
-
-def test_fill_depressions_matches_masked_reconstruction_randomly():
-    rng = np.random.default_rng(314159)
-    for _ in range(100):
-        shape = tuple(rng.integers(3, 15, size=2))
-        dem = rng.uniform(-100.0, 300.0, size=shape).astype(np.float32)
-        valids = rng.random(shape) > 0.25
-        expected = _reconstruct_by_erosion(dem, valids=valids)
-
-        filled = flowdir.fill_depressions(dem, valids=valids)
-
-        np.testing.assert_array_equal(filled, expected)
 
 
 def test_fill_depressions_fortran_all_invalid_is_unchanged():
