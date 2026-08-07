@@ -273,7 +273,7 @@ def test_fill_depressions_boundary_only_grids_are_unchanged(shape):
     np.testing.assert_array_equal(filled, dem)
 
 
-def test_fill_depressions_fortran_is_monotonic_and_idempotent_randomly():
+def test_fill_depressions_is_monotonic_and_idempotent_randomly():
     rng = np.random.default_rng(8675309)
     for _ in range(100):
         shape = tuple(rng.integers(3, 20, size=2))
@@ -373,7 +373,7 @@ def test_fill_depressions_fills_valid_island_surrounded_by_invalids():
     np.testing.assert_array_equal(filled[~valids], dem[~valids])
 
 
-def test_fill_depressions_fortran_all_invalid_is_unchanged():
+def test_fill_depressions_all_invalid_is_unchanged():
     dem = np.arange(12, dtype=np.float32).reshape(3, 4)
 
     filled = flowdir.fill_depressions(dem, valids=np.zeros(dem.shape, dtype=bool))
@@ -382,7 +382,6 @@ def test_fill_depressions_fortran_all_invalid_is_unchanged():
     assert filled is not dem
 
 
-def test_all_fortran_allocations_check_status():
 def test_label_mask_areas():
     dir_scheme = D8Directions()
     mask = np.array(
@@ -430,6 +429,7 @@ def test_label_mask_areas():
     assert c1 != c3
 
 
+def test_all_allocations_check_status():
     source_root = Path(__file__).parents[1] / "src" / "formosa" / "geomorphology"
     unguarded = []
     for source_path in source_root.rglob("*.f95"):
@@ -465,7 +465,7 @@ def test_fortran_sources_avoid_old_style_kind_declarations():
     )
     violations = []
 
-    for source_path in source_root.rglob("*.f95"):
+    for source_path in source_root.rglob("*.f90"):
         for line_number, line in enumerate(
             source_path.read_text().splitlines(), start=1
         ):
@@ -502,7 +502,7 @@ def test_checked_linear_cell_ids_reject_invalid_coordinates_and_ids():
     assert utils_f.id2ij_checked(13, 3, 4) == (0, 0, False)
 
 
-def test_fortran_direction_utilities_infer_input_shapes():
+def test_direction_utilities_infer_input_shapes():
     offsets = np.array([[0, 0], [0, 1], [0, -1]], dtype=np.int32, order="F")
     codes = np.array([0, 1, 5], dtype=np.int8)
 
@@ -1960,3 +1960,4 @@ if __name__ == "__main__":
     test_simplify_multiple_flowgraphs_ignores_identical_arcs()
     test_simplify_flowgraph_keeps_every_arc_endpoint()
     test_simplify_multiple_flowgraphs_accepts_one_empty_graph()
+    test_label_mask_areas()
