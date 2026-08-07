@@ -60,6 +60,11 @@ contains
     pure subroutine fill_boundary_ocean_queue( &
         z, valids, nrows, ncols, seed_ids, nseeds, &
         ocean_lvl, flood_below, err_code)
+        !! Pushes all boundary ocean cells of a DEM to the queue.
+        !! 
+        !! Notes
+        !! -----
+        !! Private helper function for :func:'detect_ocean_basins_from_boundary'.
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols
@@ -141,6 +146,11 @@ contains
     pure subroutine detect_ocean_basins_from_boundary( &
         z, valids, basins, nrows, ncols, offsets, noffsets, &
         ocean_lvl, flood_below, err_code)
+        !! Finds ocean basins the border the DEM's edges, and gives 
+        !! each a unique label.
+        !!
+        !! An ocean basin is identified by elevation at or at or 
+        !! below a given threshold.
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols
@@ -148,6 +158,7 @@ contains
         real, intent(in) :: z(nrows, ncols)
             !! Elevation grid
         logical(kind=1), intent(in) :: valids(nrows, ncols)
+            !! Validity mask (false for no-data)
         integer, intent(in) :: noffsets
             !! Number of flow directions
         integer, intent(in) :: offsets(noffsets, 2)
@@ -247,12 +258,16 @@ contains
     pure subroutine fill_sink_priority_queue( &
         z, valids, more_sinks, processed, pqueue, pqueue_size, &
         offsets, err_code)
-        !! Push sinks of a DEM to the priority queue.
+        !! Pushes sink cells of a DEM to the priority queue.
         !!
         !! The following kinds of cells are considered sinks:
         !!  1. Valid edge cells of the DEM
         !!  2. Valid cells surrounding an invalid cell
         !!  3. Additional valid sink cells specified as 'more_sinks'
+        !!
+        !! Notes
+        !! -----
+        !! This is a private helper function for :func:'fill_depressions'.
         implicit none(type, external)
         ! Arguments
         real, intent(in) :: z(:, :)
