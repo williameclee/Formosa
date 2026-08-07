@@ -1,7 +1,8 @@
 !!!
 ! Last modified
 !   2026-07-02, En-Chi Lee (williameclee@gmail.com)
-!     - Iterated the array bound instead of starting from 1 in 'mask2ij'
+!     - Iterated the array bound instead of starting from 1 in 
+!       'mask2ij'
 !   2026-07-08, En-Chi Lee (williameclee@gmail.com)
 !     - Moved 'mask2ij' to this module
 !   2026-07-08, En-Chi Lee (williameclee@gmail.com)
@@ -9,33 +10,59 @@
 !   2026-07-12, En-Chi Lee (williameclee@gmail.com)
 !     - Moved 'flowdir_utils' module here 'utils'
 !   2026-08-03, En-Chi Lee (williameclee@gmail.com)
-!     - Explicitly handled Python uint8 -> signed 8-bit Fortran conversion/interpretation in 'fill_offset_lookup'
+!     - Explicitly handled Python uint8 -> signed 8-bit Fortran 
+!       conversion/interpretation in 'fill_offset_lookup'
 !   2026-08-04, En-Chi Lee (williameclee@gmail.com)
 !     - Refactored 'mask2ij' to propagate buffer overflow error
-!     - Added function 'mask2id' as the linear-index version of 'mask2ij'; also added related linear index check functions
+!     - Added function 'mask2id' as the linear-index version of 
+!       'mask2ij'; also added related linear index check functions
 !   2026-08-05, En-Chi Lee (williameclee@gmail.com)
 !     - Switched to 'iso_c_binding'
 !   2026-08-06, En-Chi Lee (williameclee@gmail.com)
 !     - Implemented priority queue
+!   2026-08-07, En-Chi Lee (williameclee@gmail.com)
+!     - Added helper function 'array2d_oob'
 !!!
 
 module utils
     use iso_c_binding, only: c_int8_t
     implicit none(type, external)
 contains
-    pure function ij2id_checked(i, j, nrows, ncols) result(cell_id)
-        !! Encodes a valid one-based grid coordinate as a linear cell ID.
-        !! Zero is returned for an out-of-bounds coordinate and is never a
-        !! valid cell ID.
+
+    logical pure function array2d_oob(i, j, nrows, ncols) result(is_oob)
+        !! Checks whether a pair of array index (i, j) is
+        !! out-of-bounds
         implicit none(type, external)
-        integer, intent(in) :: i, j, nrows, ncols
+        integer, intent(in) :: i, j
+            !! Row and column indices
+        integer, intent(in) :: nrows, ncols
+            !! Size of the array
+
+        if (i < 1 .or. i > nrows .or. j < 1 .or. j > ncols) then
+            is_oob = .true.
+        else
+            is_oob = .false.
+        end if
+    end function array2d_oob
+
+    pure function ij2id_checked(i, j, nrows, ncols) result(cell_id)
+        !! Encodes a valid one-based grid coordinate as a linear 
+        !! cell ID.
+        !!
+        !! Zero is returned for an out-of-bounds coordinate and is 
+        !! never a valid cell ID.
+        implicit none(type, external)
+        integer, intent(in) :: i, j
+            !! Row and column indices
+        integer, intent(in) :: nrows, ncols
+            !! Size of the array
         integer :: cell_id
 
         if (nrows < 1 .or. ncols < 1) then
             cell_id = 0
         else if (ncols > huge(cell_id)/nrows) then
             cell_id = 0
-        else if (i < 1 .or. i > nrows .or. j < 1 .or. j > ncols) then
+        else if (array2d_oob(i, j, nrows, ncols)) then
             cell_id = 0
         else
             cell_id = i + (j - 1)*nrows
