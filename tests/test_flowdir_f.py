@@ -28,6 +28,8 @@
 #     - Added priority-queue ordering and error-handling tests.
 #     - Added tests for the priority-flood depression-filling algorithm.
 #     - Added tests for the ocean basin masking algorithms.
+#   2026-08-07, En-Chi Lee (williameclee@gmail.com)
+#     - Added tests for function `label_mask_areas`.
 
 import re
 import warnings
@@ -381,6 +383,53 @@ def test_fill_depressions_fortran_all_invalid_is_unchanged():
 
 
 def test_all_fortran_allocations_check_status():
+def test_label_mask_areas():
+    dir_scheme = D8Directions()
+    mask = np.array(
+        [
+            [T, F, T, F, T],
+            [T, F, T, F, T],
+            [T, F, T, F, T],
+            [T, F, T, F, T],
+        ],
+        dtype=bool,
+    )
+    labels, err_code = raster_f.label_mask_areas(mask, dir_scheme.offsets)
+    assert err_code == 0
+    assert ~np.any(labels[:, 1])
+    assert ~np.any(labels[:, 3])
+    c1 = np.unique(labels[:, 0])
+    assert np.size(c1) == 1
+    c2 = np.unique(labels[:, 2])
+    assert np.size(c2) == 1
+    c3 = np.unique(labels[:, 4])
+    assert np.size(c3) == 1
+    assert c1 != c2
+    assert c1 != c3
+    assert c2 != c3
+
+    mask = np.array(
+        [
+            [T, F, T, F, T],
+            [T, F, T, F, T],
+            [T, T, T, F, T],
+            [T, F, T, F, T],
+        ],
+        dtype=bool,
+    )
+    labels, err_code = raster_f.label_mask_areas(mask, dir_scheme.offsets)
+    assert err_code == 0
+    assert ~np.any(labels[:, 3])
+    c1 = np.unique(labels[:, 0])
+    assert np.size(c1) == 1
+    c2 = np.unique(labels[:, 2])
+    assert np.size(c2) == 1
+    c3 = np.unique(labels[:, 4])
+    assert np.size(c3) == 1
+    assert c1 == c2
+    assert c1 != c3
+
+
     source_root = Path(__file__).parents[1] / "src" / "formosa" / "geomorphology"
     unguarded = []
     for source_path in source_root.rglob("*.f95"):

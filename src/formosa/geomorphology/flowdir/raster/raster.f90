@@ -41,6 +41,8 @@
 !       algorithm
 !     - Implemented boundary-bordering ocean basin identification
 !       algorithm
+!   2026-08-06, En-Chi Lee (williameclee@gmail.com)
+!     - Added function 'label_mask_areas'
 !!!
 
 module flowdir_raster
@@ -411,6 +413,85 @@ contains
             end do
         end do
     end subroutine fill_depression
+
+    pure subroutine label_mask_areas( &
+        mask, labels, nrows, ncols, offsets, nofss, err_code)
+        !! Finds connected mask areas and assigns each a unique
+        !! label.
+        implicit none(type, external)
+        ! Arguments
+        integer, intent(in) :: nrows, ncols
+            !! Size of the grid
+        logical(kind=1), intent(in) :: mask(nrows, ncols)
+        integer, intent(in) :: nofss
+            !! Number of flow directions
+        integer, intent(in) :: offsets(nofss, 2)
+            !! List of offsets for each flow direction
+        ! Outputs
+        integer, intent(out) :: labels(nrows, ncols)
+        integer, intent(out) :: err_code
+        ! Local variables
+        integer :: queue_size
+        integer, allocatable :: seed_queue(:), flood_queue(:)
+        integer :: iseed, nseeds, icell, ncells
+        integer :: si, sj, ci, cj, ni, nj
+        integer :: iofs
+        integer :: ilabel
+        logical(kind=1) :: is_valid
+
+        queue_size = count(mask)
+        allocate (seed_queue(queue_size), flood_queue(queue_size), &
+                  stat=err_code)
+        if (err_code /= 0) then
+            err_code = 2
+            return
+        end if
+
+        labels = 0
+        if (queue_size == 0) return
+
+        ! Fill the seed queue
+        call mask2id(mask, seed_queue, queue_size, nseeds, err_code)
+        if (err_code /= 0) return
+
+        ! Go through each cell
+        ilabel = 0
+        iseed = 1
+        do while (iseed <= nseeds)
+            call id2ij_checked( &
+                seed_queue(iseed), nrows, ncols, si, sj, is_valid)
+            if (labels(si, sj) /= 0) then
+                iseed = iseed + 1
+                cycle
+            end if
+            ! A new area is found
+            ilabel = ilabel + 1
+            labels(si, sj) = ilabel
+            ncells = 1
+            icell = 1
+            flood_queue(icell) = seed_queue(iseed)
+
+            do while (icell <= ncells)
+                call id2ij_checked( &
+                    flood_queue(icell), nrows, ncols, ci, cj, is_valid)
+
+                ! Loop through neighbours
+                do iofs = 1, nofss
+                    ni = ci + offsets(iofs, 1)
+                    nj = cj + offsets(iofs, 2)
+                    ! Check bounds
+                    if (array2d_oob(ni, nj, nrows, ncols)) cycle
+                    if (.not. mask(ni, nj)) cycle
+                    if (labels(ni, nj) /= 0) cycle
+                    ncells = ncells + 1
+                    flood_queue(ncells) = ij2id_checked(ni, nj, nrows, ncols)
+                    labels(ni, nj) = ilabel
+                end do
+                icell = icell + 1
+            end do
+            iseed = iseed + 1
+        end do
+    end subroutine label_mask_areas
 
     subroutine compute_flowdir_simple( &
         z, valids, dirs, is_flat, nrows, ncols, &
