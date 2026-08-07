@@ -1,29 +1,41 @@
 # Last modified
 #   2026-06-11, En-Chi Lee (williameclee@gmail.com)
-#     - Updated function and argument names to match the standardised names
+#     - Updated function and argument names to match the
+#       standardised names.
 #   2026-07-01, En-Chi Lee (williameclee@gmail.com)
-#     - Added test cases for `compute_downstream_indices`, `create_flowgraph`, and `compute_flow_strahler_order`
+#     - Added test cases for `compute_downstream_indices`,
+#       `create_flowgraph`, and `compute_flow_strahler_order`.
 #   2026-07-02, En-Chi Lee (williameclee@gmail.com)
-#     - Added test case for `compute_downstream_indices` with validity mask
+#     - Added test case for `compute_downstream_indices` with
+#       validity mask.
 #   2026-07-09, En-Chi Lee (williameclee@gmail.com)
-#     - Added test case for the Fortran implementation of `construct_flowgraph`
+#     - Added test case for the Fortran implementation of
+#       `construct_flowgraph`.
 #   2026-07-12, En-Chi Lee (williameclee@gmail.com)
-#     - Added test cases for function `test_locate_invalid_graph_topogtaphy`
+#     - Added test cases for function `test_locate_invalid_graph_topogtaphy`.
 #   2026-07-14, En-Chi Lee (williameclee@gmail.com)
-#     - Updated `geomorphology.flowdir` to the new submodule name
+#     - Updated `geomorphology.flowdir` to the new submodule name.
 #   2026-07-29, En-Chi Lee (williameclee@gmail.com)
-#     - Added test cases for function `simplify_flowgraph`
-#     - Added complete topology-intersection scan-and-retry regression tests
+#     - Added test cases for function `simplify_flowgraph`.
+#     - Added complete topology-intersection scan-and-retry
+#       regression tests.
 #   2026-07-30, En-Chi Lee (williameclee@gmail.com)
-#     - Various minor refactors and type annotation enhancements
+#     - Various minor refactors and type annotation enhancements.
 #   2026-07-31, En-Chi Lee (williameclee@gmail.com)
-#     - Updated tests to match the updated `simplify_flowgraph` interface; also added additional tests for the new interface
+#     - Updated tests to match the updated `simplify_flowgraph`
+#       interface; also added additional tests for the new interface.
 #   2026-08-03, En-Chi Lee (williameclee@gmail.com)
-#     - Added test cases for function `find_acyclic_flowdirs`
+#     - Added test cases for function `find_acyclic_flowdirs`.
 #   2026-08-04, En-Chi Lee (williameclee@gmail.com)
-#     - Added test cases for FORTRAN error code handling
+#     - Added test cases for FORTRAN error code handling.
 #   2026-08-05, En-Chi Lee (williameclee@gmail.com)
-#     - Added a regression check for nonstandard old-style Fortran kind declarations
+#     - Added a regression check for nonstandard old-style FORTRAN
+#       kind declarations.
+#   2026-08-07 [PR 33], En-Chi Lee (williameclee@gmail.com)
+#     - Added tests for the priority-flood depression-filling
+#       algorithm.
+#     - Added tests for the ocean basin masking algorithms 
+#       (`label_mask_areas`).
 
 import re
 import warnings
@@ -45,7 +57,402 @@ T = True
 F = False
 
 
-def test_all_fortran_allocations_check_status():
+def test_detect_ocean_basins_labels_separate_boundary_components():
+    dem = np.full((7, 9), 5.0, dtype=np.float32)
+    dem[0:3, 0:2] = 0.0
+    dem[4:7, 7:9] = -1.0
+    dem[3, 4] = 0.0  # Enclosed low cell is not an ocean basin.
+
+    basins = flowdir.detect_ocean_basins_from_boundary(dem)
+
+    left_label = basins[0, 0]
+    right_label = basins[-1, -1]
+    assert left_label > 0
+    assert right_label > 0
+    assert left_label != right_label
+    assert np.all(basins[0:3, 0:2] == left_label)
+    assert np.all(basins[4:7, 7:9] == right_label)
+    assert basins[3, 4] == 0
+    assert np.all(basins[dem == 5.0] == 0)
+
+
+def test_detect_ocean_basins_respects_valids_and_exact_level_mode():
+    dem = np.array(
+        [[0.0, -1.0, -1.0, 5.0], [0.0, -1.0, -1.0, 5.0]],
+        dtype=np.float32,
+    )
+    valids = np.ones(dem.shape, dtype=bool)
+    valids[1, 0] = False
+
+    exact = flowdir.detect_ocean_basins_from_boundary(
+        dem, valids=valids, flood_below=False
+    )
+    flooded = flowdir.detect_ocean_basins_from_boundary(
+        dem, valids=valids, flood_below=True
+    )
+
+    assert exact[0, 0] > 0
+    assert not np.any(exact[:, 1:3])
+    assert exact[1, 0] == 0
+    assert np.all(flooded[:, 1:3] > 0)
+    assert flooded[1, 0] == 0
+
+
+def test_invalidate_ocean_basins_filters_by_inclusive_size():
+    dem = np.full((7, 9), 5.0, dtype=np.float32)
+    dem[0:2, 0:3] = 0.0  # Six-cell boundary basin.
+    dem[5:7, 7:9] = 0.0  # Four-cell boundary basin.
+    dem[3, 3:6] = 0.0  # Enclosed basin is never an ocean candidate.
+    valids = np.ones(dem.shape, dtype=bool)
+    valids[6, 0] = False
+
+    result = flowdir.invalidate_ocean_basins(dem, valids=valids, min_size=6)
+
+    assert not np.any(result[0:2, 0:3])
+    assert np.all(result[5:7, 7:9])
+    assert np.all(result[3, 3:6])
+    assert not result[6, 0]
+    np.testing.assert_array_equal(valids[0:2, 0:3], np.ones((2, 3), dtype=bool))
+
+
+@pytest.mark.parametrize("minimum_basin_size", [0, -1])
+def test_invalidate_ocean_basins_rejects_nonpositive_size(minimum_basin_size):
+    with pytest.raises(ValueError, match="at least 1"):
+        flowdir.invalidate_ocean_basins(
+            np.zeros((2, 2), dtype=np.float32),
+            min_size=minimum_basin_size,
+        )
+
+
+@pytest.mark.parametrize("shape", [(1, 1), (1, 7), (6, 1), (2, 8), (9, 2)])
+def test_detect_ocean_basins_handles_boundary_only_grids(shape):
+    ocean = np.zeros(shape, dtype=np.float32)
+    land = np.ones(shape, dtype=np.float32)
+
+    ocean_basins = flowdir.detect_ocean_basins_from_boundary(ocean)
+    land_basins = flowdir.detect_ocean_basins_from_boundary(land)
+
+    assert np.all(ocean_basins == ocean_basins.flat[0])
+    assert ocean_basins.flat[0] > 0
+    assert not np.any(land_basins)
+
+
+def test_detect_ocean_basins_respects_connectivity_scheme():
+    dem = np.full((3, 3), 5.0, dtype=np.float32)
+    dem[0, 0] = 0.0
+    dem[1, 1] = 0.0
+    d4 = SimpleNamespace(
+        offsets=np.array([[-1, 0], [0, -1], [0, 1], [1, 0]], dtype=np.int32)
+    )
+
+    d8_basins = flowdir.detect_ocean_basins_from_boundary(dem)
+    d4_basins = flowdir.detect_ocean_basins_from_boundary(dem, dir_scheme=d4)  # type: ignore
+
+    assert d8_basins[1, 1] == d8_basins[0, 0]
+    assert d4_basins[0, 0] > 0
+    assert d4_basins[1, 1] == 0
+
+
+def test_detect_ocean_basins_excludes_nonfinite_and_all_invalid_cells():
+    dem = np.array([[0.0, np.nan], [np.inf, -np.inf]], dtype=np.float32)
+    basins = flowdir.detect_ocean_basins_from_boundary(dem)
+    all_invalid = flowdir.detect_ocean_basins_from_boundary(
+        np.zeros((2, 3), dtype=np.float32),
+        valids=np.zeros((2, 3), dtype=bool),
+    )
+
+    assert basins[0, 0] > 0
+    assert not np.any(basins[~np.isfinite(dem)])
+    assert not np.any(all_invalid)
+
+
+@pytest.mark.parametrize("dtype", [np.int16, np.float32, np.float64])
+def test_detect_ocean_basins_accepts_numeric_dtypes_and_noncontiguous_views(dtype):
+    source = np.zeros((8, 10), dtype=dtype)
+    dem = source[::2, ::2]
+    original = dem.copy()
+
+    basins = flowdir.detect_ocean_basins_from_boundary(dem)
+
+    assert basins.shape == dem.shape
+    assert basins.dtype == np.int32
+    assert np.all(basins > 0)
+    np.testing.assert_array_equal(dem, original)
+
+
+@pytest.mark.parametrize("min_size", [True, 1.5, "2"])
+def test_invalidate_ocean_basins_rejects_noninteger_size(min_size):
+    with pytest.raises(TypeError, match="integer"):
+        flowdir.invalidate_ocean_basins(
+            np.zeros((2, 2), dtype=np.float32), min_size=min_size
+        )
+
+
+@pytest.mark.parametrize("ocean_level", [np.nan, np.inf, -np.inf])
+def test_detect_ocean_basins_rejects_nonfinite_ocean_level(ocean_level):
+    with pytest.raises(ValueError, match="finite"):
+        flowdir.detect_ocean_basins_from_boundary(
+            np.zeros((2, 2), dtype=np.float32), ocean_level=ocean_level
+        )
+
+
+def test_detect_ocean_basins_rejects_nonboolean_flood_below_and_complex_dem():
+    dem = np.zeros((2, 2), dtype=np.float32)
+    with pytest.raises(TypeError, match="boolean"):
+        flowdir.detect_ocean_basins_from_boundary(dem, flood_below="false")  # type: ignore
+    with pytest.raises(TypeError, match="real-valued"):
+        flowdir.detect_ocean_basins_from_boundary(dem.astype(np.complex64))
+
+
+def test_fill_depressions():
+    dem = np.array(
+        [[5.0, 5.0, 5.0], [5.0, 1.0, 5.0], [5.0, 5.0, 5.0]],
+        dtype=np.float64,
+    )
+
+    filled = flowdir.fill_depressions(dem)
+
+    np.testing.assert_array_equal(filled, np.full((3, 3), 5.0))
+    assert filled.dtype == dem.dtype
+    assert dem[1, 1] == 1.0
+
+
+@pytest.mark.parametrize(
+    ("dem", "expected"),
+    [
+        (
+            [
+                [9, 9, 9, 9, 9],
+                [9, 3, 3, 3, 9],
+                [9, 3, 1, 3, 4],
+                [9, 3, 3, 3, 9],
+                [9, 9, 9, 9, 9],
+            ],
+            [
+                [9, 9, 9, 9, 9],
+                [9, 4, 4, 4, 9],
+                [9, 4, 4, 4, 4],
+                [9, 4, 4, 4, 9],
+                [9, 9, 9, 9, 9],
+            ],
+        ),
+        (
+            [[0, 0, 0, 0], [4, -3, -2, 0], [4, -4, -1, 0], [4, 4, 4, 4]],
+            [[0, 0, 0, 0], [4, 0, 0, 0], [4, 0, 0, 0], [4, 4, 4, 4]],
+        ),
+        (
+            [[5, 5, 5, 5], [5, 2, 2, 1], [5, 2, 0, 5], [5, 5, 5, 5]],
+            [[5, 5, 5, 5], [5, 2, 2, 1], [5, 2, 1, 5], [5, 5, 5, 5]],
+        ),
+    ],
+    ids=["single-spill-basin", "negative-basin", "open-channel"],
+)
+def test_fill_depressions_fortran_reference_terrains(dem, expected):
+    filled = flowdir.fill_depressions(np.asarray(dem, dtype=np.float32))
+
+    np.testing.assert_array_equal(filled, np.asarray(expected, dtype=np.float32))
+
+
+@pytest.mark.parametrize("dtype", [np.int16, np.float32, np.float64])
+def test_fill_depressions_preserves_shape_dtype_and_input(dtype):
+    source = np.array(
+        [[7, 7, 7, 7], [7, 1, 2, 7], [7, 3, 0, 7], [7, 7, 7, 7]],
+        dtype=dtype,
+    )
+    dem = source[:, ::-1]
+    original = dem.copy()
+
+    filled = flowdir.fill_depressions(dem)
+
+    assert filled.shape == dem.shape
+    assert filled.dtype == dem.dtype
+    np.testing.assert_array_equal(dem, original)
+    np.testing.assert_array_equal(filled, np.full(dem.shape, 7, dtype=dtype))
+
+
+@pytest.mark.parametrize("shape", [(1, 7), (6, 1), (2, 8), (9, 2)])
+def test_fill_depressions_boundary_only_grids_are_unchanged(shape):
+    dem = np.arange(np.prod(shape), dtype=np.float32).reshape(shape)
+
+    filled = flowdir.fill_depressions(dem)
+
+    np.testing.assert_array_equal(filled, dem)
+
+
+def test_fill_depressions_is_monotonic_and_idempotent_randomly():
+    rng = np.random.default_rng(8675309)
+    for _ in range(100):
+        shape = tuple(rng.integers(3, 20, size=2))
+        dem = rng.integers(-1000, 1000, size=shape).astype(np.float32)
+
+        filled = flowdir.fill_depressions(dem)
+        filled_twice = flowdir.fill_depressions(filled)
+
+        assert np.all(filled >= dem)
+        np.testing.assert_array_equal(filled[0, :], dem[0, :])
+        np.testing.assert_array_equal(filled[-1, :], dem[-1, :])
+        np.testing.assert_array_equal(filled[:, 0], dem[:, 0])
+        np.testing.assert_array_equal(filled[:, -1], dem[:, -1])
+        np.testing.assert_array_equal(filled_twice, filled)
+
+
+def test_fill_depressions_validates_mask_shape():
+    with pytest.raises(ValueError, match="do not match"):
+        flowdir.fill_depressions(
+            np.ones((3, 3), dtype=np.float32),
+            valids=np.ones((2, 2), dtype=bool),
+        )
+
+
+def test_fill_depressions_fortran_preserves_invalid_cells():
+    dem = np.array(
+        [[5.0, 5.0, 5.0], [5.0, -9999.0, 1.0], [5.0, 5.0, 5.0]],
+        dtype=np.float32,
+    )
+    valids = np.ones(dem.shape, dtype=bool)
+    valids[1, 1] = False
+
+    filled = flowdir.fill_depressions(dem, valids=valids)
+
+    assert filled[1, 1] == dem[1, 1]
+
+
+def test_fill_depressions_treats_internal_invalids_as_outlets():
+    dem = np.full((5, 5), 5.0, dtype=np.float32)
+    dem[1:4, 1:4] = 1.0
+    dem[2, 2] = -9999.0
+    valids = np.ones(dem.shape, dtype=bool)
+    valids[2, 2] = False
+
+    filled = flowdir.fill_depressions(dem, valids=valids)
+
+    np.testing.assert_array_equal(filled, dem)
+
+
+def test_fill_depressions_treats_boundary_invalids_as_outlets():
+    dem = np.full((5, 5), -9999.0, dtype=np.float32)
+    dem[1:4, 1:4] = 5.0
+    dem[2, 2] = 1.0
+    valids = np.zeros(dem.shape, dtype=bool)
+    valids[1:4, 1:4] = True
+
+    filled = flowdir.fill_depressions(dem, valids=valids)
+
+    np.testing.assert_array_equal(filled[valids], np.full(valids.sum(), 5.0))
+    np.testing.assert_array_equal(filled[~valids], dem[~valids])
+
+
+def test_fill_depressions_uses_diagonal_invalid_adjacency():
+    dem = np.full((5, 5), 10.0, dtype=np.float32)
+    dem[1, 1] = 1.0
+    dem[2, 2] = -9999.0
+    valids = np.ones(dem.shape, dtype=bool)
+    valids[2, 2] = False
+
+    filled = flowdir.fill_depressions(dem, valids=valids)
+
+    assert filled[1, 1] == 1.0
+    assert filled[2, 2] == -9999.0
+
+
+def test_fill_depressions_deduplicates_outlets_adjacent_to_many_invalids():
+    rows, cols = np.indices((9, 9))
+    valids = (rows + cols) % 2 == 0
+    dem = np.arange(81, dtype=np.float32).reshape(9, 9)
+    dem[~valids] = -9999.0
+
+    filled = flowdir.fill_depressions(dem, valids=valids)
+
+    np.testing.assert_array_equal(filled, dem)
+
+
+def test_fill_depressions_fills_valid_island_surrounded_by_invalids():
+    dem = np.full((9, 9), -9999.0, dtype=np.float32)
+    dem[2:7, 2:7] = 3.0
+    dem[3:6, 3:6] = 1.0
+    valids = np.zeros(dem.shape, dtype=bool)
+    valids[2:7, 2:7] = True
+
+    filled = flowdir.fill_depressions(dem, valids=valids)
+
+    np.testing.assert_array_equal(filled[valids], np.full(valids.sum(), 3.0))
+    np.testing.assert_array_equal(filled[~valids], dem[~valids])
+
+
+def test_fill_depressions_all_invalid_is_unchanged():
+    dem = np.arange(12, dtype=np.float32).reshape(3, 4)
+
+    filled = flowdir.fill_depressions(dem, valids=np.zeros(dem.shape, dtype=bool))
+
+    np.testing.assert_array_equal(filled, dem)
+    assert filled is not dem
+
+
+def test_fill_depressions_processes_multiple_large_basins_together():
+    dem = np.full((7, 13), 10.0, dtype=np.float32)
+    dem[1:6, 1:6] = 5.0
+    dem[1:6, 7:12] = 5.0
+    dem[3, 3] = 0.0
+    dem[3, 9] = -1.0
+    dem[1, 1] = 1.0
+    dem[1, 11] = 2.0
+
+    filled = flowdir.fill_depressions(dem, max_fill_size=24)
+
+    expected = dem.copy()
+    expected[1, 1] = 5.0
+    expected[1, 11] = 5.0
+    np.testing.assert_array_equal(filled, expected)
+
+
+def test_label_mask_areas():
+    dir_scheme = D8Directions()
+    mask = np.array(
+        [
+            [T, F, T, F, T],
+            [T, F, T, F, T],
+            [T, F, T, F, T],
+            [T, F, T, F, T],
+        ],
+        dtype=bool,
+    )
+    labels, err_code = raster_f.label_mask_areas(mask, dir_scheme.offsets)
+    assert err_code == 0
+    assert ~np.any(labels[:, 1])
+    assert ~np.any(labels[:, 3])
+    c1 = np.unique(labels[:, 0])
+    assert np.size(c1) == 1
+    c2 = np.unique(labels[:, 2])
+    assert np.size(c2) == 1
+    c3 = np.unique(labels[:, 4])
+    assert np.size(c3) == 1
+    assert c1 != c2
+    assert c1 != c3
+    assert c2 != c3
+
+    mask = np.array(
+        [
+            [T, F, T, F, T],
+            [T, F, T, F, T],
+            [T, T, T, F, T],
+            [T, F, T, F, T],
+        ],
+        dtype=bool,
+    )
+    labels, err_code = raster_f.label_mask_areas(mask, dir_scheme.offsets)
+    assert err_code == 0
+    assert ~np.any(labels[:, 3])
+    c1 = np.unique(labels[:, 0])
+    assert np.size(c1) == 1
+    c2 = np.unique(labels[:, 2])
+    assert np.size(c2) == 1
+    c3 = np.unique(labels[:, 4])
+    assert np.size(c3) == 1
+    assert c1 == c2
+    assert c1 != c3
+
+
+def test_all_allocations_check_status():
     source_root = Path(__file__).parents[1] / "src" / "formosa" / "geomorphology"
     unguarded = []
     for source_path in source_root.rglob("*.f95"):
@@ -59,13 +466,17 @@ def test_all_fortran_allocations_check_status():
                 statement = f"{statement} {lines[next_index].strip()}"
                 next_index += 1
             if "stat=" not in statement.lower():
-                unguarded.append(f"{source_path.relative_to(source_root)}:{line_number}")
+                unguarded.append(
+                    f"{source_path.relative_to(source_root)}:{line_number}"
+                )
                 continue
             stat_var = statement.lower().split("stat=", 1)[1].split(")", 1)[0].strip()
             status_check = f"if ({stat_var} /= 0)"
             following_lines = " ".join(lines[next_index : next_index + 4]).lower()
             if status_check not in following_lines:
-                unguarded.append(f"{source_path.relative_to(source_root)}:{line_number}")
+                unguarded.append(
+                    f"{source_path.relative_to(source_root)}:{line_number}"
+                )
 
     assert unguarded == []
 
@@ -77,10 +488,14 @@ def test_fortran_sources_avoid_old_style_kind_declarations():
     )
     violations = []
 
-    for source_path in source_root.rglob("*.f95"):
-        for line_number, line in enumerate(source_path.read_text().splitlines(), start=1):
+    for source_path in source_root.rglob("*.f90"):
+        for line_number, line in enumerate(
+            source_path.read_text().splitlines(), start=1
+        ):
             if old_style_declaration.match(line):
-                violations.append(f"{source_path.relative_to(source_root)}:{line_number}")
+                violations.append(
+                    f"{source_path.relative_to(source_root)}:{line_number}"
+                )
 
     assert violations == []
 
@@ -110,7 +525,7 @@ def test_checked_linear_cell_ids_reject_invalid_coordinates_and_ids():
     assert utils_f.id2ij_checked(13, 3, 4) == (0, 0, False)
 
 
-def test_fortran_direction_utilities_infer_input_shapes():
+def test_direction_utilities_infer_input_shapes():
     offsets = np.array([[0, 0], [0, 1], [0, -1]], dtype=np.int32, order="F")
     codes = np.array([0, 1, 5], dtype=np.int8)
 
@@ -120,6 +535,86 @@ def test_fortran_direction_utilities_infer_input_shapes():
     lookup = utils_f.fill_offset_lookup(offsets, codes)
     assert np.array_equal(lookup[1], [0, 1])
     assert np.array_equal(lookup[5], [0, -1])
+
+
+def _assert_min_heap(queue, queue_size, elevations):
+    for position in range(queue_size):
+        left = 2 * position + 1
+        right = left + 1
+        parent_elevation = elevations[queue[position] - 1]
+        if left < queue_size:
+            assert parent_elevation <= elevations[queue[left] - 1]
+        if right < queue_size:
+            assert parent_elevation <= elevations[queue[right] - 1]
+
+
+def _drain_priority_queue(queue, queue_size, elevations):
+    popped_ids = []
+    while queue_size.item() > 0:
+        popped, err_code = utils_f.pop_priority_queue(
+            queue,
+            queue_size,
+            elevations,
+        )
+        assert err_code == 0
+        popped_ids.append(popped)
+        _assert_min_heap(queue, queue_size.item(), elevations)
+    return popped_ids
+
+
+def test_priority_queue_pushes_into_empty_queue_and_pops_in_elevation_order():
+    z = np.array([5, 1, 4, 3, 2], dtype=np.float32)
+    queue = np.zeros(z.size, dtype=np.int32)
+    queue_size = np.array(0, dtype=np.int32)
+
+    for cell_id in range(1, z.size + 1):
+        err_code = utils_f.push_priority_queue(queue, queue_size, cell_id, z)
+        assert err_code == 0
+        _assert_min_heap(queue, queue_size.item(), z)
+
+    assert _drain_priority_queue(queue, queue_size, z) == [2, 5, 4, 3, 1]
+
+
+def test_priority_queue_matches_sorted_random_elevations():
+    rng = np.random.default_rng(20260806)
+    z = rng.permutation(257).astype(np.float32)
+    insertion_order = rng.permutation(z.size) + 1
+    queue = np.zeros(z.size, dtype=np.int32)
+    queue_size = np.array(0, dtype=np.int32)
+
+    for cell_id in insertion_order:
+        err_code = utils_f.push_priority_queue(queue, queue_size, int(cell_id), z)
+        assert err_code == 0
+
+    expected = (np.argsort(z) + 1).tolist()
+    assert _drain_priority_queue(queue, queue_size, z) == expected
+
+
+def test_priority_queue_handles_equal_elevations_and_reports_invalid_operations():
+    z = np.array([2, 1, 1, 3], dtype=np.float32)
+    queue = np.zeros(z.size, dtype=np.int32)
+    queue_size = np.array(0, dtype=np.int32)
+
+    for cell_id in range(1, z.size + 1):
+        assert utils_f.push_priority_queue(queue, queue_size, cell_id, z) == 0
+
+    popped_ids = _drain_priority_queue(queue, queue_size, z)
+    popped_elevations = z[np.asarray(popped_ids) - 1]
+    assert np.all(popped_elevations[:-1] <= popped_elevations[1:])
+
+    popped, err_code = utils_f.pop_priority_queue(queue, queue_size, z)
+    assert popped == 0
+    assert err_code == 1
+
+    one_cell_queue = np.zeros(1, dtype=np.int32)
+    one_cell_size = np.array(0, dtype=np.int32)
+    assert utils_f.push_priority_queue(one_cell_queue, one_cell_size, 1, z) == 0
+    assert utils_f.push_priority_queue(one_cell_queue, one_cell_size, 2, z) == 3
+    assert one_cell_size.item() == 1
+    assert one_cell_queue[0] == 1
+
+    invalid_size = np.array(-1, dtype=np.int32)
+    assert utils_f.push_priority_queue(one_cell_queue, invalid_size, 1, z) == 1
 
 
 def test_flat_synthetic_gradients_follow_breadth_first_layers():
@@ -1469,6 +1964,9 @@ def test_find_acyclic_flowdirs_translates_fortran_errors(
 
 
 if __name__ == "__main__":
+    test_priority_queue_pushes_into_empty_queue_and_pops_in_elevation_order()
+    test_priority_queue_matches_sorted_random_elevations()
+    test_priority_queue_handles_equal_elevations_and_reports_invalid_operations()
     test_downstreamid_3x3()
     test_downstreamid_4x4()
     test_flowgraph_3x3()
@@ -1485,3 +1983,4 @@ if __name__ == "__main__":
     test_simplify_multiple_flowgraphs_ignores_identical_arcs()
     test_simplify_flowgraph_keeps_every_arc_endpoint()
     test_simplify_multiple_flowgraphs_accepts_one_empty_graph()
+    test_label_mask_areas()

@@ -13,6 +13,8 @@ from .graphs import (
 )
 
 from .raster import (
+    detect_ocean_basins_from_boundary,
+    invalidate_ocean_basins,
     fill_depressions,
     compute_flowdir,
     count_indegree,

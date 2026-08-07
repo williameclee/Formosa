@@ -12,9 +12,14 @@
 #   2026-07-14, En-Chi Lee (williameclee@gmail.com)
 #     - Splitted `geomorphology.flowdir` into submodules
 #   2026-07-30, En-Chi Lee (williameclee@gmail.com)
-#     - Fixed Python/FORTRAN backend behaviour parity in `compute_flow_strahler_order`.
+#     - Fixed Python/FORTRAN backend behaviour parity in 
+#       `compute_flow_strahler_order`.
 #   2026-08-03, En-Chi Lee (williameclee@gmail.com)
-#     - Implemented Python backend for function `find_acyclic_flowdirs`.
+#     - Implemented Python backend for function 
+#       `find_acyclic_flowdirs`.
+#   2026-08-07 [PR 33], En-Chi Lee (williameclee@gmail.com)
+#     - Added reconstruction-by-erosion backend for depression 
+#       filling.
 
 from collections import deque
 
@@ -28,6 +33,54 @@ from formosa.geomorphology.flowdir.utils import (
 
 import numpy.typing as npt
 from typing import Optional
+
+
+def _fill_depressions_py(
+    dem: npt.NDArray[np.floating],
+    valids: Optional[npt.NDArray[np.bool_]] = None,
+) -> npt.NDArray[np.floating]:
+    """
+    Fill D8 depressions using iterative reconstruction by erosion.
+    
+    Notes
+    -----
+    Deprecated and no longer called by the public functions.
+    """
+    if valids is None:
+        valids = np.ones(dem.shape, dtype=bool)
+
+    reconstructed = dem.copy()
+    reconstructed[valids] = np.inf
+
+    for i in range(dem.shape[0]):
+        for j in range(dem.shape[1]):
+            if not valids[i, j]:
+                continue
+            i0, i1 = max(0, i - 1), min(dem.shape[0], i + 2)
+            j0, j1 = max(0, j - 1), min(dem.shape[1], j + 2)
+            is_outer_boundary = (
+                i == 0
+                or i == dem.shape[0] - 1
+                or j == 0
+                or j == dem.shape[1] - 1
+            )
+            is_mask_boundary = np.any(~valids[i0:i1, j0:j1])
+            if is_outer_boundary or is_mask_boundary:
+                reconstructed[i, j] = dem[i, j]
+
+    while True:
+        previous = reconstructed.copy()
+        for i in range(dem.shape[0]):
+            for j in range(dem.shape[1]):
+                if not valids[i, j]:
+                    continue
+                i0, i1 = max(0, i - 1), min(dem.shape[0], i + 2)
+                j0, j1 = max(0, j - 1), min(dem.shape[1], j + 2)
+                neighbour_valids = valids[i0:i1, j0:j1]
+                neighbour_values = previous[i0:i1, j0:j1][neighbour_valids]
+                reconstructed[i, j] = max(dem[i, j], np.min(neighbour_values))
+        if np.array_equal(reconstructed, previous):
+            return reconstructed
 
 
 def _compute_flowdir_simple_py(

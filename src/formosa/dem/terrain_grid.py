@@ -2,17 +2,25 @@
 #   2026-02-11, En-Chi Lee (williameclee@arizona.edu)
 #     - Rename flowdir functions to be more descriptive
 #   2026-06-09, En-Chi Lee (williameclee@gmail.com)
-#     - Added wrapper function for ridge distance computation in `DEMGrid` class
-#     - Removed Numpy type `np.bool` to either `np.bool_` or `bool` for compatibility with newer Numpy versions
+#     - Added wrapper function for ridge distance computation in 
+#       `DEMGrid` class
+#     - Removed Numpy type `np.bool` to either `np.bool_` or `bool` 
+#       for compatibility with newer Numpy versions
 #   2026-06-11, En-Chi Lee (williameclee@gmail.com)
-#     - Updated function and argument names to match the standardised names
+#     - Updated function and argument names to match the 
+#       standardised names
 #   2026-06-30, En-Chi Lee (williameclee@gmail.com)
 #     - Added aliases to properties
 #     - Added properties `ridgedir` and `ridge_strahler_order`
 #   2026-07-01, En-Chi Lee (williameclee@gmail.com)
 #     - Added property `shape`
 #   2026-08-04, En-Chi Lee (williameclee@gmail.com)
-#     - Updated `compute_dist2conf_max` and related functions' interface to reflect FORTRAN backend changes
+#     - Updated `compute_dist2conf_max` and related functions' 
+#       interface to reflect FORTRAN backend changes
+#   2026-08-07 [PR 33], En-Chi Lee (williameclee@gmail.com)
+#     - Added method `invalidate_ocean_basins` and replaced old 
+#       `detect_ocean_basin`
+#     - Updated method `fill_depressions`' interface
 
 from pathlib import Path
 import warnings
@@ -27,6 +35,7 @@ from formosa.geomorphology import (
     get_neighbour_values,
     compute_slope,
     fill_depressions,
+    invalidate_ocean_basins as _invalidate_ocean_basins,
     compute_flowdir,
     create_flowgraph,
     count_indegree,
@@ -41,6 +50,7 @@ from formosa.geomorphology import (
     label_watersheds,
 )
 
+from typing import Optional
 import numpy.typing as npt
 
 
@@ -67,6 +77,8 @@ class DEMGrid:
         detect_ocean: bool | float | int = False,
         directions: D8Directions = D8Directions(),
         astype: type | np.dtype | None = None,
+        min_ocean_size: int = 1,
+        ocean_flood_below: bool = True,
     ):
         if isinstance(dem, (str, Path)):
             # Read a supported raster DEM (including GeoTIFF and SRTM HGT).
@@ -209,17 +221,30 @@ class DEMGrid:
         )
 
         self.valid = ~np.isnan(self.dem)
-        self._sea_mask = None
-        self.sea_threshold = None
-        if detect_ocean is not False:
-            self.sea_threshold = (
-                detect_ocean if isinstance(detect_ocean, (int, float)) else 0
+        self._ocean_mask = None
+        self.ocean_threshold = None
+        self._min_ocean_size = min_ocean_size
+        self._ocean_flood_below = ocean_flood_below
+        self.directions = directions
+        ocean_detection_enabled = (
+            bool(detect_ocean) if isinstance(detect_ocean, (bool, np.bool_)) else True
+        )
+        if ocean_detection_enabled:
+            self.ocean_threshold = (
+                0 if isinstance(detect_ocean, (bool, np.bool_)) else detect_ocean
             )
-            self._sea_mask = detect_ocean_mask(self.dem, self.sea_threshold)
-            self.valid = self.valid & ~self._sea_mask
+            previous_valid = self.valid.copy()
+            self.valid = _invalidate_ocean_basins(
+                self.dem,
+                valids=self.valid,
+                ocean_level=self.ocean_threshold,
+                flood_below=self._ocean_flood_below,
+                min_size=self._min_ocean_size,
+                dir_scheme=self.directions,
+            )
+            self._ocean_mask = previous_valid & ~self.valid
 
         self.gaussian_filter = gaussian_filter
-        self.directions = directions
         if gaussian_filter is not None:
             filtered_dem = ndi.gaussian_filter(self.dem, sigma=gaussian_filter)
             self.dem = np.where(self.valid, filtered_dem, self.dem)
@@ -256,15 +281,45 @@ class DEMGrid:
         return self._slope
 
     @property
-    def sea_mask(self) -> npt.NDArray[np.bool_]:
-        if self._sea_mask is None or self.sea_threshold is None:
-            if self.sea_threshold is None:
-                self.sea_threshold = 0
-            sea_mask = detect_ocean_mask(self.dem, self.sea_threshold)
-            self._sea_mask = sea_mask & self.valid
-            self.valid = self.valid & ~self._sea_mask
+    def ocean_mask(self) -> npt.NDArray[np.bool_]:
+        """
+        Boolean mask representing cells connected to a sufficiently
+        large ocean that touches the DEM edge.
 
-        return self._sea_mask
+        The elevation at or at and below which is controlled by the
+        `ocean_threshold` property, and the minimum ocean size (in
+        number of cells) is controlled by the private
+        `min_ocean_size` property that can be set during
+        initialisation.
+
+        Notes
+        -----
+        See :func:`invalidate_ocean_basins` for more details.
+        """
+
+        if self._ocean_mask is None or self.ocean_threshold is None:
+            if self.ocean_threshold is None:
+                self.ocean_threshold = 0
+            self.invalidate_ocean_basins(
+                ocean_level=self.ocean_threshold,
+                min_size=self._min_ocean_size,
+                flood_below=self._ocean_flood_below,
+            )
+        assert self._ocean_mask is not None
+        return self._ocean_mask
+
+    @property
+    def sea_mask(self) -> npt.NDArray[np.bool_]:
+        """
+        Boolean mask representing cells connected to a sufficiently
+        large ocean that touches the DEM edge.
+
+        Notes
+        -----
+        This is an alias of the property :func:`ocean_mask`.
+        See :func:`invalidate_ocean_basins` for more details.
+        """
+        return self.ocean_mask
 
     @property
     def flowdir(self) -> npt.NDArray[np.integer]:
@@ -272,6 +327,7 @@ class DEMGrid:
             self._flowdir, self._flat, self._flat_gradient = compute_flowdir(
                 self.dem,
                 dir_scheme=self.directions,
+                valids=self.valid,
                 resolve_flat=True,
             )
         return self._flowdir
@@ -315,10 +371,109 @@ class DEMGrid:
             )
         return self._strahler_order
 
-    def fill_depressions(self, method: str = "erosion") -> "DEMGrid":
+    def fill_depressions(self, max_fill_size: Optional[int] = None) -> "DEMGrid":
+        """
+        Fill enclosed depressions in-place using priority-flood.
+
+        Parameters
+        ----------
+        max_fill_size : int, optional
+            Maximum size (in cells) of a depression before it is
+            considered an internally-drained basin instead.
+            If `None`, all depressions are filled (equivalent to
+            infinity).
+            Default size is `None`.
+
+        Returns
+        -------
+        DEM : DEMGrid
+            DEM with depressions filled.
+
+        Notes
+        -----
+        This is a wrapper for the function :func:`fill_depressions`.
+        """
         self.dem = fill_depressions(
-            fill_pits(self.dem)[0], valids=self.valid, method=method
+            self.dem, valids=self.valid, max_fill_size=max_fill_size
         )
+        return self
+
+    def invalidate_ocean_basins(
+        self,
+        ocean_level: int | float = 0,
+        min_size: int = 1,
+        flood_below: bool = True,
+    ) -> "DEMGrid":
+        """
+        Marks sufficiently large boundary-connected ocean basins as
+        invalid, which means they would not participate in
+        calculation of flow directions, etc.
+
+        Parameters
+        ----------
+        ocean_level : int | float, optional
+            Elevation threshold defining ocean cells.
+            Default elevation is `0`.
+        min_size : int, optional
+            Minimum cell count threshold for ocean basin
+            invalidation.
+            Ocean basins containing at least this number of cells
+            are invalidated.
+            Default size is `1`.
+        flood_below : bool, optional
+            Whether elevations strictly below `ocean_level` qualify
+            as ocean cells.
+            When false, only cells exactly equal to `ocean_level`
+            qualify.
+            Default option is `True`.
+
+        Returns
+        -------
+        DEM : DEMGrid
+            DEM with ocean basins marked as invalid.
+            Internal information (e.g. ocean level) is also updated.
+
+        Notes
+        -----
+        This is a wrapper for the function :func:`invalidate_ocean_basins`.
+        """
+        previous_valid = self.valid.copy()
+        self.valid = _invalidate_ocean_basins(
+            self.dem,
+            valids=self.valid,
+            ocean_level=ocean_level,
+            flood_below=flood_below,
+            min_size=min_size,
+            dir_scheme=self.directions,
+        )
+
+        newly_invalid = previous_valid & ~self.valid
+        if self._ocean_mask is None:
+            self._ocean_mask = newly_invalid
+        else:
+            self._ocean_mask |= newly_invalid
+        self.ocean_threshold = ocean_level
+        self._min_ocean_size = min_size
+        self._ocean_flood_below = flood_below
+
+        # Cached terrain products may depend directly or indirectly
+        # on valid
+        self._slope = None
+        self._flat = None
+        self._flat_gradient = None
+        self._flowdir = None
+        self._indegree = None
+        self._accumulation = None
+        self._strahler_order = None
+        self._watershed = None
+        self._graphx = None
+        self._graphy = None
+        self._flowdist = None
+        self._backdist = None
+        self._bmax = None
+        self._ridgedir = None
+        self._ridge_strahler_order = None
+        self._ridge_dist = None
         return self
 
     @property
@@ -442,14 +597,6 @@ class DEMGrid:
             dir_is_ridge=True,
         )
         return self._ridge_strahler_order
-
-
-def detect_ocean_mask(dem, ocean_threshold: int | float = 0):
-    neighbours, _, _ = get_neighbour_values(dem, include_self=False)
-    ocean_mask = (dem <= ocean_threshold) & np.any(
-        neighbours <= ocean_threshold, axis=0
-    )
-    return ocean_mask
 
 
 def fill_pits(

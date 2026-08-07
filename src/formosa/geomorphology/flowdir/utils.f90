@@ -1,7 +1,8 @@
 !!!
 ! Last modified
 !   2026-07-02, En-Chi Lee (williameclee@gmail.com)
-!     - Iterated the array bound instead of starting from 1 in 'mask2ij'
+!     - Iterated the array bound instead of starting from 1 in
+!       'mask2ij'
 !   2026-07-08, En-Chi Lee (williameclee@gmail.com)
 !     - Moved 'mask2ij' to this module
 !   2026-07-08, En-Chi Lee (williameclee@gmail.com)
@@ -9,31 +10,58 @@
 !   2026-07-12, En-Chi Lee (williameclee@gmail.com)
 !     - Moved 'flowdir_utils' module here 'utils'
 !   2026-08-03, En-Chi Lee (williameclee@gmail.com)
-!     - Explicitly handled Python uint8 -> signed 8-bit Fortran conversion/interpretation in 'fill_offset_lookup'
+!     - Explicitly handled Python uint8 -> signed 8-bit Fortran
+!       conversion/interpretation in 'fill_offset_lookup'
 !   2026-08-04, En-Chi Lee (williameclee@gmail.com)
 !     - Refactored 'mask2ij' to propagate buffer overflow error
-!     - Added function 'mask2id' as the linear-index version of 'mask2ij'; also added related linear index check functions
+!     - Added function 'mask2id' as the linear-index version of
+!       'mask2ij'; also added related linear index check functions
 !   2026-08-05, En-Chi Lee (williameclee@gmail.com)
 !     - Switched to 'iso_c_binding'
+!   2026-08-07 [PR 33], En-Chi Lee (williameclee@gmail.com)
+!     - Implemented priority queue
+!     - Added helper function 'array2d_oob'
 !!!
 
 module utils
     use iso_c_binding, only: c_int8_t
     implicit none(type, external)
 contains
-    pure function ij2id_checked(i, j, nrows, ncols) result(cell_id)
-        !! Encodes a valid one-based grid coordinate as a linear cell ID.
-        !! Zero is returned for an out-of-bounds coordinate and is never a
-        !! valid cell ID.
+
+    logical pure function array2d_oob(i, j, nrows, ncols) result(is_oob)
+        !! Checks whether a pair of array index (i, j) is
+        !! out-of-bounds
         implicit none(type, external)
-        integer, intent(in) :: i, j, nrows, ncols
+        integer, intent(in) :: i, j
+            !! Row and column indices
+        integer, intent(in) :: nrows, ncols
+            !! Size of the array
+
+        if (i < 1 .or. i > nrows .or. j < 1 .or. j > ncols) then
+            is_oob = .true.
+        else
+            is_oob = .false.
+        end if
+    end function array2d_oob
+
+    pure function ij2id_checked(i, j, nrows, ncols) result(cell_id)
+        !! Encodes a valid one-based grid coordinate as a linear
+        !! cell ID.
+        !!
+        !! Zero is returned for an out-of-bounds coordinate and is
+        !! never a valid cell ID.
+        implicit none(type, external)
+        integer, intent(in) :: i, j
+            !! Row and column indices
+        integer, intent(in) :: nrows, ncols
+            !! Size of the array
         integer :: cell_id
 
         if (nrows < 1 .or. ncols < 1) then
             cell_id = 0
         else if (ncols > huge(cell_id)/nrows) then
             cell_id = 0
-        else if (i < 1 .or. i > nrows .or. j < 1 .or. j > ncols) then
+        else if (array2d_oob(i, j, nrows, ncols)) then
             cell_id = 0
         else
             cell_id = i + (j - 1)*nrows
@@ -224,4 +252,168 @@ contains
             diffs(code, 2) = offsets(iofs, 2)
         end do
     end function fill_offset_lookup
+
+    pure logical function is_lower_id(id1, id2, z) result(is_lower)
+        !! Decides whether a cell is lower than another cell and
+        !! therefore has a higher priority in the priority queue.
+        implicit none(type, external)
+        ! Arguments
+        integer, intent(in) :: id1, id2
+            !! Linear cell IDs of the 'z' array to compare
+        real, intent(in) :: z(*)
+            !! Array the cell IDs reference and used to compare
+            !! values
+
+        if (z(id1) < z(id2)) then
+            is_lower = .true.
+        else
+            is_lower = .false.
+        end if
+    end function is_lower_id
+
+    pure subroutine push_priority_queue( &
+        queue, queue_size, new, z, err_code)
+        !! Pushes a cell id to the priority queue.
+        !!
+        !! The cell is moved to an appropriate location such that
+        !! the cell's corresponding value in 'z' is larger than its
+        !! parent's but smaller than all its children.
+        !!
+        !! Notes
+        !! -----
+        !! See :func:'pop_priority_queue' for the push operation.
+        implicit none(type, external)
+        ! Arguments
+        integer, intent(inout) :: queue(:)
+            !! Priority queue, containing linear cell IDs of 'z'
+        integer, intent(inout) :: queue_size
+            !! Total number of cells in the queue (not the size/
+            !! capacity of the queue)
+        integer, intent(in) :: new
+            !! New cell ID to push into the queue
+        real, intent(in) :: z(*)
+            !! Array the cell IDs reference and used to compare
+            !! values
+        integer, intent(out) :: err_code
+            !! Code indicating the status of the result
+            !!   - 0: Programme executed properly
+            !!   - 1: Invalid input
+            !!   - 3: Queue overflow
+        ! Local variables
+        integer :: pos, parent_pos
+            !! For swapping the new cell to the right position
+        integer :: tmp_id
+            !! For swapping the new cell to the right position
+
+        err_code = 0
+
+        ! First make sure the queue is large enough
+        if (queue_size < 0) then
+            err_code = 1 ! Incorrect input
+            return
+        elseif (queue_size >= size(queue)) then
+            err_code = 3 ! Overflow
+            return
+        end if
+
+        ! Add the new cell
+        queue_size = queue_size + 1
+        pos = queue_size
+        queue(pos) = new
+
+        ! Move the new cell to the right position
+        do while (pos > 1)
+            parent_pos = pos/2
+            ! Swap with parent if current cell is lower
+            if (.not. (is_lower_id(queue(pos), queue(parent_pos), z))) exit
+            tmp_id = queue(parent_pos)
+            queue(parent_pos) = queue(pos)
+            queue(pos) = tmp_id
+            pos = parent_pos
+        end do
+    end subroutine push_priority_queue
+
+    pure subroutine pop_priority_queue( &
+        queue, queue_size, popped, z, err_code)
+        !! Pops the linear cell ID with the highest priority from
+        !! the priority queue.
+        !!
+        !! The queue is then resorted such that the internal tree
+        !! structure (such that all children have larger value than
+        !! their parent) is preserved.
+        !!
+        !! Notes
+        !! -----
+        !! See :func:'push_priority_queue' for the push operation.
+        implicit none(type, external)
+        ! Arguments
+        integer, intent(inout) :: queue(:)
+            !! Priority queue, containing linear cell IDs of 'z'
+        integer, intent(inout) :: queue_size
+            !! Total number of cells in the queue (not the size/
+            !! capacity of the queue)
+        real, intent(in) :: z(*)
+            !! Array the cell IDs reference and used to compare
+            !! values
+        ! Outputs
+        integer, intent(out) :: popped
+            !! Linear cell ID of the popped cell
+        integer, intent(out) :: err_code
+            !! Code indicating the status of the result
+            !!   - 0: Programme executed properly
+            !!   - 1: Invalid input
+            !!   - 3: Queue overflow
+        ! Local variables
+        integer :: pos, left_pos, right_pos, lower_pos
+            !! For swapping the new cell to the right position
+        integer :: tmp_id
+            !! For swapping the new cell to the right position
+
+        err_code = 0
+
+        ! Check the queue is normal
+        if (queue_size <= 0) then
+            err_code = 1 ! Incorrect input
+            popped = 0
+            return
+        elseif (queue_size > size(queue)) then
+            err_code = 3 ! Overflow
+            popped = 0
+            return
+        end if
+
+        popped = queue(1)
+        if (queue_size == 1) then
+            queue_size = 0
+            return
+        end if
+
+        ! Sort the rest of the queue
+        ! First move the last element to the top
+        pos = 1
+        queue(pos) = queue(queue_size)
+        queue_size = queue_size - 1
+        ! Now move it to the correct place
+        left_pos = pos*2
+        do while (left_pos <= queue_size)
+            right_pos = left_pos + 1
+
+            ! Find the lower of the two child to swap with
+            lower_pos = left_pos
+            if (right_pos <= queue_size) then
+                if (is_lower_id(queue(right_pos), queue(left_pos), z)) &
+                    lower_pos = right_pos
+            end if
+
+            ! Check if needs swapping
+            if (.not. is_lower_id(queue(lower_pos), queue(pos), z)) exit
+            ! Swap
+            tmp_id = queue(lower_pos)
+            queue(lower_pos) = queue(pos)
+            queue(pos) = tmp_id
+
+            pos = lower_pos
+            left_pos = pos*2
+        end do
+    end subroutine pop_priority_queue
 end module utils
