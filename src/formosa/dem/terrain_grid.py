@@ -277,10 +277,17 @@ class DEMGrid:
     @property
     def ocean_mask(self) -> npt.NDArray[np.bool_]:
         """
-        Boolean mask representing cells connected to a sufficiently large ocean that touches the DEM edge.
+        Boolean mask representing cells connected to a sufficiently
+        large ocean that touches the DEM edge.
 
-        The elevation at or at and below which is controlled by the `ocean_threshold` property, and the minimum ocean size (in number of cells) is controlled by the private `min_ocean_size` property that can be set during initialisation.
+        The elevation at or at and below which is controlled by the
+        `ocean_threshold` property, and the minimum ocean size (in
+        number of cells) is controlled by the private
+        `min_ocean_size` property that can be set during
+        initialisation.
 
+        Notes
+        -----
         See :func:`invalidate_ocean_basins` for more details.
         """
 
@@ -298,8 +305,11 @@ class DEMGrid:
     @property
     def sea_mask(self) -> npt.NDArray[np.bool_]:
         """
-        Boolean mask representing cells connected to a sufficiently large ocean that touches the DEM edge.
+        Boolean mask representing cells connected to a sufficiently
+        large ocean that touches the DEM edge.
 
+        Notes
+        -----
         This is an alias of the property :func:`ocean_mask`.
         See :func:`invalidate_ocean_basins` for more details.
         """
