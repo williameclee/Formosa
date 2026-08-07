@@ -39,13 +39,12 @@
 #   2026-08-04, En-Chi Lee (williameclee@gmail.com)
 #     - Updated `compute_dist2conf_max` and related functions'
 #       interface to reflect FORTRAN backend changes.
-#   2026-08-06, En-Chi Lee (williameclee@gmail.com)
+#   2026-08-07 [PR 33], En-Chi Lee (williameclee@gmail.com)
 #     - Replaced morphological reconstruction with FORTRAN priority-
 #       flood in `fill_depressions`.
-#     - Implemented function `invalidate_ocean_basins`.
-#   2026-08-07, En-Chi Lee (williameclee@gmail.com)
 #     - Made `fill_depressions` optionally not fill internally-
 #       drained basins.
+#     - Implemented function `invalidate_ocean_basins`.
 
 
 import numpy as np

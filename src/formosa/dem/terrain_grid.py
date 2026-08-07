@@ -2,19 +2,25 @@
 #   2026-02-11, En-Chi Lee (williameclee@arizona.edu)
 #     - Rename flowdir functions to be more descriptive
 #   2026-06-09, En-Chi Lee (williameclee@gmail.com)
-#     - Added wrapper function for ridge distance computation in `DEMGrid` class
-#     - Removed Numpy type `np.bool` to either `np.bool_` or `bool` for compatibility with newer Numpy versions
+#     - Added wrapper function for ridge distance computation in 
+#       `DEMGrid` class
+#     - Removed Numpy type `np.bool` to either `np.bool_` or `bool` 
+#       for compatibility with newer Numpy versions
 #   2026-06-11, En-Chi Lee (williameclee@gmail.com)
-#     - Updated function and argument names to match the standardised names
+#     - Updated function and argument names to match the 
+#       standardised names
 #   2026-06-30, En-Chi Lee (williameclee@gmail.com)
 #     - Added aliases to properties
 #     - Added properties `ridgedir` and `ridge_strahler_order`
 #   2026-07-01, En-Chi Lee (williameclee@gmail.com)
 #     - Added property `shape`
 #   2026-08-04, En-Chi Lee (williameclee@gmail.com)
-#     - Updated `compute_dist2conf_max` and related functions' interface to reflect FORTRAN backend changes
-#   2026-08-06, En-Chi Lee (williameclee@gmail.com)
-#     - Added method `invalidate_ocean_basins` and replaced old `detect_ocean_basin`
+#     - Updated `compute_dist2conf_max` and related functions' 
+#       interface to reflect FORTRAN backend changes
+#   2026-08-07 [PR 33], En-Chi Lee (williameclee@gmail.com)
+#     - Added method `invalidate_ocean_basins` and replaced old 
+#       `detect_ocean_basin`
+#     - Updated method `fill_depressions`' interface
 
 from pathlib import Path
 import warnings

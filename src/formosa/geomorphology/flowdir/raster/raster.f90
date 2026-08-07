@@ -36,14 +36,12 @@
 !   2026-08-05, En-Chi Lee (williameclee@gmail.com)
 !     - Overhauled algorithm for 'compute_max_branch_dist'
 !     - Switched to 'iso_c_binding'
-!   2026-08-06, En-Chi Lee (williameclee@gmail.com)
+!   2026-08-07 [PR 33], En-Chi Lee (williameclee@gmail.com)
 !     - Implemented naive priority-flood depression-filling
 !       algorithm
-!     - Implemented boundary-bordering ocean basin identification
-!       algorithm
-!   2026-08-07, En-Chi Lee (williameclee@gmail.com)
-!     - Added function 'label_mask_areas'
 !     - Added argument 'more_sinks' to function 'fill_depressions'
+!     - Implemented boundary-bordering ocean basin identification
+!       algorithm ('label_mask_areas')
 !!!
 
 module flowdir_raster

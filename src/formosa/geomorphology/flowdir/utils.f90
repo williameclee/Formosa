@@ -18,9 +18,8 @@
 !       'mask2ij'; also added related linear index check functions
 !   2026-08-05, En-Chi Lee (williameclee@gmail.com)
 !     - Switched to 'iso_c_binding'
-!   2026-08-06, En-Chi Lee (williameclee@gmail.com)
+!   2026-08-07 [PR 33], En-Chi Lee (williameclee@gmail.com)
 !     - Implemented priority queue
-!   2026-08-07, En-Chi Lee (williameclee@gmail.com)
 !     - Added helper function 'array2d_oob'
 !!!
 
