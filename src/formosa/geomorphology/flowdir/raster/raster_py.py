@@ -17,7 +17,7 @@
 #   2026-08-03, En-Chi Lee (williameclee@gmail.com)
 #     - Implemented Python backend for function 
 #       `find_acyclic_flowdirs`.
-#   2026-08-06, En-Chi Lee (williameclee@gmail.com)
+#   2026-08-07 [PR 33], En-Chi Lee (williameclee@gmail.com)
 #     - Added reconstruction-by-erosion backend for depression 
 #       filling.
 

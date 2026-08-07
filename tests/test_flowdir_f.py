@@ -1,35 +1,41 @@
 # Last modified
 #   2026-06-11, En-Chi Lee (williameclee@gmail.com)
-#     - Updated function and argument names to match the standardised names.
+#     - Updated function and argument names to match the
+#       standardised names.
 #   2026-07-01, En-Chi Lee (williameclee@gmail.com)
-#     - Added test cases for `compute_downstream_indices`, `create_flowgraph`, and `compute_flow_strahler_order`.
+#     - Added test cases for `compute_downstream_indices`,
+#       `create_flowgraph`, and `compute_flow_strahler_order`.
 #   2026-07-02, En-Chi Lee (williameclee@gmail.com)
-#     - Added test case for `compute_downstream_indices` with validity mask.
+#     - Added test case for `compute_downstream_indices` with
+#       validity mask.
 #   2026-07-09, En-Chi Lee (williameclee@gmail.com)
-#     - Added test case for the Fortran implementation of `construct_flowgraph`.
+#     - Added test case for the Fortran implementation of
+#       `construct_flowgraph`.
 #   2026-07-12, En-Chi Lee (williameclee@gmail.com)
 #     - Added test cases for function `test_locate_invalid_graph_topogtaphy`.
 #   2026-07-14, En-Chi Lee (williameclee@gmail.com)
 #     - Updated `geomorphology.flowdir` to the new submodule name.
 #   2026-07-29, En-Chi Lee (williameclee@gmail.com)
 #     - Added test cases for function `simplify_flowgraph`.
-#     - Added complete topology-intersection scan-and-retry regression tests.
+#     - Added complete topology-intersection scan-and-retry
+#       regression tests.
 #   2026-07-30, En-Chi Lee (williameclee@gmail.com)
 #     - Various minor refactors and type annotation enhancements.
 #   2026-07-31, En-Chi Lee (williameclee@gmail.com)
-#     - Updated tests to match the updated `simplify_flowgraph` interface; also added additional tests for the new interface.
+#     - Updated tests to match the updated `simplify_flowgraph`
+#       interface; also added additional tests for the new interface.
 #   2026-08-03, En-Chi Lee (williameclee@gmail.com)
 #     - Added test cases for function `find_acyclic_flowdirs`.
 #   2026-08-04, En-Chi Lee (williameclee@gmail.com)
 #     - Added test cases for FORTRAN error code handling.
 #   2026-08-05, En-Chi Lee (williameclee@gmail.com)
-#     - Added a regression check for nonstandard old-style Fortran kind declarations.
-#   2026-08-06, En-Chi Lee (williameclee@gmail.com)
-#     - Added priority-queue ordering and error-handling tests.
-#     - Added tests for the priority-flood depression-filling algorithm.
-#     - Added tests for the ocean basin masking algorithms.
-#   2026-08-07, En-Chi Lee (williameclee@gmail.com)
-#     - Added tests for function `label_mask_areas`.
+#     - Added a regression check for nonstandard old-style FORTRAN
+#       kind declarations.
+#   2026-08-07 [PR 33], En-Chi Lee (williameclee@gmail.com)
+#     - Added tests for the priority-flood depression-filling
+#       algorithm.
+#     - Added tests for the ocean basin masking algorithms 
+#       (`label_mask_areas`).
 
 import re
 import warnings
