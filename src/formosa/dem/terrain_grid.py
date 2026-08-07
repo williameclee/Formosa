@@ -359,6 +359,20 @@ class DEMGrid:
         """
         Fill enclosed depressions in-place using priority-flood.
 
+        Parameters
+        ----------
+        max_fill_size : int, optional
+            Maximum size (in cells) of a depression before it is
+            considered an internally-drained basin instead.
+            If `None`, all depressions are filled (equivalent to
+            infinity).
+            Default size is `None`.
+
+        Returns
+        -------
+        DEM : DEMGrid
+            DEM with depressions filled.
+
         Notes
         -----
         This is a wrapper for the function :func:`fill_depressions`.
@@ -374,10 +388,38 @@ class DEMGrid:
         min_size: int = 1,
         flood_below: bool = True,
     ) -> "DEMGrid":
-        """Invalidate sufficiently large boundary-connected ocean basins.
+        """
+        Marks sufficiently large boundary-connected ocean basins as
+        invalid, which means they would not participate in
+        calculation of flow directions, etc.
 
-        `min_size` is an inclusive cell-count threshold. Elevations
-        are unchanged; the detected ocean cells are removed from `valid`.
+        Parameters
+        ----------
+        ocean_level : int | float, optional
+            Elevation threshold defining ocean cells.
+            Default elevation is `0`.
+        min_size : int, optional
+            Minimum cell count threshold for ocean basin
+            invalidation.
+            Ocean basins containing at least this number of cells
+            are invalidated.
+            Default size is `1`.
+        flood_below : bool, optional
+            Whether elevations strictly below `ocean_level` qualify
+            as ocean cells.
+            When false, only cells exactly equal to `ocean_level`
+            qualify.
+            Default option is `True`.
+
+        Returns
+        -------
+        DEM : DEMGrid
+            DEM with ocean basins marked as invalid.
+            Internal information (e.g. ocean level) is also updated.
+
+        Notes
+        -----
+        This is a wrapper for the function :func:`invalidate_ocean_basins`.
         """
         previous_valid = self.valid.copy()
         self.valid = _invalidate_ocean_basins(
@@ -398,7 +440,8 @@ class DEMGrid:
         self._min_ocean_size = min_size
         self._ocean_flood_below = flood_below
 
-        # Cached terrain products may depend directly or indirectly on valid.
+        # Cached terrain products may depend directly or indirectly
+        # on valid
         self._slope = None
         self._flat = None
         self._flat_gradient = None

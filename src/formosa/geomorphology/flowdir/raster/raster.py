@@ -181,22 +181,21 @@ def invalidate_ocean_basins(
     dir_scheme: D8Directions = D8Directions(),
 ) -> npt.NDArray[np.bool_]:
     """
-    Returns a validity mask with sufficiently large ocean basins invalidated.
-
-    `min_size` is an inclusive cell-count threshold.
-    Only basins connected to the raster boundary are candidates; enclosed low-elevation basins remain valid.
-
+    Returns a validity mask with sufficiently large ocean basins 
+    invalidated.
+    
     Parameters
     ----------
     dem : NDArray[number]
         2D digital elevation model.
     valids : NDArray[bool], optional
         Boolean mask indicating valid cells.
-        Invalid cells remain invalid in the output mask. If `None`, every cell with a finite elevation is valid initially.
+        Invalid cells remain invalid in the output mask. If `None`, 
+        every cell with a finite elevation is valid initially.
         Default input is `None`.
     ocean_level : int | float, optional
         Elevation threshold defining ocean cells.
-        Default value is `0`.
+        Default elevation is `0`.
     flood_below : bool, optional
         Whether elevations strictly below `ocean_level` qualify as ocean cells.
         When false, only cells exactly equal to `ocean_level` qualify.
