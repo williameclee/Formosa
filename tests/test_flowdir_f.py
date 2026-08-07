@@ -297,7 +297,7 @@ def test_fill_depressions_is_monotonic_and_idempotent_randomly():
 
 
 def test_fill_depressions_validates_mask_shape():
-    with pytest.raises(ValueError, match="do not match"):
+    with pytest.raises(ValueError, match="must have the same shape"):
         flowdir.fill_depressions(
             np.ones((3, 3), dtype=np.float32),
             valids=np.ones((2, 2), dtype=bool),

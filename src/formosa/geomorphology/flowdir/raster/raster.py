@@ -320,7 +320,7 @@ def fill_depressions(
     else:
         if valids.shape != dem.shape:
             raise ValueError(
-                "Shapes for DEM array and validity mask must agree, "
+                "DEM array and validity mask must have the same shape, "
                 + f"but got {dem.shape} and {valids.shape}, respectively."
             )
         if not np.any(valids):
