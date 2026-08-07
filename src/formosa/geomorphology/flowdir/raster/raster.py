@@ -246,82 +246,70 @@ def invalidate_ocean_basins(
 def fill_depressions(
     dem: npt.NDArray[np.number],
     valids: Optional[npt.NDArray[np.bool_]] = None,
-    backend: Literal["fortran", "python"] = "fortran",
 ) -> npt.NDArray[np.number]:
     """
-    Fills depressions in a digital elevation model.
+    Fills depressions in a digital elevation model (DEM).
 
-    Interior cells that cannot drain to the edge of the array are raised to the
-    lowest elevation that provides an outlet. The FORTRAN backend uses
-    Priority-Flood, while the Python backend uses iterative morphological
-    reconstruction by erosion.
+    Interior cells that cannot drain to the edge of the array are
+    raised to the lowest elevation that provides an outlet.
 
     Parameters
     ----------
     dem : NDArray[number]
-        Two-dimensional digital elevation model. The input is not modified.
-        The calculation uses 32-bit floating-point precision and converts the
-        result back to the input dtype.
+        2D DEM.
+        The calculation uses 32-bit floating-point precision and
+        converts the result back to the input dtype; the input is
+        not modified.
     valids : NDArray[bool], optional
-        Boolean mask with the same shape as `dem`. Invalid cells are excluded
-        from the fill and retain their original elevations. Valid cells on the
-        outer array boundary or adjacent to invalid cells are treated as
-        Priority-Flood outlets. If `None`, every cell is valid.
-    backend : {"fortran", "python"}, optional
-        Implementation to use. The default is `"fortran"`.
+        Boolean mask with the same shape as `dem`.
+        Invalid cells are excluded from the fill and retain their
+        original elevations. Valid cells on the outer array boundary
+        or adjacent to invalid cells are treated as priority-flood
+        outlets.
+        If `None`, every cell is assumed to be valid.
+        Default input is `None`.
     Returns
     -------
-    NDArray[number]
-        Depression-filled DEM with the same shape and dtype as `dem`.
+    dem_filled : NDArray[number]
+        Depression-filled DEM.
 
     Raises
     ------
     ValueError
-        If an argument is invalid or the arrays have incompatible shapes.
-    ImportError
-        If the selected backend is unavailable.
+        If an argument is invalid or the arrays have incompatible
+        shapes.
     MemoryError
         If the FORTRAN backend cannot allocate its workspace.
 
     Notes
     -----
-    Elevations should be finite. NaN ordering is not defined by the FORTRAN
-    priority queue. Equal-elevation cells may be processed in any order without
-    changing the filled result.
+    Elevations should be finite. `NaN` ordering is not defined by
+    the FORTRAN priority queue. Equal-elevation cells may be
+    processed in any order without changing the filled result.
     """
     dem = np.asarray(dem)
     if dem.ndim != 2 or 0 in dem.shape:
-        raise ValueError(f"dem must be a non-empty 2D array, got shape {dem.shape}.")
-    if not np.issubdtype(dem.dtype, np.number):
-        raise TypeError(f"dem must have a numeric dtype, got {dem.dtype}.")
-    if backend not in ("fortran", "python"):
         raise ValueError(
-            f"backend must be either 'fortran' or 'python', got {backend!r}."
         )
+    if not np.issubdtype(dem.dtype, np.number):
+        raise TypeError("DEM must have a numeric dtype, " + f"got {dem.dtype}.")
     if valids is None:
-        valids_array = np.ones(dem.shape, dtype=bool, order="F")
+        valids = np.ones(dem.shape, dtype=bool, order="F")
     else:
-        valids_array = np.asarray(valids, dtype=bool)
-        if valids_array.shape != dem.shape:
+        if valids.shape != dem.shape:
             raise ValueError(
-                f"Shapes for dem ({dem.shape}) and valids "
-                f"({valids_array.shape}) do not match."
+                f"Shapes for DEM array {dem.shape} and validity mask {valids.shape} do not match."
             )
-        if not np.any(valids_array):
+        if not np.any(valids):
             return dem.copy()
 
-    dem_float32 = dem.astype(np.float32, order="F")
-    if backend == "python":
-        from .raster_py import _fill_depressions_py
-
-        z_filled = _fill_depressions_py(dem_float32, valids=valids_array)
-    else:
-        z_filled, err_code = raster_f.fill_depression(
-            dem_float32,
-            valids_array.astype(bool, order="F"),
-            D8Directions().offsets.astype(np.int32, order="F"),
-        )
-        raise_fortran_error("fill_depression", err_code)
+    dem_f32 = dem.astype(np.float32, order="F")
+    z_filled, err_code = raster_f.fill_depression(
+        dem_f32,
+        valids.astype(bool, order="F"),
+        D8Directions().offsets.astype(np.int32, order="F"),
+    )
+    raise_fortran_error("fill_depression", err_code)
     return z_filled.astype(dem.dtype, order="F")
 
 

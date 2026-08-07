@@ -12,11 +12,14 @@
 #   2026-07-14, En-Chi Lee (williameclee@gmail.com)
 #     - Splitted `geomorphology.flowdir` into submodules
 #   2026-07-30, En-Chi Lee (williameclee@gmail.com)
-#     - Fixed Python/FORTRAN backend behaviour parity in `compute_flow_strahler_order`.
+#     - Fixed Python/FORTRAN backend behaviour parity in 
+#       `compute_flow_strahler_order`.
 #   2026-08-03, En-Chi Lee (williameclee@gmail.com)
-#     - Implemented Python backend for function `find_acyclic_flowdirs`.
+#     - Implemented Python backend for function 
+#       `find_acyclic_flowdirs`.
 #   2026-08-06, En-Chi Lee (williameclee@gmail.com)
-#     - Added reconstruction-by-erosion backend for depression filling.
+#     - Added reconstruction-by-erosion backend for depression 
+#       filling.
 
 from collections import deque
 
@@ -36,7 +39,13 @@ def _fill_depressions_py(
     dem: npt.NDArray[np.floating],
     valids: Optional[npt.NDArray[np.bool_]] = None,
 ) -> npt.NDArray[np.floating]:
-    """Fill D8 depressions using iterative reconstruction by erosion."""
+    """
+    Fill D8 depressions using iterative reconstruction by erosion.
+    
+    Notes
+    -----
+    Deprecated and no longer called by the public functions.
+    """
     if valids is None:
         valids = np.ones(dem.shape, dtype=bool)
 

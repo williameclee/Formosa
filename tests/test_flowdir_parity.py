@@ -1,8 +1,7 @@
 # Last modified
 #   2026-08-03, En-Chi Lee (williameclee@gmail.com)
-#     - Added test cases for function `find_acyclic_flowdirs` and graph construction validity
-#   2026-08-06, En-Chi Lee (williameclee@gmail.com)
-#     - Added tests for the different depression-filling algorithms for the two backends.
+#     - Added test cases for function `find_acyclic_flowdirs` and
+#       graph construction validity.
 
 import numpy as np
 import pytest
@@ -14,48 +13,6 @@ T = True
 F = False
 
 BACKENDS = ("python", "fortran")
-
-
-def test_fill_depressions_backends_match_randomly():
-    rng = np.random.default_rng(20260806)
-    for _ in range(200):
-        shape = tuple(rng.integers(3, 20, size=2))
-        dem = rng.uniform(-100.0, 300.0, size=shape).astype(np.float32)
-
-        python_filled = flowdir.fill_depressions(dem, backend="python")
-        fortran_filled = flowdir.fill_depressions(dem, backend="fortran")
-
-        np.testing.assert_array_equal(fortran_filled, python_filled)
-
-
-def test_fill_depressions_backends_match_random_masks():
-    rng = np.random.default_rng(314159)
-    for _ in range(100):
-        shape = tuple(rng.integers(3, 15, size=2))
-        dem = rng.uniform(-100.0, 300.0, size=shape).astype(np.float32)
-        valids = rng.random(shape) > 0.25
-
-        python_filled = flowdir.fill_depressions(dem, valids=valids, backend="python")
-        fortran_filled = flowdir.fill_depressions(dem, valids=valids, backend="fortran")
-
-        np.testing.assert_array_equal(fortran_filled, python_filled)
-
-
-@pytest.mark.parametrize("backend", BACKENDS)
-def test_fill_depressions_backend_preserves_dtype_shape_and_input(backend):
-    source = np.array(
-        [[7, 7, 7, 7], [7, 1, 2, 7], [7, 3, 0, 7], [7, 7, 7, 7]],
-        dtype=np.float64,
-    )
-    dem = source[:, ::-1]
-    original = dem.copy()
-
-    filled = flowdir.fill_depressions(dem, backend=backend)
-
-    assert filled.shape == dem.shape
-    assert filled.dtype == dem.dtype
-    np.testing.assert_array_equal(dem, original)
-    np.testing.assert_array_equal(filled, np.full(dem.shape, 7.0))
 
 
 @pytest.fixture
