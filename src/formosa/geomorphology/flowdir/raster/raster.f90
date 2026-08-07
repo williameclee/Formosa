@@ -345,7 +345,7 @@ contains
         end do
     end subroutine fill_boundary_priority_queue
 
-    subroutine fill_depression( &
+    pure subroutine fill_depression( &
         z, z_filled, valids, nrows, ncols, offsets, noffsets, &
         err_code)
         implicit none(type, external)
@@ -2657,7 +2657,8 @@ contains
         deallocate (indegs, lvl_ends)
     end subroutine build_flow_tree_metadata
 
-    pure function find_tree_confluence(cid1, cid2, ds_ids, depths, jump_ids) result(confluence_id)
+    pure function find_tree_confluence(cid1, cid2, ds_ids, depths, jump_ids) &
+        result(confluence_id)
         !! Returns the first common downstream cell using depth-block jumps.
         !!
         !! depth is measured from a cell downstream to its sink. jump_ids(v)
@@ -3038,7 +3039,8 @@ contains
 
     pure subroutine inner_compute_confluence_dist( &
         dists, s1i, s1j, s2i, s2j, dirs, x, y, &
-        offset_lookup, maxpathlen, path1, path2, visited, id1, id2, check_flag, err_code)
+        offset_lookup, maxpathlen, path1, path2, visited, &
+        id1, id2, check_flag, err_code)
         !! Inner routine for computing the confluence distance
         !! between two seed cells.
         !!
@@ -3234,64 +3236,4 @@ contains
                        y(path2(1, ipath2), path2(2, ipath2)))
         end do
     end subroutine inner_compute_confluence_dist
-
-    ! subroutine compute_spill_flow( &
-    !     z, valids, flowdirs, nrows, ncols, &
-    !     offsets, codes, noffsets)
-    !     implicit none
-    !     ! Inputs
-    !     integer, intent(in) :: nrows, ncols
-    !     real, dimension(nrows, ncols), intent(in) :: z
-    !     logical, dimension(nrows, ncols), intent(in) :: valids
-    !     integer, intent(in) :: noffsets
-    !     integer, dimension(noffsets, 2), intent(in) :: offsets
-    !     integer(c_int8_t), dimension(noffsets), intent(in) :: codes
-    !     ! Outputs
-    !     integer(c_int8_t), dimension(nrows, ncols), intent(out) :: flowdirs
-
-    !     logical, allocatable :: processed(:, :)
-    !     integer(c_int8_t), allocatable :: indegs(:, :)
-    !     integer, allocatable :: dists(:, :)
-    !     integer(c_int8_t), dimension(noffsets) :: opp_codes
-    !     integer(c_int8_t) :: noflow_code = 0
-
-    !     integer :: sij(2) ! Seed indices
-
-    !     noflow_code = find_noflow_code(offsets, codes)
-    !     opp_codes = find_opposite_codes(offsets, codes)
-
-    !     allocate (processed(nrows, ncols))
-    !     call compute_flowdir_simple( &
-    !         z, valids, flowdirs, processed, nrows, ncols, &
-    !         offsets, codes, noffsets)
-
-    !     processed = .false.
-    !     ! Fill invalid cells as processed
-    !     processed = merge(.true., processed,.not. valids)
-    !     ! Fill boundary cells as processed
-    !     processed(1, :) = .true.
-    !     processed(nrows, :) = .true.
-    !     processed(:, 1) = .true.
-    !     processed(:, ncols) = .true.
-    !     call flood_upstream( &
-    !         processed, flowdirs, processed, valids, nrows, ncols, &
-    !         offsets, codes, noffsets)
-
-    !     allocate (dists(nrows, ncols))
-    !     call compute_dist2source_l1( &
-    !         flowdirs, valids, indegs, dists, nrows, ncols, &
-    !         offsets, codes, noffsets)
-
-    !     if (count(processed) == nrows*ncols) then
-    !         ! All cells processed
-    !         deallocate (processed)
-    !         deallocate (dists)
-    !         return
-    !     end if
-
-    !     ! Find seed: min elevation among unprocessed cells
-    !     sij = minloc(z, mask=.not. processed)
-    !     ! Find lowest border cell of the basin containing the seed
-
-    ! end subroutine compute_spill_flow
 end module flowdir_raster
