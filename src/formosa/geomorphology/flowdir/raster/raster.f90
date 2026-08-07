@@ -41,8 +41,9 @@
 !       algorithm
 !     - Implemented boundary-bordering ocean basin identification
 !       algorithm
-!   2026-08-06, En-Chi Lee (williameclee@gmail.com)
+!   2026-08-07, En-Chi Lee (williameclee@gmail.com)
 !     - Added function 'label_mask_areas'
+!     - Added argument 'more_sinks' to function 'fill_depressions'
 !!!
 
 module flowdir_raster
@@ -53,7 +54,7 @@ module flowdir_raster
                      push_priority_queue, pop_priority_queue
     use distances, only: l1dist_xy, l2dist_xy
     implicit none(type, external)
-    private :: fill_boundary_ocean_queue, fill_boundary_priority_queue
+    private :: fill_boundary_ocean_queue, fill_sink_priority_queue
     private :: resolve_flow_tree_links, build_flow_tree_topology
     private :: propagate_flow_tree_metadata, build_flow_tree_metadata
     private :: find_tree_confluence
@@ -245,15 +246,23 @@ contains
         end do
     end subroutine detect_ocean_basins_from_boundary
 
-    pure subroutine fill_boundary_priority_queue( &
-        z, valids, processed, pqueue, pqueue_size, &
+    pure subroutine fill_sink_priority_queue( &
+        z, valids, more_sinks, processed, pqueue, pqueue_size, &
         offsets, err_code)
+        !! Push sinks of a DEM to the priority queue.
+        !!
+        !! The following kinds of cells are considered sinks:
+        !!  1. Valid edge cells of the DEM
+        !!  2. Valid cells surrounding an invalid cell
+        !!  3. Additional valid sink cells specified as 'more_sinks'
         implicit none(type, external)
         ! Arguments
         real, intent(in) :: z(:, :)
             !! Elevation grid
         logical(kind=1), intent(in) :: valids(:, :)
-            !! Validity mask (true for valid cells, false for no-data)
+            !! Validity mask (false for no-data)
+        logical(kind=1), intent(in) :: more_sinks(:, :)
+            !! Additional sink cell mask
         logical(kind=1), intent(inout) :: processed(:, :)
         integer, intent(inout) :: pqueue(:)
         integer, intent(inout) :: pqueue_size
@@ -318,10 +327,20 @@ contains
         end do
 
         ! Queue neighbours of non-valid cells (which may be ocean,
-        ! etc.)
+        ! etc.) or additional sinks
         do cj = 1, ncols
             do ci = 1, nrows
-                if (valids(ci, cj)) cycle
+                if (valids(ci, cj)) then
+                    if (processed(ci, cj)) cycle
+                    if (.not. more_sinks(ci, cj)) cycle
+                    ! Queue the sink
+                    call push_priority_queue( &
+                        pqueue, pqueue_size, &
+                        ij2id_checked(ci, cj, nrows, ncols), z, err_code)
+                    if (err_code /= 0) return
+                    processed(ci, cj) = .true.
+                    cycle
+                end if
                 ! Push all neighbours to the queue
                 do iofs = 1, noffsets
                     ! In opposite direction since we want to find
@@ -343,11 +362,11 @@ contains
                 end do
             end do
         end do
-    end subroutine fill_boundary_priority_queue
+    end subroutine fill_sink_priority_queue
 
-    pure subroutine fill_depression( &
-        z, z_filled, valids, nrows, ncols, offsets, noffsets, &
-        err_code)
+    pure subroutine fill_depressions( &
+        z, valids, more_sinks, z_filled, nrows, ncols, &
+        offsets, noffsets, err_code)
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols
@@ -356,6 +375,8 @@ contains
             !! Elevation grid
         logical(kind=1), intent(in) :: valids(nrows, ncols)
             !! Validity mask (false for no-data)
+        logical(kind=1), intent(in) :: more_sinks(nrows, ncols)
+            !! Additional sink mask
         integer, intent(in) :: noffsets
             !! Number of flow directions
         integer, intent(in) :: offsets(noffsets, 2)
@@ -386,8 +407,9 @@ contains
         pqueue_size = 0
 
         ! Push all valid boundaries to the queue
-        call fill_boundary_priority_queue( &
-            z, valids, processed, pqueue, pqueue_size, offsets, err_code)
+        call fill_sink_priority_queue( &
+            z, valids, more_sinks, processed, &
+            pqueue, pqueue_size, offsets, err_code)
         if (err_code /= 0) return
 
         ! Start processing the cells
@@ -412,7 +434,7 @@ contains
                 if (err_code /= 0) return
             end do
         end do
-    end subroutine fill_depression
+    end subroutine fill_depressions
 
     pure subroutine label_mask_areas( &
         mask, labels, nrows, ncols, offsets, nofss, err_code)

@@ -44,6 +44,7 @@ from formosa.geomorphology import (
     label_watersheds,
 )
 
+from typing import Optional
 import numpy.typing as npt
 
 
@@ -354,9 +355,17 @@ class DEMGrid:
             )
         return self._strahler_order
 
-    def fill_depressions(self) -> "DEMGrid":
-        """Fill enclosed depressions in-place using Priority-Flood."""
-        self.dem = fill_depressions(self.dem, valids=self.valid)
+    def fill_depressions(self, max_fill_size: Optional[int] = None) -> "DEMGrid":
+        """
+        Fill enclosed depressions in-place using priority-flood.
+
+        Notes
+        -----
+        This is a wrapper for the function :func:`fill_depressions`.
+        """
+        self.dem = fill_depressions(
+            self.dem, valids=self.valid, max_fill_size=max_fill_size
+        )
         return self
 
     def invalidate_ocean_basins(

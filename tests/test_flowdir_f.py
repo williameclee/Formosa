@@ -382,6 +382,23 @@ def test_fill_depressions_all_invalid_is_unchanged():
     assert filled is not dem
 
 
+def test_fill_depressions_processes_multiple_large_basins_together():
+    dem = np.full((7, 13), 10.0, dtype=np.float32)
+    dem[1:6, 1:6] = 5.0
+    dem[1:6, 7:12] = 5.0
+    dem[3, 3] = 0.0
+    dem[3, 9] = -1.0
+    dem[1, 1] = 1.0
+    dem[1, 11] = 2.0
+
+    filled = flowdir.fill_depressions(dem, max_fill_size=24)
+
+    expected = dem.copy()
+    expected[1, 1] = 5.0
+    expected[1, 11] = 5.0
+    np.testing.assert_array_equal(filled, expected)
+
+
 def test_label_mask_areas():
     dir_scheme = D8Directions()
     mask = np.array(

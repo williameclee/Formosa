@@ -2,20 +2,26 @@
 #   2026-02-11, En-Chi Lee (williameclee@arizona.edu)
 #     - Rename flowdir functions to be more descriptive.
 #   2026-06-09, En-Chi Lee (williameclee@gmail.com)
-#     - Added `compute_flow_dist2ridge` function to compute 'distance to ridges'.
+#     - Added `compute_flow_dist2ridge` function to compute
+#       'distance to ridges'.
 #     - Added error for missing FORTRAN backend.
-#     - Removed NumPy type `np.bool` to either `np.bool_` or `bool` for compatibility with newer NumPy versions.
-#     - Renamed FORTRAN function call: `compute_masked_flowdir` -> `compute_synthetic_flowdir`.
+#     - Removed NumPy type `np.bool` to either `np.bool_` or `bool`
+#       for compatibility with newer NumPy versions.
+#     - Renamed FORTRAN function call: `compute_masked_flowdir` ->
+#       `compute_synthetic_flowdir`.
 #     - Added `valids` argument to `label_flats` function.
 #   2026-06-10, En-Chi Lee (williameclee@gmail.com)
 #     - Small refactors and documentation cleanup.
 #   2026-06-11, En-Chi Lee (williameclee@gmail.com)
-#     - Moved Python backend implementations and auxiliary functions to separate files.
+#     - Moved Python backend implementations and auxiliary functions
+#       to separate files.
 #     - Standardised variable, argument, and function names.
 #   2026-06-30, En-Chi Lee (williameclee@gmail.com)
-#     - Added `x` and `y` into `compute_dist2source` in `compute_dist2ridge`.
+#     - Added `x` and `y` into `compute_dist2source` in
+#       `compute_dist2ridge`.
 #     - Changed strahler order output to 8-bit unsigned integer.
-#     - Added functions `compute_ridgedir` and `compute_ridge_strahler_order`.
+#     - Added functions `compute_ridgedir` and
+#       `compute_ridge_strahler_order`.
 #   2026-07-01, En-Chi Lee (williameclee@gmail.com)
 #     - Allowed specifying validity mask in `count_indegree`.
 #     - Added function `construct_flowgraph`.
@@ -24,14 +30,22 @@
 #   2026-07-14, En-Chi Lee (williameclee@gmail.com)
 #     - Splitted `geomorphology.flowdir` into submodules.
 #   2026-07-30, En-Chi Lee (williameclee@gmail.com)
-#     - Fixed Python/FORTRAN backend behaviour parity in `compute_flow_strahler_order`.
+#     - Fixed Python/FORTRAN backend behaviour parity in 
+#       `compute_flow_strahler_order`.
 #   2026-08-03, En-Chi Lee (williameclee@gmail.com)
-#     - Implemented functions `find_acyclic_flowdirs` and `find_cyclic_flowdirs` with both FORTRAN and Python backends.
+#     - Implemented functions `find_acyclic_flowdirs` and 
+#       `find_cyclic_flowdirs` with both FORTRAN and Python 
+#       backends.
 #   2026-08-04, En-Chi Lee (williameclee@gmail.com)
-#     - Updated `compute_dist2conf_max` and related functions' interface to reflect FORTRAN backend changes.
+#     - Updated `compute_dist2conf_max` and related functions'
+#       interface to reflect FORTRAN backend changes.
 #   2026-08-06, En-Chi Lee (williameclee@gmail.com)
-#     - Replaced morphological reconstruction with FORTRAN Priority-Flood in `fill_depressions`.
+#     - Replaced morphological reconstruction with FORTRAN priority-
+#       flood in `fill_depressions`.
 #     - Implemented function `invalidate_ocean_basins`.
+#   2026-08-07, En-Chi Lee (williameclee@gmail.com)
+#     - Made `fill_depressions` optionally not fill internally-
+#       drained basins.
 
 
 import numpy as np
@@ -124,7 +138,7 @@ def detect_ocean_basins_from_boundary(
     if isinstance(ocean_level, (bool, np.bool_)) or not np.isscalar(ocean_level):
         raise TypeError("ocean_level must be a real numeric scalar.")
     try:
-        ocean_lvl_float = float(ocean_level) # type: ignore
+        ocean_lvl_float = float(ocean_level)  # type: ignore
     except (TypeError, ValueError) as exc:
         raise TypeError("ocean_level must be a real numeric scalar.") from exc
     if not np.isfinite(ocean_lvl_float):
@@ -169,7 +183,7 @@ def invalidate_ocean_basins(
     """
     Returns a validity mask with sufficiently large ocean basins invalidated.
 
-    `min_size` is an inclusive cell-count threshold. 
+    `min_size` is an inclusive cell-count threshold.
     Only basins connected to the raster boundary are candidates; enclosed low-elevation basins remain valid.
 
     Parameters
@@ -185,7 +199,7 @@ def invalidate_ocean_basins(
         Default value is `0`.
     flood_below : bool, optional
         Whether elevations strictly below `ocean_level` qualify as ocean cells.
-        When false, only cells exactly equal to `ocean_level` qualify. 
+        When false, only cells exactly equal to `ocean_level` qualify.
         Default option is `True`.
     min_size : int, optional
         Minimum cell count threshold for ocean basin invalidation.
@@ -245,13 +259,18 @@ def invalidate_ocean_basins(
 
 def fill_depressions(
     dem: npt.NDArray[np.number],
+    dir_scheme: D8Directions = D8Directions(),
     valids: Optional[npt.NDArray[np.bool_]] = None,
+    max_fill_size: Optional[int] = None,
 ) -> npt.NDArray[np.number]:
     """
     Fills depressions in a digital elevation model (DEM).
 
     Interior cells that cannot drain to the edge of the array are
-    raised to the lowest elevation that provides an outlet.
+    raised to the lowest elevation that provides an outlet. If an
+    upper size limit for a depression is set, sufficiently large
+    depressions are considered internally-drained basins, and the
+    lowest point in each such basin becomes a priority-flood outlet.
 
     Parameters
     ----------
@@ -260,6 +279,9 @@ def fill_depressions(
         The calculation uses 32-bit floating-point precision and
         converts the result back to the input dtype; the input is
         not modified.
+    dir_scheme : D8Directions, optional
+        Flow direction encoding scheme.
+        Default scheme is `D8Directions()`.
     valids : NDArray[bool], optional
         Boolean mask with the same shape as `dem`.
         Invalid cells are excluded from the fill and retain their
@@ -268,18 +290,17 @@ def fill_depressions(
         outlets.
         If `None`, every cell is assumed to be valid.
         Default input is `None`.
+    max_fill_size : int, optional
+        Maximum size (in cells) of a depression before it is
+        considered an internally-drained basin instead.
+        If `None`, all depressions are filled (equivalent to
+        infinity).
+        Default size is `None`.
+
     Returns
     -------
     dem_filled : NDArray[number]
         Depression-filled DEM.
-
-    Raises
-    ------
-    ValueError
-        If an argument is invalid or the arrays have incompatible
-        shapes.
-    MemoryError
-        If the FORTRAN backend cannot allocate its workspace.
 
     Notes
     -----
@@ -287,30 +308,76 @@ def fill_depressions(
     the FORTRAN priority queue. Equal-elevation cells may be
     processed in any order without changing the filled result.
     """
+    # Validate DEM
     dem = np.asarray(dem)
     if dem.ndim != 2 or 0 in dem.shape:
         raise ValueError(
+            "DEM must be a non-empty 2D array, " + f"but got shape {dem.shape}."
         )
     if not np.issubdtype(dem.dtype, np.number):
-        raise TypeError("DEM must have a numeric dtype, " + f"got {dem.dtype}.")
+        raise TypeError("DEM must have a numeric dtype, " + f"but got {dem.dtype}.")
+    # Validate valids
     if valids is None:
         valids = np.ones(dem.shape, dtype=bool, order="F")
     else:
         if valids.shape != dem.shape:
             raise ValueError(
-                f"Shapes for DEM array {dem.shape} and validity mask {valids.shape} do not match."
+                "Shapes for DEM array and validity mask must agree, "
+                + f"but got {dem.shape} and {valids.shape}, respectively."
             )
         if not np.any(valids):
             return dem.copy()
+    # Validate max_fill_size
+    if max_fill_size and (max_fill_size < 0):
+        raise ValueError(
+            "Maximum fill size must be a non-negative integer, "
+            + f"got {max_fill_size}."
+        )
 
     dem_f32 = dem.astype(np.float32, order="F")
-    z_filled, err_code = raster_f.fill_depression(
+    dem_filled, err_code = raster_f.fill_depressions(
         dem_f32,
         valids.astype(bool, order="F"),
-        D8Directions().offsets.astype(np.int32, order="F"),
+        np.zeros(dem.shape, dtype=bool, order="F"),
+        dir_scheme.offsets.astype(np.int32, order="F"),
     )
     raise_fortran_error("fill_depression", err_code)
-    return z_filled.astype(dem.dtype, order="F")
+
+    if max_fill_size is None:
+        return dem_filled.astype(dem.dtype, order="F")
+
+    # Find depressions
+    labels, err_code = raster_f.label_mask_areas(
+        (valids & (dem_filled > dem_f32)).astype(bool, order="F"),
+        dir_scheme.offsets.astype(np.int32, order="F"),
+    )
+    raise_fortran_error("label_mask_areas", err_code)
+    # Count depressions
+    counts = np.bincount(labels.ravel())
+    is_large = counts > max_fill_size
+    is_large[0] = False  # The first is 0, the non-depression cells
+    # Treat large depressions as internally drained basins:
+    # Add the lowest original cell of each basin to a shared sink
+    # mask
+    more_sinks = np.zeros(dem.shape, dtype=bool, order="F")
+    for ibasin in np.flatnonzero(is_large):
+        basin_mask = labels == ibasin
+        basin_indices = np.flatnonzero(basin_mask)
+        sink_index = basin_indices[np.argmin(dem_f32.ravel()[basin_indices])]
+        more_sinks[np.unravel_index(sink_index, dem.shape)] = True
+
+    # One more priority-flood pass
+    if np.any(more_sinks):
+        new_dem_filled, err_code = raster_f.fill_depressions(
+            dem_f32,
+            valids.astype(bool, order="F"),
+            more_sinks,
+            dir_scheme.offsets.astype(np.int32, order="F"),
+        )
+        raise_fortran_error("fill_depression", err_code)
+        large_basin_mask = is_large[labels]
+        dem_filled[large_basin_mask] = new_dem_filled[large_basin_mask]
+    return dem_filled.astype(dem.dtype, order="F")
 
 
 def compute_flowdir_simple(
