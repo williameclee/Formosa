@@ -38,27 +38,14 @@
 from dataclasses import dataclass
 import numpy as np
 
-import formosa.geomorphology.flowdir.raster as raster
 from formosa.geomorphology.flowdir.directions import D8Directions
 from formosa.geomorphology.flowdir.utils import (
     compute_downstream_indices,
     raise_fortran_error,
 )
-
-try:
-    from formosa.geomorphology.flowdir_f import flowdir_graphs as graphs_f
-except ImportError as err:
-
-    class _MissingFortranBackend:
-        def __init__(self, err: ImportError):
-            self._err = err
-
-        def __getattr__(self, name):
-            raise ImportError(
-                "formosa.geomorphology.graphs_f is required for backend='fortran' but is not available."
-            ) from self._err
-
-    graphs_f = _MissingFortranBackend(err)
+import formosa.geomorphology.flowdir.flowdir as flowdir_m
+import formosa.geomorphology.flowdir.raster as raster_m
+from formosa.geomorphology.flowdir_f import flowdir_graphs as graphs_f
 
 import warnings
 
@@ -318,7 +305,7 @@ def construct_flowgraph(
         `'fortran'` uses the FORTRAN extension for performance, while 'python' uses a pure Python implementation.
         Default backend is `'fortran'`.
     remove_unused : bool, optional
-        Whether to compact the vertex array after construction so the arc ranges are adjacent in arc order. 
+        Whether to compact the vertex array after construction so the arc ranges are adjacent in arc order.
         Default option is `False`.
 
     Returns
@@ -347,7 +334,7 @@ def construct_flowgraph(
     if valids is None:
         valids = np.ones(dirs.shape, dtype=bool)
     if orders is None:
-        orders = raster.compute_flow_strahler_order(
+        orders = raster_m.compute_flow_strahler_order(
             dirs,
             dir_scheme=dir_scheme,
             valids=valids,
@@ -357,10 +344,10 @@ def construct_flowgraph(
     # Find seed cells to start with
     valids = valids & (orders >= min_order)
     ncells = int(np.sum(valids))
-    indegs = raster.count_indegree(
+    indegs = flowdir_m.count_indegree(
         dirs, dir_scheme=dir_scheme, valids=valids, backend=backend
     )
-    cyclics = raster.find_cyclic_flowdirs(
+    cyclics = flowdir_m.find_cyclic_flowdirs(
         dirs,
         dir_scheme=dir_scheme,
         valids=valids,
@@ -580,7 +567,7 @@ def insert_endpt(
          1. n-by-(1) array representing the coordinate of the vertex to turn to an endpoint
          2. Integer specifying the index of the vertex in the `ijs` array to turn to an endpoint
     remove_unused : bool, optional
-        Whether to compact the returned vertex array so the arc ranges are adjacent. 
+        Whether to compact the returned vertex array so the arc ranges are adjacent.
         Default option is `False`.
 
     Returns
@@ -1170,7 +1157,7 @@ def solve_graph_overlaps(
         If true, consecutive overlap of vertices are isolated as a new arc, which will be identical between the two input graphs (aside form the directivity).
         The default option is `True`.
     remove_unused : bool, optional
-        Whether to compact both returned vertex arrays so their arc ranges are adjacent. 
+        Whether to compact both returned vertex arrays so their arc ranges are adjacent.
         Default option is `False`.
 
     Returns
@@ -1716,7 +1703,7 @@ def simplify_flowgraph(
         Backend to use for computation.
         Default backend and the only one currently available is `'fortran'`.
     remove_unused : bool, optional
-        Whether to compact each returned vertex array so its arc ranges are adjacent. 
+        Whether to compact each returned vertex array so its arc ranges are adjacent.
         Default option is `False`.
 
     Returns

@@ -23,6 +23,14 @@ from .raster import (
     compute_dist2source,
     compute_dist2sink,
     label_watersheds,
+)
+
+from .flowdir import (
+    compute_flowdir,
+    count_indegree,
+    find_acyclic_flowdirs,
+    find_cyclic_flowdirs,
+)
 from .ridges import (
     compute_dist2conf_max,
     compute_ridgedir,

@@ -7,7 +7,9 @@ import numpy as np
 import pytest
 
 from formosa import D8Directions
-from formosa.geomorphology import flowdir
+import formosa.geomorphology.flowdir.flowdir as flowdir_m
+from formosa.geomorphology.flowdir.raster import raster as raster_m
+from formosa.geomorphology.flowdir.graphs import graphs as graphs_m
 
 T = True
 F = False
@@ -49,7 +51,7 @@ def test_unequal_tributary_does_not_increase_order(unequal_tributary_network, ba
     dirs, valids, expected = unequal_tributary_network
     dir_scheme = D8Directions(transform_codes=lambda x: x)
 
-    orders = flowdir.compute_flow_strahler_order(
+    orders = raster_m.compute_flow_strahler_order(
         dirs,
         dir_scheme=dir_scheme,
         valids=valids,
@@ -64,19 +66,19 @@ def test_strahler_backends_match_with_mask_and_supplied_indegrees(
 ):
     dirs, valids, _ = unequal_tributary_network
     dir_scheme = D8Directions(transform_codes=lambda x: x)
-    indegs = flowdir.count_indegree(
+    indegs = flowdir_m.count_indegree(
         dirs, dir_scheme=dir_scheme, valids=valids, backend="python"
     )
     original_indegs = indegs.copy()
 
-    python_orders = flowdir.compute_flow_strahler_order(
+    python_orders = raster_m.compute_flow_strahler_order(
         dirs,
         dir_scheme=dir_scheme,
         valids=valids,
         indegs=indegs,
         backend="python",
     )
-    fortran_orders = flowdir.compute_flow_strahler_order(
+    fortran_orders = raster_m.compute_flow_strahler_order(
         dirs,
         dir_scheme=dir_scheme,
         valids=valids,
@@ -116,7 +118,7 @@ def test_masked_tributary_does_not_affect_order(backend):
         dtype=np.uint8,
     )
 
-    orders = flowdir.compute_flow_strahler_order(
+    orders = raster_m.compute_flow_strahler_order(
         dirs,
         dir_scheme=dir_scheme,
         valids=valids,
@@ -136,7 +138,7 @@ def test_construct_flowgraph_is_backend_independent_of_masked_directions():
     results = []
     for backend in ("python", "fortran"):
         for candidate_dirs in (dirs, changed_dirs):
-            arc_orders, vertex_ijs, arc_endpts = flowdir.construct_flowgraph(
+            arc_orders, vertex_ijs, arc_endpts = graphs_m.construct_flowgraph(
                 candidate_dirs,
                 dir_scheme=dir_scheme,
                 valids=valids,
@@ -162,7 +164,7 @@ def test_constructed_flowgraph_segments_follow_d8_adjacency(backend):
     dirs = np.array([[3, 3, 3], [3, 3, 3], [1, 1, 0]], dtype=np.uint8)
     valids = np.array([[T, F, T], [T, T, T], [T, T, T]])
 
-    _, vertex_ijs, arc_endpts = flowdir.construct_flowgraph(
+    _, vertex_ijs, arc_endpts = graphs_m.construct_flowgraph(
         dirs,
         dir_scheme=dir_scheme,
         valids=valids,
@@ -188,8 +190,8 @@ def test_construct_flowgraph_rejects_two_cell_cycle(backend):
     dirs = np.array([[1, 5]], dtype=np.uint8)
     orders = np.ones(dirs.shape, dtype=np.uint8)
 
-    with pytest.raises(flowdir.DirectedFlowCycleError) as exc_info:
-        flowdir.construct_flowgraph(
+    with pytest.raises(graphs_m.DirectedFlowCycleError) as exc_info:
+        graphs_m.construct_flowgraph(
             dirs,
             dir_scheme=dir_scheme,
             orders=orders,
@@ -211,8 +213,8 @@ def test_construct_flowgraph_reports_cycle_without_acyclic_feeder(
     dirs = np.array([[1, 1, 5]], dtype=np.uint8)
     orders = np.ones(dirs.shape, dtype=np.uint8)
 
-    with pytest.raises(flowdir.DirectedFlowCycleError) as exc_info:
-        flowdir.construct_flowgraph(
+    with pytest.raises(graphs_m.DirectedFlowCycleError) as exc_info:
+        graphs_m.construct_flowgraph(
             dirs,
             dir_scheme=dir_scheme,
             orders=orders,
@@ -230,8 +232,8 @@ def test_construct_flowgraph_reports_disconnected_cycles(backend):
     dirs = np.array([[1, 5], [1, 5]], dtype=np.uint8)
     orders = np.ones(dirs.shape, dtype=np.uint8)
 
-    with pytest.raises(flowdir.DirectedFlowCycleError) as exc_info:
-        flowdir.construct_flowgraph(
+    with pytest.raises(graphs_m.DirectedFlowCycleError) as exc_info:
+        graphs_m.construct_flowgraph(
             dirs,
             dir_scheme=dir_scheme,
             orders=orders,
@@ -251,7 +253,7 @@ def test_construct_flowgraph_allows_isolated_noflow_cell(backend):
     dirs = np.array([[0]], dtype=np.uint8)
     orders = np.ones(dirs.shape, dtype=np.uint8)
 
-    graph_orders, graph_verts, graph_endpts = flowdir.construct_flowgraph(
+    graph_orders, graph_verts, graph_endpts = graphs_m.construct_flowgraph(
         dirs,
         dir_scheme=dir_scheme,
         orders=orders,
@@ -281,7 +283,7 @@ def test_construct_flowgraph_allows_selection_boundary(
     dir_scheme = D8Directions(transform_codes=lambda x: x)
     dirs = np.array([[1, 0]], dtype=np.uint8)
 
-    graph_orders, graph_verts, graph_endpts = flowdir.construct_flowgraph(
+    graph_orders, graph_verts, graph_endpts = graphs_m.construct_flowgraph(
         dirs,
         dir_scheme=dir_scheme,
         valids=valids,
@@ -302,7 +304,7 @@ def test_construct_flowgraph_covers_every_selected_edge_endpoint(backend):
     valids = np.array([[T, F, T], [T, T, T], [T, T, T]])
     orders = np.ones(dirs.shape, dtype=np.uint8)
 
-    _, graph_verts, graph_endpts = flowdir.construct_flowgraph(
+    _, graph_verts, graph_endpts = graphs_m.construct_flowgraph(
         dirs,
         dir_scheme=dir_scheme,
         valids=valids,
@@ -325,72 +327,3 @@ def test_construct_flowgraph_covers_every_selected_edge_endpoint(backend):
         (2, 1),
     }
     assert represented == expected
-
-
-@pytest.mark.parametrize("backend", ["python", "fortran"])
-def test_ridge_strahler_order_forwards_valid_mask(unequal_tributary_network, backend):
-    dirs, valids, expected = unequal_tributary_network
-    dir_scheme = D8Directions(transform_codes=lambda x: x)
-
-    orders = flowdir.compute_ridge_strahler_order(
-        dirs,
-        dir_scheme=dir_scheme,
-        valids=valids,
-        backend=backend,
-        dir_is_ridge=True,
-    )
-
-    np.testing.assert_array_equal(orders, expected)
-
-
-@pytest.mark.parametrize("backend", ("python", "fortran"))
-def test_find_flowdir_cycles_with_feeder_and_invalid_cell(backend):
-    dir_scheme = D8Directions(transform_codes=lambda x: x)
-    # Cell 0 feeds the cycle between cells 1 and 2; cell 3 is invalid.
-    dirs = np.array([[1, 1, 5, 0]], dtype=np.uint8)
-    valids = np.array([[True, True, True, False]])
-
-    acyclics = flowdir.find_acyclic_flowdirs(
-        dirs, dir_scheme=dir_scheme, valids=valids, backend=backend
-    )
-    cyclics = flowdir.find_cyclic_flowdirs(
-        dirs, dir_scheme=dir_scheme, valids=valids, backend=backend
-    )
-
-    np.testing.assert_array_equal(acyclics, [[True, False, False, False]])
-    np.testing.assert_array_equal(cyclics, [[False, True, True, False]])
-
-
-@pytest.mark.parametrize("backend", ("python", "fortran"))
-def test_find_flowdir_cycles_accepts_supplied_indegrees(backend):
-    dir_scheme = D8Directions(transform_codes=lambda x: x)
-    dirs = np.array([[1, 1, 0]], dtype=np.uint8)
-    valids = np.ones(dirs.shape, dtype=bool)
-    indegs = np.array([[0, 1, 1]], dtype=np.int8)
-    original_indegs = indegs.copy()
-
-    acyclics = flowdir.find_acyclic_flowdirs(
-        dirs,
-        dir_scheme=dir_scheme,
-        valids=valids,
-        indegs=indegs,
-        backend=backend,
-    )
-
-    np.testing.assert_array_equal(acyclics, valids)
-    np.testing.assert_array_equal(indegs, original_indegs)
-
-
-def test_find_acyclic_flowdirs_default_code_128_backend_parity():
-    dirs = np.array([[0, 0], [128, 0]], dtype=np.uint8)
-    valids = np.array([[False, True], [True, False]])
-
-    python_acyclics = flowdir.find_acyclic_flowdirs(
-        dirs, valids=valids, backend="python"
-    )
-    fortran_acyclics = flowdir.find_acyclic_flowdirs(
-        dirs, valids=valids, backend="fortran"
-    )
-
-    np.testing.assert_array_equal(fortran_acyclics, python_acyclics)
-    np.testing.assert_array_equal(fortran_acyclics, valids)

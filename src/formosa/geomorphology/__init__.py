@@ -8,7 +8,6 @@ from formosa.geomorphology.terrain import compute_slope
 from formosa.geomorphology.flowdir import (
     get_neighbour_values,
     create_flowgraph,
-    count_indegree,
     compute_flow_accumulation,
     compute_flow_strahler_order,
     construct_flowgraph,
@@ -17,6 +16,11 @@ from formosa.geomorphology.flowdir import (
     compute_dist2source,
     compute_dist2sink,
     label_watersheds,
+)
+from formosa.geomorphology.flowdir.flowdir import (
+    compute_flowdir,
+    count_indegree,
+)
 from formosa.geomorphology.flowdir.ridges import (
     compute_dist2conf_max,
     compute_ridgedir,
