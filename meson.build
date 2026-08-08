@@ -22,7 +22,8 @@ custom_target(
   'flowdir_f',
   input: files(
     'src/formosa/geomorphology/flowdir/utils.f90',
-    'src/formosa/geomorphology/distances.f90',
+    'src/formosa/geomorphology/geometry/geometry.f90',
+    'src/formosa/geomorphology/geometry/intersections.f90',
     'src/formosa/geomorphology/flowdir/graphs/graphs.f90',
     'src/formosa/geomorphology/flowdir/raster/raster.f90',
   ),

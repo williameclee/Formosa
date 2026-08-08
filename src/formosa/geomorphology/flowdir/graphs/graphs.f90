@@ -22,7 +22,8 @@
 module flowdir_graphs
     use iso_c_binding, only: c_int8_t, c_int16_t
     use utils, only: fill_offset_lookup, find_noflow_code, mask2ij
-    use distances, only: pt2linedist2_xy, lines_intersect_v2
+    use geometry, only: pt2linedist2_xy
+    use intersections, only: lines_intersect_v2
     implicit none(type, external)
     private :: argsort_arcs, record_topology_intersection
 contains

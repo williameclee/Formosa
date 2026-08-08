@@ -50,7 +50,7 @@ module flowdir_raster
                      array2d_oob, mask2id, mask2ij, &
                      id2ij_checked, ij2id_checked, &
                      push_priority_queue, pop_priority_queue
-    use distances, only: l1dist_xy, l2dist_xy
+    use geometry, only: l1dist_xy, l2dist_xy
     implicit none(type, external)
     private :: fill_boundary_ocean_queue, fill_sink_priority_queue
     private :: resolve_flow_tree_links, build_flow_tree_topology
