@@ -16,8 +16,9 @@ from formosa.geomorphology.flowdir import (
     simplify_flowgraph,
     compute_dist2source,
     compute_dist2sink,
-    compute_dist2conf_max,
     label_watersheds,
+from formosa.geomorphology.flowdir.ridges import (
+    compute_dist2conf_max,
     compute_ridgedir,
     compute_dist2ridge,
     compute_ridge_strahler_order,

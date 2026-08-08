@@ -23,10 +23,11 @@ from .raster import (
     compute_dist2source,
     compute_dist2sink,
     label_watersheds,
+from .ridges import (
+    compute_dist2conf_max,
     compute_ridgedir,
     compute_dist2ridge,
     compute_ridge_strahler_order,
-    compute_dist2conf_max,
 )
 
 from .utils import (

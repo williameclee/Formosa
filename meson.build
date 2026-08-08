@@ -27,6 +27,7 @@ custom_target(
     'src/formosa/geomorphology/flowdir/_backends/preprocessing.f90',
     'src/formosa/geomorphology/flowdir/graphs/graphs.f90',
     'src/formosa/geomorphology/flowdir/raster/raster.f90',
+    'src/formosa/geomorphology/flowdir/_backends/ridges.f90',
   ),
   output: ['flowdir_f' + ext_suffix],
   command: [

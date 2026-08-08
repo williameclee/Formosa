@@ -41,7 +41,6 @@ from formosa.geomorphology import (
     compute_flow_strahler_order,
     compute_dist2source,
     compute_dist2sink,
-    compute_dist2conf_max,
     compute_ridgedir,
     compute_dist2ridge,
     compute_ridge_strahler_order,
@@ -52,6 +51,8 @@ from typing import Optional
 import numpy.typing as npt
 
 from formosa.geomorphology.flowdir.preprocessing import fill_depressions, invalidate_ocean_basins as _invalidate_ocean_basins
+from formosa.geomorphology.flowdir.ridges import compute_dist2conf_max
+
 
 class DEMGrid:
     _original_dem: npt.NDArray[np.number]
