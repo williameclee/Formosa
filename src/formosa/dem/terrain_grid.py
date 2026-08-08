@@ -34,8 +34,6 @@ from formosa.geomorphology import D8Directions
 from formosa.geomorphology import (
     get_neighbour_values,
     compute_slope,
-    fill_depressions,
-    invalidate_ocean_basins as _invalidate_ocean_basins,
     compute_flowdir,
     create_flowgraph,
     count_indegree,
@@ -53,6 +51,7 @@ from formosa.geomorphology import (
 from typing import Optional
 import numpy.typing as npt
 
+from formosa.geomorphology.flowdir.preprocessing import fill_depressions, invalidate_ocean_basins as _invalidate_ocean_basins
 
 class DEMGrid:
     _original_dem: npt.NDArray[np.number]

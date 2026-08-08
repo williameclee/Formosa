@@ -1,23 +1,12 @@
-# Last modified
-#   2026-02-11, En-Chi Lee (williameclee@arizona.edu)
-#     - Rename flowdir functions to be more descriptive
-#   2026-06-09, En-Chi Lee (williameclee@gmail.com)
-#     - Added `compute_flow_dist2ridge` function to compute 'distance to ridges'
-#   2026-06-30, En-Chi Lee (williameclee@gmail.com)
-#     - Added functions `compute_ridgedir` and `compute_ridge_strahler_order`
-#   2026-07-02, En-Chi Lee (williameclee@gmail.com)
-#     - Added function `construct_flowgraph`
-#   2026-07-09, En-Chi Lee (williameclee@gmail.com)
-#     - Added function `simplify_flowgraph`
-
 from formosa.geomorphology.flowdir.d8directions import D8Directions
+from formosa.geomorphology.flowdir.preprocessing import (
+    detect_ocean_basins_from_boundary,
+    fill_depressions,
+    invalidate_ocean_basins,
+)
 from formosa.geomorphology.terrain import compute_slope
 from formosa.geomorphology.flowdir import (
     get_neighbour_values,
-    detect_ocean_basins_from_boundary,
-    invalidate_ocean_basins,
-    fill_depressions,
-    compute_flowdir,
     create_flowgraph,
     count_indegree,
     compute_flow_accumulation,

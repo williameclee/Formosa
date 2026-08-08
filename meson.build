@@ -24,6 +24,7 @@ custom_target(
     'src/formosa/geomorphology/flowdir/utils.f90',
     'src/formosa/geomorphology/geometry/geometry.f90',
     'src/formosa/geomorphology/geometry/intersections.f90',
+    'src/formosa/geomorphology/flowdir/_backends/preprocessing.f90',
     'src/formosa/geomorphology/flowdir/graphs/graphs.f90',
     'src/formosa/geomorphology/flowdir/raster/raster.f90',
   ),
