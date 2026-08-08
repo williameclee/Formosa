@@ -19,7 +19,7 @@ from formosa.geomorphology.flowdir.directions import D8Directions
 import warnings
 
 import numpy.typing as npt
-from typing import Mapping, Optional, TypeVar
+from typing import Mapping, Optional
 
 
 def raise_fortran_error(
