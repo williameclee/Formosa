@@ -1,4 +1,4 @@
-from formosa.geomorphology.flowdir.d8directions import D8Directions
+from formosa.geomorphology.flowdir.directions import D8Directions
 from formosa.geomorphology.flowdir.preprocessing import (
     detect_ocean_basins_from_boundary,
     fill_depressions,

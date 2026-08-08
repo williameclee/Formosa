@@ -14,7 +14,7 @@
 
 import numpy as np
 
-from formosa.geomorphology.flowdir.d8directions import D8Directions
+from formosa.geomorphology.flowdir.directions import D8Directions
 
 import warnings
 

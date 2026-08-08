@@ -3,6 +3,8 @@
 #   2026-08-03, En-Chi Lee (williameclee@gmail.com)
 #     - Added property `no_flow_code`
 #     - Got rid of built-in list iteration to accelerate `_code2offset_ndarray`
+#   2026-08-08, En-Chi Lee (williameclee@gmail.com)
+#     - Renamed file to 'directions'
 
 import numpy as np
 

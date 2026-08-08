@@ -36,7 +36,6 @@
 
 import numpy as np
 
-from formosa.geomorphology.flowdir.d8directions import D8Directions
 from formosa.geomorphology.flowdir.utils import (
     get_neighbour_values,
     raise_fortran_error,
@@ -56,6 +55,7 @@ except ImportError as err:
             ) from self._err
 
     raster_f = _MissingFortranBackend(err)
+from formosa.geomorphology.flowdir.directions import D8Directions
 
 from typing import Literal, Optional
 import numpy.typing as npt

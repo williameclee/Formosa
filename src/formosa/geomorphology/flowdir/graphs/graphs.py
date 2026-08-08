@@ -38,8 +38,8 @@
 from dataclasses import dataclass
 import numpy as np
 
-from formosa.geomorphology.flowdir.d8directions import D8Directions
 import formosa.geomorphology.flowdir.raster as raster
+from formosa.geomorphology.flowdir.directions import D8Directions
 from formosa.geomorphology.flowdir.utils import (
     compute_downstream_indices,
     raise_fortran_error,

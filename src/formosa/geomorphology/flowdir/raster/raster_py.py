@@ -22,11 +22,11 @@ from collections import deque
 
 import numpy as np
 
-from formosa.geomorphology.flowdir.d8directions import D8Directions
 from formosa.geomorphology.flowdir.utils import (
     get_neighbour_values,
     compute_downstream_indices,
 )
+from formosa.geomorphology.flowdir.directions import D8Directions
 
 import numpy.typing as npt
 from typing import Optional
