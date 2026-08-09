@@ -3,23 +3,11 @@
 #     - Moved Python backend implementations to this file
 #     - Removed redundant NaN checks against integer arrays
 #     - Standardised variable, argument, and function names
-#   2026-07-02, En-Chi Lee (williameclee@gmail.com)
-#     - Updated indegree algorithm
-#   2026-07-08, En-Chi Lee (williameclee@gmail.com)
-#     - Renamed helper submodule from `aux` to `utils`
-#   2026-07-09, En-Chi Lee (williameclee@gmail.com)
-#     - Added better validity check in `_count_indegree_py`
-#   2026-07-14, En-Chi Lee (williameclee@gmail.com)
-#     - Splitted `geomorphology.flowdir` into submodules
 #   2026-07-30, En-Chi Lee (williameclee@gmail.com)
 #     - Fixed Python/FORTRAN backend behaviour parity in
 #       `compute_flow_strahler_order`.
-#   2026-08-03, En-Chi Lee (williameclee@gmail.com)
-#     - Implemented Python backend for function
-#       `find_acyclic_flowdirs`.
 
 import numpy as np
-from collections import deque
 
 from formosa.geomorphology.flowdir.directions import D8Directions
 from formosa.geomorphology.flowdir.utils import compute_downstream_indices
@@ -29,7 +17,7 @@ from typing import Optional
 import numpy.typing as npt
 
 
-def _compute_flow_accumulation_py(
+def compute_flow_accumulation(
     dirs: npt.NDArray[np.integer],
     valids: Optional[npt.NDArray[np.bool_]] = None,
     weights: Optional[npt.NDArray[np.floating]] = None,
@@ -43,7 +31,7 @@ def _compute_flow_accumulation_py(
     I, J = dirs.shape
 
     if indegs is None:
-        indegs = flowdir_py.count_indegree(dirs, dir_scheme=dir_scheme)
+        indegs = flowdir_py.count_indegree(dirs, dir_scheme=dir_scheme, valids=valids)
     else:
         assert (
             indegs.shape == dirs.shape
@@ -100,7 +88,7 @@ def _compute_flow_accumulation_py(
     return accumulation
 
 
-def _compute_flow_strahler_order_py(
+def compute_flow_strahler_order(
     dirs: npt.NDArray[np.integer],
     dir_scheme: D8Directions = D8Directions(),
     valids: Optional[npt.NDArray[np.bool_]] = None,
@@ -156,7 +144,7 @@ def _compute_flow_strahler_order_py(
     return strahler_order
 
 
-def _label_watersheds_py(
+def label_watersheds(
     dirs: npt.NDArray[np.integer],
     dir_scheme: D8Directions = D8Directions(),
     valids: Optional[npt.NDArray[np.bool_]] = None,

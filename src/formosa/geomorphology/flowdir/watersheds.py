@@ -37,7 +37,8 @@ import numpy as np
 from formosa.geomorphology.flowdir.directions import D8Directions
 from formosa.geomorphology.flowdir.utils import raise_fortran_error
 from formosa.geomorphology.flowdir.flowdir import count_indegree
-from formosa.geomorphology.flowdir_f import flowdir_raster as raster_f
+import formosa.geomorphology.flowdir._backends.watersheds_py as wshed_py
+from formosa.geomorphology.flowdir_f import flowdir_watersheds as wshed_f
 
 from typing import Literal, Optional
 import numpy.typing as npt
@@ -89,9 +90,7 @@ def compute_flow_accumulation(
     """
     match backend:
         case "python":
-            from .raster_py import _compute_flow_accumulation_py
-
-            accums = _compute_flow_accumulation_py(
+            accums = wshed_py.compute_flow_accumulation(
                 dirs,
                 valids=valids,
                 weights=weights,
@@ -109,7 +108,7 @@ def compute_flow_accumulation(
             if weights is None:
                 weights = np.where(valids, 1.0, 0.0).astype(np.float32)
 
-            accums, err_code = raster_f.compute_flow_accumulation(
+            accums, err_code = wshed_f.compute_flow_accumulation(
                 dirs.astype(np.uint8, order="F"),
                 valids.astype(bool, order="F"),
                 weights.astype(np.float32, order="F"),
@@ -193,13 +192,11 @@ def compute_flow_strahler_order(
 
     match backend:
         case "python":
-            from .raster_py import _compute_flow_strahler_order_py
-
-            orders = _compute_flow_strahler_order_py(
+            orders = wshed_py.compute_flow_strahler_order(
                 dirs=dirs, dir_scheme=dir_scheme, valids=valids, indegs=indegs
             )
         case "fortran":
-            orders, err_code = raster_f.compute_flow_strahler_order(
+            orders, err_code = wshed_f.compute_flow_strahler_order(
                 dirs.astype(np.uint8, order="F"),
                 valids.astype(bool, order="F"),
                 indegs.astype(np.int8, order="F"),
@@ -281,7 +278,7 @@ def compute_dist2source(
     else:
         raise TypeError(f"Indegree must be a NumPy array (got {type(indegs)}).")
 
-    dists, err_code = raster_f.compute_dist2source(
+    dists, err_code = wshed_f.compute_dist2source(
         dirs.astype(np.uint8, order="F"),
         valids.astype(bool, order="F"),
         x.astype(np.float32, order="F"),
@@ -322,9 +319,7 @@ def label_watersheds(
     """
     match backend:
         case "python":
-            from .raster_py import _label_watersheds_py
-
-            watersheds = _label_watersheds_py(
+            watersheds = wshed_py.label_watersheds(
                 dirs=dirs,
                 dir_scheme=dir_scheme,
                 valids=valids,
@@ -343,7 +338,7 @@ def label_watersheds(
                     f"Valid mask must be a NumPy array (got {type(valids)})."
                 )
 
-            watersheds, err_code = raster_f.label_watersheds(
+            watersheds, err_code = wshed_f.label_watersheds(
                 dirs.astype(np.uint8, order="F"),
                 valids.astype(bool, order="F"),
                 dir_scheme.offsets.astype(np.int32, order="F"),
@@ -403,7 +398,7 @@ def compute_dist2sink(
         y = np.arange(dirs.shape[0], dtype=np.float32)
         x, y = np.meshgrid(x, y, indexing="xy")
 
-    dists, err_code = raster_f.compute_dist2sink(
+    dists, err_code = wshed_f.compute_dist2sink(
         dirs.astype(np.uint8, order="F"),
         x.astype(np.float32, order="F"),
         y.astype(np.float32, order="F"),

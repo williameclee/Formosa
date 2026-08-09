@@ -8,7 +8,7 @@ import pytest
 
 from formosa import D8Directions
 import formosa.geomorphology.flowdir.flowdir as flowdir_m
-from formosa.geomorphology.flowdir.raster import raster as raster_m
+from formosa.geomorphology.flowdir import watersheds as wshed_m
 from formosa.geomorphology.flowdir.graphs import graphs as graphs_m
 
 T = True
@@ -51,7 +51,7 @@ def test_unequal_tributary_does_not_increase_order(unequal_tributary_network, ba
     dirs, valids, expected = unequal_tributary_network
     dir_scheme = D8Directions(transform_codes=lambda x: x)
 
-    orders = raster_m.compute_flow_strahler_order(
+    orders = wshed_m.compute_flow_strahler_order(
         dirs,
         dir_scheme=dir_scheme,
         valids=valids,
@@ -71,14 +71,14 @@ def test_strahler_backends_match_with_mask_and_supplied_indegrees(
     )
     original_indegs = indegs.copy()
 
-    python_orders = raster_m.compute_flow_strahler_order(
+    python_orders = wshed_m.compute_flow_strahler_order(
         dirs,
         dir_scheme=dir_scheme,
         valids=valids,
         indegs=indegs,
         backend="python",
     )
-    fortran_orders = raster_m.compute_flow_strahler_order(
+    fortran_orders = wshed_m.compute_flow_strahler_order(
         dirs,
         dir_scheme=dir_scheme,
         valids=valids,
@@ -118,7 +118,7 @@ def test_masked_tributary_does_not_affect_order(backend):
         dtype=np.uint8,
     )
 
-    orders = raster_m.compute_flow_strahler_order(
+    orders = wshed_m.compute_flow_strahler_order(
         dirs,
         dir_scheme=dir_scheme,
         valids=valids,

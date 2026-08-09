@@ -3,6 +3,13 @@
 #     - Moved Python backend implementations to this file
 #     - Removed redundant NaN checks against integer arrays
 #     - Standardised variable, argument, and function names
+#   2026-07-02, En-Chi Lee (williameclee@gmail.com)
+#     - Updated indegree algorithm
+#   2026-07-09, En-Chi Lee (williameclee@gmail.com)
+#     - Added better validity check in `count_indegree`
+#   2026-08-03, En-Chi Lee (williameclee@gmail.com)
+#     - Implemented Python backend for function
+#       `find_acyclic_flowdirs`.
 
 import numpy as np
 from collections import deque

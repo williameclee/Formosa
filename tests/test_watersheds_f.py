@@ -29,7 +29,7 @@ from pathlib import Path
 import numpy as np
 
 from formosa import D8Directions
-from formosa.geomorphology.flowdir.raster import raster as raster_m
+from formosa.geomorphology.flowdir import watersheds as wshed_m
 from formosa.geomorphology.flowdir.graphs import graphs as graphs_m
 from formosa.geomorphology.flowdir_f import flowdir_graphs as graphs_f
 
@@ -152,7 +152,7 @@ def test_strahler_order_3x3():
             [1, 2, 2],
         ]
     )
-    order = raster_m.compute_flow_strahler_order(dirs, dir_scheme=dir_scheme)
+    order = wshed_m.compute_flow_strahler_order(dirs, dir_scheme=dir_scheme)
 
     np.testing.assert_array_equal(order, expected_order)
 
@@ -173,7 +173,7 @@ def test_strahler_order_3x3():
         ]
     )
 
-    order = raster_m.compute_flow_strahler_order(dirs, dir_scheme=dir_scheme)
+    order = wshed_m.compute_flow_strahler_order(dirs, dir_scheme=dir_scheme)
 
     np.testing.assert_array_equal(order, expected_order)
 
@@ -198,7 +198,7 @@ def test_strahler_order_4x4():
             [1, 1, 1, 1],
         ]
     )
-    order = raster_m.compute_flow_strahler_order(dirs, dir_scheme=dir_scheme)
+    order = wshed_m.compute_flow_strahler_order(dirs, dir_scheme=dir_scheme)
 
     np.testing.assert_array_equal(order, expected_order)
 

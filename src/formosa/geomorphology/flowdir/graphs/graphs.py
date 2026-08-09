@@ -44,7 +44,7 @@ from formosa.geomorphology.flowdir.utils import (
     raise_fortran_error,
 )
 import formosa.geomorphology.flowdir.flowdir as flowdir_m
-import formosa.geomorphology.flowdir.raster as raster_m
+import formosa.geomorphology.flowdir.watersheds as wshed_m
 from formosa.geomorphology.flowdir_f import flowdir_graphs as graphs_f
 
 import warnings
@@ -334,7 +334,7 @@ def construct_flowgraph(
     if valids is None:
         valids = np.ones(dirs.shape, dtype=bool)
     if orders is None:
-        orders = raster_m.compute_flow_strahler_order(
+        orders = wshed_m.compute_flow_strahler_order(
             dirs,
             dir_scheme=dir_scheme,
             valids=valids,

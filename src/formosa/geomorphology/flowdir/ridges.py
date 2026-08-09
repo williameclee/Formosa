@@ -27,13 +27,13 @@
 import numpy as np
 
 from formosa.geomorphology.flowdir.directions import D8Directions
-import formosa.geomorphology.flowdir.flowdir as flowdir_f
-from formosa.geomorphology.flowdir.raster.raster import (
+import formosa.geomorphology.flowdir.flowdir as flowdir_m
+from formosa.geomorphology.flowdir.watersheds import (
     compute_dist2source,
     compute_flow_strahler_order,
 )
-from formosa.geomorphology.flowdir.utils import raise_fortran_error
 from formosa.geomorphology.flowdir_f import flowdir_ridges as ridges_f
+from formosa.geomorphology.flowdir.utils import raise_fortran_error
 
 from typing import Literal, Optional
 import numpy.typing as npt
@@ -146,7 +146,7 @@ def compute_ridgedir(
         y=y,
         dir_scheme=dir_scheme,
     )
-    bmaxdirs, _, _ = flowdir_f.compute_flowdir(
+    bmaxdirs, _, _ = flowdir_m.compute_flowdir(
         -bmax, dir_scheme=dir_scheme, valids=valids, fill_depression=True
     )
     return bmaxdirs.astype(np.uint8, order="F")

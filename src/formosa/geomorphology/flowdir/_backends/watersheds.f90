@@ -18,7 +18,7 @@
 !     - Switched to 'iso_c_binding'
 !!!
 
-module flowdir_raster
+module flowdir_watersheds
     use iso_c_binding, only: c_int8_t, c_int16_t
     use utils, only: fill_offset_lookup, find_noflow_code, &
                      array2d_oob, mask2id, mask2ij, &
@@ -1016,4 +1016,4 @@ contains
         !$omp END PARALLEL
         deallocate (seed_ids)
     end subroutine flood_upstream
-end module flowdir_raster
+end module flowdir_watersheds
