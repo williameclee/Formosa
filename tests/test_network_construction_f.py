@@ -1,8 +1,7 @@
 """
-Tests related to the flow graph construction from a raster using the
-FORTRAN backend.
+Tests flow-graph construction using the FORTRAN backend.
 
-Last modified: 2026-08-09, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
 
 from tests.core import *

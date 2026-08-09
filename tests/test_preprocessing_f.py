@@ -1,8 +1,8 @@
 """
-Tests related to preprocessing of a digital elevation model (DEM)
-raster using the FORTRAN backend.
+Tests digital elevation model preprocessing using the FORTRAN
+backend.
 
-Last modified: 2026-08-09, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
 
 from tests.core import *

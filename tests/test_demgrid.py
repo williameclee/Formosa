@@ -1,8 +1,7 @@
 """
-Tests related to the properties and methods of the class
-:class:`DEMGrid`.
+Tests the public properties and methods of :class:`DEMGrid`.
 
-Last modified: 2026-08-06, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
 
 import pytest

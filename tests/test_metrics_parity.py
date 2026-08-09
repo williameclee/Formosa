@@ -1,8 +1,7 @@
 """
-Parity tests related to the derivation of hydrographical metrics 
-using the 2 backends.
+Verifies flow-metric parity between the Python and FORTRAN backends.
 
-Last modified: 2026-08-09, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
 
 from tests.core import *

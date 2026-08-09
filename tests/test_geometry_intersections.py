@@ -1,7 +1,8 @@
 """
-Parity tests of the classification of line segment intersections.
+Verifies line-segment intersection parity across configured
+backends.
 
-Last modified: 2026-08-09, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
 
 import pytest

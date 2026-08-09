@@ -119,6 +119,55 @@ Use `!>`/`!!` documentation comments for public modules and procedures, and
 ordinary `!` comments for implementation notes that should not become part of
 generated API documentation.
 
+#### Test Files
+
+Every substantive Python test file should begin with a module docstring that
+states the behaviour or component under test and the test boundary. Use the
+same formatting and optional `Last modified` field as other Python file
+descriptions.
+
+The summary should use an active, third-person verb such as `Tests`, `Verifies`,
+or `Checks` and should distinguish among:
+
+- tests of the public API or behaviour shared by all backends;
+- tests specific to the Python backend;
+- tests specific to the FORTRAN backend, including native error handling; and
+- parity tests that run equivalent cases across both backends.
+
+Do not begin with vague wording such as "Tests related to", enumerate every
+test case, or describe implementation details that can change without altering
+the module's scope. Add a short explanatory paragraph only when the filename
+and summary do not adequately identify the boundary. Shared test helpers and
+fixtures should instead describe what they provide.
+
+Test filename suffixes should match their scope:
+
+- `_f.py` for FORTRAN-backend tests;
+- `_py.py` for Python-backend tests; and
+- `_parity.py` for explicit cross-backend parity tests.
+
+Files without one of these suffixes may test the public API across configured
+backends or behaviour that is independent of a computational backend.
+
+```python
+"""
+Tests flat resolution using the FORTRAN backend.
+
+This module covers native results, boundary cases, and translation of FORTRAN
+status codes by the public drainage API.
+
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+"""
+```
+
+```python
+"""
+Verifies flow-metric parity between the Python and FORTRAN backends.
+
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+"""
+```
+
 ### Docstrings
 
 All public functions should have descriptive docstrings written in the *NumPy style*. This includes:

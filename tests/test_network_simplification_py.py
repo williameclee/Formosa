@@ -1,7 +1,7 @@
 """
-Tests related to flow graph simplification using the Python backend.
+Tests flow-graph simplification using the Python backend.
 
-Last modified: 2026-08-09, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
 
 import pytest

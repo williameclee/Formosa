@@ -1,7 +1,7 @@
 """
-Tests related to FORTRAN backend utility functions.
+Tests shared utility routines in the FORTRAN backend.
 
-Last modified: 2026-08-09, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
 
 from tests.core import *

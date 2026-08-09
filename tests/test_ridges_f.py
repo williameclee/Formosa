@@ -1,8 +1,7 @@
 """
-Tests related to construction of the ridge network using the FORTRAN 
-backend.
+Tests ridge-network construction using the FORTRAN backend.
 
-Last modified: 2026-08-09, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
 
 import pytest

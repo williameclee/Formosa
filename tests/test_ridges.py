@@ -1,8 +1,8 @@
 """
-Parity tests related to construction of the ridge network using the
-2 backends.
+Verifies ridge-network parity between the Python and FORTRAN
+backends.
 
-Last modified: 2026-08-09, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
 
 import pytest

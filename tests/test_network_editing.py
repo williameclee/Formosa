@@ -1,7 +1,7 @@
 """
-Tests related to the mutation of a flow graph.
+Tests public operations that mutate flow graphs.
 
-Last modified: 2026-08-09, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
 
 from tests.core import *

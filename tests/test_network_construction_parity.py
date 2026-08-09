@@ -1,8 +1,8 @@
 """
-Parity tests related to the flow graph construction from a raster 
-using the 2 backends.
+Verifies flow-graph construction parity across Python and FORTRAN
+backends.
 
-Last modified: 2026-08-09, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
 
 from tests.core import *

@@ -1,8 +1,7 @@
 """
-Parity tests related to the derivation of flow directions using the
-2 backends.
+Tests flow-direction behaviour shared by the configured backends.
 
-Last modified: 2026-08-09, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
 
 from tests.core import *

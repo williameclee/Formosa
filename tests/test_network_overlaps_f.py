@@ -1,8 +1,7 @@
 """
-Tests related to the resolution of invalid graph topologies using 
-the FORTRAN backend.
+Tests flow-graph overlap resolution using the FORTRAN backend.
 
-Last modified: 2026-08-09, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
 
 import pytest

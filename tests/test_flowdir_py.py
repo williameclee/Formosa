@@ -1,8 +1,7 @@
 """
-Tests related to the derivation of flow directions using the Python
-backend.
+Tests flow-direction derivation using the Python backend.
 
-Last modified: 2026-08-09, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
 
 import pytest

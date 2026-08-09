@@ -1,8 +1,10 @@
 """
-Tests related to the flat resolution of a digital elevation model 
-(DEM) using the FORTRAN backend.
+Tests flat resolution using the FORTRAN backend.
 
-Last modified: 2026-08-04, En-Chi Lee (williameclee@gmail.com)
+This module covers native results, boundary cases, and translation
+of FORTRAN status codes by the public drainage API.
+
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
 
 import pytest
