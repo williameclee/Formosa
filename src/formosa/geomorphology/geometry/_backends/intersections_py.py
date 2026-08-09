@@ -1,8 +1,10 @@
-# Last modified
-#   2026-07-30, En-Chi Lee (williameclee@gmail.com)
-#     - Ported the FORTRAN `distances` helper module to Python
-#   2026-08-08, En-Chi Lee (williameclee@gmail.com)
-#     - Refactored module to `geometry.intersections`
+"""
+Last modified
+    2026-07-30, En-Chi Lee (williameclee@gmail.com)
+      - Ported the FORTRAN `distances` helper module to Python
+    2026-08-08, En-Chi Lee (williameclee@gmail.com)
+      - Refactored module to `geometry.intersections`
+"""
 
 import numpy as np
 
@@ -14,7 +16,9 @@ def orient_v2(
     p2: npt.NDArray[np.number],
     p3: npt.NDArray[np.number],
 ) -> int:
-    """Returns the orientation of three 2D points using exact comparisons."""
+    """
+    Computes the orientation of 3 2D points using exact comparisons.
+    """
     xprod = (p2[0] - p1[0]) * (p3[1] - p1[1]) - (p2[1] - p1[1]) * (p3[0] - p1[0])
     if xprod == 0:
         return 0
@@ -26,7 +30,9 @@ def orient_v2(
 def on_segment(
     a: npt.NDArray[np.number], b: npt.NDArray[np.number], p: npt.NDArray[np.number]
 ) -> bool:
-    """Returns whether a 2D point lies on a closed line segment."""
+    """
+    Determines whether a 2D point lies on a closed line segment.
+    """
     if orient_v2(a, b, p) != 0:
         return False
     return bool(
@@ -43,7 +49,9 @@ def bboxes_overlap(
     p3: npt.NDArray[np.number],
     p4: npt.NDArray[np.number],
 ) -> bool:
-    """Returns whether two closed 2D segment bounding boxes overlap."""
+    """
+    Determines whether 2 closed 2D segment bounding boxes overlap.
+    """
     return bool(
         max(min(p1[0], p2[0]), min(p3[0], p4[0]))
         <= min(max(p1[0], p2[0]), max(p3[0], p4[0]))
@@ -59,19 +67,16 @@ def lines_intersect_v2(
     l2b: npt.NDArray[np.number],
 ) -> int:
     """
-    Classifies the intersection of two closed 2D line segments.
+    Classifies the intersection of 2 closed 2D line segments.
 
-    Returns
-    -------
-    int
-        -1 for disjoint segments, 0 for endpoint-to-endpoint contact, 1 for an
-        interior crossing, 2 for non-identical collinear overlap, 3 for
-        identical segments, 4 for an endpoint-on-interior T-junction, and 5
-        when either segment is degenerate.
-
-    Notes
-    -----
-    Comparisons are exact to match the FORTRAN implementation.
+    The retuend flag has the following interpretation:
+        - `-1`: Disjoint segments
+        - `0`: Endpoint contact
+        - `1`: Interior 'X' crossing
+        - `2`: Non-identical collinear overlap
+        - `3`: Identical segments (orientation-agnostic)
+        - `4`: Endpoint-on-interior 'T' junction
+        - `5`: Degenerate segment (some line is actually a point)
     """
     l1a = np.asarray(l1a)
     l1b = np.asarray(l1b)

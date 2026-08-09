@@ -23,7 +23,7 @@ custom_target(
   input: files(
     'src/formosa/geomorphology/drainage/utils.f90',
     'src/formosa/geomorphology/geometry/geometry.f90',
-    'src/formosa/geomorphology/geometry/intersections.f90',
+    'src/formosa/geomorphology/geometry/_backends/intersections.f90',
     'src/formosa/geomorphology/drainage/_backends/preprocessing.f90',
     'src/formosa/geomorphology/drainage/network/_backends/construction.f90',
     'src/formosa/geomorphology/drainage/network/_backends/validation.f90',

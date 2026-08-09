@@ -3,7 +3,7 @@
 #     - Implemented Python backend of function
 #       `locate_invalid_graph_topology`
 
-from formosa.geomorphology.geometry.intersections_py import lines_intersect_v2
+from formosa.geomorphology.geometry.intersections import lines_intersect_v2
 
 
 import numpy as np
@@ -41,6 +41,7 @@ def locate_invalid_graph_topology(
                     vertex_ijs[iseg + 1],
                     vertex_ijs[jseg],
                     vertex_ijs[jseg + 1],
+                    backend="python",
                 )
                 if intx_flag > 0:
                     violations.append((iarc, iarc, iseg, jseg, intx_flag))
@@ -79,6 +80,7 @@ def locate_invalid_graph_topology(
                         vertex_ijs[iseg + 1],
                         vertex_ijs[jseg],
                         vertex_ijs[jseg + 1],
+                        backend="python",
                     )
                     if intx_flag > 0:
                         if iarc < jarc:
