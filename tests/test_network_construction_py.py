@@ -10,8 +10,8 @@ import numpy as np
 from formosa import D8Directions
 import formosa.geomorphology.flowdir.network as nwork_m
 import formosa.geomorphology.flowdir.network.construction as constr_m
-from formosa.geomorphology.flowdir.network import editing as editing_m
 import formosa.geomorphology.flowdir.network._backends.construction_py as constr_py
+from formosa.geomorphology.flowdir.network import editing as editing_m
 
 T = True
 F = False

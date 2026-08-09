@@ -34,7 +34,7 @@ from formosa.geomorphology.flowdir.network.validation import (
     locate_invalid_graph_topology,
 )
 from formosa.geomorphology.flowdir.network.editing import remove_unused_vertices
-from formosa.geomorphology.flowdir_f import flowdir_graphs as graphs_f
+from formosa.geomorphology.flowdir_f import network_simplification as simp_f
 
 import numpy.typing as npt
 from typing import Literal, Optional, TypeVar, overload
@@ -762,7 +762,7 @@ def _resolve_topology_intersections(
             start = endpts[0, iarc]
             end = endpts[1, iarc]
             arc_length = end - start + 1
-            vertex_keeps[start : end + 1] = graphs_f.simplify_flowgraph(
+            vertex_keeps[start : end + 1] = simp_f.simplify_flowgraph(
                 vertices[:, start : end + 1].astype(np.float32, order="F"),
                 np.array([[1], [arc_length]], dtype=np.int32, order="F"),
                 tol,
@@ -824,7 +824,7 @@ def _simplify_single_flowgraph(
     endpts += 1
 
     # Call the FORTRAN routine to get the boolean mask of kept vertices
-    vertex_keeps: npt.NDArray[np.bool_] = graphs_f.simplify_flowgraph(
+    vertex_keeps: npt.NDArray[np.bool_] = simp_f.simplify_flowgraph(
         vertices.astype(np.float32, order="F"),
         endpts.astype(np.int32, order="F"),
         tol,

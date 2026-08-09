@@ -7,12 +7,9 @@
 !   2026-08-04, En-Chi Lee (williameclee@gmail.com)
 !     - Added allocation error monitoring and moved error handling
 !       to Python
-!   2026-08-05, En-Chi Lee (williameclee@gmail.com)
-!     - Switched to 'iso_c_binding'
 !!!
 
-module flowdir_graphs
-    use iso_c_binding, only: c_int8_t, c_int16_t
+module network_simplification
     use geometry, only: pt2linedist2_xy
     implicit none(type, external)
 contains
@@ -89,4 +86,4 @@ contains
             call simplify_arc_rdp(vertex_xys, vertex_keeps, arc_endpts(1, iarc), arc_endpts(2, iarc), tol)
         end do
     end subroutine simplify_flowgraph
-end module flowdir_graphs
+end module network_simplification

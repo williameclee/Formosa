@@ -7,7 +7,8 @@ import warnings
 import numpy as np
 
 import formosa.geomorphology.flowdir.network as nwork_m
-from formosa.geomorphology.flowdir.network import graphs as graphs_m
+import formosa.geomorphology.flowdir.network.validation as val_m
+from formosa.geomorphology.flowdir.network import simplification as simp_m
 
 from types import SimpleNamespace
 
@@ -38,16 +39,16 @@ def test_topology_repair_simplifies_each_conflicting_arc_once(monkeypatch):
         simplified_starts.append(tuple(vertex_xys[:, 0]))
         return np.ones(vertex_xys.shape[1], dtype=np.int8)
 
-    monkeypatch.setattr(graphs_m, "locate_invalid_graph_topology", fake_locator)
+    monkeypatch.setattr(simp_m, "locate_invalid_graph_topology", fake_locator)
     monkeypatch.setattr(
-        graphs_m,
-        "graphs_f",
+        simp_m,
+        "simp_f",
         SimpleNamespace(simplify_flowgraph=fake_simplify),
     )
 
     vertices = np.array([[0, 1, 2, 3, 4, 5], [0, 0, 0, 0, 0, 0]], dtype=np.float32)
     endpts = np.array([[0, 2, 4], [1, 3, 5]], dtype=np.int32)
-    keeps = graphs_m._resolve_topology_intersections(
+    keeps = simp_m._resolve_topology_intersections(
         vertices, endpts, np.ones(6, dtype=bool), tol=1.0, max_iters=1
     )
 
@@ -60,7 +61,7 @@ def test_topology_repair_attempt_count_matches_max_iters(monkeypatch):
     simplify_calls = []
 
     monkeypatch.setattr(
-        graphs_m,
+        simp_m,
         "locate_invalid_graph_topology",
         lambda *args, **kwargs: intersections,
     )
@@ -70,14 +71,14 @@ def test_topology_repair_attempt_count_matches_max_iters(monkeypatch):
         return np.ones(vertex_xys.shape[1], dtype=np.int8)
 
     monkeypatch.setattr(
-        graphs_m,
-        "graphs_f",
+        simp_m,
+        "simp_f",
         SimpleNamespace(simplify_flowgraph=fake_simplify),
     )
 
     vertices = np.array([[0, 1, 2, 3], [0, 0, 0, 0]], dtype=np.float32)
     endpts = np.array([[0, 2], [1, 3]], dtype=np.int32)
-    graphs_m._resolve_topology_intersections(
+    simp_m._resolve_topology_intersections(
         vertices,
         endpts,
         np.ones(4, dtype=bool),
@@ -92,11 +93,11 @@ def test_simplify_single_flowgraph():
     verts = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]])
     endpts = np.array([[0, 2]])
     orders = np.array([2, 4])
-    simp_orders, simp_verts, simp_endpts, keeps = graphs_m.simplify_flowgraph(
+    simp_orders, simp_verts, simp_endpts, keeps = simp_m.simplify_flowgraph(
         np.array([3]), verts, endpts, tol=1.0, check_topology=False, backend="fortran"
     )
     np.testing.assert_array_equal(simp_orders, [3])
-    np.testing.assert_array_equal(keeps, [True, False, True])
+    np.testing.assert_array_equal(keeps, [T, F, T])
     np.testing.assert_array_equal(simp_verts, [[0.0, 0.0], [2.0, 2.0]])
     np.testing.assert_array_equal(simp_endpts, [[0, 1]])
 
@@ -105,27 +106,27 @@ def test_simplify_single_flowgraph():
     endpts_topo = np.array([[0, 2], [3, 4]])
 
     # Under tol = 1.5 and check_topology = False, simplification occurs and causes intersection
-    _, _, _, keeps_no_check = graphs_m.simplify_flowgraph(
+    _, _, _, keeps_no_check = simp_m.simplify_flowgraph(
         *(orders, verts_topo, endpts_topo),
         tol=1.5,
         check_topology=False,
         backend="fortran",
     )
     # Vertex 1 should be removed
-    np.testing.assert_array_equal(keeps_no_check, [True, False, True, True, True])
+    np.testing.assert_array_equal(keeps_no_check, [T, F, T, T, T])
 
     # Under tol = 1.5 and check_topology = True, it detects intersection, reduces tolerance,
     # and keeps Vertex 1 to avoid intersection
-    _, checked_verts, checked_endpts, keeps_with_check = graphs_m.simplify_flowgraph(
+    _, checked_verts, checked_endpts, keeps_with_check = simp_m.simplify_flowgraph(
         *(orders, verts_topo, endpts_topo),
         tol=1.5,
         check_topology=True,
         backend="fortran",
     )
     # Vertex 1 should be kept
-    np.testing.assert_array_equal(keeps_with_check, [True, True, True, True, True])
+    np.testing.assert_array_equal(keeps_with_check, [T, T, T, T, T])
     assert (
-        nwork_m.validation.locate_invalid_graph_topology(
+        val_m.locate_invalid_graph_topology(
             checked_verts, checked_endpts, backend="fortran"
         )
         is None
@@ -134,7 +135,7 @@ def test_simplify_single_flowgraph():
     with warnings.catch_warnings():
         warnings.simplefilter("default")
         filters_before = list(warnings.filters)
-        graphs_m.simplify_flowgraph(
+        simp_m.simplify_flowgraph(
             *(orders, verts_topo, endpts_topo),
             tol=1.5,
             check_topology=True,
@@ -155,7 +156,7 @@ def test_simplify_single_flowgraph_preserves_vertex_layout():
     endpts = np.array([[0, 3]])
     orders = np.array([5])
 
-    simp_orders, simp_verts, simp_endpts, keeps = graphs_m.simplify_flowgraph(
+    simp_orders, simp_verts, simp_endpts, keeps = simp_m.simplify_flowgraph(
         *(orders, verts, endpts),
         tol=0.0,
         check_topology=False,
@@ -175,7 +176,7 @@ def test_simplify_flowgraph_validates_arc_orders():
     orders = [np.array([1]), np.array([2])]
 
     with pytest.raises(TypeError, match="must be NumPy arrays"):
-        graphs_m.simplify_flowgraph(
+        simp_m.simplify_flowgraph(
             np.array([1]),
             "not-an-array",  # type: ignore
             endpts,
@@ -183,7 +184,7 @@ def test_simplify_flowgraph_validates_arc_orders():
         )
 
     with pytest.raises(ValueError, match="Order array has length 0"):
-        graphs_m.simplify_flowgraph(
+        simp_m.simplify_flowgraph(
             np.array([], dtype=np.uint8),
             verts,
             endpts,
@@ -191,7 +192,7 @@ def test_simplify_flowgraph_validates_arc_orders():
         )
 
     with pytest.raises(ValueError, match="must have the same length"):
-        graphs_m.simplify_flowgraph(
+        simp_m.simplify_flowgraph(
             *(orders, [verts], [endpts]),
             check_topology=False,
         )
@@ -204,19 +205,19 @@ def test_simplify_rejects_invalid_final_graph_from_valid_input(monkeypatch):
     final_intxs = np.array([[0, 1, 0, 2, 1]], dtype=np.int32)
 
     monkeypatch.setattr(
-        graphs_m,
+        simp_m,
         "_resolve_topology_intersections",
         lambda verts, endpts, keeps, tol, graph_ids=None: np.array([T, F, T, T, T]),
     )
     locator_results = iter([final_intxs, None])
     monkeypatch.setattr(
-        graphs_m,
+        simp_m,
         "_locate_disallowed_graph_topology",
         lambda verts, endpts, graph_ids=None: next(locator_results),
     )
 
     with pytest.raises(nwork_m.UnresolvedSimplificationTopology) as exc_info:
-        graphs_m.simplify_flowgraph(
+        simp_m.simplify_flowgraph(
             *(orders, verts, endpts),
             tol=1.0,
             check_topology=True,
@@ -232,7 +233,7 @@ def test_simplify_rejects_invalid_final_graph_from_invalid_input(monkeypatch):
     input_intxs = np.array([[0, 1, 0, 2, 1]], dtype=np.int32)
 
     monkeypatch.setattr(
-        graphs_m,
+        simp_m,
         "_resolve_topology_intersections",
         lambda verts, endpts, keeps, tol, graph_ids=None: np.ones(
             verts.shape[1], dtype=bool
@@ -240,13 +241,13 @@ def test_simplify_rejects_invalid_final_graph_from_invalid_input(monkeypatch):
     )
     locator_results = iter([final_intxs, input_intxs])
     monkeypatch.setattr(
-        graphs_m,
+        simp_m,
         "_locate_disallowed_graph_topology",
         lambda verts, endpts, graph_ids=None: next(locator_results),
     )
 
     with pytest.raises(nwork_m.InvalidOriginalGraphTopology) as exc_info:
-        graphs_m.simplify_flowgraph(
+        simp_m.simplify_flowgraph(
             *(orders, verts, endpts),
             tol=1.0,
             check_topology=True,
@@ -260,9 +261,9 @@ def test_simplify_skips_final_validation_when_topology_check_is_disabled(
     def fail_if_called(*args, **kwargs):
         raise AssertionError("Topology validation should be disabled.")
 
-    monkeypatch.setattr(graphs_m, "_locate_disallowed_graph_topology", fail_if_called)
+    monkeypatch.setattr(simp_m, "_locate_disallowed_graph_topology", fail_if_called)
 
-    graphs_m.simplify_flowgraph(
+    simp_m.simplify_flowgraph(
         np.array([1]),
         np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]]),
         np.array([[0, 2]]),
@@ -282,7 +283,7 @@ def test_simplify_multiple_flowgraphs():
     orders1 = np.array([4], dtype=np.uint8)
 
     simp_orders_list, simp_verts_list, simp_endpts_list, keeps_list = (
-        graphs_m.simplify_flowgraph(
+        simp_m.simplify_flowgraph(
             [orders0, orders1],
             [vs0, verts1],
             [endpts0, endpts1],
@@ -307,7 +308,7 @@ def test_simplify_multiple_flowgraphs():
     endpts0_t = endpts0.T  # shape (2, 1)
 
     simp_orders_tuple, simp_vs_tuple, simp_endpts_tuple, keeps_tuple = (
-        graphs_m.simplify_flowgraph(
+        simp_m.simplify_flowgraph(
             *((orders0, orders1), (verts0_t, verts1), (endpts0_t, endpts1)),
             tol=1.0,
             check_topology=False,
@@ -333,7 +334,7 @@ def test_simplify_multiple_flowgraphs_accepts_one_empty_graph():
     verts = np.array([[0.0, 0.0], [1.0, 0.0]], dtype=np.float32)
     endpts = np.array([[0, 1]], dtype=np.int32)
 
-    simp_orders, simp_verts, simp_endpts, keeps = graphs_m.simplify_flowgraph(
+    simp_orders, simp_verts, simp_endpts, keeps = simp_m.simplify_flowgraph(
         [empty_orders, orders],
         [empty_verts, verts],
         [empty_endpts, endpts],
@@ -364,7 +365,7 @@ def test_simplify_multiple_flowgraphs_round_trips_all_empty_graphs(collection_ty
         (np.empty((0, 2), dtype=np.int32), np.empty((2, 0), dtype=np.int64))
     )
 
-    simp_orders, simp_verts, simp_endpts, keeps = graphs_m.simplify_flowgraph(
+    simp_orders, simp_verts, simp_endpts, keeps = simp_m.simplify_flowgraph(
         orders,
         verts,
         endpts,
@@ -393,7 +394,7 @@ def test_simplify_multiple_flowgraphs_round_trips_all_empty_graphs(collection_ty
 def test_simplify_multiple_flowgraphs_accepts_empty_collections(collection_type):
     empty = collection_type()
 
-    results = graphs_m.simplify_flowgraph(empty, empty, empty)
+    results = simp_m.simplify_flowgraph(empty, empty, empty)
 
     for result in results:
         assert isinstance(result, collection_type)
@@ -416,7 +417,7 @@ def test_simplify_flowgraph_keeps_every_arc_endpoint():
     )
     endpts = np.array([[0, 2], [3, 5], [6, 7]], dtype=np.int32)
 
-    _, simp_verts, simp_endpts, keeps = graphs_m.simplify_flowgraph(
+    _, simp_verts, simp_endpts, keeps = simp_m.simplify_flowgraph(
         orders,
         verts,
         endpts,
@@ -440,7 +441,7 @@ def test_simplify_multiple_flowgraphs_inserts_overlap_endpoints():
     endpts = [np.array([[0, 2]]), np.array([[0, 2]])]
     orders = [np.array([3]), np.array([5])]
 
-    simp_orders, simp_verts, simp_endpts, keeps = graphs_m.simplify_flowgraph(
+    simp_orders, simp_verts, simp_endpts, keeps = simp_m.simplify_flowgraph(
         *(orders, vertices, endpts),
         tol=0.0,
         check_topology=True,
@@ -477,7 +478,7 @@ def test_simplify_multiple_flowgraphs_ignores_identical_arcs():
     endpts = [np.array([[0, 4]]), np.array([[0, 4]])]
     orders = [np.array([2]), np.array([4])]
 
-    _, simp_verts, _, _ = graphs_m.simplify_flowgraph(
+    _, simp_verts, _, _ = simp_m.simplify_flowgraph(
         *(orders, verts, endpts),
         tol=0.25,
         check_topology=True,

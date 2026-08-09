@@ -16,7 +16,7 @@
 import pytest
 import numpy as np
 
-from formosa.geomorphology.flowdir.network import graphs as graphs_m
+from formosa.geomorphology.flowdir.network import simplification as simp_m
 
 T = True
 F = False
@@ -28,7 +28,7 @@ def test_solve_graph_overlaps_can_remove_unused_vertices():
     g2_vertices = np.array([[97, 97], [0, 1], [1, 1], [96, 96]])
     endpts = np.array([[1, 2]], dtype=np.int32)
 
-    result = graphs_m.solve_graph_overlaps(
+    result = simp_m.solve_graph_overlaps(
         orders,
         g1_vertices,
         endpts,
@@ -56,8 +56,8 @@ def test_simplify_flowgraph_can_remove_unused_vertices(monkeypatch):
     def fake_simplify(*args, **kwargs):
         return orders, simplified_vertices, simplified_endpts, keeps
 
-    monkeypatch.setattr(graphs_m, "_simplify_single_flowgraph", fake_simplify)
-    out_orders, out_vertices, out_endpts, out_keeps = graphs_m.simplify_flowgraph(
+    monkeypatch.setattr(simp_m, "_simplify_single_flowgraph", fake_simplify)
+    out_orders, out_vertices, out_endpts, out_keeps = simp_m.simplify_flowgraph(
         orders, vertices, endpts, remove_unused=True
     )
 
@@ -88,8 +88,8 @@ def test_simplify_multiple_flowgraphs_can_remove_unused_vertices(
     def fake_simplify(*args, **kwargs):
         return orders, simplified_vertices, simplified_endpts, keeps
 
-    monkeypatch.setattr(graphs_m, "_simplify_multiple_flowgraphs", fake_simplify)
-    _, out_vertices, out_endpts, _ = graphs_m.simplify_flowgraph(
+    monkeypatch.setattr(simp_m, "_simplify_multiple_flowgraphs", fake_simplify)
+    _, out_vertices, out_endpts, _ = simp_m.simplify_flowgraph(
         orders, vertices, endpts, remove_unused=True
     )
 
@@ -122,7 +122,7 @@ def test_find_graph_overlaps():
     g2_endpts = np.array([[0, 2], [3, 5]])
 
     vert_vert, intr_intr, g1_intr_g2_vert, g1_vert_g2_intr = (
-        graphs_m.find_graph_overlaps(g1_ijs, g1_endpts, g2_ijs, g2_endpts)
+        simp_m.find_graph_overlaps(g1_ijs, g1_endpts, g2_ijs, g2_endpts)
     )
 
     np.testing.assert_array_equal(vert_vert, np.array([[0, 0]]))
@@ -146,9 +146,9 @@ def test_find_graph_overlaps_is_symmetric_with_repeated_coordinates():
     g2_ijs = np.array([[0, 0], [2, 0], [4, 0], [1, 0], [5, 0]])
     g2_endpts = np.array([[0, 2], [3, 4]])
 
-    forward = graphs_m.find_graph_overlaps(g1_ijs, g1_endpts, g2_ijs, g2_endpts)
-    forward = graphs_m.find_graph_overlaps(g1_ijs, g1_endpts, g2_ijs, g2_endpts)
-    reverse = graphs_m.find_graph_overlaps(g2_ijs, g2_endpts, g1_ijs, g1_endpts)
+    forward = simp_m.find_graph_overlaps(g1_ijs, g1_endpts, g2_ijs, g2_endpts)
+    forward = simp_m.find_graph_overlaps(g1_ijs, g1_endpts, g2_ijs, g2_endpts)
+    reverse = simp_m.find_graph_overlaps(g2_ijs, g2_endpts, g1_ijs, g1_endpts)
 
     np.testing.assert_array_equal(forward[0], reverse[0])
     np.testing.assert_array_equal(forward[1], reverse[1])
@@ -169,7 +169,7 @@ def test_find_graph_overlaps_accepts_an_empty_graph(empty_graph):
     if empty_graph == 2:
         graphs = graphs[::-1]
 
-    overlaps = graphs_m.find_graph_overlaps(*graphs[0], *graphs[1])
+    overlaps = simp_m.find_graph_overlaps(*graphs[0], *graphs[1])
 
     for overlap_type in overlaps:
         assert overlap_type.shape == (0, 2)
@@ -214,7 +214,7 @@ def test_solve_graph_overlaps(
         solved_g2_orders,
         solved_g2_ijs,
         solved_g2_endpts,
-    ) = graphs_m.solve_graph_overlaps(
+    ) = simp_m.solve_graph_overlaps(
         g1_orders,
         g1_ijs,
         g1_endpts,
@@ -230,7 +230,7 @@ def test_solve_graph_overlaps(
     assert solved_g2_endpts.shape == (expected_narcs, 2)
 
     vert_vert, intr_intr, g1_intr_g2_vert, g1_vert_g2_intr = (
-        graphs_m.find_graph_overlaps(
+        simp_m.find_graph_overlaps(
             solved_g1_ijs,
             solved_g1_endpts,
             solved_g2_ijs,
@@ -270,7 +270,7 @@ def test_solve_graph_overlaps_with_repeated_coordinates():
         solved_g2_orders,
         solved_g2_ijs,
         solved_g2_endpts,
-    ) = graphs_m.solve_graph_overlaps(
+    ) = simp_m.solve_graph_overlaps(
         g1_orders,
         g1_ijs,
         g1_endpts,
@@ -282,7 +282,7 @@ def test_solve_graph_overlaps_with_repeated_coordinates():
 
     assert solved_g1_orders.size == 4
     assert solved_g2_orders.size == 3
-    vert_vert, intr_intr, _, _ = graphs_m.find_graph_overlaps(
+    vert_vert, intr_intr, _, _ = simp_m.find_graph_overlaps(
         solved_g1_ijs,
         solved_g1_endpts,
         solved_g2_ijs,
@@ -302,8 +302,8 @@ def test_solve_graph_overlaps_is_idempotent():
         np.array([[0, 4]]),
     )
 
-    first = graphs_m.solve_graph_overlaps(*args, allows_arcs_overlap=True)
-    second = graphs_m.solve_graph_overlaps(*first, allows_arcs_overlap=True)
+    first = simp_m.solve_graph_overlaps(*args, allows_arcs_overlap=True)
+    second = simp_m.solve_graph_overlaps(*first, allows_arcs_overlap=True)
 
     for first_array, second_array in zip(first, second):
         np.testing.assert_array_equal(second_array, first_array)
