@@ -18,8 +18,8 @@ from formosa.geomorphology.drainage.utils import (
     compute_downstream_indices,
     raise_fortran_error,
 )
-import formosa.geomorphology.drainage.network._backends.validation_py as val_py
 from formosa.geomorphology.drainage_f import network_validation as val_f
+import formosa.geomorphology.drainage.network._backends.validation_py as val_py
 
 
 class GraphTopologyError(RuntimeError):
@@ -286,4 +286,53 @@ def locate_invalid_graph_topology(
         # Sort lexicographically
         sort_idx = np.lexsort((intxs[:, 3], intxs[:, 2], intxs[:, 1], intxs[:, 0]))
         intxs = intxs[sort_idx]
+    return intxs
+
+
+def _ignore_identical_intergraph_arcs(
+    intxs: Optional[npt.NDArray[np.int32]],
+    vertices: npt.NDArray[np.number],
+    endpts: npt.NDArray[np.integer],
+    graph_ids: npt.NDArray[np.integer],
+) -> Optional[npt.NDArray[np.int32]]:
+    """
+    Removes topology violations between identical arcs in different graphs.
+    """
+    if intxs is None:
+        return None
+
+    keeps = np.ones(intxs.shape[0], dtype=bool)
+    identical_pairs: dict[tuple[int, int], bool] = {}
+    for i, (iarc, jarc, _, _, _) in enumerate(intxs):
+        if graph_ids[iarc] == graph_ids[jarc]:
+            continue
+
+        pair = (int(iarc), int(jarc))
+        if pair not in identical_pairs:
+            istart, iend = endpts[:, iarc]
+            jstart, jend = endpts[:, jarc]
+            iarc_vertices = vertices[:, istart : iend + 1]
+            jarc_vertices = vertices[:, jstart : jend + 1]
+            identical_pairs[pair] = np.array_equal(
+                iarc_vertices, jarc_vertices
+            ) or np.array_equal(iarc_vertices, jarc_vertices[:, ::-1])
+        if identical_pairs[pair]:
+            keeps[i] = False
+
+    if not np.any(keeps):
+        return None
+    return intxs[keeps]
+
+
+def _locate_disallowed_graph_topology(
+    vertices: npt.NDArray[np.number],
+    endpts: npt.NDArray[np.integer],
+    graph_ids: Optional[npt.NDArray[np.integer]] = None,
+) -> Optional[npt.NDArray[np.int32]]:
+    """
+    Locates violations in arrays stored in internal (2, N) layout.
+    """
+    intxs = locate_invalid_graph_topology(vertices.T, endpts.T)
+    if graph_ids is not None:
+        intxs = _ignore_identical_intergraph_arcs(intxs, vertices, endpts, graph_ids)
     return intxs
