@@ -6,13 +6,10 @@
 #     - Specified endpoint index definition for `construct_flowgraph`
 #     - Implemented FORTRAN backend of function `simplify_flowgraph` and function `concat_flowgraph`
 #     - Added vertex mask to output of function `simplify_flowgraph`
-#   2026-07-12, En-Chi Lee (williameclee@gmail.com)
-#     - Implemented Python and FORTRAN backends of function `locate_invalid_graph_topology`
 #   2026-07-13, En-Chi Lee (williameclee@gmail.com)
 #     - Added default topology check to `simplify_flowgraph`
 #   2026-07-14, En-Chi Lee (williameclee@gmail.com)
 #     - Added simultaneous multi-graph checks to `simplify_flowgraph`
-#     - Updated variable names in `locate_invalid_graph_topology`
 #     - Split `geomorphology.flowdir` into submodules
 #   2026-07-27, En-Chi Lee (williameclee@gmail.com)
 #     - Implemented `insert_endpt` and relevant helper functions
@@ -20,7 +17,6 @@
 #     - Implemented `solve_graph_overlaps` and relevant helper functions
 #     - Integrated overlap resolution into simultaneous multi-graph simplification
 #   2026-07-29, En-Chi Lee (williameclee@gmail.com)
-#     - Made topology intersection results complete using scan-and-retry
 #     - Added validation to simplified graph before return
 #   2026-07-30, En-Chi Lee (williameclee@gmail.com)
 #     - Fixed Python/FORTRAN backend behaviour parity in `compute_flow_strahler_order`.

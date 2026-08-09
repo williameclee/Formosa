@@ -1,14 +1,14 @@
 # Last modified
 #   2026-07-09, En-Chi Lee (williameclee@gmail.com)
-#     - Added test case for the Python implementation of `construct_flowgraph` and function `concat_flowgraph`
-#   2026-07-12, En-Chi Lee (williameclee@gmail.com)
-#     - Added test cases for function `locate_invalid_graph_topogtaphy`
+#     - Added test case for the Python implementation of 
+#       `construct_flowgraph` and function `concat_flowgraph`
 #   2026-07-14, En-Chi Lee (williameclee@gmail.com)
 #     - Updated `geomorphology.flowdir` to the new submodule name
 #   2026-07-27, En-Chi Lee (williameclee@gmail.com)
 #     - Added test cases for function `insert_endpt`
 #   2026-07-28, En-Chi Lee (williameclee@gmail.com)
-#     - Added test cases for functions `find_graph_overlaps` and `solve_graph_overlaps`
+#     - Added test cases for functions `find_graph_overlaps` and 
+#       `solve_graph_overlaps`
 #   2026-08-04, En-Chi Lee (williameclee@gmail.com)
 #     - Added test cases for function `remove_unused_vertices`
 
@@ -73,7 +73,7 @@ def test_construct_flowgraph_rejects_incomplete_backend_output(monkeypatch):
         omit_selected_edge,
     )
 
-    with pytest.raises(nwork_m.validation.IncompleteFlowGraphError) as exc_info:
+    with pytest.raises(nwork_m.IncompleteFlowGraphError) as exc_info:
         graphs_m.construct_flowgraph(
             dirs,
             dir_scheme=dir_scheme,
@@ -107,7 +107,7 @@ def test_construct_flowgraph_rejects_missing_directed_edge(monkeypatch):
         omit_second_edge,
     )
 
-    with pytest.raises(nwork_m.validation.IncompleteFlowGraphError) as exc_info:
+    with pytest.raises(nwork_m.IncompleteFlowGraphError) as exc_info:
         graphs_m.construct_flowgraph(
             dirs,
             dir_scheme=dir_scheme,
@@ -291,38 +291,6 @@ def test_simplify_multiple_flowgraphs_can_remove_unused_vertices(
     np.testing.assert_array_equal(out_vertices[1], [[2, 0], [3, 0]])
     np.testing.assert_array_equal(out_endpts[0], [[0, 1]])
     np.testing.assert_array_equal(out_endpts[1], [[0, 1]])
-
-
-def test_locate_invalid_graph_topogtaphy():
-    vs = np.array([[0, 0], [1, 1], [1, 0], [0, 1]])
-    endpts = np.array([[0, 1], [2, 3]])
-    exp_intxs = np.array([[0, 1, 0, 2, 1]], dtype=np.int32)
-    intxs = nwork_m.validation.locate_invalid_graph_topology(vs, endpts, backend="python")
-    np.testing.assert_array_equal(intxs, exp_intxs)
-
-    vs = np.array([[0, 0], [1, 1], [2, 0], [1, 0], [0, 1]])
-    endpts = np.array([[0, 2], [3, 4]])
-    exp_intxs = np.array([[0, 1, 0, 3, 1]], dtype=np.int32)
-    intxs = nwork_m.validation.locate_invalid_graph_topology(vs, endpts, backend="python")
-    np.testing.assert_array_equal(intxs, exp_intxs)
-
-    # Test self-intersection within a single arc
-    vs = np.array([[0, 0], [2, 2], [2, 0], [0, 2]])
-    endpts = np.array([[0, 3]])
-    exp_intxs = np.array([[0, 0, 0, 2, 1]], dtype=np.int32)
-    intxs = nwork_m.validation.locate_invalid_graph_topology(vs, endpts, backend="python")
-    np.testing.assert_array_equal(intxs, exp_intxs)
-
-    # Test no violations
-    vs = np.array([[0, 0], [1, 1], [2, 2]])
-    endpts = np.array([[0, 2]])
-    assert nwork_m.validation.locate_invalid_graph_topology(vs, endpts, backend="python") is None
-
-    # Test error handling on invalid shapes
-    with pytest.raises(ValueError, match="Invalid array shapes passed"):
-        nwork_m.validation.locate_invalid_graph_topology(
-            np.array([1, 2, 3]), endpts, backend="python"
-        )
 
 
 def test_graph_insert_endpt():
@@ -666,7 +634,6 @@ def test_solve_graph_overlaps_is_idempotent():
 if __name__ == "__main__":
     test_network_graph_3x3()
     test_network_graph_concat_3x3()
-    test_locate_invalid_graph_topogtaphy()
     test_graph_insert_endpt()
     test_find_graph_overlaps()
     test_solve_graph_overlaps_with_repeated_coordinates()

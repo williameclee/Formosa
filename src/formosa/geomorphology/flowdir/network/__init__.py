@@ -4,6 +4,9 @@ from .validation import (
     IncompleteFlowGraphError,
     InvalidOriginalGraphTopology,
     UnresolvedSimplificationTopology,
+)
+
+from .validation import (
     locate_invalid_graph_topology,
 )
 
