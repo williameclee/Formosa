@@ -2,12 +2,12 @@
 #   2026-02-11, En-Chi Lee (williameclee@arizona.edu)
 #     - Rename flowdir functions to be more descriptive
 #   2026-06-09, En-Chi Lee (williameclee@gmail.com)
-#     - Added wrapper function for ridge distance computation in 
+#     - Added wrapper function for ridge distance computation in
 #       `DEMGrid` class
-#     - Removed Numpy type `np.bool` to either `np.bool_` or `bool` 
+#     - Removed Numpy type `np.bool` to either `np.bool_` or `bool`
 #       for compatibility with newer Numpy versions
 #   2026-06-11, En-Chi Lee (williameclee@gmail.com)
-#     - Updated function and argument names to match the 
+#     - Updated function and argument names to match the
 #       standardised names
 #   2026-06-30, En-Chi Lee (williameclee@gmail.com)
 #     - Added aliases to properties
@@ -15,10 +15,10 @@
 #   2026-07-01, En-Chi Lee (williameclee@gmail.com)
 #     - Added property `shape`
 #   2026-08-04, En-Chi Lee (williameclee@gmail.com)
-#     - Updated `compute_dist2conf_max` and related functions' 
+#     - Updated `compute_dist2conf_max` and related functions'
 #       interface to reflect FORTRAN backend changes
 #   2026-08-07 [PR 33], En-Chi Lee (williameclee@gmail.com)
-#     - Added method `invalidate_ocean_basins` and replaced old 
+#     - Added method `invalidate_ocean_basins` and replaced old
 #       `detect_ocean_basin`
 #     - Updated method `fill_depressions`' interface
 
@@ -35,7 +35,6 @@ from formosa.geomorphology import (
     get_neighbour_values,
     compute_slope,
     compute_flowdir,
-    create_flowgraph,
     count_indegree,
     compute_flow_accumulation,
     compute_flow_strahler_order,
@@ -50,7 +49,11 @@ from formosa.geomorphology import (
 from typing import Optional
 import numpy.typing as npt
 
-from formosa.geomorphology.flowdir.preprocessing import fill_depressions, invalidate_ocean_basins as _invalidate_ocean_basins
+from formosa.geomorphology.flowdir.network.construction import create_flowgraph
+from formosa.geomorphology.flowdir.preprocessing import (
+    fill_depressions,
+    invalidate_ocean_basins as _invalidate_ocean_basins,
+)
 from formosa.geomorphology.flowdir.ridges import compute_dist2conf_max
 
 

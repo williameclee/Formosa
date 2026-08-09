@@ -1,3 +1,11 @@
+# Last modified
+#   2026-07-12, En-Chi Lee (williameclee@gmail.com)
+#     - Added test cases for function
+#       `test_locate_invalid_graph_topogtaphy`.
+#   2026-07-29, En-Chi Lee (williameclee@gmail.com)
+#     - Added complete topology-intersection scan-and-retry
+#       regression tests.
+
 from types import SimpleNamespace
 
 import pytest

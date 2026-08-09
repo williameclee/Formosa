@@ -2,8 +2,8 @@ import pytest
 import numpy as np
 
 from formosa import D8Directions
-from formosa.geomorphology.flowdir.network import graphs as graphs_m
 import formosa.geomorphology.flowdir.network as nwork_m
+import formosa.geomorphology.flowdir.network.construction as constr_m
 
 T = True
 F = False
@@ -21,7 +21,7 @@ def test_construct_flowgraph_is_backend_independent_of_masked_directions():
     results = []
     for backend in BACKENDS:
         for candidate_dirs in (dirs, changed_dirs):
-            arc_orders, vertex_ijs, arc_endpts = graphs_m.construct_flowgraph(
+            arc_orders, vertex_ijs, arc_endpts = constr_m.construct_flowgraph(
                 candidate_dirs,
                 dir_scheme=dir_scheme,
                 valids=valids,
@@ -47,7 +47,7 @@ def test_constructed_flowgraph_segments_follow_d8_adjacency(backend):
     dirs = np.array([[3, 3, 3], [3, 3, 3], [1, 1, 0]], dtype=np.uint8)
     valids = np.array([[T, F, T], [T, T, T], [T, T, T]])
 
-    _, vertex_ijs, arc_endpts = graphs_m.construct_flowgraph(
+    _, vertex_ijs, arc_endpts = constr_m.construct_flowgraph(
         dirs,
         dir_scheme=dir_scheme,
         valids=valids,
@@ -74,7 +74,7 @@ def test_construct_flowgraph_rejects_two_cell_cycle(backend):
     orders = np.ones(dirs.shape, dtype=np.uint8)
 
     with pytest.raises(nwork_m.validation.DirectedFlowCycleError) as exc_info:
-        graphs_m.construct_flowgraph(
+        constr_m.construct_flowgraph(
             dirs,
             dir_scheme=dir_scheme,
             orders=orders,
@@ -97,7 +97,7 @@ def test_construct_flowgraph_reports_cycle_without_acyclic_feeder(
     orders = np.ones(dirs.shape, dtype=np.uint8)
 
     with pytest.raises(nwork_m.validation.DirectedFlowCycleError) as exc_info:
-        graphs_m.construct_flowgraph(
+        constr_m.construct_flowgraph(
             dirs,
             dir_scheme=dir_scheme,
             orders=orders,
@@ -116,7 +116,7 @@ def test_construct_flowgraph_reports_disconnected_cycles(backend):
     orders = np.ones(dirs.shape, dtype=np.uint8)
 
     with pytest.raises(nwork_m.validation.DirectedFlowCycleError) as exc_info:
-        graphs_m.construct_flowgraph(
+        constr_m.construct_flowgraph(
             dirs,
             dir_scheme=dir_scheme,
             orders=orders,
@@ -136,7 +136,7 @@ def test_construct_flowgraph_allows_isolated_noflow_cell(backend):
     dirs = np.array([[0]], dtype=np.uint8)
     orders = np.ones(dirs.shape, dtype=np.uint8)
 
-    graph_orders, graph_verts, graph_endpts = graphs_m.construct_flowgraph(
+    graph_orders, graph_verts, graph_endpts = constr_m.construct_flowgraph(
         dirs,
         dir_scheme=dir_scheme,
         orders=orders,
@@ -166,7 +166,7 @@ def test_construct_flowgraph_allows_selection_boundary(
     dir_scheme = D8Directions(transform_codes=lambda x: x)
     dirs = np.array([[1, 0]], dtype=np.uint8)
 
-    graph_orders, graph_verts, graph_endpts = graphs_m.construct_flowgraph(
+    graph_orders, graph_verts, graph_endpts = constr_m.construct_flowgraph(
         dirs,
         dir_scheme=dir_scheme,
         valids=valids,
@@ -187,7 +187,7 @@ def test_construct_flowgraph_covers_every_selected_edge_endpoint(backend):
     valids = np.array([[T, F, T], [T, T, T], [T, T, T]])
     orders = np.ones(dirs.shape, dtype=np.uint8)
 
-    _, graph_verts, graph_endpts = graphs_m.construct_flowgraph(
+    _, graph_verts, graph_endpts = constr_m.construct_flowgraph(
         dirs,
         dir_scheme=dir_scheme,
         valids=valids,
