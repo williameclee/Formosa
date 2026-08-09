@@ -13,7 +13,7 @@ import numpy.typing as npt
 from typing import Optional
 
 
-def _construct_flowgraph_py(
+def construct_flowgraph(
     dirs: npt.NDArray[np.integer],
     dir_scheme: D8Directions,
     valids: npt.NDArray[np.bool_],

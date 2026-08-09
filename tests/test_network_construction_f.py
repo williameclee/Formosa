@@ -8,7 +8,7 @@ import numpy as np
 
 from formosa import D8Directions
 import formosa.geomorphology.flowdir.network.construction as constr_m
-from formosa.geomorphology.flowdir_f import flowdir_graphs as graphs_f
+from formosa.geomorphology.flowdir_f import network_construction as constr_f
 
 from types import SimpleNamespace
 
@@ -25,16 +25,8 @@ def test_construct_flowgraph_fortran_returns_buffer_overflow_code():
     offsets = np.array([[0, 1], [0, 0]], dtype=np.int32, order="F")
     codes = np.array([1, 0], dtype=np.uint8, order="F")
 
-    *_, err_code = graphs_f.construct_flowgraph(
-        dirs,
-        valids,
-        orders,
-        seeds,
-        indegs,
-        offsets,
-        codes,
-        True,
-        1,
+    *_, err_code = constr_f.construct_flowgraph(
+        dirs, valids, orders, seeds, indegs, offsets, codes, True, 1
     )
 
     assert err_code == 3
@@ -81,7 +73,7 @@ def test_construct_flowgraph_translates_fortran_error(monkeypatch):
 
     monkeypatch.setattr(
         constr_m,
-        "graphs_f",
+        "constr_f",
         SimpleNamespace(construct_flowgraph=fake_construct),
     )
 

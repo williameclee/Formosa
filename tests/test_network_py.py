@@ -17,7 +17,7 @@ import pytest
 import numpy as np
 
 from formosa.geomorphology.flowdir.network import graphs as graphs_m
-from formosa.geomorphology.flowdir.network._backends import graphs_py as graphs_py
+from formosa.geomorphology.flowdir.network._backends import construction_py as construction_py
 
 T = True
 F = False

@@ -13,7 +13,8 @@ from formosa.geomorphology.flowdir.network.validation import (
     _valid_flow_edges,
     _validate_flowgraph_coverage,
 )
-from formosa.geomorphology.flowdir_f import flowdir_graphs as graphs_f
+from formosa.geomorphology.flowdir_f import network_construction as constr_f
+import formosa.geomorphology.flowdir.network._backends.construction_py as constr_py
 
 from typing import Literal, Optional
 import numpy.typing as npt
@@ -201,10 +202,8 @@ def construct_flowgraph(
 
     match backend:
         case "python":
-            from ._backends.graphs_py import _construct_flowgraph_py
-
             narcs, nvertices, arc_orders, vertex_ijs, arc_endpts = (
-                _construct_flowgraph_py(
+                constr_py.construct_flowgraph(
                     dirs=dirs,
                     dir_scheme=dir_scheme,
                     valids=valids,
@@ -217,7 +216,7 @@ def construct_flowgraph(
             )
         case "fortran":
             narcs, nvertices, arc_orders, vertex_ijs, arc_endpts, err_code = (
-                graphs_f.construct_flowgraph(
+                constr_f.construct_flowgraph(
                     dirs.astype(np.uint8, order="F"),
                     valids.astype(bool, order="F"),
                     orders.astype(np.int16, order="F"),

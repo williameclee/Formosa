@@ -11,7 +11,7 @@ from formosa import D8Directions
 import formosa.geomorphology.flowdir.network as nwork_m
 import formosa.geomorphology.flowdir.network.construction as constr_m
 from formosa.geomorphology.flowdir.network import graphs as graphs_m
-from formosa.geomorphology.flowdir.network._backends import graphs_py as graphs_py
+import formosa.geomorphology.flowdir.network._backends.construction_py as constr_py
 
 T = True
 F = False
@@ -60,8 +60,8 @@ def test_construct_flowgraph_rejects_incomplete_backend_output(monkeypatch):
         )
 
     monkeypatch.setattr(
-        graphs_py,
-        "_construct_flowgraph_py",
+        constr_py,
+        "construct_flowgraph",
         omit_selected_edge,
     )
 
@@ -94,8 +94,8 @@ def test_construct_flowgraph_rejects_missing_directed_edge(monkeypatch):
         )
 
     monkeypatch.setattr(
-        graphs_py,
-        "_construct_flowgraph_py",
+        constr_py,
+        "construct_flowgraph",
         omit_second_edge,
     )
 

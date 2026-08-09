@@ -22,7 +22,7 @@ from .flowdir import (
     compute_ridge_strahler_order,
 )
 
-from .flowdir.network.construction import (
+from .flowdir.network import (
     construct_flowgraph,
     create_flowgraph,
 )
