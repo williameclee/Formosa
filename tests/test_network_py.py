@@ -17,8 +17,9 @@ import pytest
 import numpy as np
 
 from formosa import D8Directions
-from formosa.geomorphology.flowdir.graphs import graphs as graphs_m
-from formosa.geomorphology.flowdir.graphs import graphs_py as graphs_py
+import formosa.geomorphology.flowdir.network as nwork_m
+from formosa.geomorphology.flowdir.network import graphs as graphs_m
+from formosa.geomorphology.flowdir.network._backends import graphs_py as graphs_py
 
 T = True
 F = False
@@ -72,7 +73,7 @@ def test_construct_flowgraph_rejects_incomplete_backend_output(monkeypatch):
         omit_selected_edge,
     )
 
-    with pytest.raises(graphs_m.IncompleteFlowGraphError) as exc_info:
+    with pytest.raises(nwork_m.validation.IncompleteFlowGraphError) as exc_info:
         graphs_m.construct_flowgraph(
             dirs,
             dir_scheme=dir_scheme,
@@ -106,7 +107,7 @@ def test_construct_flowgraph_rejects_missing_directed_edge(monkeypatch):
         omit_second_edge,
     )
 
-    with pytest.raises(graphs_m.IncompleteFlowGraphError) as exc_info:
+    with pytest.raises(nwork_m.validation.IncompleteFlowGraphError) as exc_info:
         graphs_m.construct_flowgraph(
             dirs,
             dir_scheme=dir_scheme,
@@ -296,30 +297,30 @@ def test_locate_invalid_graph_topogtaphy():
     vs = np.array([[0, 0], [1, 1], [1, 0], [0, 1]])
     endpts = np.array([[0, 1], [2, 3]])
     exp_intxs = np.array([[0, 1, 0, 2, 1]], dtype=np.int32)
-    intxs = graphs_m.locate_invalid_graph_topology(vs, endpts, backend="python")
+    intxs = nwork_m.validation.locate_invalid_graph_topology(vs, endpts, backend="python")
     np.testing.assert_array_equal(intxs, exp_intxs)
 
     vs = np.array([[0, 0], [1, 1], [2, 0], [1, 0], [0, 1]])
     endpts = np.array([[0, 2], [3, 4]])
     exp_intxs = np.array([[0, 1, 0, 3, 1]], dtype=np.int32)
-    intxs = graphs_m.locate_invalid_graph_topology(vs, endpts, backend="python")
+    intxs = nwork_m.validation.locate_invalid_graph_topology(vs, endpts, backend="python")
     np.testing.assert_array_equal(intxs, exp_intxs)
 
     # Test self-intersection within a single arc
     vs = np.array([[0, 0], [2, 2], [2, 0], [0, 2]])
     endpts = np.array([[0, 3]])
     exp_intxs = np.array([[0, 0, 0, 2, 1]], dtype=np.int32)
-    intxs = graphs_m.locate_invalid_graph_topology(vs, endpts, backend="python")
+    intxs = nwork_m.validation.locate_invalid_graph_topology(vs, endpts, backend="python")
     np.testing.assert_array_equal(intxs, exp_intxs)
 
     # Test no violations
     vs = np.array([[0, 0], [1, 1], [2, 2]])
     endpts = np.array([[0, 2]])
-    assert graphs_m.locate_invalid_graph_topology(vs, endpts, backend="python") is None
+    assert nwork_m.validation.locate_invalid_graph_topology(vs, endpts, backend="python") is None
 
     # Test error handling on invalid shapes
     with pytest.raises(ValueError, match="Invalid array shapes passed"):
-        graphs_m.locate_invalid_graph_topology(
+        nwork_m.validation.locate_invalid_graph_topology(
             np.array([1, 2, 3]), endpts, backend="python"
         )
 

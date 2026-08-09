@@ -1,17 +1,4 @@
-from .graphs import (
-    GraphTopologyError,
-    InvalidOriginalGraphTopology,
-    UnresolvedSimplificationTopology,
-    DirectedFlowCycleError,
-    IncompleteFlowGraphError,
-    construct_flowgraph,
-    concat_flowgraph,
-    remove_unused_vertices,
-    simplify_flowgraph,
-    locate_invalid_graph_topology,
-    create_flowgraph,
-)
-
+from .network.validation import locate_invalid_graph_topology
 from .preprocessing import (
     detect_ocean_basins_from_boundary,
     fill_depressions,
@@ -43,4 +30,17 @@ from .ridges import (
 from .utils import (
     compute_downstream_indices,
     get_neighbour_values,
+)
+
+from .network import (
+    DirectedFlowCycleError,
+    GraphTopologyError,
+    IncompleteFlowGraphError,
+    InvalidOriginalGraphTopology,
+    UnresolvedSimplificationTopology,
+    construct_flowgraph,
+    concat_flowgraph,
+    remove_unused_vertices,
+    simplify_flowgraph,
+    create_flowgraph,
 )

@@ -1,14 +1,17 @@
-from .graphs import (
+from .validation import (
+    DirectedFlowCycleError,
     GraphTopologyError,
+    IncompleteFlowGraphError,
     InvalidOriginalGraphTopology,
     UnresolvedSimplificationTopology,
-    DirectedFlowCycleError,
-    IncompleteFlowGraphError,
+    locate_invalid_graph_topology,
+)
+
+from .graphs import (
     construct_flowgraph,
     insert_endpt,
     concat_flowgraph,
     remove_unused_vertices,
     simplify_flowgraph,
-    locate_invalid_graph_topology,
     create_flowgraph,
 )

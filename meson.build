@@ -25,7 +25,7 @@ custom_target(
     'src/formosa/geomorphology/geometry/geometry.f90',
     'src/formosa/geomorphology/geometry/intersections.f90',
     'src/formosa/geomorphology/flowdir/_backends/preprocessing.f90',
-    'src/formosa/geomorphology/flowdir/graphs/graphs.f90',
+    'src/formosa/geomorphology/flowdir/network/_backends/graphs.f90',
     'src/formosa/geomorphology/flowdir/_backends/watersheds.f90',
     'src/formosa/geomorphology/flowdir/_backends/flowdir.f90',
     'src/formosa/geomorphology/flowdir/_backends/ridges.f90',
