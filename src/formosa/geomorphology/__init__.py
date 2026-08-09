@@ -21,4 +21,5 @@ from .drainage import (
 from .drainage.network import (
     construct_flowgraph,
     concat_flowgraph,
+    simplify_flowgraph,
 )

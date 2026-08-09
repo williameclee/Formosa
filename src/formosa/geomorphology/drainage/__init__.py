@@ -28,14 +28,14 @@ from .ridges import (
     compute_ridge_strahler_order,
 )
 
-from .network.validation import (
+from .network import (
     DirectedFlowCycleError,
     GraphTopologyError,
     IncompleteFlowGraphError,
     InvalidOriginalGraphTopology,
     UnresolvedSimplificationTopology,
+    construct_flowgraph,
+    create_flowgraph,
+    concat_flowgraph,
+    simplify_flowgraph,
 )
-from .network.construction import construct_flowgraph, create_flowgraph
-from .network.validation import locate_invalid_graph_topology
-from .network.editing import concat_flowgraph, remove_unused_vertices
-from .network import simplify_flowgraph
