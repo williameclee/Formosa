@@ -1,9 +1,9 @@
-!!!
-! Calculations of verious distance metrics between points.
-!
-! Last modified: 2026-08-09, En-Chi Lee (williameclee@gmail.com)
-!!!
-
+!> Compute distance metrics between points using the FORTRAN backend.
+!!
+!! This internal module provides geometric primitives used by other
+!! FORTRAN routines and is not intended to be used directly.
+!!
+!! Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 module distances
     use iso_c_binding, only: c_int8_t
     implicit none(type, external)

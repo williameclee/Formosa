@@ -1,7 +1,7 @@
 """
-Operations on the watershed/drainage basin raster.
+Identifies and labels watersheds from raster flow directions.
 
-Last modified: 2026-08-09, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np

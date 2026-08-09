@@ -1,8 +1,7 @@
 """
-Helper functions to compute the dimensions and shapes of a digital
-elevation model (DEM) ratser.
+Derives raster coordinates from digital elevation model metadata.
 
-Last modified: 2026-08-08, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np

@@ -1,7 +1,7 @@
 """
-Functions to read DEM data from raster files on disk.
+Reads digital elevation model data from raster files on disk.
 
-Last modified: 2026-08-06, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
 
 from pathlib import Path

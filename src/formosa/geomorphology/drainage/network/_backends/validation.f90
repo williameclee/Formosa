@@ -1,12 +1,9 @@
-!!!
-! Verification steps that a flow graph has well-behaving topology.
-!
-! Content of this file is mostly designed to be called by other
-! FORTRAN routines and not directly by the user.
-!
-! Last modified: 2026-07-29, En-Chi Lee (williameclee@gmail.com)
-!!!
-
+!> Validates flow-graph topology using the FORTRAN backend.
+!!
+!! This internal module is called by the Python network API and 
+!! other FORTRAN routines and is not intended to be used directly.
+!!
+!! Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 module network_validation
     use intersections, only: lines_intersect_v2
     implicit none(type, external)

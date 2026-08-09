@@ -1,13 +1,9 @@
-!!!
-! Calculations of raster cell-level geomorphological metrics of a
-! digital elevation model (DEM) raster based on the flow direction.
-!
-! Content of this file is mostly designed to be called by the Python
-! frontend and not directly by the user.
-!
-! Last modified: 2026-08-05, En-Chi Lee (williameclee@gmail.com)
-!!!
-
+!> Computes flow-based raster metrics using the FORTRAN backend.
+!!
+!! This internal module is called by the Python drainage API and is
+!! not intended to be used directly.
+!!
+!! Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 module drainage_metrics
     use iso_c_binding, only: c_int8_t, c_int16_t
     use utils, only: fill_offset_lookup, find_noflow_code, &

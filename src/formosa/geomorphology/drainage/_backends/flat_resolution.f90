@@ -1,16 +1,10 @@
-!!!
-! Backend routines to assign flat areas in a digital elevation model
-! (DEM) some synthetic elevation difference and therefore a gradient.
-!
-! The algorithms mainly follow
-! [R. Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009).
-!
-! Content of this file is mostly designed to be called by the Python
-! frontend and not directly by the user.
-!
-! Last modified: 2026-08-05, En-Chi Lee (williameclee@gmail.com)
-!!!
-
+!> Resolves flats in digital elevation models using the FORTRAN backend.
+!!
+!! The algorithms assign synthetic gradients to flats and mainly
+!! follow Barnes et al. (2014), https://doi.org/10.1016/j.cageo.2013.01.009.
+!! This internal module is called by the Python drainage API.
+!!
+!! Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 module drainage_flat_resolution
     use iso_c_binding, only: c_int8_t
     use utils, only: find_noflow_code, array2d_oob, mask2ij

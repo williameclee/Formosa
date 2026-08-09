@@ -1,8 +1,10 @@
 """
-Helper class :class:`D8Directions` that encodes the flow direction
-codes in a raster.
+Defines and validates raster flow-direction encoding schemes.
 
-Last modified: 2026-08-08, En-Chi Lee (williameclee@gmail.com)
+This module provides :class:`D8Directions`, which associates D8
+direction codes with their corresponding row and column offsets.
+
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np

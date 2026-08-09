@@ -1,11 +1,10 @@
 """
-Functions to compute the flow direction from a digital elevation
-model (DEM) raster, or to perform further analyses on the network
-graph created by the flow.
-The additional analyses here stay at the raster level; actual graph
-representations are implemented in module `drainage.network`.
+Computes and analyse raster flow directions.
 
-Last modified: 2026-08-03, En-Chi Lee (williameclee@gmail.com)
+The analyses in this module operate on raster flow fields; explicit
+flow-graph representations are implemented in :mod:`formosa.geomorphology.drainage.network`.
+
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np

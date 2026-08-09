@@ -1,10 +1,10 @@
 """
-Classifications of intersections of line segments.
+Classifies line-segment intersections using the Python backend.
 
-Content of this file is mostly designed to be called by the public-
-facing APIs and not directly by the user.
+This module implements internal routines called by the public-facing
+geometry API and is not intended to be used directly.
 
-Last modified: 2026-08-08, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np

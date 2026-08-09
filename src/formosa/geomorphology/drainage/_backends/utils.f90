@@ -1,16 +1,10 @@
-!!!
-! Helper functions for processing the drainage network.
-! The file currently include the following major functions:
-!   - Calculations and conversions of array indices
-!   - Decoding codes that represent flow directions on a grid
-!   - Primitive funtionalities of a priority queue.
-!
-! Content of this file is mostly designed to be called by other 
-! FORTRAN routines and not directly by the user.
-!
-! Last modified: 2026-08-07, En-Chi Lee (williameclee@gmail.com)
-!!!
-
+!> Provides shared utilities for the FORTRAN drainage backends.
+!!
+!! This internal module supports array-index conversion, flow-
+!! direction code decoding, raster masking, and priority queues used
+!! by other FORTRAN modules.
+!!
+!! Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 module utils
     use iso_c_binding, only: c_int8_t
     implicit none(type, external)

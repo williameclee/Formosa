@@ -1,8 +1,7 @@
 """
-Solutions of invalid (overlapping or crossing) flow graph
-topologies.
+Detects and resolves overlapping or crossing flow-graph topology.
 
-Last modified: 2026-08-03, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
 
 from dataclasses import dataclass

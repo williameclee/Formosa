@@ -1,3 +1,9 @@
+"""
+Manages Formosa's application data directory.
+
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+"""
+
 from pathlib import Path
 from platformdirs import user_data_dir
 

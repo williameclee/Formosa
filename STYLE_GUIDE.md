@@ -25,6 +25,100 @@ Function names should use snake_case, and is generally prefixed with a verb desc
 
 ## Documentation
 
+### File Descriptions
+
+Every substantive source file should begin with a short description
+of the file's current purpose. A file is substantive when it
+contains implementation code, rather than only re-exports or package
+initialisation. Empty `__init__.py` files and `__init__.py` files
+that only define the public import surface do not need a file
+description.
+
+The description should:
+
+- State the file's primary responsibility in its first sentence;
+- Describe important scope, assumptions, algorithms, or relationships to other
+  modules only when these are not apparent from the first sentence;
+- Identify an internal backend when the file is not intended to be used
+  directly by users;
+- Use British English, complete sentences, and the present tense; and
+- Describe the file as it currently exists, rather than list its contents or
+  repeat the documentation of individual functions and classes.
+- Keep each line of the description to a maximum of 68 characters, and avoid
+  trailing whitespace.
+
+Keep the description brief: normally one summary sentence and no more than one
+or two explanatory paragraphs. Longer algorithmic explanations belong in the
+relevant function documentation, a reference document, or an architecture
+decision record.
+
+A `Last modified` line is encouraged. Git history is the authoritative record of
+changes, so this line must not contain a modification log. When retained, use
+the ISO 8601 date of the last substantive change to the file description or
+implementation, followed by the contributor's preferred name. An email address
+may be included but is not required:
+
+```text
+Last modified: YYYY-MM-DD, Name (email@domain)
+```
+
+Do not add per-change history fields. Record implementation details in commit messages and pull requests, user-visible changes in `CHANGELOG.md` or release notes, and consequential design decisions
+in architecture decision records.
+
+#### Python Files
+
+Use the module docstring as the file description. Place it before imports and
+follow the general conventions of PEP 257: a concise summary sentence, a blank
+line, and any additional explanation. Use reStructuredText roles where a symbol
+reference is useful because the documentation follows NumPy/Sphinx conventions.
+
+```python
+"""
+Represents and process gridded digital elevation models.
+
+This module provides :class:`DEMGrid`, which coordinates raster input and
+geomorphological operations on a digital elevation model (DEM).
+
+Last modified: 2026-08-09, En-Chi Lee (williameclee@gmail.com)
+"""
+```
+
+For a private backend, make its role explicit:
+
+```python
+"""
+Resolves flats in digital elevation models using the Python backend.
+
+This module implements internal routines called by the public-facing drainage
+API and is not intended to be used directly.
+"""
+```
+
+#### FORTRAN Files
+
+Place a documentation-comment block immediately before the `module` statement.
+Use `!>` to begin the block and `!!` for its continuation lines so that tools
+such as FORD and Doxygen can associate it with the module. Follow the same
+content rules as for Python files, and state whether the module is an internal
+backend called from Python or from other FORTRAN routines.
+
+```fortran
+!> Computes flow directions for digital elevation model rasters.
+!!
+!! This module provides the internal Fortran backend called by the Python
+!! drainage API. It also contains raster-level analyses of the resulting flow
+!! field; flow-graph operations are implemented in the network modules.
+!!
+!! Last modified: 2026-08-09, En-Chi Lee
+module drainage_flowdir
+    implicit none(type, external)
+contains
+```
+
+Use `!>`/`!!` documentation comments for public modules and procedures, and
+ordinary `!` comments for implementation notes that should not become part of
+generated API documentation.
+
 ### Docstrings
 
 All public functions should have descriptive docstrings written in the *NumPy style*. This includes:
@@ -46,4 +140,4 @@ Functions should be fully type-annotated:
 - NumPy arrays should use `numpy.typing.NDArray` with the inner type specified (e.g. `npt.NDArray[np.integer]`, `npt.NDArray[np.number]`).
 
 ----
-Last updated: Jul 12, 2026 ([@williameclee](https://github.com/williameclee))
+Last updated: Aug 10, 2026 ([@williameclee](https://github.com/williameclee))

@@ -1,11 +1,10 @@
 """
-Calculations of raster cell-level geomorphological metrics of a
-digital elevation model (DEM) raster based on the flow direction.
+Computes flow-based raster metrics using the Python backend.
 
-Content of this file is mostly designed to be called by the public-
-facing APIs and not directly by the user.
+This module implements internal routines called by the public-facing
+drainage API and is not intended to be used directly.
 
-Last modified: 2026-07-30, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np

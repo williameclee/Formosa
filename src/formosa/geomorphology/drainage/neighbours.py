@@ -1,8 +1,7 @@
 """
-Helper functions that computes or fetches properties of a cell's 
-neighbours in a raster.
+Locates neighbouring raster cells and retrieve their values.
 
-Last modified: 2026-08-09, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np

@@ -1,8 +1,11 @@
 """
-Wrapper class `DEMGrid` facilitating data calculation and
-manipulation of digital elevation model (DEM) rasters.
+Represents and processes gridded digital elevation models.
 
-Last modified: 2026-08-09, En-Chi Lee (williameclee@gmail.com)
+This module provides :class:`DEMGrid`, which coordinates raster
+input and geomorphological operations on a digital elevation model
+(DEM).
+
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
 
 from pathlib import Path

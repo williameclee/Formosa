@@ -1,8 +1,7 @@
 """
-Calculations of geomorphological metrics of a digital elevation
-model (DEM) raster.
+Computes terrain metrics from digital elevation model rasters.
 
-Last modified: 2026-08-09, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np

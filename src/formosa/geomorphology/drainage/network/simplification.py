@@ -1,8 +1,7 @@
 """
-Simplification/downsampling of arcs in a flow graph while keeping
-the integrity of its topology.
+Simplifies flow-graph arcs while preserving valid topology.
 
-Last modified: 2026-08-04, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np

@@ -1,12 +1,9 @@
-!!!
-! Conversions of a flow direction raster to a flow graph.
-!
-! Content of this file is mostly designed to be called by other
-! FORTRAN routines and not directly by the user.
-!
-! Last modified: 2026-08-05, En-Chi Lee (williameclee@gmail.com)
-!!!
-
+!> Constructs flow graphs from direction rasters using the FORTRAN backend.
+!!
+!! This internal module is called by the Python network API and
+!! other FORTRAN routines and is not intended to be used directly.
+!!
+!! Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 module network_construction
     use iso_c_binding, only: c_int8_t, c_int16_t
     use utils, only: fill_offset_lookup, find_noflow_code, mask2ij

@@ -1,18 +1,11 @@
-!!!
-! Derivation and analyses on the ridge network of a digital
-! elevation model (DEM) raster.
-! The calculation assumes that the maximum of the confluence 
-! distance between a raster cell and its neighbours is a proxy for 
-! the cell's 'ridge-ness'.
-! The reciprocal of this field can then br run through the 
-! conventional drainage network derivation steps.
-!
-! Content of this file is mostly designed to be called by the Python
-! frontend and not directly by the user.
-!
-! Last modified: 2026-08-05, En-Chi Lee (williameclee@gmail.com)
-!!!
-
+!> Derives and analyses ridge networks using the FORTRAN backend.
+!!
+!! The method treats the maximum confluence distance between a 
+!! raster cell and its neighbours as a proxy for ridge likelihood, 
+!! then applies conventional drainage operations to the reciprocal 
+!! field. This internal module is called by the Python drainage API.
+!!
+!! Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 module drainage_ridges
     use iso_c_binding, only: c_int8_t
     use utils, only: fill_offset_lookup, array2d_oob, ij2id_checked

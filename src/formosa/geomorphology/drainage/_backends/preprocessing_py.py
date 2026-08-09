@@ -1,11 +1,10 @@
 """
-Preparations before a digital elevation model (DEM) raster can be
-used to calculate flow direction and other geomorphological metrics.
+Prepares digital elevation models for drainage analysis in Python.
 
-Content of this file is mostly designed to be called by the public-
-facing APIs and not directly by the user.
+This module implements the internal Python backend called by the
+public-facing drainage API and is not intended to be used directly.
 
-Last modified: 2026-08-07, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np

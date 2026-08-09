@@ -1,8 +1,11 @@
 """
-Preparations before a digital elevation model (DEM) raster can be
-used to calculate flow direction and other geomorphological metrics.
+Prepares digital elevation models for drainage analysis.
 
-Last modified: 2026-08-07, En-Chi Lee (williameclee@gmail.com)
+This module identifies ocean basins, fills depressions, and performs
+other operations required before flow routing and metric
+calculation.
+
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np

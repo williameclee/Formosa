@@ -1,7 +1,12 @@
 """
-Helper definitions and functions for downloading DEM.
-"""
+Validates and post-processes downloaded digital elevation model
+data.
 
+This module provides internal helpers shared by the DEM download
+APIs and is not intended to be used directly.
+
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+"""
 
 from rasterio.transform import Affine
 

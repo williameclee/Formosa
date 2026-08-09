@@ -1,13 +1,12 @@
 """
-Derivation and analyses on the ridge network of a digital
-elevation model (DEM) raster.
-The calculation assumes that the maximum of the confluence
-distance between a raster cell and its neighbours is a proxy for the
-cell's 'ridge-ness'.
-The reciprocal of this field can then be run through the
-conventional drainage network derivation steps.
+Derives and analyses ridge networks from digital elevation models.
 
-Last modified: 2026-08-04, En-Chi Lee (williameclee@gmail.com)
+The method treats the maximum confluence distance between a raster
+cell and its neighbours as a proxy for ridge likelihood, then
+applies conventional drainage network operations to the reciprocal
+field.
+
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np

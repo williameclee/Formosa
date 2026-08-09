@@ -1,14 +1,9 @@
-!!!
-! Preparations before a digital elevation model (DEM) raster can be
-! used to calculate flow direction and other geomorphological
-! metrics.
-!
-! Content of this file is mostly designed to be called by the Python
-! frontend and not directly by the user.
-!
-! Last modified: 2026-08-07, En-Chi Lee (williameclee@gmail.com)
-!!!
-
+!> Prepares digital elevation models for drainage analysis in FORTRAN.
+!!
+!! This internal module is called by the Python drainage API and is
+!! not intended to be used directly.
+!!
+!! Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 module drainage_preprocessing
     use utils, only: array2d_oob, mask2id, &
                      id2ij_checked, ij2id_checked, &

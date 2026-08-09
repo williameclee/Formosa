@@ -1,7 +1,7 @@
 """
-Verification steps that a flow graph has well-behaving topology.
+Validates flow graphs and report invalid topology.
 
-Last modified: 2026-07-29, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np

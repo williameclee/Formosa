@@ -1,7 +1,7 @@
 """
-Conversions of a flow direction raster to a flow graph.
+Constructs flow graphs from raster flow directions.
 
-Last modified: 2026-07-09, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np

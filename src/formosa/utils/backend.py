@@ -1,8 +1,7 @@
 """
-Helper definitions and functions for managing the 2 different
-backends provided by this package.
+Defines computational backends and translate FORTRAN status codes.
 
-Created by: 2026-08-09, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
 
 from typing import Literal, Mapping, TypeAlias

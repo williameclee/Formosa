@@ -1,3 +1,9 @@
+"""
+Defines and transforms colour maps for terrain visualisation.
+
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+"""
+
 import numpy as np
 from matplotlib.colors import LinearSegmentedColormap
 
@@ -134,7 +140,15 @@ def mist(
     )
     return truncate_colormap(cmap, minval, maxval, N)
 
-iceberg_val: list[str] = ["#112D38", "#325563", "#608999", "#9FB9BF", "#C8DBDE", "#EBF7F7"]
+
+iceberg_val: list[str] = [
+    "#112D38",
+    "#325563",
+    "#608999",
+    "#9FB9BF",
+    "#C8DBDE",
+    "#EBF7F7",
+]
 
 
 def iceberg(

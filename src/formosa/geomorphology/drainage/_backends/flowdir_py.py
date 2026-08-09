@@ -1,14 +1,12 @@
 """
-Functions to compute the flow direction from a digital elevation
-model (DEM) raster, or to perform further analyses on the network
-graph created by the flow.
-The additional analyses here stay at the raster level; actual graph
-representations are implemented in module `drainage.network`.
+Computes raster flow directions using the Python backend.
 
-Content of this file is mostly designed to be called by the public-
-facing APIs and not directly by the user.
+This module also provides raster-level analyses of the resulting
+flow field; flow-graph operations are implemented in the network
+package. These internal routines are called by the public-facing
+drainage API.
 
-Last modified: 2026-08-03, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np

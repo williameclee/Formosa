@@ -1,7 +1,8 @@
 """
-Mutations of a flow graph, such as concatenation and splitting arcs.
+Edits flow graphs by concatenating, splitting, and removing graph
+elements.
 
-Last modified: 2026-08-04, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np

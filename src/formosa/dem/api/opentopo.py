@@ -1,7 +1,7 @@
 """
-Functions to download DEM data from the OpenTopography server.
+Downloads digital elevation model data from OpenTopography.
 
-Last modified: 2026-08-08, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
 
 import os

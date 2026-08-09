@@ -1,17 +1,10 @@
-!!!
-! Functions to compute the flow direction from a digital elevation
-! model (DEM) raster, or to perform further analyses on the network
-! graph created by the flow.
-! The additional analyses here stay at the raster level; actual
-! graph representations are implemented in module
-! 'drainage.network'.
-!
-! Content of this file is mostly designed to be called by the Python
-! frontend and not directly by the user.
-!
-! Last modified: 2026-08-05, En-Chi Lee (williameclee@gmail.com)
-!!!
-
+!> Computes raster flow directions using the FORTRAN backend.
+!!
+!! This internal module is called by the Python drainage API. It 
+!! also provides raster-level analyses of the resulting flow field; 
+!! flow-graph operations are implemented in the network modules.
+!!
+!! Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 module drainage_flowdir
     use iso_c_binding, only: c_int8_t
     use utils, only: fill_offset_lookup, find_noflow_code, &
