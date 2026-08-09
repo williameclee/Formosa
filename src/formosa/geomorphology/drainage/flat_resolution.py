@@ -12,7 +12,7 @@ from formosa.geomorphology.drainage.directions import D8Directions
 from formosa.geomorphology.drainage.neighbours import (
     get_neighbour_values,
 )
-from formosa.geomorphology.drainage_f import drainage_flat_resolution as flat_f
+from formosa.geomorphology._native import drainage_flat_resolution as flat_f
 import formosa.geomorphology.drainage._backends.flowdir_py as flowdir_py
 
 from typing import Optional

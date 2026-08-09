@@ -9,7 +9,7 @@ Last modified:
 import numpy as np
 
 from formosa.utils import Backend
-from formosa.geomorphology.drainage_f import intersections as intx_f
+from formosa.geomorphology._native import intersections as intx_f
 import formosa.geomorphology.geometry._backends.intersections_py as intxs_py
 
 import numpy.typing as npt

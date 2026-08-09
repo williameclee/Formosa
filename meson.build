@@ -19,7 +19,7 @@ ext_suffix = run_command(
 ).stdout().strip()
 
 custom_target(
-  'drainage_f',
+  '_native',
   input: files(
     'src/formosa/geomorphology/drainage/_backends/utils.f90',
     'src/formosa/geomorphology/geometry/_backends/distances.f90',
@@ -34,11 +34,11 @@ custom_target(
     'src/formosa/geomorphology/drainage/_backends/flowdir.f90',
     'src/formosa/geomorphology/drainage/_backends/ridges.f90',
   ),
-  output: ['drainage_f' + ext_suffix],
+  output: ['_native' + ext_suffix],
   command: [
     py.full_path(),
     '-m', 'numpy.f2py',
-    '-m', 'drainage_f',
+    '-m', '_native',
     # OpenMP flags
     '--f90flags="-march=native -fopenmp -O3"', # -pg for profiling
     '-lgomp',

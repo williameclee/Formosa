@@ -9,7 +9,7 @@ import numpy as np
 
 from formosa import D8Directions
 import formosa.geomorphology.drainage.flat_resolution as flat_m
-from formosa.geomorphology.drainage_f import drainage_flat_resolution as flat_f
+from formosa.geomorphology._native import drainage_flat_resolution as flat_f
 
 from types import SimpleNamespace
 

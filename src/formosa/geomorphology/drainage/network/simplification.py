@@ -33,7 +33,7 @@ from formosa.geomorphology.drainage.network.validation import (
     _locate_disallowed_graph_topology,
 )
 from formosa.geomorphology.drainage.network.editing import remove_unused_vertices
-from formosa.geomorphology.drainage_f import network_simplification as simp_f
+from formosa.geomorphology._native import network_simplification as simp_f
 
 import numpy.typing as npt
 from typing import Optional, TypeVar, overload

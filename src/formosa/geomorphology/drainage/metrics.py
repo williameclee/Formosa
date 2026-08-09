@@ -11,7 +11,7 @@ import numpy as np
 from formosa.utils import Backend, raise_fortran_error
 from formosa.geomorphology.drainage.directions import D8Directions
 from formosa.geomorphology.drainage.flowdir import count_indegree
-from formosa.geomorphology.drainage_f import drainage_metrics as metrics_f
+from formosa.geomorphology._native import drainage_metrics as metrics_f
 import formosa.geomorphology.drainage._backends.metrics_py as metrics_py
 
 from typing import Optional

@@ -33,7 +33,7 @@ from formosa.geomorphology.drainage.metrics import (
     compute_dist2source,
     compute_flow_strahler_order,
 )
-from formosa.geomorphology.drainage_f import drainage_ridges as ridges_f
+from formosa.geomorphology._native import drainage_ridges as ridges_f
 
 from typing import Optional
 import numpy.typing as npt

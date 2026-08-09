@@ -22,7 +22,7 @@ from formosa.geomorphology.drainage.network.validation import (
     _valid_flow_edges,
     _validate_flowgraph_coverage,
 )
-from formosa.geomorphology.drainage_f import network_construction as constr_f
+from formosa.geomorphology._native import network_construction as constr_f
 import formosa.geomorphology.drainage.network._backends.construction_py as constr_py
 
 from typing import Optional

@@ -15,7 +15,7 @@ from formosa.geomorphology.drainage.directions import D8Directions
 from formosa.geomorphology.drainage.neighbours import (
     compute_downstream_indices,
 )
-from formosa.geomorphology.drainage_f import network_validation as val_f
+from formosa.geomorphology._native import network_validation as val_f
 import formosa.geomorphology.drainage.network._backends.validation_py as val_py
 
 from typing import Optional

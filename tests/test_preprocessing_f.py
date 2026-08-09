@@ -12,7 +12,7 @@ import numpy as np
 
 from formosa import D8Directions
 import formosa.geomorphology.drainage.preprocessing as preproc_m
-from formosa.geomorphology.drainage_f import drainage_preprocessing as preproc_f
+from formosa.geomorphology._native import drainage_preprocessing as preproc_f
 
 from types import SimpleNamespace
 

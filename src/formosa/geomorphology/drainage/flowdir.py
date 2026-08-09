@@ -35,7 +35,7 @@ from formosa.geomorphology.drainage.flat_resolution import (
     create_pushing_syn_grad,
     compute_syn_flowdir,
 )
-from formosa.geomorphology.drainage_f import drainage_flowdir as flowdir_f
+from formosa.geomorphology._native import drainage_flowdir as flowdir_f
 import formosa.geomorphology.drainage._backends.flowdir_py as flowdir_py
 
 from typing import Optional
