@@ -13,13 +13,13 @@ import numpy as np
 from typing import Literal, Optional
 import numpy.typing as npt
 
-from formosa.geomorphology.flowdir.directions import D8Directions
-from formosa.geomorphology.flowdir.utils import (
+from formosa.geomorphology.drainage.directions import D8Directions
+from formosa.geomorphology.drainage.utils import (
     compute_downstream_indices,
     raise_fortran_error,
 )
-import formosa.geomorphology.flowdir.network._backends.validation_py as val_py
-from formosa.geomorphology.flowdir_f import network_validation as val_f
+import formosa.geomorphology.drainage.network._backends.validation_py as val_py
+from formosa.geomorphology.drainage_f import network_validation as val_f
 
 
 class GraphTopologyError(RuntimeError):

@@ -8,8 +8,8 @@ import pytest
 import numpy as np
 
 from formosa import D8Directions
-import formosa.geomorphology.flowdir.flowdir as flowdir_m
-from formosa.geomorphology.flowdir_f import flowdir_flowdir as flowdir_f
+import formosa.geomorphology.drainage.flowdir as flowdir_m
+from formosa.geomorphology.drainage_f import drainage_flowdir as drainage_f
 
 from types import SimpleNamespace
 
@@ -29,7 +29,7 @@ def test_label_flats_translates_fortran_errors(
     def fake_label(*args):
         return np.zeros((1, 1), dtype=np.int32), err_code
 
-    monkeypatch.setattr(flowdir_m, "flowdir_f", SimpleNamespace(label_flats=fake_label))
+    monkeypatch.setattr(flowdir_m, "drainage_f", SimpleNamespace(label_flats=fake_label))
 
     with pytest.raises(exception, match=rf"label_flats.*{detail}.*{err_code}"):
         flowdir_m.label_flats(
@@ -43,7 +43,7 @@ def test_flat_synthetic_gradients_follow_breadth_first_layers():
     centre = np.zeros(labels.shape, dtype=bool, order="F")
     centre[2, 2] = True
 
-    pulling, err_code = flowdir_f.create_pulling_syn_grad(labels, centre, offsets)
+    pulling, err_code = drainage_f.create_pulling_syn_grad(labels, centre, offsets)
     assert err_code == 0
     np.testing.assert_array_equal(
         pulling,
@@ -59,7 +59,7 @@ def test_flat_synthetic_gradients_follow_breadth_first_layers():
         ),
     )
 
-    pushing, err_code = flowdir_f.create_pushing_syn_grad(labels, centre, offsets)
+    pushing, err_code = drainage_f.create_pushing_syn_grad(labels, centre, offsets)
     assert err_code == 0
     np.testing.assert_array_equal(pushing, 4 - pulling)
 
@@ -69,8 +69,8 @@ def test_flat_synthetic_gradients_handle_empty_inputs():
     edges = np.zeros(labels.shape, dtype=bool, order="F")
     offsets = D8Directions().offsets.astype(np.int32, order="F")
 
-    pushing, pushing_err = flowdir_f.create_pushing_syn_grad(labels, edges, offsets)
-    pulling, pulling_err = flowdir_f.create_pulling_syn_grad(labels, edges, offsets)
+    pushing, pushing_err = drainage_f.create_pushing_syn_grad(labels, edges, offsets)
+    pulling, pulling_err = drainage_f.create_pulling_syn_grad(labels, edges, offsets)
 
     assert pushing_err == 0
     assert pulling_err == 0
@@ -131,7 +131,7 @@ def test_find_acyclic_flowdirs_translates_fortran_errors(
 
     monkeypatch.setattr(
         flowdir_m,
-        "flowdir_f",
+        "drainage_f",
         SimpleNamespace(find_acyclic_flowdirs=fake_find),
     )
 

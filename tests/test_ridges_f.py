@@ -2,8 +2,8 @@ import pytest
 import numpy as np
 
 from formosa import D8Directions
-import formosa.geomorphology.flowdir.ridges as ridges_m
-from formosa.geomorphology.flowdir_f import flowdir_ridges as ridges_f
+import formosa.geomorphology.drainage.ridges as ridges_m
+from formosa.geomorphology.drainage_f import flowdir_ridges as ridges_f
 
 from types import SimpleNamespace
 

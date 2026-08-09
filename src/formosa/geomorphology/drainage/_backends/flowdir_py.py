@@ -14,8 +14,8 @@
 import numpy as np
 from collections import deque
 
-from formosa.geomorphology.flowdir.directions import D8Directions
-from formosa.geomorphology.flowdir.utils import (
+from formosa.geomorphology.drainage.directions import D8Directions
+from formosa.geomorphology.drainage.utils import (
     get_neighbour_values,
     compute_downstream_indices,
 )

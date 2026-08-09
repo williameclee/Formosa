@@ -28,13 +28,13 @@
 from dataclasses import dataclass
 import numpy as np
 
-from formosa.geomorphology.flowdir.network.validation import (
+from formosa.geomorphology.drainage.network.validation import (
     InvalidOriginalGraphTopology,
     UnresolvedSimplificationTopology,
     locate_invalid_graph_topology,
 )
-from formosa.geomorphology.flowdir.network.editing import remove_unused_vertices
-from formosa.geomorphology.flowdir_f import network_simplification as simp_f
+from formosa.geomorphology.drainage.network.editing import remove_unused_vertices
+from formosa.geomorphology.drainage_f import network_simplification as simp_f
 
 import numpy.typing as npt
 from typing import Literal, Optional, TypeVar, overload

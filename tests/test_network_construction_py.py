@@ -9,9 +9,9 @@ import pytest
 import numpy as np
 
 from formosa import D8Directions
-import formosa.geomorphology.flowdir.network as nwork_m
-import formosa.geomorphology.flowdir.network.construction as constr_m
-import formosa.geomorphology.flowdir.network._backends.construction_py as constr_py
+import formosa.geomorphology.drainage.network as nwork_m
+import formosa.geomorphology.drainage.network.construction as constr_m
+import formosa.geomorphology.drainage.network._backends.construction_py as constr_py
 
 
 def test_construct_flowgraph_3x3():

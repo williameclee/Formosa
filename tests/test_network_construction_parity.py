@@ -4,8 +4,8 @@ import pytest
 import numpy as np
 
 from formosa import D8Directions
-import formosa.geomorphology.flowdir.network as nwork_m
-import formosa.geomorphology.flowdir.network.construction as constr_m
+import formosa.geomorphology.drainage.network as nwork_m
+import formosa.geomorphology.drainage.network.construction as constr_m
 
 
 def test_construct_flowgraph_is_backend_independent_of_masked_directions():

@@ -4,8 +4,8 @@ import pytest
 import numpy as np
 
 from formosa import D8Directions
-import formosa.geomorphology.flowdir.utils as utils_m
-from formosa.geomorphology.flowdir_f import utils as utils_f
+import formosa.geomorphology.drainage.utils as utils_m
+from formosa.geomorphology.drainage_f import utils as utils_f
 
 
 def test_checked_linear_cell_ids_reject_invalid_coordinates_and_ids():

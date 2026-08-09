@@ -34,14 +34,14 @@
 
 import numpy as np
 
-from formosa.geomorphology.flowdir.directions import D8Directions
-from formosa.geomorphology.flowdir.preprocessing import fill_depressions
-from formosa.geomorphology.flowdir.utils import (
+from formosa.geomorphology.drainage.directions import D8Directions
+from formosa.geomorphology.drainage.preprocessing import fill_depressions
+from formosa.geomorphology.drainage.utils import (
     get_neighbour_values,
     raise_fortran_error,
 )
-from formosa.geomorphology.flowdir_f import flowdir_flowdir as flowdir_f
-import formosa.geomorphology.flowdir._backends.flowdir_py as flowdir_py
+from formosa.geomorphology.drainage_f import drainage_flowdir as drainage_f
+import formosa.geomorphology.drainage._backends.flowdir_py as flowdir_py
 
 from typing import Literal, Optional
 import numpy.typing as npt
@@ -84,7 +84,7 @@ def compute_flowdir_simple(
         case "fortran":
             if valids is None:
                 valids = np.ones(dem.shape, dtype=bool, order="F")
-            dirs, flats = flowdir_f.compute_flowdir_simple(
+            dirs, flats = drainage_f.compute_flowdir_simple(
                 dem.astype(np.float32, order="F"),
                 valids.astype(bool, order="F"),
                 dir_scheme.offsets.astype(np.int32, order="F"),
@@ -137,7 +137,7 @@ def find_flat_edges(
             if valids is None:
                 valids = np.ones(dem.shape, dtype=bool, order="F")
 
-            low_edges, high_edges = flowdir_f.find_flat_edges(
+            low_edges, high_edges = drainage_f.find_flat_edges(
                 dem.astype(np.float32, order="F"),
                 dirs.astype(np.int32, order="F"),
                 valids.astype(bool, order="F"),
@@ -197,7 +197,7 @@ def label_flats(
     else:
         valids = np.ones(dem.shape, dtype=bool, order="F")
 
-    labels, err_code = flowdir_f.label_flats(
+    labels, err_code = drainage_f.label_flats(
         dem.astype(np.float32, order="F"),
         seeds.astype(bool, order="F"),
         valids.astype(bool, order="F"),
@@ -317,7 +317,7 @@ def create_pushing_syn_grad(
         labels.shape == high_edges.shape
     ), f"Shapes for labels ({labels.shape}) and high_edges ({high_edges.shape}) do not match."
 
-    z_syn, err_code = flowdir_f.create_pushing_syn_grad(
+    z_syn, err_code = drainage_f.create_pushing_syn_grad(
         labels.astype(np.int32, order="F"),
         high_edges.astype(bool, order="F"),
         dir_scheme.offsets.astype(np.int32, order="F"),
@@ -358,7 +358,7 @@ def create_pulling_syn_grad(
     ValueError
         If the shapes of the input arrays do not match the expected dimensions.
     """
-    z_syn, err_code = flowdir_f.create_pulling_syn_grad(
+    z_syn, err_code = drainage_f.create_pulling_syn_grad(
         labels.astype(np.int32, order="F"),
         low_edges.astype(bool, order="F"),
         dir_scheme.offsets.astype(np.int32, order="F"),
@@ -399,7 +399,7 @@ def compute_syn_flowdir(
         case "python":
             dirs = flowdir_py.compute_masked_flowdir(z, labels, dir_scheme=dir_scheme)
         case "fortran":
-            dirs = flowdir_f.compute_syn_flowdir(
+            dirs = drainage_f.compute_syn_flowdir(
                 z.astype(np.int32, order="F"),
                 labels.astype(np.int32, order="F"),
                 dir_scheme.offsets.astype(np.int32, order="F"),
@@ -565,7 +565,7 @@ def count_indegree(
                 dirs, dir_scheme=dir_scheme, valids=valids
             )
         case "fortran":
-            indegs = flowdir_f.count_indegree(
+            indegs = drainage_f.count_indegree(
                 dirs.astype(np.uint8, order="F"),
                 valids.astype(bool, order="F"),
                 dir_scheme.offsets.astype(np.int32, order="F"),
@@ -591,7 +591,7 @@ def _find_acyclic_flowdirs_fortran(
     MemoryError
         If the traversal workspace cannot be allocated.
     """
-    acyclics, err_code = flowdir_f.find_acyclic_flowdirs(
+    acyclics, err_code = drainage_f.find_acyclic_flowdirs(
         dirs.astype(np.uint8, order="F"),
         indegs.astype(np.int8, order="F"),
         valids.astype(bool, order="F"),

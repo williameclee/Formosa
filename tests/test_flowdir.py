@@ -9,7 +9,7 @@ import pytest
 import numpy as np
 
 from formosa import D8Directions
-import formosa.geomorphology.flowdir.flowdir as flowdir_m
+import formosa.geomorphology.drainage.flowdir as flowdir_m
 
 
 @pytest.mark.parametrize("backend", BACKENDS)

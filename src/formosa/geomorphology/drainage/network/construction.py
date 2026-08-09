@@ -9,21 +9,21 @@
 
 import numpy as np
 
-from formosa.geomorphology.flowdir.directions import D8Directions
-from formosa.geomorphology.flowdir.utils import (
+from formosa.geomorphology.drainage.directions import D8Directions
+from formosa.geomorphology.drainage.utils import (
     compute_downstream_indices,
     raise_fortran_error,
 )
-import formosa.geomorphology.flowdir.flowdir as flowdir_m
-import formosa.geomorphology.flowdir.watersheds as wshed_m
-from formosa.geomorphology.flowdir.network.editing import remove_unused_vertices
-from formosa.geomorphology.flowdir.network.validation import (
+import formosa.geomorphology.drainage.flowdir as flowdir_m
+import formosa.geomorphology.drainage.watersheds as wshed_m
+from formosa.geomorphology.drainage.network.editing import remove_unused_vertices
+from formosa.geomorphology.drainage.network.validation import (
     DirectedFlowCycleError,
     _valid_flow_edges,
     _validate_flowgraph_coverage,
 )
-from formosa.geomorphology.flowdir_f import network_construction as constr_f
-import formosa.geomorphology.flowdir.network._backends.construction_py as constr_py
+from formosa.geomorphology.drainage_f import network_construction as constr_f
+import formosa.geomorphology.drainage.network._backends.construction_py as constr_py
 
 from typing import Literal, Optional
 import numpy.typing as npt

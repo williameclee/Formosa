@@ -26,14 +26,14 @@
 
 import numpy as np
 
-from formosa.geomorphology.flowdir.directions import D8Directions
-import formosa.geomorphology.flowdir.flowdir as flowdir_m
-from formosa.geomorphology.flowdir.watersheds import (
+from formosa.geomorphology.drainage.directions import D8Directions
+import formosa.geomorphology.drainage.flowdir as flowdir_m
+from formosa.geomorphology.drainage.watersheds import (
     compute_dist2source,
     compute_flow_strahler_order,
 )
-from formosa.geomorphology.flowdir_f import flowdir_ridges as ridges_f
-from formosa.geomorphology.flowdir.utils import raise_fortran_error
+from formosa.geomorphology.drainage_f import flowdir_ridges as ridges_f
+from formosa.geomorphology.drainage.utils import raise_fortran_error
 
 from typing import Literal, Optional
 import numpy.typing as npt

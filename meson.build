@@ -19,24 +19,24 @@ ext_suffix = run_command(
 ).stdout().strip()
 
 custom_target(
-  'flowdir_f',
+  'drainage_f',
   input: files(
-    'src/formosa/geomorphology/flowdir/utils.f90',
+    'src/formosa/geomorphology/drainage/utils.f90',
     'src/formosa/geomorphology/geometry/geometry.f90',
     'src/formosa/geomorphology/geometry/intersections.f90',
-    'src/formosa/geomorphology/flowdir/_backends/preprocessing.f90',
-    'src/formosa/geomorphology/flowdir/network/_backends/construction.f90',
-    'src/formosa/geomorphology/flowdir/network/_backends/validation.f90',
-    'src/formosa/geomorphology/flowdir/network/_backends/simplification.f90',
-    'src/formosa/geomorphology/flowdir/_backends/watersheds.f90',
-    'src/formosa/geomorphology/flowdir/_backends/flowdir.f90',
-    'src/formosa/geomorphology/flowdir/_backends/ridges.f90',
+    'src/formosa/geomorphology/drainage/_backends/preprocessing.f90',
+    'src/formosa/geomorphology/drainage/network/_backends/construction.f90',
+    'src/formosa/geomorphology/drainage/network/_backends/validation.f90',
+    'src/formosa/geomorphology/drainage/network/_backends/simplification.f90',
+    'src/formosa/geomorphology/drainage/_backends/watersheds.f90',
+    'src/formosa/geomorphology/drainage/_backends/flowdir.f90',
+    'src/formosa/geomorphology/drainage/_backends/ridges.f90',
   ),
-  output: ['flowdir_f' + ext_suffix],
+  output: ['drainage_f' + ext_suffix],
   command: [
     py.full_path(),
     '-m', 'numpy.f2py',
-    '-m', 'flowdir_f',
+    '-m', 'drainage_f',
     # OpenMP flags
     '--f90flags="-march=native -fopenmp -O3"', # -pg for profiling
     '-lgomp',

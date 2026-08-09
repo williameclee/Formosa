@@ -4,8 +4,8 @@ import pytest
 import numpy as np
 
 from formosa import D8Directions
-import formosa.geomorphology.flowdir.network.construction as constr_m
-import formosa.geomorphology.flowdir.network.editing as editing_m
+import formosa.geomorphology.drainage.network.construction as constr_m
+import formosa.geomorphology.drainage.network.editing as editing_m
 
 
 def test_remove_unused_vertices_compacts_arc_ranges():

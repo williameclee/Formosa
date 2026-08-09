@@ -2,7 +2,7 @@ import pytest
 import numpy as np
 
 from formosa import D8Directions
-import formosa.geomorphology.flowdir.ridges as ridges_m
+import formosa.geomorphology.drainage.ridges as ridges_m
 from tests.test_watersheds_parity import unequal_tributary_network
 
 

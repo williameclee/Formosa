@@ -9,8 +9,8 @@ import pytest
 import numpy as np
 
 from formosa import D8Directions
-import formosa.geomorphology.flowdir.flowdir as flowdir_m
-from formosa.geomorphology.flowdir import watersheds as wshed_m
+import formosa.geomorphology.drainage.flowdir as flowdir_m
+from formosa.geomorphology.drainage import watersheds as wshed_m
 
 
 @pytest.fixture

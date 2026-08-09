@@ -22,7 +22,7 @@
 !     - Switched to 'iso_c_binding'
 !!!
 
-module flowdir_flowdir
+module drainage_flowdir
     use iso_c_binding, only: c_int8_t
     use utils, only: fill_offset_lookup, find_noflow_code, &
                      array2d_oob, mask2ij
@@ -889,4 +889,4 @@ contains
         deallocate (rem_indegs)
         deallocate (seed_ijs)
     end subroutine find_acyclic_flowdirs
-end module flowdir_flowdir
+end module drainage_flowdir

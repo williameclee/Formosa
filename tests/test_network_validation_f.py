@@ -10,8 +10,8 @@ import pytest
 import warnings
 import numpy as np
 
-import formosa.geomorphology.flowdir.network.validation as val_m
-from formosa.geomorphology.flowdir_f import network_validation as val_f
+import formosa.geomorphology.drainage.network.validation as val_m
+from formosa.geomorphology.drainage_f import network_validation as val_f
 
 from types import SimpleNamespace
 

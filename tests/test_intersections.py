@@ -5,7 +5,7 @@
 
 import pytest
 
-from formosa.geomorphology.flowdir_f import intersections as intx_f
+from formosa.geomorphology.drainage_f import intersections as intx_f
 import formosa.geomorphology.geometry.intersections_py as intx_py
 
 LINE_INTERSECTION_CASES = [

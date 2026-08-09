@@ -8,10 +8,10 @@
 
 import numpy as np
 
-from formosa.geomorphology.flowdir.directions import D8Directions
-from formosa.geomorphology.flowdir.utils import raise_fortran_error
+from formosa.geomorphology.drainage.directions import D8Directions
+from formosa.geomorphology.drainage.utils import raise_fortran_error
 
-from formosa.geomorphology.flowdir_f import flowdir_preprocessing as preproc_f
+from formosa.geomorphology.drainage_f import flowdir_preprocessing as preproc_f
 
 from typing import Optional
 import numpy.typing as npt

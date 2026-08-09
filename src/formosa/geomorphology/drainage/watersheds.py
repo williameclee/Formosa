@@ -34,11 +34,11 @@
 
 import numpy as np
 
-from formosa.geomorphology.flowdir.directions import D8Directions
-from formosa.geomorphology.flowdir.utils import raise_fortran_error
-from formosa.geomorphology.flowdir.flowdir import count_indegree
-import formosa.geomorphology.flowdir._backends.watersheds_py as wshed_py
-from formosa.geomorphology.flowdir_f import flowdir_watersheds as wshed_f
+from formosa.geomorphology.drainage.directions import D8Directions
+from formosa.geomorphology.drainage.utils import raise_fortran_error
+from formosa.geomorphology.drainage.flowdir import count_indegree
+import formosa.geomorphology.drainage._backends.watersheds_py as wshed_py
+from formosa.geomorphology.drainage_f import flowdir_watersheds as wshed_f
 
 from typing import Literal, Optional
 import numpy.typing as npt

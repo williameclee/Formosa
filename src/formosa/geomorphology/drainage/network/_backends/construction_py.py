@@ -6,7 +6,7 @@
 
 import numpy as np
 
-from formosa.geomorphology.flowdir.directions import D8Directions
+from formosa.geomorphology.drainage.directions import D8Directions
 
 
 import numpy.typing as npt

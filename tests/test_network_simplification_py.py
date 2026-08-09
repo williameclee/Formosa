@@ -15,7 +15,7 @@
 import pytest
 import numpy as np
 
-from formosa.geomorphology.flowdir.network import simplification as simp_m
+from formosa.geomorphology.drainage.network import simplification as simp_m
 
 
 def test_solve_graph_overlaps_can_remove_unused_vertices():

@@ -49,12 +49,12 @@ from formosa.geomorphology import (
 from typing import Optional
 import numpy.typing as npt
 
-from formosa.geomorphology.flowdir.network.construction import create_flowgraph
-from formosa.geomorphology.flowdir.preprocessing import (
+from formosa.geomorphology.drainage.network.construction import create_flowgraph
+from formosa.geomorphology.drainage.preprocessing import (
     fill_depressions,
     invalidate_ocean_basins as _invalidate_ocean_basins,
 )
-from formosa.geomorphology.flowdir.ridges import compute_dist2conf_max
+from formosa.geomorphology.drainage.ridges import compute_dist2conf_max
 
 
 class DEMGrid:

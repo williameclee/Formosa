@@ -9,8 +9,8 @@ import pytest
 import numpy as np
 
 from formosa import D8Directions
-import formosa.geomorphology.flowdir.network.construction as constr_m
-from formosa.geomorphology.flowdir_f import network_construction as constr_f
+import formosa.geomorphology.drainage.network.construction as constr_m
+from formosa.geomorphology.drainage_f import network_construction as constr_f
 
 from types import SimpleNamespace
 

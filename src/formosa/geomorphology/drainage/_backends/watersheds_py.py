@@ -9,9 +9,9 @@
 
 import numpy as np
 
-from formosa.geomorphology.flowdir.directions import D8Directions
-from formosa.geomorphology.flowdir.utils import compute_downstream_indices
-import formosa.geomorphology.flowdir._backends.flowdir_py as flowdir_py
+from formosa.geomorphology.drainage.directions import D8Directions
+from formosa.geomorphology.drainage.utils import compute_downstream_indices
+import formosa.geomorphology.drainage._backends.flowdir_py as flowdir_py
 
 from typing import Optional
 import numpy.typing as npt

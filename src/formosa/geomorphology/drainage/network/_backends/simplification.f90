@@ -3,7 +3,7 @@
 !   2026-07-09, En-Chi Lee (williameclee@gmail.com)
 !     - Implemented 'simplify_flowgraph' function
 !   2026-07-14, En-Chi Lee (williameclee@gmail.com)
-!     - Splitted 'flowdir_f' into submodules
+!     - Splitted 'drainage_f' into submodules
 !   2026-08-04, En-Chi Lee (williameclee@gmail.com)
 !     - Added allocation error monitoring and moved error handling
 !       to Python

@@ -1,6 +1,6 @@
-from .flowdir.directions import D8Directions
+from .drainage.directions import D8Directions
 from .terrain import compute_slope
-from .flowdir import (
+from .drainage import (
     detect_ocean_basins_from_boundary,
     fill_depressions,
     invalidate_ocean_basins,
@@ -18,7 +18,7 @@ from .flowdir import (
     compute_dist2ridge,
     compute_ridge_strahler_order,
 )
-from .flowdir.network import (
+from .drainage.network import (
     construct_flowgraph,
     concat_flowgraph,
 )

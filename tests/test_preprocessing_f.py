@@ -11,8 +11,8 @@ import pytest
 import numpy as np
 
 from formosa import D8Directions
-import formosa.geomorphology.flowdir.preprocessing as preproc_m
-from formosa.geomorphology.flowdir_f import flowdir_preprocessing as preproc_f
+import formosa.geomorphology.drainage.preprocessing as preproc_m
+from formosa.geomorphology.drainage_f import flowdir_preprocessing as preproc_f
 
 from types import SimpleNamespace
 

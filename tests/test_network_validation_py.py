@@ -6,7 +6,7 @@
 import pytest
 import numpy as np
 
-import formosa.geomorphology.flowdir.network.validation as val_m
+import formosa.geomorphology.drainage.network.validation as val_m
 
 
 def test_locate_invalid_graph_topogtaphy():
