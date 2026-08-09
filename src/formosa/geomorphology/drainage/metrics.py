@@ -1,35 +1,9 @@
 # Last modified
-#   2026-02-11, En-Chi Lee (williameclee@arizona.edu)
-#     - Rename flowdir functions to be more descriptive.
-#   2026-06-09, En-Chi Lee (williameclee@gmail.com)
-#     - Added error for missing FORTRAN backend.
-#     - Removed NumPy type `np.bool` to either `np.bool_` or `bool`
-#       for compatibility with newer NumPy versions.
-#     - Renamed FORTRAN function call: `compute_masked_flowdir` ->
-#       `compute_synthetic_flowdir`.
-#     - Added `valids` argument to `label_flats` function.
-#   2026-06-10, En-Chi Lee (williameclee@gmail.com)
-#     - Small refactors and documentation cleanup.
-#   2026-06-11, En-Chi Lee (williameclee@gmail.com)
-#     - Moved Python backend implementations and auxiliary functions
-#       to separate files.
-#     - Standardised variable, argument, and function names.
 #   2026-06-30, En-Chi Lee (williameclee@gmail.com)
-#     - Changed strahler order output to 8-bit unsigned integer.
-#   2026-07-01, En-Chi Lee (williameclee@gmail.com)
-#     - Allowed specifying validity mask in `count_indegree`.
-#     - Added function `construct_flowgraph`.
-#   2026-07-08, En-Chi Lee (williameclee@gmail.com)
-#     - Renamed helper submodule from `aux` to `utils`.
-#   2026-07-14, En-Chi Lee (williameclee@gmail.com)
-#     - Splitted `geomorphology.flowdir` into submodules.
+#     - Changed Strahler order output to uint8 integer.
 #   2026-07-30, En-Chi Lee (williameclee@gmail.com)
 #     - Fixed Python/FORTRAN backend behaviour parity in
 #       `compute_flow_strahler_order`.
-#   2026-08-03, En-Chi Lee (williameclee@gmail.com)
-#     - Implemented functions `find_acyclic_flowdirs` and
-#       `find_cyclic_flowdirs` with both FORTRAN and Python
-#       backends.
 
 
 import numpy as np
@@ -37,8 +11,8 @@ import numpy as np
 from formosa.geomorphology.drainage.directions import D8Directions
 from formosa.geomorphology.drainage.utils import raise_fortran_error
 from formosa.geomorphology.drainage.flowdir import count_indegree
-import formosa.geomorphology.drainage._backends.watersheds_py as wshed_py
-from formosa.geomorphology.drainage_f import drainage_watersheds as wshed_f
+from formosa.geomorphology.drainage_f import drainage_metrics as metrics_f
+import formosa.geomorphology.drainage._backends.metrics_py as metrics_py
 
 from typing import Literal, Optional
 import numpy.typing as npt
@@ -90,7 +64,7 @@ def compute_flow_accumulation(
     """
     match backend:
         case "python":
-            accums = wshed_py.compute_flow_accumulation(
+            accums = metrics_py.compute_flow_accumulation(
                 dirs,
                 valids=valids,
                 weights=weights,
@@ -108,7 +82,7 @@ def compute_flow_accumulation(
             if weights is None:
                 weights = np.where(valids, 1.0, 0.0).astype(np.float32)
 
-            accums, err_code = wshed_f.compute_flow_accumulation(
+            accums, err_code = metrics_f.compute_flow_accumulation(
                 dirs.astype(np.uint8, order="F"),
                 valids.astype(bool, order="F"),
                 weights.astype(np.float32, order="F"),
@@ -192,11 +166,11 @@ def compute_flow_strahler_order(
 
     match backend:
         case "python":
-            orders = wshed_py.compute_flow_strahler_order(
+            orders = metrics_py.compute_flow_strahler_order(
                 dirs=dirs, dir_scheme=dir_scheme, valids=valids, indegs=indegs
             )
         case "fortran":
-            orders, err_code = wshed_f.compute_flow_strahler_order(
+            orders, err_code = metrics_f.compute_flow_strahler_order(
                 dirs.astype(np.uint8, order="F"),
                 valids.astype(bool, order="F"),
                 indegs.astype(np.int8, order="F"),
@@ -278,7 +252,7 @@ def compute_dist2source(
     else:
         raise TypeError(f"Indegree must be a NumPy array (got {type(indegs)}).")
 
-    dists, err_code = wshed_f.compute_dist2source(
+    dists, err_code = metrics_f.compute_dist2source(
         dirs.astype(np.uint8, order="F"),
         valids.astype(bool, order="F"),
         x.astype(np.float32, order="F"),
@@ -289,63 +263,6 @@ def compute_dist2source(
     )
     raise_fortran_error("compute_dist2source", err_code)
     return dists.astype(np.float32, order="F")
-
-
-def label_watersheds(
-    dirs: npt.NDArray[np.integer],
-    dir_scheme: D8Directions = D8Directions(),
-    valids: Optional[npt.NDArray[np.bool_]] = None,
-    backend: Literal["fortran", "python"] = "fortran",
-) -> npt.NDArray[np.int32]:
-    """
-    Finds and labels watersheds in a DEM based on flow direction.
-
-    Parameters
-    ----------
-    dirs : NDArray[int]
-        A 2D array representing the flow direction for each cell.
-    dir_scheme : D8Directions, optional
-        An instance of `D8Directions` defining the flow direction scheme.
-        Default is `D8Directions()`.
-    valids : NDArray[bool], optional
-        A boolean mask array indicating valid cells in the flow direction grid.
-        If `None`, all non-NaN cells in flowdirs are considered valid.
-        Default is `None`.
-
-    Returns
-    -------
-    watersheds : NDArray[int32]
-        A 2D array where each watershed is labeled with a unique integer.
-    """
-    match backend:
-        case "python":
-            watersheds = wshed_py.label_watersheds(
-                dirs=dirs,
-                dir_scheme=dir_scheme,
-                valids=valids,
-            )
-        case "fortran":
-            if valids is None:
-                valids = np.ones(dirs.shape, dtype=bool)
-            elif isinstance(valids, np.ndarray):
-                assert (
-                    valids.shape == dirs.shape
-                ), f"Shape for flow direction ({dirs.shape}) and valid mask ({valids.shape}) do not match."
-                valids = valids.astype(bool, copy=False) & (~np.isnan(dirs))
-                dirs = np.where(valids, dirs, np.nan)
-            else:
-                raise TypeError(
-                    f"Valid mask must be a NumPy array (got {type(valids)})."
-                )
-
-            watersheds, err_code = wshed_f.label_watersheds(
-                dirs.astype(np.uint8, order="F"),
-                valids.astype(bool, order="F"),
-                dir_scheme.offsets.astype(np.int32, order="F"),
-                dir_scheme.codes.astype(np.uint8, order="F"),
-            )
-            raise_fortran_error("label_watersheds", err_code)
-    return watersheds.astype(np.int32, order="F")
 
 
 def compute_dist2sink(
@@ -398,7 +315,7 @@ def compute_dist2sink(
         y = np.arange(dirs.shape[0], dtype=np.float32)
         x, y = np.meshgrid(x, y, indexing="xy")
 
-    dists, err_code = wshed_f.compute_dist2sink(
+    dists, err_code = metrics_f.compute_dist2sink(
         dirs.astype(np.uint8, order="F"),
         x.astype(np.float32, order="F"),
         y.astype(np.float32, order="F"),

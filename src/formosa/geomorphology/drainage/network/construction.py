@@ -15,7 +15,7 @@ from formosa.geomorphology.drainage.utils import (
     raise_fortran_error,
 )
 import formosa.geomorphology.drainage.flowdir as flowdir_m
-import formosa.geomorphology.drainage.watersheds as wshed_m
+import formosa.geomorphology.drainage.metrics as metrics_m
 from formosa.geomorphology.drainage.network.editing import remove_unused_vertices
 from formosa.geomorphology.drainage.network.validation import (
     DirectedFlowCycleError,
@@ -183,7 +183,7 @@ def construct_flowgraph(
     if valids is None:
         valids = np.ones(dirs.shape, dtype=bool)
     if orders is None:
-        orders = wshed_m.compute_flow_strahler_order(
+        orders = metrics_m.compute_flow_strahler_order(
             dirs,
             dir_scheme=dir_scheme,
             valids=valids,

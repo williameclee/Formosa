@@ -14,18 +14,12 @@
 #     - Moved Python backend implementations and auxiliary functions
 #       to separate files.
 #     - Standardised variable, argument, and function names.
-#   2026-06-30, En-Chi Lee (williameclee@gmail.com)
-#     - Changed strahler order output to 8-bit unsigned integer.
 #   2026-07-01, En-Chi Lee (williameclee@gmail.com)
 #     - Allowed specifying validity mask in `count_indegree`.
-#     - Added function `construct_flowgraph`.
 #   2026-07-08, En-Chi Lee (williameclee@gmail.com)
 #     - Renamed helper submodule from `aux` to `utils`.
 #   2026-07-14, En-Chi Lee (williameclee@gmail.com)
 #     - Splitted `geomorphology.flowdir` into submodules.
-#   2026-07-30, En-Chi Lee (williameclee@gmail.com)
-#     - Fixed Python/FORTRAN backend behaviour parity in
-#       `compute_flow_strahler_order`.
 #   2026-08-03, En-Chi Lee (williameclee@gmail.com)
 #     - Implemented functions `find_acyclic_flowdirs` and
 #       `find_cyclic_flowdirs` with both FORTRAN and Python

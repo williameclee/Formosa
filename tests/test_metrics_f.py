@@ -18,7 +18,7 @@ from pathlib import Path
 import numpy as np
 
 from formosa import D8Directions
-from formosa.geomorphology.drainage import watersheds as wshed_m
+from formosa.geomorphology.drainage import metrics as metrics_m
 
 
 def test_all_allocations_check_status():
@@ -88,7 +88,7 @@ def test_strahler_order_3x3():
             [1, 2, 2],
         ]
     )
-    order = wshed_m.compute_flow_strahler_order(dirs, dir_scheme=dir_scheme)
+    order = metrics_m.compute_flow_strahler_order(dirs, dir_scheme=dir_scheme)
 
     np.testing.assert_array_equal(order, expected_order)
 
@@ -109,7 +109,7 @@ def test_strahler_order_3x3():
         ]
     )
 
-    order = wshed_m.compute_flow_strahler_order(dirs, dir_scheme=dir_scheme)
+    order = metrics_m.compute_flow_strahler_order(dirs, dir_scheme=dir_scheme)
 
     np.testing.assert_array_equal(order, expected_order)
 
@@ -134,6 +134,6 @@ def test_strahler_order_4x4():
             [1, 1, 1, 1],
         ]
     )
-    order = wshed_m.compute_flow_strahler_order(dirs, dir_scheme=dir_scheme)
+    order = metrics_m.compute_flow_strahler_order(dirs, dir_scheme=dir_scheme)
 
     np.testing.assert_array_equal(order, expected_order)
