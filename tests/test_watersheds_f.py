@@ -10,15 +10,15 @@
 #     - Added a regression check for nonstandard old-style FORTRAN
 #       kind declarations.
 
+from tests.core import *
+
+import pytest
 import re
 from pathlib import Path
 import numpy as np
 
 from formosa import D8Directions
 from formosa.geomorphology.flowdir import watersheds as wshed_m
-
-T = True
-F = False
 
 
 def test_all_allocations_check_status():

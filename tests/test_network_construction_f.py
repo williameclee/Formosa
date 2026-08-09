@@ -3,6 +3,8 @@
 #     - Added test case for the Fortran implementation of
 #       `construct_flowgraph`.
 
+from tests.core import *
+
 import pytest
 import numpy as np
 
@@ -11,9 +13,6 @@ import formosa.geomorphology.flowdir.network.construction as constr_m
 from formosa.geomorphology.flowdir_f import network_construction as constr_f
 
 from types import SimpleNamespace
-
-T = True
-F = False
 
 
 def test_construct_flowgraph_fortran_returns_buffer_overflow_code():
@@ -60,7 +59,7 @@ def test_construct_flowgraph_3x3():
         )
 
 
-def test_construct_flowgraph_translates_fortran_error(monkeypatch):
+def test_construct_flowgraph_translates_fortran_error(monkeypatch: pytest.MonkeyPatch):
     def fake_construct(*args):
         return (
             0,

@@ -6,14 +6,14 @@
 #     - Added complete topology-intersection scan-and-retry
 #       regression tests.
 
-from types import SimpleNamespace
-
 import pytest
 import warnings
 import numpy as np
 
 import formosa.geomorphology.flowdir.network.validation as val_m
 from formosa.geomorphology.flowdir_f import network_validation as val_f
+
+from types import SimpleNamespace
 
 
 def _make_separated_x_pairs(
@@ -30,14 +30,7 @@ def _make_separated_x_pairs(
     for ipair in range(npairs):
         x = 3 * ipair
         start = len(vertices)
-        vertices.extend(
-            [
-                [x, 0],
-                [x + 1, 1],
-                [x, 1],
-                [x + 1, 0],
-            ]
-        )
+        vertices.extend([[x, 0], [x + 1, 1], [x, 1], [x + 1, 0]])
         endpts.extend([[start, start + 1], [start + 2, start + 3]])
 
     return (
@@ -163,7 +156,7 @@ def test_topology_scanner_empty_input_initialises_outputs():
     )
 
 
-def test_topology_wrapper_uses_single_scan_when_capacity_is_sufficient(monkeypatch):
+def test_topology_wrapper_uses_single_scan_when_capacity_is_sufficient(monkeypatch: pytest.MonkeyPatch):
     """
     The wrapper avoids retrying when its provisional buffer is sufficient.
     """
@@ -176,9 +169,7 @@ def test_topology_wrapper_uses_single_scan_when_capacity_is_sufficient(monkeypat
         return intxs, 1, 0
 
     monkeypatch.setattr(
-        val_m,
-        "val_f",
-        SimpleNamespace(scan_invalid_graph_topology=fake_scan),
+        val_m, "val_f", SimpleNamespace(scan_invalid_graph_topology=fake_scan)
     )
     intxs = val_m.locate_invalid_graph_topology(
         np.zeros((4, 2)), np.array([[0, 1], [2, 3]]), backend="fortran"
@@ -188,7 +179,7 @@ def test_topology_wrapper_uses_single_scan_when_capacity_is_sufficient(monkeypat
     np.testing.assert_array_equal(intxs, [[0, 1, 0, 2, 1]])
 
 
-def test_topology_wrapper_retries_with_exact_reported_capacity(monkeypatch):
+def test_topology_wrapper_retries_with_exact_reported_capacity(monkeypatch: pytest.MonkeyPatch):
     """
     An overflow retry uses the total reported by the provisional scan.
     """
@@ -204,9 +195,7 @@ def test_topology_wrapper_retries_with_exact_reported_capacity(monkeypatch):
         return intxs, nintxs, 0
 
     monkeypatch.setattr(
-        val_m,
-        "val_f",
-        SimpleNamespace(scan_invalid_graph_topology=fake_scan),
+        val_m, "val_f", SimpleNamespace(scan_invalid_graph_topology=fake_scan)
     )
     intxs = val_m.locate_invalid_graph_topology(
         np.zeros((20, 2)),
@@ -219,7 +208,7 @@ def test_topology_wrapper_retries_with_exact_reported_capacity(monkeypatch):
     assert intxs.shape == (5, 5)
 
 
-def test_topology_wrapper_rejects_inconsistent_retry_count(monkeypatch):
+def test_topology_wrapper_rejects_inconsistent_retry_count(monkeypatch: pytest.MonkeyPatch):
     """
     A changed count during the deterministic retry raises an error.
     """
@@ -231,9 +220,7 @@ def test_topology_wrapper_rejects_inconsistent_retry_count(monkeypatch):
         return intxs, 4 if len(calls) == 1 else 3, 0
 
     monkeypatch.setattr(
-        val_m,
-        "val_f",
-        SimpleNamespace(scan_invalid_graph_topology=fake_scan),
+        val_m, "val_f", SimpleNamespace(scan_invalid_graph_topology=fake_scan)
     )
     with pytest.raises(RuntimeError, match="count changed"):
         val_m.locate_invalid_graph_topology(
@@ -249,7 +236,7 @@ def test_topology_wrapper_rejects_inconsistent_retry_count(monkeypatch):
     ("err_code", "exception"),
     [(1, ValueError), (2, MemoryError), (99, RuntimeError)],
 )
-def test_topology_wrapper_translates_scanner_errors(monkeypatch, err_code, exception):
+def test_topology_wrapper_translates_scanner_errors(monkeypatch: pytest.MonkeyPatch, err_code, exception):
     """
     Scanner status codes map to the documented Python exceptions.
     """
@@ -258,9 +245,7 @@ def test_topology_wrapper_translates_scanner_errors(monkeypatch, err_code, excep
         return np.empty((5, capacity), dtype=np.int32), 0, err_code
 
     monkeypatch.setattr(
-        val_m,
-        "val_f",
-        SimpleNamespace(scan_invalid_graph_topology=fake_scan),
+        val_m, "val_f", SimpleNamespace(scan_invalid_graph_topology=fake_scan)
     )
     with pytest.raises(exception):
         val_m.locate_invalid_graph_topology(

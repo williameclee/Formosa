@@ -13,9 +13,6 @@ from formosa.geomorphology.flowdir_f import flowdir_flowdir as flowdir_f
 
 from types import SimpleNamespace
 
-T = True
-F = False
-
 
 @pytest.mark.parametrize(
     ("err_code", "exception", "detail"),
@@ -27,21 +24,16 @@ F = False
     ],
 )
 def test_label_flats_translates_fortran_errors(
-    monkeypatch, err_code, exception, detail
+    monkeypatch: pytest.MonkeyPatch, err_code, exception, detail
 ):
     def fake_label(*args):
         return np.zeros((1, 1), dtype=np.int32), err_code
 
-    monkeypatch.setattr(
-        flowdir_m,
-        "flowdir_f",
-        SimpleNamespace(label_flats=fake_label),
-    )
+    monkeypatch.setattr(flowdir_m, "flowdir_f", SimpleNamespace(label_flats=fake_label))
 
     with pytest.raises(exception, match=rf"label_flats.*{detail}.*{err_code}"):
         flowdir_m.label_flats(
-            np.zeros((1, 1), dtype=np.float32),
-            np.ones((1, 1), dtype=bool),
+            np.zeros((1, 1), dtype=np.float32), np.ones((1, 1), dtype=bool)
         )
 
 
@@ -132,7 +124,7 @@ def test_indegree_3x3():
     ],
 )
 def test_find_acyclic_flowdirs_translates_fortran_errors(
-    monkeypatch, err_code, exception
+    monkeypatch: pytest.MonkeyPatch, err_code, exception
 ):
     def fake_find(*args):
         return np.zeros((1, 1), dtype=bool), err_code

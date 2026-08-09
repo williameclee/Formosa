@@ -4,15 +4,11 @@
 #   2026-08-03, En-Chi Lee (williameclee@gmail.com)
 #     - Added test cases for function `find_acyclic_flowdirs` and graph construction validity
 
-
 import pytest
 import numpy as np
 
 from formosa import D8Directions
 import formosa.geomorphology.flowdir.flowdir as flowdir_m
-
-T = True
-F = False
 
 
 def test_indegree_3x3():

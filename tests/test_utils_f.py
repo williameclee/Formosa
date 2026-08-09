@@ -1,3 +1,5 @@
+from tests.core import *
+
 import pytest
 import numpy as np
 
@@ -5,8 +7,6 @@ from formosa import D8Directions
 import formosa.geomorphology.flowdir.utils as utils_m
 from formosa.geomorphology.flowdir_f import utils as utils_f
 
-T = True
-F = False
 
 def test_checked_linear_cell_ids_reject_invalid_coordinates_and_ids():
     assert utils_f.ij2id_checked(1, 1, 3, 4) == 1
@@ -59,11 +59,7 @@ def _assert_min_heap(queue, queue_size, elevations):
 def _drain_priority_queue(queue, queue_size, elevations):
     popped_ids = []
     while queue_size.item() > 0:
-        popped, err_code = utils_f.pop_priority_queue(
-            queue,
-            queue_size,
-            elevations,
-        )
+        popped, err_code = utils_f.pop_priority_queue(queue, queue_size, elevations)
         assert err_code == 0
         popped_ids.append(popped)
         _assert_min_heap(queue, queue_size.item(), elevations)

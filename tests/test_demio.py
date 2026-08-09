@@ -3,8 +3,8 @@
 #     - Added tests for the new `.hgt` input format
 #     - Added tests for the ocean basin masking functions
 
-import numpy as np
 import pytest
+import numpy as np
 
 from formosa.dem import DEMGrid, read_dem
 
@@ -93,13 +93,7 @@ def test_demgrid_detect_ocean_uses_boundary_basins_and_size_threshold():
     dem[3, 3:6] = 0.0  # Enclosed low basin.
     x, y = np.meshgrid(np.arange(dem.shape[1]), np.arange(dem.shape[0]))
 
-    grid = DEMGrid(
-        dem.copy(),
-        x=x,
-        y=y,
-        detect_ocean=True,
-        min_ocean_size=6,
-    )
+    grid = DEMGrid(dem.copy(), x=x, y=y, detect_ocean=True, min_ocean_size=6)
 
     assert not np.any(grid.valid[0:2, 0:3])
     assert np.all(grid.valid[5:7, 7:9])

@@ -1,9 +1,11 @@
+from tests.core import *
+
 import pytest
-
-import formosa.geomorphology.flowdir.network.editing as editing_m
-
-
 import numpy as np
+
+from formosa import D8Directions
+import formosa.geomorphology.flowdir.network.construction as constr_m
+import formosa.geomorphology.flowdir.network.editing as editing_m
 
 
 def test_remove_unused_vertices_compacts_arc_ranges():
@@ -186,3 +188,24 @@ def test_graph_insert_endpt():
     np.testing.assert_array_equal(o_ijs, exp_ijs)
     np.testing.assert_array_equal(o_endpts, exp_endpts)
     np.testing.assert_array_equal(o_orders, exp_orders)
+
+
+def test_network_graph_concat_3x3():
+    dir_scheme = D8Directions(transform_codes=lambda x: x)
+
+    dirs = np.array([[3, 3, 3], [3, 3, 3], [1, 1, 0]])
+    valids = np.array([[T, F, T], [T, T, T], [T, T, T]])
+    arc_orders, vertex_ijs, arc_endpts = constr_m.construct_flowgraph(
+        dirs, dir_scheme=dir_scheme, backend="python", min_order=1, valids=valids
+    )
+
+    exp_s_orders = np.array([1, 2])
+    exp_s_endpts = np.array([[0, 10], [12, 13]])
+
+    s_arc_orders, s_vertex_ijs, s_arc_endpts = editing_m.concat_flowgraph(
+        arc_orders, vertex_ijs, arc_endpts
+    )
+    assert s_vertex_ijs.shape[0] == vertex_ijs.shape[0] + arc_orders.shape[0] - 1
+    assert arc_endpts[-1, 1] == vertex_ijs.shape[0] - 1
+    np.testing.assert_array_equal(s_arc_orders, exp_s_orders)
+    np.testing.assert_array_equal(s_arc_endpts, exp_s_endpts)

@@ -5,9 +5,7 @@
 #     - Added tests for the ocean basin masking algorithms
 #       (`label_mask_areas`).
 
-import re
-import warnings
-from pathlib import Path
+from tests.core import *
 
 import pytest
 import numpy as np
@@ -17,9 +15,6 @@ import formosa.geomorphology.flowdir.preprocessing as preproc_m
 from formosa.geomorphology.flowdir_f import flowdir_preprocessing as preproc_f
 
 from types import SimpleNamespace
-
-T = True
-F = False
 
 
 def test_detect_ocean_basins_labels_separate_boundary_components():
@@ -415,4 +410,3 @@ def test_label_mask_areas():
     assert np.size(c3) == 1
     assert c1 == c2
     assert c1 != c3
-

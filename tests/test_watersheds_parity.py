@@ -3,17 +3,14 @@
 #     - Added test cases for function `find_acyclic_flowdirs` and
 #       graph construction validity.
 
-import numpy as np
+from tests.core import *
+
 import pytest
+import numpy as np
 
 from formosa import D8Directions
 import formosa.geomorphology.flowdir.flowdir as flowdir_m
 from formosa.geomorphology.flowdir import watersheds as wshed_m
-
-T = True
-F = False
-
-BACKENDS = ("python", "fortran")
 
 
 @pytest.fixture
@@ -45,16 +42,13 @@ def unequal_tributary_network():
     return dirs, valids, expected
 
 
-@pytest.mark.parametrize("backend", ["python", "fortran"])
+@pytest.mark.parametrize("backend", BACKENDS)
 def test_unequal_tributary_does_not_increase_order(unequal_tributary_network, backend):
     dirs, valids, expected = unequal_tributary_network
     dir_scheme = D8Directions(transform_codes=lambda x: x)
 
     orders = wshed_m.compute_flow_strahler_order(
-        dirs,
-        dir_scheme=dir_scheme,
-        valids=valids,
-        backend=backend,
+        dirs, dir_scheme=dir_scheme, valids=valids, backend=backend
     )
 
     np.testing.assert_array_equal(orders, expected)
@@ -71,18 +65,10 @@ def test_strahler_backends_match_with_mask_and_supplied_indegrees(
     original_indegs = indegs.copy()
 
     python_orders = wshed_m.compute_flow_strahler_order(
-        dirs,
-        dir_scheme=dir_scheme,
-        valids=valids,
-        indegs=indegs,
-        backend="python",
+        dirs, dir_scheme=dir_scheme, valids=valids, indegs=indegs, backend="python"
     )
     fortran_orders = wshed_m.compute_flow_strahler_order(
-        dirs,
-        dir_scheme=dir_scheme,
-        valids=valids,
-        indegs=indegs,
-        backend="fortran",
+        dirs, dir_scheme=dir_scheme, valids=valids, indegs=indegs, backend="fortran"
     )
 
     np.testing.assert_array_equal(python_orders, fortran_orders)
@@ -90,7 +76,7 @@ def test_strahler_backends_match_with_mask_and_supplied_indegrees(
     assert np.all(python_orders[~valids] == 0)
 
 
-@pytest.mark.parametrize("backend", ["python", "fortran"])
+@pytest.mark.parametrize("backend", BACKENDS)
 def test_masked_tributary_does_not_affect_order(backend):
     dir_scheme = D8Directions(transform_codes=lambda x: x)
     dirs = np.array(
@@ -118,10 +104,7 @@ def test_masked_tributary_does_not_affect_order(backend):
     )
 
     orders = wshed_m.compute_flow_strahler_order(
-        dirs,
-        dir_scheme=dir_scheme,
-        valids=valids,
-        backend=backend,
+        dirs, dir_scheme=dir_scheme, valids=valids, backend=backend
     )
 
     np.testing.assert_array_equal(orders, expected)

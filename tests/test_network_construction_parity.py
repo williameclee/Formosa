@@ -1,14 +1,11 @@
+from tests.core import *
+
 import pytest
 import numpy as np
 
 from formosa import D8Directions
 import formosa.geomorphology.flowdir.network as nwork_m
 import formosa.geomorphology.flowdir.network.construction as constr_m
-
-T = True
-F = False
-
-BACKENDS = ("python", "fortran")
 
 
 def test_construct_flowgraph_is_backend_independent_of_masked_directions():
@@ -29,10 +26,7 @@ def test_construct_flowgraph_is_backend_independent_of_masked_directions():
                 backend=backend,
             )
             arcs = [
-                (
-                    int(order),
-                    tuple(map(tuple, vertex_ijs[start : end + 1].tolist())),
-                )
+                (int(order), tuple(map(tuple, vertex_ijs[start : end + 1].tolist())))
                 for order, (start, end) in zip(arc_orders, arc_endpts)
             ]
             results.append(arcs)
@@ -48,11 +42,7 @@ def test_constructed_flowgraph_segments_follow_d8_adjacency(backend):
     valids = np.array([[T, F, T], [T, T, T], [T, T, T]])
 
     _, vertex_ijs, arc_endpts = constr_m.construct_flowgraph(
-        dirs,
-        dir_scheme=dir_scheme,
-        valids=valids,
-        min_order=1,
-        backend=backend,
+        dirs, dir_scheme=dir_scheme, valids=valids, min_order=1, backend=backend
     )
 
     for start, end in arc_endpts:
@@ -61,10 +51,7 @@ def test_constructed_flowgraph_segments_follow_d8_adjacency(backend):
         assert np.all(np.max(np.abs(offsets), axis=1) == 1)
         assert not np.any(np.all(offsets == 0, axis=1))
         for (i, j), offset in zip(arc[:-1], offsets):
-            np.testing.assert_array_equal(
-                offset,
-                dir_scheme.code2d8offset(dirs[i, j]),
-            )
+            np.testing.assert_array_equal(offset, dir_scheme.code2d8offset(dirs[i, j]))
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
@@ -75,11 +62,7 @@ def test_construct_flowgraph_rejects_two_cell_cycle(backend):
 
     with pytest.raises(nwork_m.validation.DirectedFlowCycleError) as exc_info:
         constr_m.construct_flowgraph(
-            dirs,
-            dir_scheme=dir_scheme,
-            orders=orders,
-            min_order=1,
-            backend=backend,
+            dirs, dir_scheme=dir_scheme, orders=orders, min_order=1, backend=backend
         )
 
     np.testing.assert_array_equal(exc_info.value.cycle_ijs, [[0, 0], [0, 1]])
@@ -117,16 +100,11 @@ def test_construct_flowgraph_reports_disconnected_cycles(backend):
 
     with pytest.raises(nwork_m.validation.DirectedFlowCycleError) as exc_info:
         constr_m.construct_flowgraph(
-            dirs,
-            dir_scheme=dir_scheme,
-            orders=orders,
-            min_order=1,
-            backend=backend,
+            dirs, dir_scheme=dir_scheme, orders=orders, min_order=1, backend=backend
         )
 
     np.testing.assert_array_equal(
-        exc_info.value.cycle_ijs,
-        [[0, 0], [0, 1], [1, 0], [1, 1]],
+        exc_info.value.cycle_ijs, [[0, 0], [0, 1], [1, 0], [1, 1]]
     )
 
 
@@ -137,11 +115,7 @@ def test_construct_flowgraph_allows_isolated_noflow_cell(backend):
     orders = np.ones(dirs.shape, dtype=np.uint8)
 
     graph_orders, graph_verts, graph_endpts = constr_m.construct_flowgraph(
-        dirs,
-        dir_scheme=dir_scheme,
-        orders=orders,
-        min_order=1,
-        backend=backend,
+        dirs, dir_scheme=dir_scheme, orders=orders, min_order=1, backend=backend
     )
 
     assert graph_orders.shape == (0,)
@@ -158,10 +132,7 @@ def test_construct_flowgraph_allows_isolated_noflow_cell(backend):
     ],
 )
 def test_construct_flowgraph_allows_selection_boundary(
-    backend,
-    valids,
-    orders,
-    min_order,
+    backend, valids, orders, min_order
 ):
     dir_scheme = D8Directions(transform_codes=lambda x: x)
     dirs = np.array([[1, 0]], dtype=np.uint8)
@@ -199,14 +170,5 @@ def test_construct_flowgraph_covers_every_selected_edge_endpoint(backend):
     represented = {
         tuple(ij) for start, end in graph_endpts for ij in graph_verts[start : end + 1]
     }
-    expected = {
-        (0, 0),
-        (1, 0),
-        (2, 0),
-        (0, 2),
-        (1, 2),
-        (2, 2),
-        (1, 1),
-        (2, 1),
-    }
+    expected = {(0, 0), (1, 0), (2, 0), (0, 2), (1, 2), (2, 2), (1, 1), (2, 1)}
     assert represented == expected

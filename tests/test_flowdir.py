@@ -3,17 +3,16 @@
 #     - Added test cases for function `find_acyclic_flowdirs` and
 #       graph construction validity.
 
-import numpy as np
+from tests.core import *
+
 import pytest
+import numpy as np
 
 from formosa import D8Directions
 import formosa.geomorphology.flowdir.flowdir as flowdir_m
 
-T = True
-F = False
 
-
-@pytest.mark.parametrize("backend", ("python", "fortran"))
+@pytest.mark.parametrize("backend", BACKENDS)
 def test_find_flowdir_cycles_with_feeder_and_invalid_cell(backend):
     dir_scheme = D8Directions(transform_codes=lambda x: x)
     # Cell 0 feeds the cycle between cells 1 and 2; cell 3 is invalid.
@@ -31,7 +30,7 @@ def test_find_flowdir_cycles_with_feeder_and_invalid_cell(backend):
     np.testing.assert_array_equal(cyclics, [[F, T, T, F]])
 
 
-@pytest.mark.parametrize("backend", ("python", "fortran"))
+@pytest.mark.parametrize("backend", BACKENDS)
 def test_find_flowdir_cycles_accepts_supplied_indegrees(backend):
     dir_scheme = D8Directions(transform_codes=lambda x: x)
     dirs = np.array([[1, 1, 0]], dtype=np.uint8)

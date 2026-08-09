@@ -2,6 +2,8 @@
 #   2026-07-29, En-Chi Lee (williameclee@gmail.com)
 #     - Added test cases for function `simplify_flowgraph`.
 
+from tests.core import *
+
 import pytest
 import warnings
 import numpy as np
@@ -12,11 +14,10 @@ from formosa.geomorphology.flowdir.network import simplification as simp_m
 
 from types import SimpleNamespace
 
-T = True
-F = False
 
-
-def test_topology_repair_simplifies_each_conflicting_arc_once(monkeypatch):
+def test_topology_repair_simplifies_each_conflicting_arc_once(
+    monkeypatch: pytest.MonkeyPatch,
+):
     """
     Each conflicting arc is simplified once per repair iteration.
     """
@@ -56,7 +57,9 @@ def test_topology_repair_simplifies_each_conflicting_arc_once(monkeypatch):
     np.testing.assert_array_equal(keeps, np.ones(6, dtype=bool))
 
 
-def test_topology_repair_attempt_count_matches_max_iters(monkeypatch):
+def test_topology_repair_attempt_count_matches_max_iters(
+    monkeypatch: pytest.MonkeyPatch,
+):
     intersections = np.array([[0, 1, 0, 2, 1]], dtype=np.int32)
     simplify_calls = []
 
@@ -177,25 +180,16 @@ def test_simplify_flowgraph_validates_arc_orders():
 
     with pytest.raises(TypeError, match="must be NumPy arrays"):
         simp_m.simplify_flowgraph(
-            np.array([1]),
-            "not-an-array",  # type: ignore
-            endpts,
-            check_topology=False,
+            np.array([1]), "not-an-array", endpts, check_topology=False  # type: ignore
         )
 
     with pytest.raises(ValueError, match="Order array has length 0"):
         simp_m.simplify_flowgraph(
-            np.array([], dtype=np.uint8),
-            verts,
-            endpts,
-            check_topology=False,
+            np.array([], dtype=np.uint8), verts, endpts, check_topology=False
         )
 
     with pytest.raises(ValueError, match="must have the same length"):
-        simp_m.simplify_flowgraph(
-            *(orders, [verts], [endpts]),
-            check_topology=False,
-        )
+        simp_m.simplify_flowgraph(orders, [verts], [endpts], check_topology=False)
 
 
 def test_simplify_rejects_invalid_final_graph_from_valid_input(monkeypatch):
@@ -218,14 +212,13 @@ def test_simplify_rejects_invalid_final_graph_from_valid_input(monkeypatch):
 
     with pytest.raises(nwork_m.UnresolvedSimplificationTopology) as exc_info:
         simp_m.simplify_flowgraph(
-            *(orders, verts, endpts),
-            tol=1.0,
-            check_topology=True,
-            backend="fortran",
+            orders, verts, endpts, tol=1.0, check_topology=True, backend="fortran"
         )
 
 
-def test_simplify_rejects_invalid_final_graph_from_invalid_input(monkeypatch):
+def test_simplify_rejects_invalid_final_graph_from_invalid_input(
+    monkeypatch: pytest.MonkeyPatch,
+):
     verts = np.array([[0.0, 0.0], [1.0, 1.0], [0.0, 1.0], [1.0, 0.0]])
     endpts = np.array([[0, 1], [2, 3]])
     orders = np.array([1, 2])
@@ -248,10 +241,7 @@ def test_simplify_rejects_invalid_final_graph_from_invalid_input(monkeypatch):
 
     with pytest.raises(nwork_m.InvalidOriginalGraphTopology) as exc_info:
         simp_m.simplify_flowgraph(
-            *(orders, verts, endpts),
-            tol=1.0,
-            check_topology=True,
-            backend="fortran",
+            orders, verts, endpts, tol=1.0, check_topology=True, backend="fortran"
         )
 
 
@@ -479,10 +469,7 @@ def test_simplify_multiple_flowgraphs_ignores_identical_arcs():
     orders = [np.array([2]), np.array([4])]
 
     _, simp_verts, _, _ = simp_m.simplify_flowgraph(
-        *(orders, verts, endpts),
-        tol=0.25,
-        check_topology=True,
-        backend="fortran",
+        orders, verts, endpts, tol=0.25, check_topology=True, backend="fortran"
     )
 
     # The identical central arcs may simplify despite having opposite directions

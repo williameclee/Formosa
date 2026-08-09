@@ -85,11 +85,7 @@ def test_max_branch_distance_matches_direct_path_reference():
 
     expected = _reference_max_branch_dist(dirs, valids, x, y, dir_scheme)
     actual = ridges_m.compute_dist2conf_max(
-        dirs,
-        valids=valids,
-        x=x,
-        y=y,
-        dir_scheme=dir_scheme,
+        dirs, valids=valids, x=x, y=y, dir_scheme=dir_scheme
     )
     np.testing.assert_allclose(actual, expected, rtol=2e-6, atol=2e-6)
 
@@ -118,9 +114,7 @@ def test_max_branch_distance_parallel_metadata_propagation():
     dirs[0, :] = code_by_offset[(1, 0)]
 
     actual = ridges_m.compute_dist2conf_max(
-        dirs,
-        valids=np.ones(dirs.shape, dtype=bool, order="F"),
-        dir_scheme=dir_scheme,
+        dirs, valids=np.ones(dirs.shape, dtype=bool, order="F"), dir_scheme=dir_scheme
     )
 
     np.testing.assert_array_equal(actual[0, :], 1.0)
@@ -396,17 +390,8 @@ def test_max_branch_distance_translates_allocation_failure(monkeypatch):
         return np.zeros((1, 1), dtype=np.float32), 2
 
     monkeypatch.setattr(
-        ridges_m,
-        "ridges_f",
-        SimpleNamespace(compute_max_branch_dist=fake_compute),
+        ridges_m, "ridges_f", SimpleNamespace(compute_max_branch_dist=fake_compute)
     )
 
     with pytest.raises(MemoryError, match=r"compute_max_branch_dist.*error code 2"):
-        ridges_m.compute_dist2conf_max(
-            np.zeros((1, 1), dtype=np.uint8),
-        )
-
-
-if __name__ == "__main__":
-    test_confluence_distance_2x2()
-    test_confluence_distance_3x3()
+        ridges_m.compute_dist2conf_max(np.zeros((1, 1), dtype=np.uint8))

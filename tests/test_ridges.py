@@ -12,11 +12,7 @@ def test_ridge_strahler_order_forwards_valid_mask(unequal_tributary_network, bac
     dir_scheme = D8Directions(transform_codes=lambda x: x)
 
     orders = ridges_m.compute_ridge_strahler_order(
-        dirs,
-        dir_scheme=dir_scheme,
-        valids=valids,
-        backend=backend,
-        dir_is_ridge=True,
+        dirs, dir_scheme=dir_scheme, valids=valids, backend=backend, dir_is_ridge=True
     )
 
     np.testing.assert_array_equal(orders, expected)
