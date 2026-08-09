@@ -5,7 +5,7 @@ import warnings
 import numpy as np
 
 import formosa.geomorphology.flowdir.network.validation as val_m
-from formosa.geomorphology.flowdir_f import flowdir_graphs as graphs_f
+from formosa.geomorphology.flowdir_f import network_validation as val_f
 
 
 def _make_separated_x_pairs(
@@ -101,7 +101,7 @@ def _scan_topology_with_capacity(
     """
     vertices_f = np.asfortranarray(vertices.T, dtype=np.float32)
     endpts_f = np.asfortranarray(endpts.T + 1, dtype=np.int32)
-    return graphs_f.scan_invalid_graph_topology(vertices_f, endpts_f, capacity)
+    return val_f.scan_invalid_graph_topology(vertices_f, endpts_f, capacity)
 
 
 def test_topology_scanner_counts_past_capacity():
@@ -169,7 +169,7 @@ def test_topology_wrapper_uses_single_scan_when_capacity_is_sufficient(monkeypat
 
     monkeypatch.setattr(
         val_m,
-        "graphs_f",
+        "val_f",
         SimpleNamespace(scan_invalid_graph_topology=fake_scan),
     )
     intxs = val_m.locate_invalid_graph_topology(
@@ -197,7 +197,7 @@ def test_topology_wrapper_retries_with_exact_reported_capacity(monkeypatch):
 
     monkeypatch.setattr(
         val_m,
-        "graphs_f",
+        "val_f",
         SimpleNamespace(scan_invalid_graph_topology=fake_scan),
     )
     intxs = val_m.locate_invalid_graph_topology(
@@ -224,7 +224,7 @@ def test_topology_wrapper_rejects_inconsistent_retry_count(monkeypatch):
 
     monkeypatch.setattr(
         val_m,
-        "graphs_f",
+        "val_f",
         SimpleNamespace(scan_invalid_graph_topology=fake_scan),
     )
     with pytest.raises(RuntimeError, match="count changed"):
@@ -251,7 +251,7 @@ def test_topology_wrapper_translates_scanner_errors(monkeypatch, err_code, excep
 
     monkeypatch.setattr(
         val_m,
-        "graphs_f",
+        "val_f",
         SimpleNamespace(scan_invalid_graph_topology=fake_scan),
     )
     with pytest.raises(exception):

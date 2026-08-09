@@ -1,6 +1,6 @@
 # Last modified
 #   2026-07-12, En-Chi Lee (williameclee@gmail.com)
-#     - Implemented Python and FORTRAN backends of function 
+#     - Implemented Python and FORTRAN backends of function
 #       `locate_invalid_graph_topology`
 #   2026-07-14, En-Chi Lee (williameclee@gmail.com)
 #     - Updated variable names in `locate_invalid_graph_topology`
@@ -18,7 +18,8 @@ from formosa.geomorphology.flowdir.utils import (
     compute_downstream_indices,
     raise_fortran_error,
 )
-from formosa.geomorphology.flowdir_f import flowdir_graphs as graphs_f
+import formosa.geomorphology.flowdir.network._backends.validation_py as val_py
+from formosa.geomorphology.flowdir_f import network_validation as val_f
 
 
 class GraphTopologyError(RuntimeError):
@@ -187,7 +188,7 @@ def _locate_invalid_graph_topology_fortran(
         vertices_f.shape[1] // 100, 3
     )  # Arbitrary capacity that seems to work
 
-    intxs, nintxs, err_code = graphs_f.scan_invalid_graph_topology(
+    intxs, nintxs, err_code = val_f.scan_invalid_graph_topology(
         vertices_f, endpts_f, capacity
     )
     raise_fortran_error(
@@ -200,7 +201,7 @@ def _locate_invalid_graph_topology_fortran(
 
     if nintxs > capacity:
         expected_nintxs = nintxs
-        intxs, nintxs, err_code = graphs_f.scan_invalid_graph_topology(
+        intxs, nintxs, err_code = val_f.scan_invalid_graph_topology(
             vertices_f, endpts_f, expected_nintxs
         )
         raise_fortran_error(
@@ -270,9 +271,7 @@ def locate_invalid_graph_topology(
 
     match backend:
         case "python":
-            from ._backends.graphs_py import _locate_invalid_graph_topology_py
-
-            intxs = _locate_invalid_graph_topology_py(
+            intxs = val_py.locate_invalid_graph_topology(
                 arc_endpts.astype(np.int32, order="C"),
                 vertex_xys.astype(np.float64, order="C"),
             )
