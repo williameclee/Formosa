@@ -30,6 +30,7 @@ custom_target(
     'src/formosa/geomorphology/drainage/network/_backends/simplification.f90',
     'src/formosa/geomorphology/drainage/_backends/basins.f90',
     'src/formosa/geomorphology/drainage/_backends/metrics.f90',
+    'src/formosa/geomorphology/drainage/_backends/flowdir_flat_resolution.f90',
     'src/formosa/geomorphology/drainage/_backends/flowdir.f90',
     'src/formosa/geomorphology/drainage/_backends/ridges.f90',
   ),
