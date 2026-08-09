@@ -148,7 +148,7 @@ def lines_intersect_v2(
     """
     Classifies the intersection of 2 closed 2D line segments.
 
-    The retuend flag has the following interpretation:
+    The retuned flag has the following interpretation:
       - `-1`: Disjoint segments
       - `0`: Endpoint contact
       - `1`: Interior 'X' crossing
