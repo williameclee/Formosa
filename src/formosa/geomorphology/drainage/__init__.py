@@ -1,4 +1,4 @@
-from .utils import (
+from .neighbours import (
     compute_downstream_indices,
     get_neighbour_values,
 )

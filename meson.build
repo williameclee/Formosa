@@ -21,7 +21,7 @@ ext_suffix = run_command(
 custom_target(
   'drainage_f',
   input: files(
-    'src/formosa/geomorphology/drainage/utils.f90',
+    'src/formosa/geomorphology/drainage/_backends/utils.f90',
     'src/formosa/geomorphology/geometry/geometry.f90',
     'src/formosa/geomorphology/geometry/_backends/intersections.f90',
     'src/formosa/geomorphology/drainage/_backends/preprocessing.f90',

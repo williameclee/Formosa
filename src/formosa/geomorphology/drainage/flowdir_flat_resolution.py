@@ -9,7 +9,7 @@ import numpy as np
 
 from formosa.utils import Backend, raise_fortran_error
 from formosa.geomorphology.drainage.directions import D8Directions
-from formosa.geomorphology.drainage.utils import (
+from formosa.geomorphology.drainage.neighbours import (
     get_neighbour_values,
 )
 from formosa.geomorphology.drainage_f import drainage_flowdir_flat_resolution as flat_f

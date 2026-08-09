@@ -12,7 +12,7 @@ import numpy as np
 
 from formosa.utils import Backend, raise_fortran_error
 from formosa.geomorphology.drainage.directions import D8Directions
-from formosa.geomorphology.drainage.utils import (
+from formosa.geomorphology.drainage.neighbours import (
     compute_downstream_indices,
 )
 from formosa.geomorphology.drainage_f import network_validation as val_f
