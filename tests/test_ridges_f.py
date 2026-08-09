@@ -3,7 +3,7 @@ import numpy as np
 
 from formosa import D8Directions
 import formosa.geomorphology.drainage.ridges as ridges_m
-from formosa.geomorphology.drainage_f import flowdir_ridges as ridges_f
+from formosa.geomorphology.drainage_f import drainage_ridges as ridges_f
 
 from types import SimpleNamespace
 

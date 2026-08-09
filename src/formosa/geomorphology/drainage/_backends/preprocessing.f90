@@ -8,7 +8,7 @@
 !       algorithm ('label_mask_areas')
 !!!
 
-module flowdir_preprocessing
+module drainage_preprocessing
     use utils, only: array2d_oob, mask2id, &
                      id2ij_checked, ij2id_checked, &
                      push_priority_queue, pop_priority_queue
@@ -485,4 +485,4 @@ contains
             iseed = iseed + 1
         end do
     end subroutine label_mask_areas
-end module flowdir_preprocessing
+end module drainage_preprocessing

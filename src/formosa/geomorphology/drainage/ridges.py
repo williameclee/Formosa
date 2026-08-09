@@ -32,7 +32,7 @@ from formosa.geomorphology.drainage.watersheds import (
     compute_dist2source,
     compute_flow_strahler_order,
 )
-from formosa.geomorphology.drainage_f import flowdir_ridges as ridges_f
+from formosa.geomorphology.drainage_f import drainage_ridges as ridges_f
 from formosa.geomorphology.drainage.utils import raise_fortran_error
 
 from typing import Literal, Optional

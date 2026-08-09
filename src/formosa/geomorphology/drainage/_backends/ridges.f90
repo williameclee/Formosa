@@ -10,7 +10,7 @@
 !     - Switched to 'iso_c_binding'
 !!!
 
-module flowdir_ridges
+module drainage_ridges
     use iso_c_binding, only: c_int8_t
     use utils, only: fill_offset_lookup, array2d_oob, ij2id_checked
     use geometry, only: l2dist_xy
@@ -909,4 +909,4 @@ contains
                        y(path2(1, ipath2), path2(2, ipath2)))
         end do
     end subroutine inner_compute_confluence_dist
-end module flowdir_ridges
+end module drainage_ridges
