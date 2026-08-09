@@ -21,7 +21,7 @@ def _point(value: npt.ArrayLike, name: str) -> npt.NDArray[np.number]:
     """
     point = np.asarray(value)
     if point.shape != (2,):
-        raise ValueError("{name} must have shape (2,), +" f"but got {point.shape}.")
+        raise ValueError("{name} must have shape (2,), " + f"but got {point.shape}.")
     if not np.issubdtype(point.dtype, np.number):
         raise TypeError(
             "{name} must contain numeric coordinates, " + f"but got {point.dtype}."
