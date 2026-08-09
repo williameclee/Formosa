@@ -7,7 +7,7 @@
 !     - Switched to 'iso_c_binding'
 !!!
 
-module drainage_basins
+module drainage_watersheds
     use iso_c_binding, only: c_int8_t
     use utils, only: find_noflow_code, array2d_oob, mask2id, &
                      id2ij_checked, ij2id_checked
@@ -167,4 +167,4 @@ contains
         deallocate (seed_ids)
     end subroutine label_watersheds
 
-end module drainage_basins
+end module drainage_watersheds

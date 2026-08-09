@@ -2,8 +2,8 @@ import numpy as np
 
 from formosa.utils import Backend, raise_fortran_error
 from formosa.geomorphology.drainage.directions import D8Directions
-from formosa.geomorphology.drainage_f import drainage_basins as basins_f
-import formosa.geomorphology.drainage._backends.basins_py as basins_py
+from formosa.geomorphology.drainage_f import drainage_watersheds as basins_f
+import formosa.geomorphology.drainage._backends.watersheds_py as watersheds_py
 
 from typing import Optional
 import numpy.typing as npt
@@ -42,7 +42,7 @@ def label_watersheds(
     """
     match backend:
         case "python":
-            watersheds = basins_py.label_watersheds(
+            watersheds = watersheds_py.label_watersheds(
                 dirs=dirs,
                 dir_scheme=dir_scheme,
                 valids=valids,

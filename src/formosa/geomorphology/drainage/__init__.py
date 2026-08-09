@@ -20,7 +20,7 @@ from .metrics import (
     compute_dist2source,
     compute_dist2sink,
 )
-from .basins import label_watersheds
+from .watersheds import label_watersheds
 from .ridges import (
     compute_dist2conf_max,
     compute_ridgedir,

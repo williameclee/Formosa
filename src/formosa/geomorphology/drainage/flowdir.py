@@ -28,7 +28,7 @@ import numpy as np
 from formosa.utils import Backend, raise_fortran_error
 from formosa.geomorphology.drainage.directions import D8Directions
 from formosa.geomorphology.drainage.preprocessing import fill_depressions
-from formosa.geomorphology.drainage.flowdir_flat_resolution import (
+from formosa.geomorphology.drainage.flat_resolution import (
     label_flats,
     find_flat_edges,
     create_pulling_syn_grad,

@@ -8,7 +8,7 @@
 !     - Switched to 'iso_c_binding'
 !!!
 
-module drainage_flowdir_flat_resolution
+module drainage_flat_resolution
     use iso_c_binding, only: c_int8_t
     use utils, only: find_noflow_code, array2d_oob, mask2ij
     implicit none(type, external)
@@ -618,4 +618,4 @@ contains
         deallocate (queued)
         deallocate (low_edges_ijs)
     end subroutine create_pulling_syn_grad
-end module drainage_flowdir_flat_resolution
+end module drainage_flat_resolution

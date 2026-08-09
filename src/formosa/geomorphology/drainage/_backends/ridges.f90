@@ -13,7 +13,7 @@
 module drainage_ridges
     use iso_c_binding, only: c_int8_t
     use utils, only: fill_offset_lookup, array2d_oob, ij2id_checked
-    use geometry, only: l2dist_xy
+    use distances, only: l2dist_xy
     implicit none(type, external)
     private :: resolve_flowtree_links, build_flowtree_topology, &
                propagate_flowtree_metadata, build_flowtree_metadata, &

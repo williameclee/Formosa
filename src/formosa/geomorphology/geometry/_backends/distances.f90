@@ -6,11 +6,12 @@
 !     - Implemented point-to-line distance functions 'pt2linedist_xy' and 'pt2linedist2_xy'
 !   2026-08-05, En-Chi Lee (williameclee@gmail.com)
 !     - Switched to 'iso_c_binding'
-!   2026-08-08, En-Chi Lee (williameclee@gmail.com)
-!     - Refactored module to 'geometry' and 'intersections'
+!   2026-08-09, En-Chi Lee (williameclee@gmail.com)
+!     - Refactored module: 
+!       'distances' -> 'geometry' / 'distances' + 'intersections'
 !!!
 
-module geometry
+module distances
     use iso_c_binding, only: c_int8_t
     implicit none(type, external)
     interface l1dist_xy
@@ -88,4 +89,4 @@ contains
 
         dist = sqrt(pt2linedist2_xy(x1, y1, x2, y2, x3, y3))
     end function pt2linedist_xy
-end module geometry
+end module distances

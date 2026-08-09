@@ -8,8 +8,8 @@ import pytest
 import numpy as np
 
 from formosa import D8Directions
-import formosa.geomorphology.drainage.flowdir_flat_resolution as flat_m
-from formosa.geomorphology.drainage_f import drainage_flowdir_flat_resolution as flat_f
+import formosa.geomorphology.drainage.flat_resolution as flat_m
+from formosa.geomorphology.drainage_f import drainage_flat_resolution as flat_f
 
 from types import SimpleNamespace
 

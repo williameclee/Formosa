@@ -10,7 +10,7 @@
 !!!
 
 module network_simplification
-    use geometry, only: pt2linedist2_xy
+    use distances, only: pt2linedist2_xy
     implicit none(type, external)
 contains
     pure recursive subroutine simplify_arc_rdp( &

@@ -2,8 +2,9 @@
 ! Last modified
 !   2026-08-05, En-Chi Lee (williameclee@gmail.com)
 !     - Switched to 'iso_c_binding'
-!   2026-08-08, En-Chi Lee (williameclee@gmail.com)
-!     - Refactored module to 'geometry' and 'intersections'
+!   2026-08-09, En-Chi Lee (williameclee@gmail.com)
+!     - Refactored module:
+!       'distances' -> 'geometry' / 'distances' + 'intersections'
 !!!
 
 module intersections

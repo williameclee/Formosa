@@ -23,7 +23,7 @@ module drainage_metrics
     use utils, only: fill_offset_lookup, find_noflow_code, &
                      array2d_oob, mask2id, mask2ij, &
                      id2ij_checked, ij2id_checked
-    use geometry, only: l1dist_xy, l2dist_xy
+    use distances, only: l1dist_xy, l2dist_xy
     implicit none(type, external)
 contains
     subroutine compute_flow_accumulation( &
