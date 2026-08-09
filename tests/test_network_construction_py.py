@@ -10,7 +10,7 @@ import numpy as np
 from formosa import D8Directions
 import formosa.geomorphology.flowdir.network as nwork_m
 import formosa.geomorphology.flowdir.network.construction as constr_m
-from formosa.geomorphology.flowdir.network import graphs as graphs_m
+from formosa.geomorphology.flowdir.network import editing as editing_m
 import formosa.geomorphology.flowdir.network._backends.construction_py as constr_py
 
 T = True
@@ -130,7 +130,7 @@ def test_network_graph_concat_3x3():
     exp_s_orders = np.array([1, 2])
     exp_s_endpts = np.array([[0, 10], [12, 13]])
 
-    s_arc_orders, s_vertex_ijs, s_arc_endpts = graphs_m.concat_flowgraph(
+    s_arc_orders, s_vertex_ijs, s_arc_endpts = editing_m.concat_flowgraph(
         arc_orders, vertex_ijs, arc_endpts
     )
     assert s_vertex_ijs.shape[0] == vertex_ijs.shape[0] + arc_orders.shape[0] - 1

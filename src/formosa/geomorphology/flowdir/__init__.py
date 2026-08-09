@@ -3,7 +3,6 @@ from .utils import (
     get_neighbour_values,
 )
 
-
 from .preprocessing import (
     detect_ocean_basins_from_boundary,
     fill_depressions,
@@ -38,8 +37,5 @@ from .network.validation import (
 )
 from .network.construction import construct_flowgraph, create_flowgraph
 from .network.validation import locate_invalid_graph_topology
-from .network import (
-    concat_flowgraph,
-    remove_unused_vertices,
-    simplify_flowgraph,
-)
+from .network.editing import concat_flowgraph, remove_unused_vertices
+from .network import simplify_flowgraph

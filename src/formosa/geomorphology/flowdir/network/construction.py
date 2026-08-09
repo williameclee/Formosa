@@ -1,3 +1,12 @@
+# Last modified
+#   2026-07-01, En-Chi Lee (williameclee@gmail.com)
+#     - Opted out of the out-of-bound check in
+#       `compute_downstream_indices` in `create_flowgraph`
+#     - Added function `construct_flowgraph`
+#   2026-07-09, En-Chi Lee (williameclee@gmail.com)
+#     - Specified endpoint index definition for
+#       `construct_flowgraph`
+
 import numpy as np
 
 from formosa.geomorphology.flowdir.directions import D8Directions
@@ -7,7 +16,7 @@ from formosa.geomorphology.flowdir.utils import (
 )
 import formosa.geomorphology.flowdir.flowdir as flowdir_m
 import formosa.geomorphology.flowdir.watersheds as wshed_m
-from formosa.geomorphology.flowdir.network.graphs import remove_unused_vertices
+from formosa.geomorphology.flowdir.network.editing import remove_unused_vertices
 from formosa.geomorphology.flowdir.network.validation import (
     DirectedFlowCycleError,
     _valid_flow_edges,
