@@ -8,13 +8,11 @@ Last modified:
 
 import numpy as np
 
+from formosa.utils import Backend
 from formosa.geomorphology.drainage_f import intersections as intx_f
 import formosa.geomorphology.geometry._backends.intersections_py as intxs_py
 
-from typing import Literal, TypeAlias
 import numpy.typing as npt
-
-Backend: TypeAlias = Literal["fortran", "python"]
 
 
 def _point(value: npt.ArrayLike, name: str) -> npt.NDArray[np.number]:
@@ -35,7 +33,7 @@ def _point(value: npt.ArrayLike, name: str) -> npt.NDArray[np.number]:
 
 def _fortran_point(value: npt.NDArray[np.number]) -> npt.NDArray[np.float32]:
     """
-    Converts a point to the representation consumed by the FORTRAN 
+    Converts a point to the representation consumed by the FORTRAN
     backend.
     """
     return np.asarray(value, dtype=np.float32, order="F")

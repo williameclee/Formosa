@@ -8,13 +8,13 @@
 
 import numpy as np
 
+from formosa.utils import Backend, raise_fortran_error
 from formosa.geomorphology.drainage.directions import D8Directions
-from formosa.geomorphology.drainage.utils import raise_fortran_error
 from formosa.geomorphology.drainage.flowdir import count_indegree
 from formosa.geomorphology.drainage_f import drainage_metrics as metrics_f
 import formosa.geomorphology.drainage._backends.metrics_py as metrics_py
 
-from typing import Literal, Optional
+from typing import Optional
 import numpy.typing as npt
 
 
@@ -25,7 +25,7 @@ def compute_flow_accumulation(
     indegs: Optional[npt.NDArray[np.integer]] = None,
     dsij: Optional[npt.NDArray[np.integer]] = None,
     dir_scheme: D8Directions = D8Directions(),
-    backend: Literal["fortran", "python"] = "fortran",
+    backend: Backend = "fortran",
 ) -> npt.NDArray[np.float32]:
     """
     Computes flow accumulation for each cell in a flow direction grid.
@@ -54,8 +54,10 @@ def compute_flow_accumulation(
         An instance of `D8Directions` defining the flow direction scheme.
         Default is `D8Directions()`.
     backend : {'fortran', 'python'}, optional
-        The backend to use for computation. 'fortran' uses the Fortran extension for performance, while 'python' uses a pure Python implementation.
-        Default is 'fortran'.
+        Backend to use for computation.
+        `'fortran'` uses the FORTRAN extension for performance,
+        while `'python'` uses a pure Python implementation.
+        Default backend is `'fortran'`.
 
     Returns
     -------
@@ -100,7 +102,7 @@ def compute_flow_strahler_order(
     dir_scheme: D8Directions = D8Directions(),
     valids: Optional[npt.NDArray[np.bool_]] = None,
     indegs: Optional[npt.NDArray[np.integer]] = None,
-    backend: Literal["fortran", "python"] = "fortran",
+    backend: Backend = "fortran",
 ) -> npt.NDArray[np.uint8]:
     """
     Computes the Strahler order for each cell in a flow direction grid.
@@ -121,9 +123,10 @@ def compute_flow_strahler_order(
         If `None`, it will be computed from the flow direction grid.
         Default is `None`.
     backend : {'fortran', 'python'}, optional
-        Backend to use for computation
-        `'fortran'` uses the FORTRAN extension for performance, while 'python' uses a pure Python implementation.
-        Default option is `'fortran'`.
+        Backend to use for computation.
+        `'fortran'` uses the FORTRAN extension for performance,
+        while `'python'` uses a pure Python implementation.
+        Default backend is `'fortran'`.
 
     Returns
     -------

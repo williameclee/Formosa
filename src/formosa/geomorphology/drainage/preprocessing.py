@@ -8,9 +8,8 @@
 
 import numpy as np
 
+from formosa.utils import raise_fortran_error
 from formosa.geomorphology.drainage.directions import D8Directions
-from formosa.geomorphology.drainage.utils import raise_fortran_error
-
 from formosa.geomorphology.drainage_f import drainage_preprocessing as preproc_f
 
 from typing import Optional

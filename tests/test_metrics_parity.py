@@ -8,6 +8,7 @@ from tests.core import *
 import pytest
 import numpy as np
 
+from formosa.utils import BACKENDS
 from formosa import D8Directions
 import formosa.geomorphology.drainage.flowdir as flowdir_m
 import formosa.geomorphology.drainage.metrics as metrics_m

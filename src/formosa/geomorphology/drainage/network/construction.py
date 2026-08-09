@@ -9,10 +9,10 @@
 
 import numpy as np
 
+from formosa.utils import Backend, raise_fortran_error
 from formosa.geomorphology.drainage.directions import D8Directions
 from formosa.geomorphology.drainage.utils import (
     compute_downstream_indices,
-    raise_fortran_error,
 )
 import formosa.geomorphology.drainage.flowdir as flowdir_m
 import formosa.geomorphology.drainage.metrics as metrics_m
@@ -25,7 +25,7 @@ from formosa.geomorphology.drainage.network.validation import (
 from formosa.geomorphology.drainage_f import network_construction as constr_f
 import formosa.geomorphology.drainage.network._backends.construction_py as constr_py
 
-from typing import Literal, Optional
+from typing import Optional
 import numpy.typing as npt
 
 
@@ -119,8 +119,8 @@ def construct_flowgraph(
     orders: Optional[npt.NDArray[np.integer]] = None,
     preserve_junctions: bool = True,
     sort: bool = True,
-    backend: Literal["fortran", "python"] = "fortran",
     remove_unused: bool = False,
+    backend: Backend = "fortran",
 ) -> tuple[npt.NDArray[np.int8], npt.NDArray[np.int32], npt.NDArray[np.int32]]:
     """
     Constructs a flow graph from a flow direction grid.
@@ -149,13 +149,14 @@ def construct_flowgraph(
     sort : bool, option
         Whether to sort the flow graph by arc order and then by length.
         Default option is `True`.
-    backend : {'fortran', 'python'}, optional
-        The backend to use for computation.
-        `'fortran'` uses the FORTRAN extension for performance, while 'python' uses a pure Python implementation.
-        Default backend is `'fortran'`.
     remove_unused : bool, optional
         Whether to compact the vertex array after construction so the arc ranges are adjacent in arc order.
         Default option is `False`.
+    backend : {'fortran', 'python'}, optional
+        Backend to use for computation.
+        `'fortran'` uses the FORTRAN extension for performance,
+        while `'python'` uses a pure Python implementation.
+        Default backend is `'fortran'`.
 
     Returns
     -------

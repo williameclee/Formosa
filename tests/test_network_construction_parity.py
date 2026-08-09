@@ -3,6 +3,7 @@ from tests.core import *
 import pytest
 import numpy as np
 
+from formosa.utils import BACKENDS
 from formosa import D8Directions
 import formosa.geomorphology.drainage.network as nwork_m
 import formosa.geomorphology.drainage.network.construction as constr_m

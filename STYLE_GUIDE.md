@@ -33,7 +33,7 @@ All public functions should have descriptive docstrings written in the *NumPy st
 - A **Parameters** section detailing variable names, types (e.g. `NDArray[int]`), and default values if optional.
   - Each parameter should start with the short phrase describing the parameter, without the leading 'A' or 'The', and end with a period.
   - More detailed descriptions of parameters can be provided in a separate paragraph after the short phrase.
-  - For optional parameters, the default value should be specified at the end of the description in parentheses (e.g. 'The default backend is `"python"`').
+  - For optional parameters, the default value should be specified at the end of the description in parentheses (e.g. 'Default backend is `"python"`').
 - A **Returns** section specifying returned values, types, and descriptions of output structures.
   - The documentation should be in the same style as that for the Parameters section.
 - A **Raises** section detailing exceptions raised and under what conditions.

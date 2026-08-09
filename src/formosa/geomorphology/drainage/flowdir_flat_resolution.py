@@ -7,15 +7,15 @@
 
 import numpy as np
 
+from formosa.utils import Backend, raise_fortran_error
 from formosa.geomorphology.drainage.directions import D8Directions
 from formosa.geomorphology.drainage.utils import (
     get_neighbour_values,
-    raise_fortran_error,
 )
 from formosa.geomorphology.drainage_f import drainage_flowdir_flat_resolution as flat_f
 import formosa.geomorphology.drainage._backends.flowdir_py as flowdir_py
 
-from typing import Literal, Optional
+from typing import Optional
 import numpy.typing as npt
 
 
@@ -24,7 +24,7 @@ def find_flat_edges(
     dirs: npt.NDArray[np.integer],
     dir_scheme: D8Directions = D8Directions(),
     valids: Optional[npt.NDArray[np.bool_]] = None,
-    backend: Literal["fortran", "python"] = "fortran",
+    backend: Backend = "fortran",
 ) -> tuple[npt.NDArray[np.bool_], npt.NDArray[np.bool_]]:
     """
     Finds the cells on the edges of flat areas that drain to lower terrain (low edges) and those that are adjacent to higher terrain (high edges).
@@ -44,8 +44,10 @@ def find_flat_edges(
         If `None`, all cells are considered valid.
         Default is `None`.
     backend : {'fortran', 'python'}, optional
-        The backend to use for computation. 'fortran' uses the Fortran extension for performance, while 'python' uses a pure Python implementation.
-        Default is 'fortran'.
+        Backend to use for computation.
+        `'fortran'` uses the FORTRAN extension for performance,
+        while `'python'` uses a pure Python implementation.
+        Default backend is `'fortran'`.
 
     Returns
     -------
@@ -297,7 +299,7 @@ def compute_syn_flowdir(
     z: npt.NDArray[np.integer | np.floating],
     labels: npt.NDArray[np.integer],
     dir_scheme: D8Directions = D8Directions(),
-    backend: Literal["fortran", "python"] = "fortran",
+    backend: Backend = "fortran",
 ) -> npt.NDArray[np.uint8]:
     """
     Computes flow directions within flat areas using synthetic elevation.
@@ -313,8 +315,10 @@ def compute_syn_flowdir(
         An instance of `D8Directions` defining the flow direction scheme.
         Default is `D8Directions()`.
     backend : {'fortran', 'python'}, optional
-        The backend to use for computation. 'fortran' uses the Fortran extension for performance,
-        while 'python' uses a pure Python implementation. Default is 'fortran'.
+        Backend to use for computation.
+        `'fortran'` uses the FORTRAN extension for performance,
+        while `'python'` uses a pure Python implementation.
+        Default backend is `'fortran'`.
 
     Returns
     -------

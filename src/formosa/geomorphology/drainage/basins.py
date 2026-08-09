@@ -1,11 +1,11 @@
 import numpy as np
 
+from formosa.utils import Backend, raise_fortran_error
 from formosa.geomorphology.drainage.directions import D8Directions
-from formosa.geomorphology.drainage.utils import raise_fortran_error
 from formosa.geomorphology.drainage_f import drainage_basins as basins_f
 import formosa.geomorphology.drainage._backends.basins_py as basins_py
 
-from typing import Literal, Optional
+from typing import Optional
 import numpy.typing as npt
 
 
@@ -13,7 +13,7 @@ def label_watersheds(
     dirs: npt.NDArray[np.integer],
     dir_scheme: D8Directions = D8Directions(),
     valids: Optional[npt.NDArray[np.bool_]] = None,
-    backend: Literal["fortran", "python"] = "fortran",
+    backend: Backend = "fortran",
 ) -> npt.NDArray[np.int32]:
     """
     Finds and labels watersheds in a DEM based on flow direction.
@@ -29,6 +29,11 @@ def label_watersheds(
         A boolean mask array indicating valid cells in the flow direction grid.
         If `None`, all non-NaN cells in flowdirs are considered valid.
         Default is `None`.
+    backend : {'fortran', 'python'}, optional
+        Backend to use for computation.
+        `'fortran'` uses the FORTRAN extension for performance,
+        while `'python'` uses a pure Python implementation.
+        Default backend is `'fortran'`.
 
     Returns
     -------

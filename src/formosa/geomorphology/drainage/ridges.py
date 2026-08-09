@@ -26,8 +26,8 @@
 
 import numpy as np
 
+from formosa.utils import Backend, raise_fortran_error
 from formosa.geomorphology.drainage.directions import D8Directions
-from formosa.geomorphology.drainage.utils import raise_fortran_error
 import formosa.geomorphology.drainage.flowdir as flowdir_m
 from formosa.geomorphology.drainage.metrics import (
     compute_dist2source,
@@ -35,7 +35,7 @@ from formosa.geomorphology.drainage.metrics import (
 )
 from formosa.geomorphology.drainage_f import drainage_ridges as ridges_f
 
-from typing import Literal, Optional
+from typing import Optional
 import numpy.typing as npt
 
 
@@ -211,9 +211,19 @@ def compute_ridge_strahler_order(
     dir_scheme: D8Directions = D8Directions(),
     valids: Optional[npt.NDArray[np.bool_]] = None,
     indegs: Optional[npt.NDArray[np.integer]] = None,
-    backend: Literal["fortran", "python"] = "fortran",
+    backend: Backend = "fortran",
     dir_is_ridge: bool = False,
 ) -> npt.NDArray[np.uint8]:
+    """
+    Parameters
+    ----------
+    backend : {'fortran', 'python'}, optional
+        Backend to use for computation.
+        `'fortran'` uses the FORTRAN extension for performance,
+        while `'python'` uses a pure Python implementation.
+        Default backend is `'fortran'`.
+    """
+
     if dir_is_ridge:
         bmaxdirs = dirs
     else:

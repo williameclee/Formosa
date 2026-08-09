@@ -1,16 +1,20 @@
-# Last modified
-#   2026-06-11, En-Chi Lee (williameclee@gmail.com)
-#     - Moved auxiliary functions to this file
-#     - Standardised variable and argument names
-#   2026-07-01, En-Chi Lee (williameclee@gmail.com)
-#     - Made out-of-bound check in `compute_downstream_indices` optional
-#   2026-07-02, En-Chi Lee (williameclee@gmail.com)
-#     - Actually implemented validity check in `compute_downstram_indices`
-#     - Updated `geomorphology.flowdir` submodule path
-#   2026-08-03, En-Chi Lee (williameclee@gmail.com)
-#     - Added arguments `return_flat_index` and `oob_is_okay` to `compute_downstream_indices`
-#   2026-08-04, En-Chi Lee (williameclee@gmail.com)
-#     - Added unified FORTRAN error code handler
+"""
+Last modified
+    2026-06-11, En-Chi Lee (williameclee@gmail.com)
+      - Moved auxiliary functions to this file
+      - Standardised variable and argument names
+    2026-07-01, En-Chi Lee (williameclee@gmail.com)
+      - Made out-of-bound check in `compute_downstream_indices` optional
+    2026-07-02, En-Chi Lee (williameclee@gmail.com)
+      - Actually implemented validity check in `compute_downstram_indices`
+      - Updated `geomorphology.flowdir` submodule path
+    2026-08-03, En-Chi Lee (williameclee@gmail.com)
+      - Added arguments `return_flat_index` and `oob_is_okay` to `compute_downstream_indices`
+    2026-08-04, En-Chi Lee (williameclee@gmail.com)
+      - Added unified FORTRAN error code handler
+    2026-08-09, En-Chi Lee (williameclee@gmail.com)
+      - Promoted `raise_fortran_error` to a package-level helper
+"""
 
 import numpy as np
 
@@ -18,35 +22,8 @@ from formosa.geomorphology.drainage.directions import D8Directions
 
 import warnings
 
+from typing import Optional
 import numpy.typing as npt
-from typing import Mapping, Optional
-
-
-def raise_fortran_error(
-    operation: str,
-    err_code: int,
-    errors: Optional[Mapping[int, tuple[type[Exception], str]]] = None,
-) -> None:
-    """
-    Raises the Python exception corresponding to a Fortran status code.
-
-    The default project convention is 0 for success, 1 for invalid input,
-    2 for allocation failure, and 3 for array or index overflow. A
-    routine-specific mapping may refine exception types and text
-    without changing those numeric meanings.
-    """
-    if err_code == 0:
-        return
-
-    error_map = errors or {
-        1: (ValueError, "invalid input"),
-        2: (MemoryError, "unable to allocate backend workspace"),
-        3: (RuntimeError, "array or index capacity exceeded"),
-    }
-    exception, detail = error_map.get(
-        int(err_code), (RuntimeError, "unknown backend failure")
-    )
-    raise exception(f"Fortran {operation} failed: {detail} (error code {err_code}).")
 
 
 def get_neighbour_values(

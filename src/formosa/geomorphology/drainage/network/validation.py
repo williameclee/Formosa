@@ -10,16 +10,16 @@
 
 import numpy as np
 
-from typing import Literal, Optional
-import numpy.typing as npt
-
+from formosa.utils import Backend, raise_fortran_error
 from formosa.geomorphology.drainage.directions import D8Directions
 from formosa.geomorphology.drainage.utils import (
     compute_downstream_indices,
-    raise_fortran_error,
 )
 from formosa.geomorphology.drainage_f import network_validation as val_f
 import formosa.geomorphology.drainage.network._backends.validation_py as val_py
+
+from typing import Optional
+import numpy.typing as npt
 
 
 class GraphTopologyError(RuntimeError):
@@ -221,7 +221,7 @@ def _locate_invalid_graph_topology_fortran(
 def locate_invalid_graph_topology(
     vertex_xys: npt.NDArray[np.number],
     arc_endpts: npt.NDArray[np.integer],
-    backend: Literal["fortran", "python"] = "fortran",
+    backend: Backend = "fortran",
 ) -> Optional[npt.NDArray[np.int32]]:
     """
     Locates invalid topologies (segment intersections) within and between arcs in a graph.
@@ -235,8 +235,10 @@ def locate_invalid_graph_topology(
     arc_endpts : NDArray[integer]
         2D array of shape `(narcs, 2)` containing the start and end vertex indices for each arc in `vertex_ijs`.
     backend : {'fortran', 'python'}, optional
-        Computational backend to use.
-        The default option is `'fortran'`.
+        Backend to use for computation.
+        `'fortran'` uses the FORTRAN extension for performance,
+        while `'python'` uses a pure Python implementation.
+        Default backend is `'fortran'`.
 
     Returns
     -------

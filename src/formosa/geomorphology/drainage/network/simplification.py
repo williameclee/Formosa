@@ -22,6 +22,7 @@
 
 import numpy as np
 
+from formosa.utils import Backend
 from formosa.geomorphology.drainage.network.overlaps import (
     _resolve_topology_intersections,
     solve_graph_overlaps,
@@ -35,7 +36,7 @@ from formosa.geomorphology.drainage.network.editing import remove_unused_vertice
 from formosa.geomorphology.drainage_f import network_simplification as simp_f
 
 import numpy.typing as npt
-from typing import Literal, Optional, TypeVar, overload
+from typing import Optional, TypeVar, overload
 
 NpIndex = TypeVar("NpIndex", np.int32, np.int64, np.intp)
 
@@ -58,7 +59,7 @@ def _simplify_multiple_flowgraphs(
     endpts_list: list[npt.NDArray[NpIndex]] | tuple[npt.NDArray[NpIndex], ...],
     tol: int | float,
     check_topology: bool,
-    backend: str,
+    backend: Backend,
 ) -> tuple[
     list[npt.NDArray[np.integer]] | tuple[npt.NDArray[np.integer], ...],
     list[npt.NDArray[np.number]] | tuple[npt.NDArray[np.number], ...],
@@ -241,7 +242,7 @@ def _simplify_single_flowgraph(
     endpts: npt.NDArray[NpIndex],
     tol: float,
     check_topology: bool,
-    backend: str,
+    backend: Backend,
     graph_ids: Optional[npt.NDArray[np.integer]] = None,
 ) -> tuple[
     npt.NDArray[np.integer],
@@ -327,8 +328,8 @@ def simplify_flowgraph(
     arc_endpts: npt.NDArray[NpIndex],
     tol: int | float = 1,
     check_topology: bool = True,
-    backend: Literal["fortran", "python"] = "fortran",
     remove_unused: bool = False,
+    backend: Backend = "fortran",
 ) -> tuple[
     npt.NDArray[np.integer],
     npt.NDArray[np.number],
@@ -344,8 +345,8 @@ def simplify_flowgraph(
     arc_endpts: list[npt.NDArray[NpIndex]],
     tol: int | float = 1,
     check_topology: bool = True,
-    backend: Literal["fortran", "python"] = "fortran",
     remove_unused: bool = False,
+    backend: Backend = "fortran",
 ) -> tuple[
     list[npt.NDArray[np.integer]],
     list[npt.NDArray[np.number]],
@@ -361,8 +362,8 @@ def simplify_flowgraph(
     arc_endpts: tuple[npt.NDArray[NpIndex], ...],
     tol: int | float = 1,
     check_topology: bool = True,
-    backend: Literal["fortran", "python"] = "fortran",
     remove_unused: bool = False,
+    backend: Backend = "fortran",
 ) -> tuple[
     tuple[npt.NDArray[np.integer], ...],
     tuple[npt.NDArray[np.number], ...],
@@ -389,8 +390,8 @@ def simplify_flowgraph(
     ),
     tol: int | float = 1,
     check_topology: bool = True,
-    backend: Literal["fortran", "python"] = "fortran",
     remove_unused: bool = False,
+    backend: Backend = "fortran",
 ):
     """
     Simplify a flow graph using the Ramer-Douglas-Peucker (RDP) algorithm with a fixed tolerance threshold.
@@ -412,12 +413,14 @@ def simplify_flowgraph(
     check_topology : bool, optional
         Whether to check for invalid topography in the simplified graph.
         Default option is `True`.
-    backend : {'fortran', 'python'}, optional
-        Backend to use for computation.
-        Default backend and the only one currently available is `'fortran'`.
     remove_unused : bool, optional
         Whether to compact each returned vertex array so its arc ranges are adjacent.
         Default option is `False`.
+    backend : {'fortran', 'python'}, optional
+        Backend to use for computation.
+        `'fortran'` uses the FORTRAN extension for performance,
+        while `'python'` uses a pure Python implementation.
+        Default backend is `'fortran'`.
 
     Returns
     -------

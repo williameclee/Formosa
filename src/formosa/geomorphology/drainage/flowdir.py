@@ -25,8 +25,8 @@
 
 import numpy as np
 
+from formosa.utils import Backend, raise_fortran_error
 from formosa.geomorphology.drainage.directions import D8Directions
-from formosa.geomorphology.drainage.utils import raise_fortran_error
 from formosa.geomorphology.drainage.preprocessing import fill_depressions
 from formosa.geomorphology.drainage.flowdir_flat_resolution import (
     label_flats,
@@ -38,7 +38,7 @@ from formosa.geomorphology.drainage.flowdir_flat_resolution import (
 from formosa.geomorphology.drainage_f import drainage_flowdir as flowdir_f
 import formosa.geomorphology.drainage._backends.flowdir_py as flowdir_py
 
-from typing import Literal, Optional
+from typing import Optional
 import numpy.typing as npt
 
 
@@ -46,7 +46,7 @@ def _compute_flowdir_simple(
     dem: npt.NDArray[np.number],
     dir_scheme: D8Directions = D8Directions(),
     valids: Optional[npt.NDArray[np.bool_]] = None,
-    backend: Literal["fortran", "python"] = "fortran",
+    backend: Backend = "fortran",
 ) -> tuple[npt.NDArray[np.uint8], npt.NDArray[np.bool_]]:
     """
     Computes flow directions for a DEM using a simple D8 algorithm.
@@ -63,8 +63,10 @@ def _compute_flowdir_simple(
         If `None`, all cells are considered valid.
         Default is `None`.
     backend : {'fortran', 'python'}, optional
-        The backend to use for computation. 'fortran' uses the Fortran extension for performance, while 'python' uses a pure Python implementation.
-        Default is 'fortran'.
+        Backend to use for computation.
+        `'fortran'` uses the FORTRAN extension for performance,
+        while `'python'` uses a pure Python implementation.
+        Default backend is `'fortran'`.
 
     Returns
     -------
@@ -209,7 +211,7 @@ def count_indegree(
     dirs: npt.NDArray[np.integer],
     dir_scheme: D8Directions = D8Directions(),
     valids: Optional[npt.NDArray[np.bool_]] = None,
-    backend: Literal["fortran", "python"] = "fortran",
+    backend: Backend = "fortran",
 ) -> npt.NDArray[np.int8]:
     """
     Computes the number of upstream cells (indegree) for each cell in a flow direction grid.
@@ -226,9 +228,10 @@ def count_indegree(
         If not provided, all cells are assumed to be valid.
         Default is `None`.
     backend : {'fortran', 'python'}, optional
-        The backend to use for computation. 'fortran' uses the Fortran extension for performance, while 'python' uses a pure Python implementation.
-        Note: the Python implementation is unmaintained.
-        Default is 'fortran'.
+        Backend to use for computation.
+        `'fortran'` uses the FORTRAN extension for performance,
+        while `'python'` uses a pure Python implementation.
+        Default backend is `'fortran'`.
 
     Returns
     -------
@@ -261,7 +264,7 @@ def _find_acyclic_flowdirs_fortran(
     dir_scheme: D8Directions,
 ) -> npt.NDArray[np.bool_]:
     """
-    Returns acyclic flow cells using the FORTRAN backend.
+    Finds acyclic flow cells using the FORTRAN backend.
 
     Raises
     ------
@@ -269,6 +272,10 @@ def _find_acyclic_flowdirs_fortran(
         If the traversal queue overflows or an unknown status is returned.
     MemoryError
         If the traversal workspace cannot be allocated.
+        
+    Notes
+    -----
+    This is a helper function for :func:`find_acyclic_flowdirs`.
     """
     acyclics, err_code = flowdir_f.find_acyclic_flowdirs(
         dirs.astype(np.uint8, order="F"),
@@ -286,7 +293,7 @@ def find_acyclic_flowdirs(
     dir_scheme: D8Directions = D8Directions(),
     valids: Optional[npt.NDArray[np.bool_]] = None,
     indegs: Optional[npt.NDArray[np.integer]] = None,
-    backend: Literal["fortran", "python"] = "fortran",
+    backend: Backend = "fortran",
 ) -> npt.NDArray[np.bool_]:
     """
     Finds valid cells that do not belong to a directed flow cycle.
@@ -310,8 +317,10 @@ def find_acyclic_flowdirs(
         computed using the selected backend.
         The default input is `None`.
     backend : {'fortran', 'python'}, optional
-        Computational backend.
-        The default backend is `'fortran'`.
+        Backend to use for computation.
+        `'fortran'` uses the FORTRAN extension for performance,
+        while `'python'` uses a pure Python implementation.
+        Default backend is `'fortran'`.
 
     Returns
     -------
@@ -358,7 +367,7 @@ def find_cyclic_flowdirs(
     dir_scheme: D8Directions = D8Directions(),
     valids: Optional[npt.NDArray[np.bool_]] = None,
     indegs: Optional[npt.NDArray[np.integer]] = None,
-    backend: Literal["fortran", "python"] = "fortran",
+    backend: Backend = "fortran",
 ) -> npt.NDArray[np.bool_]:
     """
     Finds valid cells belonging to directed flow cycles.
@@ -379,8 +388,10 @@ def find_cyclic_flowdirs(
         computed using the selected backend.
         The default input is `None`.
     backend : {'fortran', 'python'}, optional
-        Computational backend.
-        The default backend is `'fortran'`.
+        Backend to use for computation.
+        `'fortran'` uses the FORTRAN extension for performance,
+        while `'python'` uses a pure Python implementation.
+        Default backend is `'fortran'`.
 
     Returns
     -------
