@@ -1,19 +1,22 @@
-# Last modified
-#   2026-06-09, En-Chi Lee (williameclee@gmail.com)
-#     - Renamed FORTRAN function call: `compute_masked_flowdir` ->
-#       `compute_synthetic_flowdir`.
-#     - Added `valids` argument to `label_flats` function.
+"""
+Functions to assign flat areas in a digital elevation model (DEM) 
+some synthetic elevation difference and therefore a gradient.
 
+The algorithms mainly follow 
+[R. Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009).
+
+Last modified: 2026-06-09, En-Chi Lee (williameclee@gmail.com)
+"""
 
 import numpy as np
 
+import formosa.geomorphology.drainage._backends.flat_resolution_py
 from formosa.utils import Backend, raise_fortran_error
 from formosa.geomorphology.drainage.directions import D8Directions
 from formosa.geomorphology.drainage.neighbours import (
     get_neighbour_values,
 )
 from formosa.geomorphology._native import drainage_flat_resolution as flat_f
-import formosa.geomorphology.drainage._backends.flowdir_py as flowdir_py
 
 from typing import Optional
 import numpy.typing as npt
@@ -58,7 +61,7 @@ def find_flat_edges(
     """
     match backend:
         case "python":
-            low_edges, high_edges = flowdir_py.find_flat_edges(
+            low_edges, high_edges = formosa.geomorphology.drainage._backends.flat_resolution_py.find_flat_edges(
                 dem, dirs, dir_scheme=dir_scheme
             )
         case "fortran":
@@ -327,7 +330,7 @@ def compute_syn_flowdir(
     """
     match backend:
         case "python":
-            dirs = flowdir_py.compute_masked_flowdir(z, labels, dir_scheme=dir_scheme)
+            dirs = formosa.geomorphology.drainage._backends.flat_resolution_py.compute_masked_flowdir(z, labels, dir_scheme=dir_scheme)
         case "fortran":
             dirs = flat_f.compute_syn_flowdir(
                 z.astype(np.int32, order="F"),

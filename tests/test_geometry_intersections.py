@@ -1,8 +1,7 @@
 """
-Last modified
-    2026-08-08, En-Chi Lee (williameclee@gmail.com)
-      - Aggregated all intersection-related tests and made both
-        backends tested at the same time
+Parity tests of the classification of line segment intersections.
+
+Last modified: 2026-08-09, En-Chi Lee (williameclee@gmail.com)
 """
 
 import pytest

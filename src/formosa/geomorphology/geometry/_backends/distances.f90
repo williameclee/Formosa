@@ -1,14 +1,7 @@
 !!!
-! Last modified
-!   2026-07-08, En-Chi Lee (williameclee@gmail.com)
-!     - Moved distance calculation to this module
-!   2026-07-09, En-Chi Lee (williameclee@gmail.com)
-!     - Implemented point-to-line distance functions 'pt2linedist_xy' and 'pt2linedist2_xy'
-!   2026-08-05, En-Chi Lee (williameclee@gmail.com)
-!     - Switched to 'iso_c_binding'
-!   2026-08-09, En-Chi Lee (williameclee@gmail.com)
-!     - Refactored module: 
-!       'distances' -> 'geometry' / 'distances' + 'intersections'
+! Calculations of verious distance metrics between points.
+!
+! Last modified: 2026-08-09, En-Chi Lee (williameclee@gmail.com)
 !!!
 
 module distances

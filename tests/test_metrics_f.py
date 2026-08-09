@@ -1,14 +1,9 @@
-# Last modified
-#   2026-07-01, En-Chi Lee (williameclee@gmail.com)
-#     - Added test cases for `create_flowgraph`, and
-#       `compute_flow_strahler_order`.
-#   2026-07-30, En-Chi Lee (williameclee@gmail.com)
-#     - Various minor refactors and type annotation enhancements.
-#   2026-08-04, En-Chi Lee (williameclee@gmail.com)
-#     - Added test cases for FORTRAN error code handling.
-#   2026-08-05, En-Chi Lee (williameclee@gmail.com)
-#     - Added a regression check for nonstandard old-style FORTRAN
-#       kind declarations.
+"""
+Tests related to the derivation of hydrographical metrics using the
+FORTRAN backend.
+
+Last modified: 2026-08-09, En-Chi Lee (williameclee@gmail.com)
+"""
 
 from tests.core import *
 

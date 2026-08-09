@@ -1,3 +1,9 @@
+"""
+Operations on the watershed/drainage basin raster.
+
+Last modified: 2026-08-09, En-Chi Lee (williameclee@gmail.com)
+"""
+
 import numpy as np
 
 from formosa.utils import Backend, raise_fortran_error

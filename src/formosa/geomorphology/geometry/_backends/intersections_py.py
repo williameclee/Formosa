@@ -1,9 +1,10 @@
 """
-Last modified
-    2026-07-30, En-Chi Lee (williameclee@gmail.com)
-      - Ported the FORTRAN `distances` helper module to Python
-    2026-08-08, En-Chi Lee (williameclee@gmail.com)
-      - Refactored module to `geometry.intersections`
+Classifications of intersections of line segments.
+
+Content of this file is mostly designed to be called by the public-
+facing APIs and not directly by the user.
+
+Last modified: 2026-08-08, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np

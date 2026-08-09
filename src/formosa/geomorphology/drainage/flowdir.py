@@ -1,27 +1,12 @@
-# Last modified
-#   2026-02-11, En-Chi Lee (williameclee@arizona.edu)
-#     - Rename flowdir functions to be more descriptive.
-#   2026-06-09, En-Chi Lee (williameclee@gmail.com)
-#     - Added error for missing FORTRAN backend.
-#     - Removed NumPy type `np.bool` to either `np.bool_` or `bool`
-#       for compatibility with newer NumPy versions.
-#   2026-06-10, En-Chi Lee (williameclee@gmail.com)
-#     - Small refactors and documentation cleanup.
-#   2026-06-11, En-Chi Lee (williameclee@gmail.com)
-#     - Moved Python backend implementations and auxiliary functions
-#       to separate files.
-#     - Standardised variable, argument, and function names.
-#   2026-07-01, En-Chi Lee (williameclee@gmail.com)
-#     - Allowed specifying validity mask in `count_indegree`.
-#   2026-07-08, En-Chi Lee (williameclee@gmail.com)
-#     - Renamed helper submodule from `aux` to `utils`.
-#   2026-07-14, En-Chi Lee (williameclee@gmail.com)
-#     - Splitted `geomorphology.flowdir` into submodules.
-#   2026-08-03, En-Chi Lee (williameclee@gmail.com)
-#     - Implemented functions `find_acyclic_flowdirs` and
-#       `find_cyclic_flowdirs` with both FORTRAN and Python
-#       backends.
+"""
+Functions to compute the flow direction from a digital elevation
+model (DEM) raster, or to perform further analyses on the network
+graph created by the flow.
+The additional analyses here stay at the raster level; actual graph
+representations are implemented in module `drainage.network`.
 
+Last modified: 2026-08-03, En-Chi Lee (williameclee@gmail.com)
+"""
 
 import numpy as np
 
@@ -272,7 +257,7 @@ def _find_acyclic_flowdirs_fortran(
         If the traversal queue overflows or an unknown status is returned.
     MemoryError
         If the traversal workspace cannot be allocated.
-        
+
     Notes
     -----
     This is a helper function for :func:`find_acyclic_flowdirs`.

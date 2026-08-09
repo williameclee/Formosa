@@ -1,10 +1,13 @@
-# Last modified
-#   2026-08-06, En-Chi Lee (williameclee@gmail.com)
-#     - Added support for `.hgt` files
+"""
+Functions to read DEM data from raster files on disk.
+
+Last modified: 2026-08-06, En-Chi Lee (williameclee@gmail.com)
+"""
 
 from pathlib import Path
-import numpy as np
 import rasterio
+import numpy as np
+
 from formosa.dem.utils import transform2xy
 
 import numpy.typing as npt

@@ -1,6 +1,9 @@
-# Last modified
-#   2026-07-29, En-Chi Lee (williameclee@gmail.com)
-#     - Added test cases for function `simplify_flowgraph`.
+"""
+Tests related to flow graph simplification using the FORTRAN 
+backend.
+
+Last modified: 2026-08-09, En-Chi Lee (williameclee@gmail.com)
+"""
 
 from tests.core import *
 

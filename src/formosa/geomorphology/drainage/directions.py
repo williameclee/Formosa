@@ -1,10 +1,9 @@
-# Last modified
-#      - Moved from `geomorphology.flowdir` to `geomorphology.flowdir.flowdir`
-#   2026-08-03, En-Chi Lee (williameclee@gmail.com)
-#     - Added property `no_flow_code`
-#     - Got rid of built-in list iteration to accelerate `_code2offset_ndarray`
-#   2026-08-08, En-Chi Lee (williameclee@gmail.com)
-#     - Renamed file to 'directions'
+"""
+Helper class :class:`D8Directions` that encodes the flow direction
+codes in a raster.
+
+Last modified: 2026-08-08, En-Chi Lee (williameclee@gmail.com)
+"""
 
 import numpy as np
 

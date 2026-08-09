@@ -1,9 +1,7 @@
 """
-Last modified
-    2026-08-08, En-Chi Lee (williameclee@gmail.com)
-      - Refactored module:
-        `dem.api.fetch_dem` -> `dem.api.gmrt` + `dem.api.opentopo`
-      - Streamlined argument option type hints with `TypeAlias`
+Functions to download DEM data from the OpenTopography server.
+
+Last modified: 2026-08-08, En-Chi Lee (williameclee@gmail.com)
 """
 
 import os
@@ -15,12 +13,10 @@ from rasterio.io import MemoryFile
 import numpy as np
 
 from formosa.core import DATA_DIR
-from formosa.dem.api.utils import _validate_latlon_limits, _dem_post_processing
+from formosa.dem.api.utils import number, _validate_latlon_limits, _dem_post_processing
 
 from typing import Literal, TypeAlias, TypeVar
 import numpy.typing as npt
-
-number = TypeVar("number", int, float)
 
 OpenTopoProduct: TypeAlias = Literal[
     "SRTMGL3",

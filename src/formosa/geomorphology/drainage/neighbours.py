@@ -1,19 +1,8 @@
 """
-Last modified
-    2026-06-11, En-Chi Lee (williameclee@gmail.com)
-      - Moved auxiliary functions to this file
-      - Standardised variable and argument names
-    2026-07-01, En-Chi Lee (williameclee@gmail.com)
-      - Made out-of-bound check in `compute_downstream_indices` optional
-    2026-07-02, En-Chi Lee (williameclee@gmail.com)
-      - Actually implemented validity check in `compute_downstram_indices`
-      - Updated `geomorphology.flowdir` submodule path
-    2026-08-03, En-Chi Lee (williameclee@gmail.com)
-      - Added arguments `return_flat_index` and `oob_is_okay` to `compute_downstream_indices`
-    2026-08-04, En-Chi Lee (williameclee@gmail.com)
-      - Added unified FORTRAN error code handler
-    2026-08-09, En-Chi Lee (williameclee@gmail.com)
-      - Promoted `raise_fortran_error` to a package-level helper
+Helper functions that computes or fetches properties of a cell's 
+neighbours in a raster.
+
+Last modified: 2026-08-09, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np

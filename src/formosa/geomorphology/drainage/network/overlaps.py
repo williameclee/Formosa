@@ -1,19 +1,9 @@
-# Last modified
-#   2026-07-14, En-Chi Lee (williameclee@gmail.com)
-#     - Added simultaneous multi-graph checks to
-#       `simplify_flowgraph`
-#   2026-07-28, En-Chi Lee (williameclee@gmail.com)
-#     - Implemented `solve_graph_overlaps` and relevant helper
-#       functions
-#     - Integrated overlap resolution into simultaneous multi-
-#       graph simplification
-#   2026-07-31, En-Chi Lee (williameclee@gmail.com)
-#     - Preserved arc orders when `simplify_flowgraph` splits
-#       overlapping graphs
-#   2026-08-03, En-Chi Lee (williameclee@gmail.com)
-#     - Made `solve_graph_overlaps` stable and recognised already
-#       valid shared arcs
+"""
+Solutions of invalid (overlapping or crossing) flow graph
+topologies.
 
+Last modified: 2026-08-03, En-Chi Lee (williameclee@gmail.com)
+"""
 
 from dataclasses import dataclass
 import numpy as np

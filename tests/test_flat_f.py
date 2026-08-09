@@ -1,8 +1,9 @@
-# Last modified
-#   2026-08-03, En-Chi Lee (williameclee@gmail.com)
-#     - Added test cases for function `find_acyclic_flowdirs`.
-#   2026-08-04, En-Chi Lee (williameclee@gmail.com)
-#     - Added test cases for FORTRAN error code handling.
+"""
+Tests related to the flat resolution of a digital elevation model 
+(DEM) using the FORTRAN backend.
+
+Last modified: 2026-08-04, En-Chi Lee (williameclee@gmail.com)
+"""
 
 import pytest
 import numpy as np

@@ -1,7 +1,9 @@
-# Last modified
-#   2026-07-12, En-Chi Lee (williameclee@gmail.com)
-#     - Added test cases for function
-#       `locate_invalid_graph_topogtaphy`
+"""
+Tests related to validation of flow graph topology using the Python 
+backend.
+
+Last modified: 2026-08-09, En-Chi Lee (williameclee@gmail.com)
+"""
 
 import pytest
 import numpy as np

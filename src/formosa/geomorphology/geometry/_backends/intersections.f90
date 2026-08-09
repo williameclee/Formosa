@@ -1,10 +1,10 @@
 !!!
-! Last modified
-!   2026-08-05, En-Chi Lee (williameclee@gmail.com)
-!     - Switched to 'iso_c_binding'
-!   2026-08-09, En-Chi Lee (williameclee@gmail.com)
-!     - Refactored module:
-!       'distances' -> 'geometry' / 'distances' + 'intersections'
+! Classifications of intersections of line segments.
+!
+! Content of this file is mostly designed to be called by other
+! FORTRAN routines and not directly by the user.
+!
+! Last modified: 2026-08-09, En-Chi Lee (williameclee@gmail.com)
 !!!
 
 module intersections

@@ -1,9 +1,10 @@
 !!!
-! Last modified
-!   2026-07-12, En-Chi Lee (williameclee@gmail.com)
-!     - Implemented 'scan_invalid_graph_topology' function
-!   2026-07-29, En-Chi Lee (williameclee@gmail.com)
-!     - Made topology intersection scans count all violations past output capacity
+! Verification steps that a flow graph has well-behaving topology.
+!
+! Content of this file is mostly designed to be called by other
+! FORTRAN routines and not directly by the user.
+!
+! Last modified: 2026-07-29, En-Chi Lee (williameclee@gmail.com)
 !!!
 
 module network_validation

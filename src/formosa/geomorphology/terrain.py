@@ -1,3 +1,10 @@
+"""
+Calculations of geomorphological metrics of a digital elevation
+model (DEM) raster.
+
+Last modified: 2026-08-09, En-Chi Lee (williameclee@gmail.com)
+"""
+
 import numpy as np
 
 import numpy.typing as npt

@@ -1,3 +1,12 @@
+"""
+Operations on the watershed/drainage basin raster.
+
+Content of this file is mostly designed to be called by the public-
+facing APIs and not directly by the user.
+
+Last modified: 2026-08-09, En-Chi Lee (williameclee@gmail.com)
+"""
+
 import numpy as np
 
 from formosa.geomorphology.drainage.directions import D8Directions

@@ -1,21 +1,11 @@
 !!!
-! Last modified
-!   2026-06-11, En-Chi Lee (williameclee@gmail.com)
-!     - Added precomputed 'dist_lookup' for L1 distance in
-!       'compute_dist2source_l1'
-!   2026-07-01, En-Chi Lee (williameclee@gmail.com)
-!     - Fixed Strahler order algorithm
-!     - Changed index array shape to optimise cache locality
-!   2026-08-03, En-Chi Lee (williameclee@gmail.com)
-!     - Explicitly handled Python uint8 -> FORTRAN int8
-!       conversion/interpretation in 'fill_offset_lookup'
-!   2026-08-04, En-Chi Lee (williameclee@gmail.com)
-!     - Added allocation error monitoring and moved error handling
-!       to Python
-!     - Used function 'mask2id' as the linear-index version of
-!       'mask2ij'
-!   2026-08-05, En-Chi Lee (williameclee@gmail.com)
-!     - Switched to 'iso_c_binding'
+! Calculations of raster cell-level geomorphological metrics of a
+! digital elevation model (DEM) raster based on the flow direction.
+!
+! Content of this file is mostly designed to be called by the Python
+! frontend and not directly by the user.
+!
+! Last modified: 2026-08-05, En-Chi Lee (williameclee@gmail.com)
 !!!
 
 module drainage_metrics

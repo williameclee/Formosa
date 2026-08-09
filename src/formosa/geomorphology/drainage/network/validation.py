@@ -1,12 +1,8 @@
-# Last modified
-#   2026-07-12, En-Chi Lee (williameclee@gmail.com)
-#     - Implemented Python and FORTRAN backends of function
-#       `locate_invalid_graph_topology`
-#   2026-07-14, En-Chi Lee (williameclee@gmail.com)
-#     - Updated variable names in `locate_invalid_graph_topology`
-#   2026-07-29, En-Chi Lee (williameclee@gmail.com)
-#     - Made topology intersection results complete using scan-and-
-#       retry
+"""
+Verification steps that a flow graph has well-behaving topology.
+
+Last modified: 2026-07-29, En-Chi Lee (williameclee@gmail.com)
+"""
 
 import numpy as np
 

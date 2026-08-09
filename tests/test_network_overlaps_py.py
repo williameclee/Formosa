@@ -1,9 +1,9 @@
-# Last modified
-#   2026-07-28, En-Chi Lee (williameclee@gmail.com)
-#     - Added test cases for functions `find_graph_overlaps` and
-#       `solve_graph_overlaps`
-#   2026-08-04, En-Chi Lee (williameclee@gmail.com)
-#     - Added test cases for function `remove_unused_vertices`
+"""
+Tests related to the resolution of invalid graph topologies using 
+the Python backend.
+
+Last modified: 2026-08-09, En-Chi Lee (williameclee@gmail.com)
+"""
 
 import pytest
 import numpy as np

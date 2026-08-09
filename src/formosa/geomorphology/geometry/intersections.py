@@ -1,9 +1,7 @@
 """
-Backend-selectable operations on two-dimensional line segments.
+Operations on two-dimensional line segments.
 
-Last modified:
-    2026-08-03, En-Chi Lee (williameclee@gmail.com)
-     - Added public wrapper for the 2 backend implementations
+Last modified: 2026-08-09, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np

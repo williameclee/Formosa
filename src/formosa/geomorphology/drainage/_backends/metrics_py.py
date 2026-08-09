@@ -1,11 +1,12 @@
-# Last modified
-#   2026-06-11, En-Chi Lee (williameclee@gmail.com)
-#     - Moved Python backend implementations to this file
-#     - Removed redundant NaN checks against integer arrays
-#     - Standardised variable, argument, and function names
-#   2026-07-30, En-Chi Lee (williameclee@gmail.com)
-#     - Fixed Python/FORTRAN backend behaviour parity in
-#       `compute_flow_strahler_order`.
+"""
+Calculations of raster cell-level geomorphological metrics of a
+digital elevation model (DEM) raster based on the flow direction.
+
+Content of this file is mostly designed to be called by the public-
+facing APIs and not directly by the user.
+
+Last modified: 2026-07-30, En-Chi Lee (williameclee@gmail.com)
+"""
 
 import numpy as np
 
@@ -142,5 +143,3 @@ def compute_flow_strahler_order(
             seeds.append((dsi, dsj))
 
     return strahler_order
-
-

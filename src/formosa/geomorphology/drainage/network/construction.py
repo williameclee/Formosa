@@ -1,11 +1,8 @@
-# Last modified
-#   2026-07-01, En-Chi Lee (williameclee@gmail.com)
-#     - Opted out of the out-of-bound check in
-#       `compute_downstream_indices` in `create_flowgraph`
-#     - Added function `construct_flowgraph`
-#   2026-07-09, En-Chi Lee (williameclee@gmail.com)
-#     - Specified endpoint index definition for
-#       `construct_flowgraph`
+"""
+Conversions of a flow direction raster to a flow graph.
+
+Last modified: 2026-07-09, En-Chi Lee (williameclee@gmail.com)
+"""
 
 import numpy as np
 

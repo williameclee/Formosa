@@ -1,9 +1,9 @@
-# Last modified
-#   2026-08-07 [PR 33], En-Chi Lee (williameclee@gmail.com)
-#     - Added tests for the priority-flood depression-filling
-#       algorithm.
-#     - Added tests for the ocean basin masking algorithms
-#       (`label_mask_areas`).
+"""
+Tests related to preprocessing of a digital elevation model (DEM)
+raster using the FORTRAN backend.
+
+Last modified: 2026-08-09, En-Chi Lee (williameclee@gmail.com)
+"""
 
 from tests.core import *
 

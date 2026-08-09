@@ -1,17 +1,10 @@
 !!!
-! Last modified
-!   2026-07-02, En-Chi Lee (williameclee@gmail.com)
-!     - Added function 'construct_flowgraph'
-!   2026-07-09, En-Chi Lee (williameclee@gmail.com)
-!     - Added overflow check in 'construct_flowgraph'
-!   2026-08-03, En-Chi Lee (williameclee@gmail.com)
-!     - Explicitly handled Python uint8 -> int8 FORTRAN conversion/
-!       interpretation in 'fill_offset_lookup'
-!   2026-08-04, En-Chi Lee (williameclee@gmail.com)
-!     - Added allocation error monitoring and moved error handling
-!       to Python
-!   2026-08-05, En-Chi Lee (williameclee@gmail.com)
-!     - Switched to 'iso_c_binding'
+! Conversions of a flow direction raster to a flow graph.
+!
+! Content of this file is mostly designed to be called by other
+! FORTRAN routines and not directly by the user.
+!
+! Last modified: 2026-08-05, En-Chi Lee (williameclee@gmail.com)
 !!!
 
 module network_construction

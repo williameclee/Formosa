@@ -1,28 +1,14 @@
-# Last modified
-#   2026-02-11, En-Chi Lee (williameclee@arizona.edu)
-#     - Rename flowdir functions to be more descriptive.
-#   2026-06-09, En-Chi Lee (williameclee@gmail.com)
-#     - Added `compute_flow_dist2ridge` function to compute
-#       'distance to ridges'.
-#     - Added error for missing FORTRAN backend.
-#     - Removed NumPy type `np.bool` to either `np.bool_` or `bool`
-#       for compatibility with newer NumPy versions.
-#   2026-06-10, En-Chi Lee (williameclee@gmail.com)
-#     - Small refactors and documentation cleanup.
-#   2026-06-11, En-Chi Lee (williameclee@gmail.com)
-#     - Moved Python backend implementations and auxiliary functions
-#       to separate files.
-#     - Standardised variable, argument, and function names.
-#   2026-06-30, En-Chi Lee (williameclee@gmail.com)
-#     - Added `x` and `y` into `compute_dist2source` in
-#       `compute_dist2ridge`.
-#     - Added functions `compute_ridgedir` and
-#       `compute_ridge_strahler_order`.
-#   2026-07-14, En-Chi Lee (williameclee@gmail.com)
-#     - Splitted `geomorphology.flowdir` into submodules.
-#   2026-08-04, En-Chi Lee (williameclee@gmail.com)
-#     - Updated `compute_dist2conf_max` and related functions'
-#       interface to reflect FORTRAN backend changes.
+"""
+Derivation and analyses on the ridge network of a digital
+elevation model (DEM) raster.
+The calculation assumes that the maximum of the confluence
+distance between a raster cell and its neighbours is a proxy for the
+cell's 'ridge-ness'.
+The reciprocal of this field can then be run through the
+conventional drainage network derivation steps.
+
+Last modified: 2026-08-04, En-Chi Lee (williameclee@gmail.com)
+"""
 
 import numpy as np
 

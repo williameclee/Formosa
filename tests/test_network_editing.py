@@ -1,11 +1,8 @@
-# Last modified
-#   2026-07-09, En-Chi Lee (williameclee@gmail.com)
-#     - Added test case for the Python implementation of
-#       function `concat_flowgraph`
-#   2026-07-27, En-Chi Lee (williameclee@gmail.com)
-#     - Added test cases for function `insert_endpt`
-#   2026-08-04, En-Chi Lee (williameclee@gmail.com)
-#     - Added test cases for function `remove_unused_vertices`
+"""
+Tests related to the mutation of a flow graph.
+
+Last modified: 2026-08-09, En-Chi Lee (williameclee@gmail.com)
+"""
 
 from tests.core import *
 

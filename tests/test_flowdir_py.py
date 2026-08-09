@@ -1,8 +1,9 @@
-# Last modified
-#   2026-07-02, En-Chi Lee (williameclee@gmail.com)
-#     - Added test cases for the Python implementation of `count_indegree`
-#   2026-08-03, En-Chi Lee (williameclee@gmail.com)
-#     - Added test cases for function `find_acyclic_flowdirs` and graph construction validity
+"""
+Tests related to the derivation of flow directions using the Python
+backend.
+
+Last modified: 2026-08-09, En-Chi Lee (williameclee@gmail.com)
+"""
 
 import pytest
 import numpy as np

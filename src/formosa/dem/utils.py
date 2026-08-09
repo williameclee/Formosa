@@ -1,3 +1,10 @@
+"""
+Helper functions to compute the dimensions and shapes of a digital
+elevation model (DEM) ratser.
+
+Last modified: 2026-08-08, En-Chi Lee (williameclee@gmail.com)
+"""
+
 import numpy as np
 import rasterio.transform as rt
 from rasterio.transform import Affine

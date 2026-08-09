@@ -1,8 +1,11 @@
-# Last modified
-#   2026-07-14, En-Chi Lee (williameclee@gmail.com)
-#     - Splitted `geomorphology.flowdir` into submodules
-#   2026-07-30, En-Chi Lee (williameclee@gmail.com)
-#     - Various minor refactors and type annotation enhancements
+"""
+Conversions of a flow direction raster to a flow graph.
+
+Content of this file is mostly designed to be called by the public-
+facing APIs and not directly by the user.
+
+Last modified: 2026-07-30, En-Chi Lee (williameclee@gmail.com)
+"""
 
 import numpy as np
 

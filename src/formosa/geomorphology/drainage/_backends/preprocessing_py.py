@@ -1,8 +1,12 @@
-# Last modified
-#   2026-08-07 [PR 33], En-Chi Lee (williameclee@gmail.com)
-#     - Added reconstruction-by-erosion backend for depression
-#       filling.
+"""
+Preparations before a digital elevation model (DEM) raster can be
+used to calculate flow direction and other geomorphological metrics.
 
+Content of this file is mostly designed to be called by the public-
+facing APIs and not directly by the user.
+
+Last modified: 2026-08-07, En-Chi Lee (williameclee@gmail.com)
+"""
 
 import numpy as np
 

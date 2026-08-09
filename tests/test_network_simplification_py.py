@@ -1,6 +1,8 @@
-# Last modified
-#   2026-08-04, En-Chi Lee (williameclee@gmail.com)
-#     - Added test cases for function `remove_unused_vertices`
+"""
+Tests related to flow graph simplification using the Python backend.
+
+Last modified: 2026-08-09, En-Chi Lee (williameclee@gmail.com)
+"""
 
 import pytest
 import numpy as np

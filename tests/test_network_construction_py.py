@@ -1,7 +1,9 @@
-# Last modified
-#   2026-07-09, En-Chi Lee (williameclee@gmail.com)
-#     - Added test case for the Python implementation of
-#       `construct_flowgraph`
+"""
+Tests related to the flow graph construction from a raster using the
+Python backend.
+
+Last modified: 2026-08-09, En-Chi Lee (williameclee@gmail.com)
+"""
 
 from tests.core import *
 

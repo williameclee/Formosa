@@ -1,21 +1,15 @@
 !!!
-! Last modified
-!   2026-07-01, En-Chi Lee (williameclee@gmail.com)
-!     - Changed index array shape to optimise cache locality
-!     - Allowed specifying validity mask in 'count_indegree'
-!   2026-07-08, En-Chi Lee (williameclee@gmail.com)
-!     - Moved 'mask2ij' to separate 'utils' module
-!   2026-07-09, En-Chi Lee (williameclee@gmail.com)
-!     - Fixed OpenMP data race in 'count_indegree'
-!   2026-08-03, En-Chi Lee (williameclee@gmail.com)
-!     - Implemented 'find_acyclic_flowdirs'
-!     - Explicitly handled Python uint8 -> FORTRAN int8
-!       conversion/interpretation in 'fill_offset_lookup'
-!   2026-08-04, En-Chi Lee (williameclee@gmail.com)
-!     - Added allocation error monitoring and moved error handling
-!       to Python
-!   2026-08-05, En-Chi Lee (williameclee@gmail.com)
-!     - Switched to 'iso_c_binding'
+! Functions to compute the flow direction from a digital elevation
+! model (DEM) raster, or to perform further analyses on the network
+! graph created by the flow.
+! The additional analyses here stay at the raster level; actual
+! graph representations are implemented in module
+! 'drainage.network'.
+!
+! Content of this file is mostly designed to be called by the Python
+! frontend and not directly by the user.
+!
+! Last modified: 2026-08-05, En-Chi Lee (williameclee@gmail.com)
 !!!
 
 module drainage_flowdir

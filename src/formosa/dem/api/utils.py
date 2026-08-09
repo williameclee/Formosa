@@ -1,4 +1,14 @@
+"""
+Helper definitions and functions for downloading DEM.
+"""
+
+
+from rasterio.transform import Affine
+
 import warnings
+
+import numpy as np
+import numpy.typing as npt
 
 from typing import TypeVar
 
@@ -36,12 +46,6 @@ def _validate_latlon_limits(
         lon_offset = lonlim[0] // 360 * 360
         lonlim = (lonlim[0] - lon_offset, lonlim[1] - lon_offset)
     return latlim, lonlim
-
-
-import numpy as np
-import rasterio.transform as rt
-from rasterio.transform import Affine
-import numpy.typing as npt
 
 
 def _dem_post_processing(

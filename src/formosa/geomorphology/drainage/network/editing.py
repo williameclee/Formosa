@@ -1,11 +1,8 @@
-# Last modified
-#   2026-07-09, En-Chi Lee (williameclee@gmail.com)
-#     - Implemented FORTRAN backend of function
-#       `simplify_flowgraph` and function `concat_flowgraph`
-#   2026-07-27, En-Chi Lee (williameclee@gmail.com)
-#     - Implemented `insert_endpt` and relevant helper functions
-#   2026-08-04, En-Chi Lee (williameclee@gmail.com)
-#     - Implemented function `remove_unused_vertices`
+"""
+Mutations of a flow graph, such as concatenation and splitting arcs.
+
+Last modified: 2026-08-04, En-Chi Lee (williameclee@gmail.com)
+"""
 
 import numpy as np
 

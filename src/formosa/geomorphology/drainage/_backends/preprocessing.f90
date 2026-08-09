@@ -1,11 +1,12 @@
 !!!
-! Last modified
-!   2026-08-07 [PR 33], En-Chi Lee (williameclee@gmail.com)
-!     - Implemented naive priority-flood depression-filling
-!       algorithm
-!     - Added argument 'more_sinks' to function 'fill_depressions'
-!     - Implemented boundary-bordering ocean basin identification
-!       algorithm ('label_mask_areas')
+! Preparations before a digital elevation model (DEM) raster can be
+! used to calculate flow direction and other geomorphological
+! metrics.
+!
+! Content of this file is mostly designed to be called by the Python
+! frontend and not directly by the user.
+!
+! Last modified: 2026-08-07, En-Chi Lee (williameclee@gmail.com)
 !!!
 
 module drainage_preprocessing

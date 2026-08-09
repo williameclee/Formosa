@@ -1,10 +1,9 @@
-# Last modified
-#   2026-08-07 [PR 33], En-Chi Lee (williameclee@gmail.com)
-#     - Replaced morphological reconstruction with FORTRAN priority-
-#       flood in `fill_depressions`.
-#     - Made `fill_depressions` optionally not fill internally-
-#       drained basins.
-#     - Implemented function `invalidate_ocean_basins`.
+"""
+Preparations before a digital elevation model (DEM) raster can be
+used to calculate flow direction and other geomorphological metrics.
+
+Last modified: 2026-08-07, En-Chi Lee (williameclee@gmail.com)
+"""
 
 import numpy as np
 

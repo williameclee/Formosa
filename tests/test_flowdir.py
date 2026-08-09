@@ -1,7 +1,9 @@
-# Last modified
-#   2026-08-03, En-Chi Lee (williameclee@gmail.com)
-#     - Added test cases for function `find_acyclic_flowdirs` and
-#       graph construction validity.
+"""
+Parity tests related to the derivation of flow directions using the
+2 backends.
+
+Last modified: 2026-08-09, En-Chi Lee (williameclee@gmail.com)
+"""
 
 from tests.core import *
 

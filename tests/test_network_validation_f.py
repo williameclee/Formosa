@@ -1,10 +1,9 @@
-# Last modified
-#   2026-07-12, En-Chi Lee (williameclee@gmail.com)
-#     - Added test cases for function
-#       `test_locate_invalid_graph_topogtaphy`.
-#   2026-07-29, En-Chi Lee (williameclee@gmail.com)
-#     - Added complete topology-intersection scan-and-retry
-#       regression tests.
+"""
+Tests related to validation of flow graph topology using the FORTRAN 
+backend.
+
+Last modified: 2026-08-09, En-Chi Lee (williameclee@gmail.com)
+"""
 
 import pytest
 import warnings

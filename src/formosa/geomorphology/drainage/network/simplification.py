@@ -1,24 +1,9 @@
-# Last modified
-#   2026-07-09, En-Chi Lee (williameclee@gmail.com)
-#     - Added vertex mask to output of function
-#       `simplify_flowgraph`
-#   2026-07-13, En-Chi Lee (williameclee@gmail.com)
-#     - Added default topology check to `simplify_flowgraph`
-#   2026-07-14, En-Chi Lee (williameclee@gmail.com)
-#     - Added simultaneous multi-graph checks to
-#       `simplify_flowgraph`
-#   2026-07-28, En-Chi Lee (williameclee@gmail.com)
-#     - Integrated overlap resolution into simultaneous multi-
-#       graph simplification
-#   2026-07-29, En-Chi Lee (williameclee@gmail.com)
-#     - Added validation to simplified graph before return
-#   2026-07-31, En-Chi Lee (williameclee@gmail.com)
-#     - Preserved arc orders when `simplify_flowgraph` splits
-#       overlapping graphs
-#   2026-08-04, En-Chi Lee (williameclee@gmail.com)
-#     - Made `simplify_flowgraph` able to handle empty graphs
-#     - Accelerated graph validation and simplification
+"""
+Simplification/downsampling of arcs in a flow graph while keeping
+the integrity of its topology.
 
+Last modified: 2026-08-04, En-Chi Lee (williameclee@gmail.com)
+"""
 
 import numpy as np
 

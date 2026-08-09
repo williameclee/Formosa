@@ -1,13 +1,16 @@
 !!!
-! Last modified
-!   2026-07-01, En-Chi Lee (williameclee@gmail.com)
-!     - Optimised confluence lookup algorithm
-!   2026-08-04, En-Chi Lee (williameclee@gmail.com)
-!     - Added allocation error monitoring and moved error handling
-!       to Python
-!   2026-08-05, En-Chi Lee (williameclee@gmail.com)
-!     - Overhauled algorithm for 'compute_max_branch_dist'
-!     - Switched to 'iso_c_binding'
+! Derivation and analyses on the ridge network of a digital
+! elevation model (DEM) raster.
+! The calculation assumes that the maximum of the confluence 
+! distance between a raster cell and its neighbours is a proxy for 
+! the cell's 'ridge-ness'.
+! The reciprocal of this field can then br run through the 
+! conventional drainage network derivation steps.
+!
+! Content of this file is mostly designed to be called by the Python
+! frontend and not directly by the user.
+!
+! Last modified: 2026-08-05, En-Chi Lee (williameclee@gmail.com)
 !!!
 
 module drainage_ridges

@@ -1,26 +1,14 @@
 !!!
-! Last modified
-!   2026-07-02, En-Chi Lee (williameclee@gmail.com)
-!     - Iterated the array bound instead of starting from 1 in
-!       'mask2ij'
-!   2026-07-08, En-Chi Lee (williameclee@gmail.com)
-!     - Moved 'mask2ij' to this module
-!   2026-07-08, En-Chi Lee (williameclee@gmail.com)
-!     - Moved 'mask2ij' to separate 'utils' module
-!   2026-07-12, En-Chi Lee (williameclee@gmail.com)
-!     - Moved 'flowdir_utils' module here 'utils'
-!   2026-08-03, En-Chi Lee (williameclee@gmail.com)
-!     - Explicitly handled Python uint8 -> signed 8-bit Fortran
-!       conversion/interpretation in 'fill_offset_lookup'
-!   2026-08-04, En-Chi Lee (williameclee@gmail.com)
-!     - Refactored 'mask2ij' to propagate buffer overflow error
-!     - Added function 'mask2id' as the linear-index version of
-!       'mask2ij'; also added related linear index check functions
-!   2026-08-05, En-Chi Lee (williameclee@gmail.com)
-!     - Switched to 'iso_c_binding'
-!   2026-08-07 [PR 33], En-Chi Lee (williameclee@gmail.com)
-!     - Implemented priority queue
-!     - Added helper function 'array2d_oob'
+! Helper functions for processing the drainage network.
+! The file currently include the following major functions:
+!   - Calculations and conversions of array indices
+!   - Decoding codes that represent flow directions on a grid
+!   - Primitive funtionalities of a priority queue.
+!
+! Content of this file is mostly designed to be called by other 
+! FORTRAN routines and not directly by the user.
+!
+! Last modified: 2026-08-07, En-Chi Lee (williameclee@gmail.com)
 !!!
 
 module utils

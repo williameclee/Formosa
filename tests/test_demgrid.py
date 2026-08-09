@@ -1,7 +1,9 @@
-# Last modified
-#   2026-08-06, En-Chi Lee (williameclee@gmail.com)
-#     - Added tests for the new `.hgt` input format
-#     - Added tests for the ocean basin masking functions
+"""
+Tests related to the properties and methods of the class
+:class:`DEMGrid`.
+
+Last modified: 2026-08-06, En-Chi Lee (williameclee@gmail.com)
+"""
 
 import pytest
 import numpy as np

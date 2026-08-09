@@ -1,15 +1,15 @@
-# Last modified
-#   2026-06-11, En-Chi Lee (williameclee@gmail.com)
-#     - Moved Python backend implementations to this file
-#     - Removed redundant NaN checks against integer arrays
-#     - Standardised variable, argument, and function names
-#   2026-07-02, En-Chi Lee (williameclee@gmail.com)
-#     - Updated indegree algorithm
-#   2026-07-09, En-Chi Lee (williameclee@gmail.com)
-#     - Added better validity check in `count_indegree`
-#   2026-08-03, En-Chi Lee (williameclee@gmail.com)
-#     - Implemented Python backend for function
-#       `find_acyclic_flowdirs`.
+"""
+Functions to compute the flow direction from a digital elevation
+model (DEM) raster, or to perform further analyses on the network
+graph created by the flow.
+The additional analyses here stay at the raster level; actual graph
+representations are implemented in module `drainage.network`.
+
+Content of this file is mostly designed to be called by the public-
+facing APIs and not directly by the user.
+
+Last modified: 2026-08-03, En-Chi Lee (williameclee@gmail.com)
+"""
 
 import numpy as np
 from collections import deque
@@ -40,54 +40,6 @@ def compute_flowdir_simple(
     flowdirs = codes[flowdirs].astype(np.int32)
     is_flat = flowdirs == 0
     return flowdirs, is_flat
-
-
-def compute_masked_flowdir(
-    z: npt.NDArray[np.integer | np.floating],
-    labels: npt.NDArray[np.integer],
-    dir_scheme: D8Directions = D8Directions(),
-) -> npt.NDArray[np.integer]:
-    neighbours, codes, _ = get_neighbour_values(
-        z,
-        dir_scheme=dir_scheme,
-        include_self=True,
-        pad_value=z.max() + 1,
-    )
-    neighbour_labels, _, _ = get_neighbour_values(
-        labels, dir_scheme=dir_scheme, include_self=True, pad_value=-1
-    )
-    # Mask neighbours that are not in the same flat
-    neighbours = np.where(
-        neighbour_labels != labels[np.newaxis, :, :], np.inf, neighbours
-    )
-    min_indices = np.argmin(neighbours, axis=0)
-    flowdirs = codes[min_indices]
-    flowdirs[labels == 0] = 0
-
-    return flowdirs
-
-
-def find_flat_edges(
-    dem: npt.NDArray[np.number],
-    dirs: npt.NDArray[np.integer],
-    dir_scheme=D8Directions(),
-) -> tuple[npt.NDArray[np.bool_], npt.NDArray[np.bool_]]:
-    neighbours, _, _ = get_neighbour_values(
-        dem,
-        dir_scheme=dir_scheme,
-        include_self=False,
-        pad_value=np.min(dem) - 1,  # since is_high_edge
-    )
-    neighbour_flowdirs, _, _ = get_neighbour_values(
-        dirs, dir_scheme=dir_scheme, include_self=False, pad_value=-1
-    )
-
-    is_high_edge: npt.NDArray[np.bool_] = (dirs == 0) & np.any(dem < neighbours, axis=0)
-    is_low_edge: npt.NDArray[np.bool_] = (dirs != 0) & (
-        np.any((neighbour_flowdirs == 0) & (dem == neighbours), axis=0)
-    )
-
-    return is_low_edge, is_high_edge
 
 
 def count_indegree(

@@ -1,10 +1,10 @@
 !!!
-! Last modified
-!   2026-08-04, En-Chi Lee (williameclee@gmail.com)
-!     - Used function 'mask2id' as the linear-index version of
-!       'mask2ij'
-!   2026-08-05, En-Chi Lee (williameclee@gmail.com)
-!     - Switched to 'iso_c_binding'
+! Operations on the watershed/drainage basin raster.
+!
+! Content of this file is mostly designed to be called by other
+! FORTRAN routines and not directly by the user.
+!
+! Last modified: 2026-08-05, En-Chi Lee (williameclee@gmail.com)
 !!!
 
 module drainage_watersheds

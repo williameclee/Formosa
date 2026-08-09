@@ -1,6 +1,8 @@
 """
-Created by
-    2026-08-09, En-Chi Lee (williameclee@gmail.com)
+Helper definitions and functions for managing the 2 different
+backends provided by this package.
+
+Created by: 2026-08-09, En-Chi Lee (williameclee@gmail.com)
 """
 
 from typing import Literal, Mapping, TypeAlias

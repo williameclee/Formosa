@@ -1,10 +1,9 @@
-# Last modified
-#   2026-06-30, En-Chi Lee (williameclee@gmail.com)
-#     - Changed Strahler order output to uint8 integer.
-#   2026-07-30, En-Chi Lee (williameclee@gmail.com)
-#     - Fixed Python/FORTRAN backend behaviour parity in
-#       `compute_flow_strahler_order`.
+"""
+Calculations of raster cell-level geomorphological metrics of a
+digital elevation model (DEM) raster based on the flow direction.
 
+Last modified: 2026-07-30, En-Chi Lee (williameclee@gmail.com)
+"""
 
 import numpy as np
 
