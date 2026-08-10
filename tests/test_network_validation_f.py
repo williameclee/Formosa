@@ -37,38 +37,6 @@ def _make_separated_x_pairs(
     )
 
 
-def test_locate_invalid_graph_topogtaphy():
-    vs = np.array([[0, 0], [1, 1], [1, 0], [0, 1]])
-    endpts = np.array([[0, 1], [2, 3]])
-    exp_intxs = np.array([[0, 1, 0, 2, 1]], dtype=np.int32)
-    intxs = val_m.locate_invalid_graph_topology(vs, endpts, backend="fortran")
-    np.testing.assert_array_equal(intxs, exp_intxs)
-
-    vs = np.array([[0, 0], [1, 1], [2, 0], [1, 0], [0, 1]])
-    endpts = np.array([[0, 2], [3, 4]])
-    exp_intxs = np.array([[0, 1, 0, 3, 1]], dtype=np.int32)
-    intxs = val_m.locate_invalid_graph_topology(vs, endpts, backend="fortran")
-    np.testing.assert_array_equal(intxs, exp_intxs)
-
-    # Test self-intersection within a single arc
-    vs = np.array([[0, 0], [2, 2], [2, 0], [0, 2]])
-    endpts = np.array([[0, 3]])
-    exp_intxs = np.array([[0, 0, 0, 2, 1]], dtype=np.int32)
-    intxs = val_m.locate_invalid_graph_topology(vs, endpts, backend="fortran")
-    np.testing.assert_array_equal(intxs, exp_intxs)
-
-    # Test no violations
-    vs = np.array([[0, 0], [1, 1], [2, 2]])
-    endpts = np.array([[0, 2]])
-    assert val_m.locate_invalid_graph_topology(vs, endpts, backend="fortran") is None
-
-    # Test error handling on invalid shapes
-    with pytest.raises(ValueError, match="Invalid array shapes passed"):
-        val_m.locate_invalid_graph_topology(
-            np.array([1, 2, 3]), endpts, backend="fortran"
-        )
-
-
 def test_locate_invalid_graph_topology_retries_after_buffer_overflow():
     """
     The public FORTRAN backend returns all results after provisional overflow.

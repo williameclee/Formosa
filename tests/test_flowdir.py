@@ -5,14 +5,45 @@ Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
 
 from tests.core import *
+from formosa.utils import BACKENDS
 
 import pytest
 import numpy as np
 
-
-from formosa.utils import BACKENDS
 from formosa import D8Directions
 import formosa.geomorphology.drainage.flowdir as flowdir_m
+
+
+@pytest.mark.parametrize(
+    ("dirs", "dir_scheme", "exp_indegs", "should_warn"),
+    [
+        (
+            [[3, 3, 3], [3, 3, 3], [1, 1, 0]],
+            D8Directions(transform_codes=lambda x: x),
+            [[0, 0, 0], [1, 1, 1], [1, 2, 2]],
+            False,
+        ),
+        (
+            [[5, 1, 1], [5, 1, 1], [5, 1, 1]],
+            D8Directions(transform_codes=lambda x: x),
+            [[0, 0, 1], [0, 0, 1], [0, 0, 1]],
+            True,
+        ),
+    ],
+)
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_indegree(dirs, dir_scheme, exp_indegs, should_warn, backend):
+    if should_warn and backend == "python":
+        with pytest.warns(UserWarning, match="out of bounds"):
+            indegs = flowdir_m.count_indegree(
+                np.array(dirs), dir_scheme=dir_scheme, backend=backend
+            )
+    else:
+        indegs = flowdir_m.count_indegree(
+            np.array(dirs), dir_scheme=dir_scheme, backend=backend
+        )
+
+    np.testing.assert_array_equal(indegs, np.array(exp_indegs))
 
 
 @pytest.mark.parametrize("backend", BACKENDS)

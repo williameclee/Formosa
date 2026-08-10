@@ -15,6 +15,43 @@ import formosa.geomorphology.drainage.flowdir as flowdir_m
 import formosa.geomorphology.drainage.metrics as metrics_m
 
 
+@pytest.mark.parametrize("backend", BACKENDS)
+@pytest.mark.parametrize(
+    ("dirs", "expected_orders", "should_warn"),
+    [
+        (
+            [[3, 3, 3], [3, 3, 3], [1, 1, 0]],
+            [[1, 1, 1], [1, 1, 1], [1, 2, 2]],
+            False,
+        ),
+        (
+            [[5, 1, 1], [5, 1, 1], [5, 1, 1]],
+            [[1, 1, 1], [1, 1, 1], [1, 1, 1]],
+            True,
+        ),
+        (
+            [[1, 2, 2, 2], [8, 1, 1, 1], [8, 8, 8, 8], [1, 2, 1, 2]],
+            [[1, 2, 1, 1], [1, 1, 2, 2], [1, 1, 1, 1], [1, 1, 1, 1]],
+            True,
+        ),
+    ],
+)
+def test_strahler_order_reference_cases(backend, dirs, expected_orders, should_warn):
+    dir_scheme = D8Directions(transform_codes=lambda x: x)
+
+    if should_warn and backend == "python":
+        with pytest.warns(UserWarning):
+            orders = metrics_m.compute_flow_strahler_order(
+                np.array(dirs), dir_scheme=dir_scheme, backend=backend
+            )
+    else:
+        orders = metrics_m.compute_flow_strahler_order(
+            np.array(dirs), dir_scheme=dir_scheme, backend=backend
+        )
+
+    np.testing.assert_array_equal(orders, np.array(expected_orders))
+
+
 @pytest.fixture
 def unequal_tributary_network():
     """A second-order branch joins a longer first-order branch."""
@@ -56,26 +93,22 @@ def test_unequal_tributary_does_not_increase_order(unequal_tributary_network, ba
     np.testing.assert_array_equal(orders, expected)
 
 
-def test_strahler_backends_match_with_mask_and_supplied_indegrees(
-    unequal_tributary_network,
-):
-    dirs, valids, _ = unequal_tributary_network
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_strahler_with_mask_and_supplied_indegrees(unequal_tributary_network, backend):
+    dirs, valids, expected = unequal_tributary_network
     dir_scheme = D8Directions(transform_codes=lambda x: x)
     indegs = flowdir_m.count_indegree(
         dirs, dir_scheme=dir_scheme, valids=valids, backend="python"
     )
     original_indegs = indegs.copy()
 
-    python_orders = metrics_m.compute_flow_strahler_order(
-        dirs, dir_scheme=dir_scheme, valids=valids, indegs=indegs, backend="python"
-    )
-    fortran_orders = metrics_m.compute_flow_strahler_order(
-        dirs, dir_scheme=dir_scheme, valids=valids, indegs=indegs, backend="fortran"
+    orders = metrics_m.compute_flow_strahler_order(
+        dirs, dir_scheme=dir_scheme, valids=valids, indegs=indegs, backend=backend
     )
 
-    np.testing.assert_array_equal(python_orders, fortran_orders)
+    np.testing.assert_array_equal(orders, expected)
     np.testing.assert_array_equal(indegs, original_indegs)
-    assert np.all(python_orders[~valids] == 0)
+    assert np.all(orders[~valids] == 0)
 
 
 @pytest.mark.parametrize("backend", BACKENDS)

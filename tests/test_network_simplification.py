@@ -1,11 +1,11 @@
 """
-Tests flow-graph simplification using the Python backend.
+Tests backend-independent flow-graph simplification wrappers.
 
 Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
 
-import pytest
 import numpy as np
+import pytest
 
 import formosa.geomorphology.drainage.network.simplification as simp_m
 

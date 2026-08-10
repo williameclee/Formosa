@@ -16,6 +16,36 @@ import formosa.geomorphology.drainage.network as nwork_m
 import formosa.geomorphology.drainage.network.construction as constr_m
 
 
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_construct_flowgraph_3x3(backend):
+    dir_scheme = D8Directions(transform_codes=lambda x: x)
+    dirs = np.array([[3, 3, 3], [3, 3, 3], [1, 1, 0]])
+    valids = np.array([[T, F, T], [T, T, T], [T, T, T]])
+    expected_orders = np.array([1, 1, 1, 2])
+    expected_lengths = np.array([1, 2, 3, 1])
+    expected_vertices = [
+        np.array([[1, 1], [2, 1]]),
+        np.array([[0, 2], [1, 2], [2, 2]]),
+        np.array([[0, 0], [1, 0], [2, 0], [2, 1]]),
+        np.array([[2, 1], [2, 2]]),
+    ]
+
+    orders, vertices, endpts = constr_m.construct_flowgraph(
+        dirs,
+        dir_scheme=dir_scheme,
+        backend=backend,
+        min_order=1,
+        valids=valids,
+    )
+
+    np.testing.assert_array_equal(orders, expected_orders)
+    np.testing.assert_array_equal(endpts[:, 1] - endpts[:, 0], expected_lengths)
+    for i, expected in enumerate(expected_vertices):
+        np.testing.assert_array_equal(
+            vertices[endpts[i, 0] : endpts[i, 1] + 1], expected
+        )
+
+
 def test_construct_flowgraph_is_backend_independent_of_masked_directions():
     dir_scheme = D8Directions(transform_codes=lambda x: x)
     dirs = np.array([[3, 3, 3], [3, 3, 3], [1, 1, 0]], dtype=np.uint8)

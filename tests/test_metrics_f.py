@@ -4,15 +4,8 @@ Tests flow-based raster metrics using the FORTRAN backend.
 Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
 
-from tests.core import *
-
-import pytest
 import re
 from pathlib import Path
-import numpy as np
-
-from formosa import D8Directions
-from formosa.geomorphology.drainage import metrics as metrics_m
 
 
 def test_all_allocations_check_status():
@@ -61,73 +54,3 @@ def test_fortran_sources_avoid_old_style_kind_declarations():
                 )
 
     assert violations == []
-
-
-def test_strahler_order_3x3():
-    dir_scheme = D8Directions(transform_codes=lambda x: x)
-
-    # Config 1
-    dirs = np.array(
-        [
-            [3, 3, 3],
-            [3, 3, 3],
-            [1, 1, 0],
-        ]
-    )
-
-    expected_order = np.array(
-        [
-            [1, 1, 1],
-            [1, 1, 1],
-            [1, 2, 2],
-        ]
-    )
-    order = metrics_m.compute_flow_strahler_order(dirs, dir_scheme=dir_scheme)
-
-    np.testing.assert_array_equal(order, expected_order)
-
-    # Config 2
-    dirs = np.array(
-        [
-            [5, 1, 1],
-            [5, 1, 1],
-            [5, 1, 1],
-        ]
-    )
-
-    expected_order = np.array(
-        [
-            [1, 1, 1],
-            [1, 1, 1],
-            [1, 1, 1],
-        ]
-    )
-
-    order = metrics_m.compute_flow_strahler_order(dirs, dir_scheme=dir_scheme)
-
-    np.testing.assert_array_equal(order, expected_order)
-
-
-def test_strahler_order_4x4():
-    dir_scheme = D8Directions(transform_codes=lambda x: x)
-
-    # Config 1
-    dirs = np.array(
-        [
-            [1, 2, 2, 2],
-            [8, 1, 1, 1],
-            [8, 8, 8, 8],
-            [1, 2, 1, 2],
-        ]
-    )
-    expected_order = np.array(
-        [
-            [1, 2, 1, 1],
-            [1, 1, 2, 2],
-            [1, 1, 1, 1],
-            [1, 1, 1, 1],
-        ]
-    )
-    order = metrics_m.compute_flow_strahler_order(dirs, dir_scheme=dir_scheme)
-
-    np.testing.assert_array_equal(order, expected_order)

@@ -15,34 +15,6 @@ import formosa.geomorphology.drainage.network.construction as constr_m
 import formosa.geomorphology.drainage.network._backends.construction_py as constr_py
 
 
-def test_construct_flowgraph_3x3():
-    dir_scheme = D8Directions(transform_codes=lambda x: x)
-
-    dirs = np.array([[3, 3, 3], [3, 3, 3], [1, 1, 0]])
-    valids = np.array([[T, F, T], [T, T, T], [T, T, T]])
-
-    exp_orders = np.array([1, 1, 1, 2])
-    exp_lengths = np.array([1, 2, 3, 1])
-    exp_ijs = [
-        np.array([[1, 1], [2, 1]]),
-        np.array([[0, 2], [1, 2], [2, 2]]),
-        np.array([[0, 0], [1, 0], [2, 0], [2, 1]]),
-        np.array([[2, 1], [2, 2]]),
-    ]
-    arc_orders, vertex_ijs, arc_endpts = constr_m.construct_flowgraph(
-        dirs, dir_scheme=dir_scheme, backend="python", min_order=1, valids=valids
-    )
-    arc_lengths = arc_endpts[:, 1] - arc_endpts[:, 0]
-
-    np.testing.assert_array_equal(arc_orders, exp_orders)
-    np.testing.assert_array_equal(arc_lengths, exp_lengths)
-
-    for i, exp_ij in enumerate(exp_ijs):
-        np.testing.assert_array_equal(
-            vertex_ijs[arc_endpts[i, 0] : arc_endpts[i, 1] + 1], exp_ij
-        )
-
-
 def test_construct_flowgraph_rejects_incomplete_backend_output(monkeypatch):
     dir_scheme = D8Directions(transform_codes=lambda x: x)
     dirs = np.array([[1, 0]], dtype=np.uint8)

@@ -32,34 +32,6 @@ def test_construct_flowgraph_fortran_returns_buffer_overflow_code():
     assert err_code == 3
 
 
-def test_construct_flowgraph_3x3():
-    dir_scheme = D8Directions(transform_codes=lambda x: x)
-
-    dirs = np.array([[3, 3, 3], [3, 3, 3], [1, 1, 0]])
-    valids = np.array([[T, F, T], [T, T, T], [T, T, T]])
-
-    exp_orders = np.array([1, 1, 1, 2])
-    exp_lengths = np.array([1, 2, 3, 1])
-    exp_ijs = [
-        np.array([[1, 1], [2, 1]]),
-        np.array([[0, 2], [1, 2], [2, 2]]),
-        np.array([[0, 0], [1, 0], [2, 0], [2, 1]]),
-        np.array([[2, 1], [2, 2]]),
-    ]
-    arc_orders, vertex_ijs, arc_endpts = constr_m.construct_flowgraph(
-        dirs, dir_scheme=dir_scheme, backend="fortran", min_order=1, valids=valids
-    )
-    arc_lengths = arc_endpts[:, 1] - arc_endpts[:, 0]
-
-    np.testing.assert_array_equal(arc_orders, exp_orders)
-    np.testing.assert_array_equal(arc_lengths, exp_lengths)
-
-    for i, exp_ij in enumerate(exp_ijs):
-        np.testing.assert_array_equal(
-            vertex_ijs[arc_endpts[i, 0] : arc_endpts[i, 1] + 1], exp_ij
-        )
-
-
 def test_construct_flowgraph_translates_fortran_error(monkeypatch: pytest.MonkeyPatch):
     def fake_construct(*args):
         return (
@@ -86,47 +58,48 @@ def test_construct_flowgraph_translates_fortran_error(monkeypatch: pytest.Monkey
         )
 
 
-def test_create_flowgraph_3x3():
-    dir_scheme = D8Directions(transform_codes=lambda x: x)
-
-    # Config 1
-    dirs = np.array([[3, 3, 3], [3, 3, 3], [1, 1, 0]], dtype=np.uint8, order="F")
-
-    expected_fg_i = np.array(
-        [
-            *(0, 1, np.nan, 0, 1, np.nan, 0, 1, np.nan),
-            *(1, 2, np.nan, 1, 2, np.nan, 1, 2, np.nan),
-            *(2, 2, np.nan, 2, 2, np.nan, 2, 2, np.nan),
-        ]
-    )
-    expected_fg_j = np.array(
-        [
-            *(0, 0, np.nan, 1, 1, np.nan, 2, 2, np.nan),
-            *(0, 0, np.nan, 1, 1, np.nan, 2, 2, np.nan),
-            *(0, 1, np.nan, 1, 2, np.nan, 2, 2, np.nan),
-        ]
-    )
-    fg_i, fg_j = constr_m.create_flowgraph(dirs, dir_scheme=dir_scheme)
-    np.testing.assert_array_equal(fg_i, expected_fg_i)
-    np.testing.assert_array_equal(fg_j, expected_fg_j)
-
-    # Config 2
-    dirs = np.array([[5, 1, 1], [5, 1, 1], [5, 1, 1]])
-    expected_fg_i = np.array(
-        [
-            *(0, 0, np.nan),
-            *(1, 1, np.nan),
-            *(2, 2, np.nan),
-        ]
-    )
-    expected_fg_j = np.array(
-        [
-            *(1, 2, np.nan),
-            *(1, 2, np.nan),
-            *(1, 2, np.nan),
-        ]
-    )
-    with pytest.warns(UserWarning):
-        fg_i, fg_j = constr_m.create_flowgraph(dirs, dir_scheme=dir_scheme)
-    np.testing.assert_array_equal(fg_i, expected_fg_i)
-    np.testing.assert_array_equal(fg_j, expected_fg_j)
+@pytest.mark.parametrize(
+    ("dirs", "dir_scheme", "exp_fgi", "exp_fgj", "should_warn"),
+    [
+        (
+            [[3, 3, 3], [3, 3, 3], [1, 1, 0]],
+            D8Directions(transform_codes=lambda x: x),
+            [
+                *(0, 1, np.nan, 0, 1, np.nan, 0, 1, np.nan),
+                *(1, 2, np.nan, 1, 2, np.nan, 1, 2, np.nan),
+                *(2, 2, np.nan, 2, 2, np.nan, 2, 2, np.nan),
+            ],
+            [
+                *(0, 0, np.nan, 1, 1, np.nan, 2, 2, np.nan),
+                *(0, 0, np.nan, 1, 1, np.nan, 2, 2, np.nan),
+                *(0, 1, np.nan, 1, 2, np.nan, 2, 2, np.nan),
+            ],
+            False,
+        ),
+        (
+            [[5, 1, 1], [5, 1, 1], [5, 1, 1]],
+            D8Directions(transform_codes=lambda x: x),
+            [
+                *(0, 0, np.nan),
+                *(1, 1, np.nan),
+                *(2, 2, np.nan),
+            ],
+            [
+                *(1, 2, np.nan),
+                *(1, 2, np.nan),
+                *(1, 2, np.nan),
+            ],
+            True,
+        ),
+    ],
+)
+def test_create_flowgraph_3x3(dirs, dir_scheme, exp_fgi, exp_fgj, should_warn):
+    if should_warn:
+        with pytest.warns(UserWarning, match="Some downstream indices out of bounds"):
+            fg_i, fg_j = constr_m.create_flowgraph(
+                np.array(dirs), dir_scheme=dir_scheme
+            )
+    else:
+        fg_i, fg_j = constr_m.create_flowgraph(np.array(dirs), dir_scheme=dir_scheme)
+    np.testing.assert_array_equal(fg_i, np.array(exp_fgi))
+    np.testing.assert_array_equal(fg_j, np.array(exp_fgj))
