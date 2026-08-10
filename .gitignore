@@ -10,7 +10,11 @@ __pycache__/
 .vscode
 .coverage
 uv.lock
+.pytest_cache/
+*mesonpy-*/
 *_test.py
+
+.continue/
 .harper-dictionary.txt
 
 prs/

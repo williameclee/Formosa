@@ -1,3 +1,9 @@
+"""
+Derives raster coordinates from digital elevation model metadata.
+
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+"""
+
 import numpy as np
 import rasterio.transform as rt
 from rasterio.transform import Affine

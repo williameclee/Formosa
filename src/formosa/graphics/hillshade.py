@@ -1,3 +1,9 @@
+"""
+Renders shaded relief from two-dimensional elevation arrays.
+
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+"""
+
 import numpy as np
 
 import numpy.typing as npt

@@ -1,26 +1,12 @@
-# Last modified
-#   2026-02-11, En-Chi Lee (williameclee@arizona.edu)
-#     - Rename flowdir functions to be more descriptive
-#   2026-06-09, En-Chi Lee (williameclee@gmail.com)
-#     - Added wrapper function for ridge distance computation in 
-#       `DEMGrid` class
-#     - Removed Numpy type `np.bool` to either `np.bool_` or `bool` 
-#       for compatibility with newer Numpy versions
-#   2026-06-11, En-Chi Lee (williameclee@gmail.com)
-#     - Updated function and argument names to match the 
-#       standardised names
-#   2026-06-30, En-Chi Lee (williameclee@gmail.com)
-#     - Added aliases to properties
-#     - Added properties `ridgedir` and `ridge_strahler_order`
-#   2026-07-01, En-Chi Lee (williameclee@gmail.com)
-#     - Added property `shape`
-#   2026-08-04, En-Chi Lee (williameclee@gmail.com)
-#     - Updated `compute_dist2conf_max` and related functions' 
-#       interface to reflect FORTRAN backend changes
-#   2026-08-07 [PR 33], En-Chi Lee (williameclee@gmail.com)
-#     - Added method `invalidate_ocean_basins` and replaced old 
-#       `detect_ocean_basin`
-#     - Updated method `fill_depressions`' interface
+"""
+Represents and processes gridded digital elevation models.
+
+This module provides :class:`DEMGrid`, which coordinates raster
+input and geomorphological operations on a digital elevation model
+(DEM).
+
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+"""
 
 from pathlib import Path
 import warnings
@@ -30,25 +16,25 @@ import rasterio.transform as rt
 import scipy.ndimage as ndi
 
 from formosa.dem.demio import read_dem
-from formosa.geomorphology import D8Directions
-from formosa.geomorphology import (
-    get_neighbour_values,
-    compute_slope,
-    fill_depressions,
-    invalidate_ocean_basins as _invalidate_ocean_basins,
-    compute_flowdir,
-    create_flowgraph,
-    count_indegree,
+from formosa.geomorphology.terrain import compute_slope
+from formosa.geomorphology.drainage import (
+    D8Directions,
+    compute_dist2conf_max,
+    compute_dist2ridge,
+    compute_dist2sink,
+    compute_dist2source,
     compute_flow_accumulation,
     compute_flow_strahler_order,
-    compute_dist2source,
-    compute_dist2sink,
-    compute_dist2conf_max,
+    compute_flowdir,
     compute_ridgedir,
-    compute_dist2ridge,
     compute_ridge_strahler_order,
+    count_indegree,
+    fill_depressions,
+    get_neighbour_values,
+    invalidate_ocean_basins as _invalidate_ocean_basins,
     label_watersheds,
 )
+from formosa.geomorphology.drainage.network import create_flowline_plot_data
 
 from typing import Optional
 import numpy.typing as npt
@@ -336,7 +322,7 @@ class DEMGrid:
         self,
         valid: npt.NDArray[np.bool_] | None = None,
     ) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.integer]]:
-        graphy, graphx = create_flowgraph(
+        graphy, graphx = create_flowline_plot_data(
             self.flowdir,
             dir_scheme=self.directions,
             valids=valid if valid is not None else self.valid,
@@ -602,6 +588,12 @@ class DEMGrid:
 def fill_pits(
     dem: npt.NDArray[np.number],
 ) -> tuple[npt.NDArray[np.number], npt.NDArray[np.bool_]]:
+    """
+    Notes
+    -----
+    This function is deprecated.
+    """
+
     dem_filled = dem.copy()
 
     min_neighbours = np.min(get_neighbour_values(dem_filled)[0], axis=0)

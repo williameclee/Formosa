@@ -1,4 +1,19 @@
+"""
+Validates and post-processes downloaded digital elevation model
+data.
+
+This module provides internal helpers shared by the DEM download
+APIs and is not intended to be used directly.
+
+Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+"""
+
+from rasterio.transform import Affine
+
 import warnings
+
+import numpy as np
+import numpy.typing as npt
 
 from typing import TypeVar
 
@@ -36,12 +51,6 @@ def _validate_latlon_limits(
         lon_offset = lonlim[0] // 360 * 360
         lonlim = (lonlim[0] - lon_offset, lonlim[1] - lon_offset)
     return latlim, lonlim
-
-
-import numpy as np
-import rasterio.transform as rt
-from rasterio.transform import Affine
-import numpy.typing as npt
 
 
 def _dem_post_processing(
