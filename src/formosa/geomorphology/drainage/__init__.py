@@ -1,3 +1,4 @@
+from .directions import D8Directions
 from .neighbours import (
     compute_downstream_indices,
     get_neighbour_values,
@@ -39,3 +40,34 @@ from .network import (
     concat_flowgraph,
     simplify_flowgraph,
 )
+
+__all__ = [
+    "D8Directions",
+    "DirectedFlowCycleError",
+    "GraphTopologyError",
+    "IncompleteFlowGraphError",
+    "InvalidOriginalGraphTopology",
+    "UnresolvedSimplificationTopology",
+    "compute_dist2conf_max",
+    "compute_dist2ridge",
+    "compute_dist2sink",
+    "compute_dist2source",
+    "compute_downstream_indices",
+    "compute_flow_accumulation",
+    "compute_flow_strahler_order",
+    "compute_flowdir",
+    "compute_ridgedir",
+    "compute_ridge_strahler_order",
+    "concat_flowgraph",
+    "construct_flowgraph",
+    "count_indegree",
+    "create_flowline_plot_data",
+    "detect_ocean_basins_from_boundary",
+    "fill_depressions",
+    "find_acyclic_flowdirs",
+    "find_cyclic_flowdirs",
+    "get_neighbour_values",
+    "invalidate_ocean_basins",
+    "label_watersheds",
+    "simplify_flowgraph",
+]

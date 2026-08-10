@@ -16,31 +16,28 @@ import rasterio.transform as rt
 import scipy.ndimage as ndi
 
 from formosa.dem.demio import read_dem
-from formosa.geomorphology import D8Directions
-from formosa.geomorphology import (
-    get_neighbour_values,
-    compute_slope,
-    compute_flowdir,
-    count_indegree,
+from formosa.geomorphology.terrain import compute_slope
+from formosa.geomorphology.drainage import (
+    D8Directions,
+    compute_dist2conf_max,
+    compute_dist2ridge,
+    compute_dist2sink,
+    compute_dist2source,
     compute_flow_accumulation,
     compute_flow_strahler_order,
-    compute_dist2source,
-    compute_dist2sink,
+    compute_flowdir,
     compute_ridgedir,
-    compute_dist2ridge,
     compute_ridge_strahler_order,
+    count_indegree,
+    fill_depressions,
+    get_neighbour_values,
+    invalidate_ocean_basins as _invalidate_ocean_basins,
+    label_watersheds,
 )
+from formosa.geomorphology.drainage.network import create_flowline_plot_data
 
 from typing import Optional
 import numpy.typing as npt
-
-from formosa.geomorphology.drainage import (
-    fill_depressions,
-    label_watersheds,
-    invalidate_ocean_basins as _invalidate_ocean_basins,
-    compute_dist2conf_max,
-)
-from formosa.geomorphology.drainage.network import create_flowline_plot_data
 
 
 class DEMGrid:
