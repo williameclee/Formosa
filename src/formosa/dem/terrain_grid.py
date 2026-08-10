@@ -40,7 +40,7 @@ from formosa.geomorphology.drainage import (
     invalidate_ocean_basins as _invalidate_ocean_basins,
     compute_dist2conf_max,
 )
-from formosa.geomorphology.drainage.network import create_flowgraph
+from formosa.geomorphology.drainage.network import create_flowline_plot_data
 
 
 class DEMGrid:
@@ -325,7 +325,7 @@ class DEMGrid:
         self,
         valid: npt.NDArray[np.bool_] | None = None,
     ) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.integer]]:
-        graphy, graphx = create_flowgraph(
+        graphy, graphx = create_flowline_plot_data(
             self.flowdir,
             dir_scheme=self.directions,
             valids=valid if valid is not None else self.valid,

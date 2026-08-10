@@ -96,10 +96,10 @@ def test_construct_flowgraph_translates_fortran_error(monkeypatch: pytest.Monkey
 def test_create_flowgraph_3x3(dirs, dir_scheme, exp_fgi, exp_fgj, should_warn):
     if should_warn:
         with pytest.warns(UserWarning, match="Some downstream indices out of bounds"):
-            fg_i, fg_j = constr_m.create_flowgraph(
+            fg_i, fg_j = constr_m.create_flowline_plot_data(
                 np.array(dirs), dir_scheme=dir_scheme
             )
     else:
-        fg_i, fg_j = constr_m.create_flowgraph(np.array(dirs), dir_scheme=dir_scheme)
+        fg_i, fg_j = constr_m.create_flowline_plot_data(np.array(dirs), dir_scheme=dir_scheme)
     np.testing.assert_array_equal(fg_i, np.array(exp_fgi))
     np.testing.assert_array_equal(fg_j, np.array(exp_fgj))

@@ -26,7 +26,7 @@ from typing import Optional
 import numpy.typing as npt
 
 
-def create_flowgraph(
+def create_flowline_plot_data(
     dirs: npt.NDArray[np.integer],
     valids: Optional[npt.NDArray[np.bool_]] = None,
     dir_scheme: D8Directions = D8Directions(),

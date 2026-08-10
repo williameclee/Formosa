@@ -35,7 +35,7 @@ from .network import (
     InvalidOriginalGraphTopology,
     UnresolvedSimplificationTopology,
     construct_flowgraph,
-    create_flowgraph,
+    create_flowline_plot_data,
     concat_flowgraph,
     simplify_flowgraph,
 )
