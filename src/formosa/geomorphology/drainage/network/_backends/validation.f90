@@ -1,6 +1,6 @@
 !> Validates flow-graph topology using the FORTRAN backend.
 !!
-!! This internal module is called by the Python network API and 
+!! This internal module is called by the Python network API and
 !! other FORTRAN routines and is not intended to be used directly.
 !!
 !! Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)

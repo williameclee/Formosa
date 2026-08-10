@@ -1,7 +1,7 @@
 !> Computes raster flow directions using the FORTRAN backend.
 !!
-!! This internal module is called by the Python drainage API. It 
-!! also provides raster-level analyses of the resulting flow field; 
+!! This internal module is called by the Python drainage API. It
+!! also provides raster-level analyses of the resulting flow field;
 !! flow-graph operations are implemented in the network modules.
 !!
 !! Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
