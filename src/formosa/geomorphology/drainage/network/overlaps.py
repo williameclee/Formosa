@@ -13,14 +13,13 @@ from formosa.geomorphology.drainage.network.validation import (
 from formosa.geomorphology.drainage.network.editing import remove_unused_vertices
 from formosa.geomorphology._native import network_simplification as simp_f
 
+from typing import Optional, Generic
 import numpy.typing as npt
-from typing import Optional, TypeVar
-
-NpIndex = TypeVar("NpIndex", np.int32, np.int64, np.intp)
+from formosa.utils.typing import NpIndex, NpCoords
 
 
 @dataclass
-class _GraphVertexAnalysis:
+class _GraphVertexAnalysis(Generic[NpCoords]):
     """
     Reusable vertex metadata for one flow graph.
 
@@ -37,14 +36,14 @@ class _GraphVertexAnalysis:
         Stored vertices that are not referenced by an arc are assigned `-1`.
     """
 
-    verts: npt.NDArray[np.number]
+    verts: npt.NDArray[NpCoords]
     is_endpt: npt.NDArray[np.bool_]
     vert_cnts: npt.NDArray[np.intp]
     vert_inv_ids: npt.NDArray[np.intp]
 
 
 @dataclass
-class _SharedVertexAnalysis:
+class _SharedVertexAnalysis(Generic[NpCoords]):
     """
     Vertex metadata shared by a pair of flow graphs.
 
@@ -66,7 +65,7 @@ class _SharedVertexAnalysis:
         Number of occurrences of each shared vertex in the second graph.
     """
 
-    verts: npt.NDArray[np.number]
+    verts: npt.NDArray[NpCoords]
     g1_vert_ids: npt.NDArray[np.intp]
     g2_vert_ids: npt.NDArray[np.intp]
     g1_is_endpt: npt.NDArray[np.bool_]
@@ -76,7 +75,7 @@ class _SharedVertexAnalysis:
 
 
 def _analyse_graph_vertices(
-    verts: npt.NDArray[np.number], endpts: npt.NDArray[np.integer]
+    verts: npt.NDArray[NpCoords], endpts: npt.NDArray[NpIndex]
 ) -> _GraphVertexAnalysis:
     """
     Builds reusable vertex IDs, endpoint roles, and occurrence counts.
@@ -173,15 +172,15 @@ def _find_shared_graph_vertices(
 
 
 def find_graph_overlaps(
-    g1_ijs: npt.NDArray[np.number],
-    g1_endpts: npt.NDArray[np.integer],
-    g2_ijs: npt.NDArray[np.number],
-    g2_endpts: npt.NDArray[np.integer],
+    g1_ijs: npt.NDArray[NpCoords],
+    g1_endpts: npt.NDArray[NpIndex],
+    g2_ijs: npt.NDArray[NpCoords],
+    g2_endpts: npt.NDArray[NpIndex],
 ) -> tuple[
-    npt.NDArray[np.number],
-    npt.NDArray[np.number],
-    npt.NDArray[np.number],
-    npt.NDArray[np.number],
+    npt.NDArray[NpCoords],
+    npt.NDArray[NpCoords],
+    npt.NDArray[NpCoords],
+    npt.NDArray[NpCoords],
 ]:
     """
     Finds and classifies the shared vertices of two graphs.
@@ -214,7 +213,7 @@ def find_graph_overlaps(
         _analyse_graph_vertices(g1_ijs, g1_endpts),
         _analyse_graph_vertices(g2_ijs, g2_endpts),
     )
-    overlaps = shared.verts
+    overlaps = shared.verts.astype(g1_ijs.dtype, copy=False)
 
     # Partition the overlaps by their roles in the two graphs
     endpt_endpt = overlaps[shared.g1_is_endpt & shared.g2_is_endpt]
@@ -353,19 +352,19 @@ def _split_arcs_at_vertex_ids(
 
 def solve_graph_overlaps(
     g1_orders: npt.NDArray[np.integer],
-    g1_ijs: npt.NDArray[np.number],
+    g1_ijs: npt.NDArray[NpCoords],
     g1_endpts: npt.NDArray[NpIndex],
     g2_orders: npt.NDArray[np.integer],
-    g2_ijs: npt.NDArray[np.number],
+    g2_ijs: npt.NDArray[NpCoords],
     g2_endpts: npt.NDArray[NpIndex],
     allows_arcs_overlap: bool = True,
     remove_unused: bool = False,
 ) -> tuple[
     npt.NDArray[np.integer],
-    npt.NDArray[np.number],
+    npt.NDArray[NpCoords],
     npt.NDArray[NpIndex],
     npt.NDArray[np.integer],
-    npt.NDArray[np.number],
+    npt.NDArray[NpCoords],
     npt.NDArray[NpIndex],
 ]:
     """
@@ -458,8 +457,8 @@ def solve_graph_overlaps(
 
 
 def _resolve_topology_intersections(
-    vertices: npt.NDArray[np.number],
-    endpts: npt.NDArray[np.integer],
+    vertices: npt.NDArray[NpCoords],
+    endpts: npt.NDArray[NpIndex],
     vertex_keeps: npt.NDArray[np.bool_],
     tol: float,
     graph_ids: Optional[npt.NDArray[np.integer]] = None,
