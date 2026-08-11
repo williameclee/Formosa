@@ -43,6 +43,53 @@ def orient_v2(p1: NDArray[NpReal], p2: NDArray[NpReal], p3: NDArray[NpReal]) -> 
     return (p2x - p1x) * (p3y - p1y) - (p2y - p1y) * (p3x - p1x)
 
 
+@overload
+def incircle(
+    a: NDArray[np.integer],
+    b: NDArray[np.integer],
+    c: NDArray[np.integer],
+    p: NDArray[np.integer],
+) -> int: ...
+
+
+@overload
+def incircle(
+    a: NDArray[np.floating],
+    b: NDArray[np.floating],
+    c: NDArray[np.floating],
+    p: NDArray[np.floating],
+) -> float: ...
+
+
+@overload
+def incircle(
+    a: NDArray[NpReal], b: NDArray[NpReal], c: NDArray[NpReal], p: NDArray[NpReal]
+) -> Real: ...
+
+
+def incircle(
+    a: NDArray[NpReal], b: NDArray[NpReal], c: NDArray[NpReal], p: NDArray[NpReal]
+) -> Real:
+    """
+    Calculates the signed in-circle determinant for 4 2D points.
+    """
+    ax, ay = a.tolist()
+    bx, by = b.tolist()
+    cx, cy = c.tolist()
+    px, py = p.tolist()
+
+    adx, ady = ax - px, ay - py
+    bdx, bdy = bx - px, by - py
+    cdx, cdy = cx - px, cy - py
+    abdet = adx * bdy - bdx * ady
+    bcdet = bdx * cdy - cdx * bdy
+    cadet = cdx * ady - adx * cdy
+    alift = adx * adx + ady * ady
+    blift = bdx * bdx + bdy * bdy
+    clift = cdx * cdx + cdy * cdy
+    return alift * bcdet + blift * cadet + clift * abdet
+
+
 def on_segment(a: NDArray[NpReal], b: NDArray[NpReal], p: NDArray[NpReal]) -> bool:
     """
     Determines whether a 2D point lies on a closed line segment.

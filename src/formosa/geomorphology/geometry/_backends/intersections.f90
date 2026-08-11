@@ -30,6 +30,35 @@ contains
         o = (p2(1) - p1(1))*(p3(2) - p1(2)) - (p2(2) - p1(2))*(p3(1) - p1(1))
     end function orient_v2
 
+    pure function incircle(a, b, c, p) result(det)
+        !! Calculates the signed in-circle determinant. For
+        !! counterclockwise a, b, c, a positive value places p
+        !! inside their circumcircle.
+        implicit none(type, external)
+        ! Arguments
+        real, intent(in) :: a(2), b(2), c(2), p(2)
+        ! Outputs
+        real :: det
+        ! Local variables
+        real :: adx, ady, bdx, bdy, cdx, cdy
+        real :: abdet, bcdet, cadet, alift, blift, clift
+
+        adx = a(1) - p(1)
+        ady = a(2) - p(2)
+        bdx = b(1) - p(1)
+        bdy = b(2) - p(2)
+        cdx = c(1) - p(1)
+        cdy = c(2) - p(2)
+
+        abdet = adx*bdy - bdx*ady
+        bcdet = bdx*cdy - cdx*bdy
+        cadet = cdx*ady - adx*cdy
+        alift = adx*adx + ady*ady
+        blift = bdx*bdx + bdy*bdy
+        clift = cdx*cdx + cdy*cdy
+        det = alift*bcdet + blift*cadet + clift*abdet
+    end function incircle
+
     pure function on_segment(a, b, p) result(on_flag)
         implicit none(type, external)
         ! Arguments

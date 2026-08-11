@@ -59,6 +59,80 @@ def orient_v2(
             raise ValueError(f"Unsupported backend {backend!r}.")
 
 
+def incircle(
+    a: ArrayLike,
+    b: ArrayLike,
+    c: ArrayLike,
+    p: ArrayLike,
+    oriented: bool = False,
+    backend: Backend = "fortran",
+) -> Real:
+    """
+    Calculates the signed in-circle determinant for 4 2D points.
+
+    - Positive determinant means `p` lies inside their circumcircle;
+    - 0 means it is cocircular;
+    - Negative determinant means it lies outside.
+
+    When `oriented=Dalse`, the sign of the determinant depends on 
+    the orientation of the triangle. For counterclockwise triangle
+    vertices `a`, `b`, and `c`, the sign is the same as described
+    above. Reversing the triangle orientation reverses the sign.
+
+    Parameters
+    ----------
+    a : NDArray[number]
+        First point of the triangle.
+        Must be a 2-by-0 real-valued coordinate.
+    b : NDArray[number]
+        Second point of the triangle.
+        Must be a 2-by-0 real-valued coordinate.
+    c : NDArray[number]
+        Third point of the triangle.
+        Must be a 2-by-0 real-valued coordinate.
+    p : NDArray[number]
+        Point to test against the triangle's circumcircle.
+        Must be a 2-by-0 real-valued coordinate.
+    oriented : bool, optional
+        Whether to normalise the determinant sign for the
+        orientation of `a`, `b`, and `c`.
+        A collinear triangle raises `ValueError` in this mode.
+        Default option is `False`.
+
+    Returns
+    -------
+    det : int | float
+        Signed in-circle determinant.
+
+    Notes
+    -----
+    Integer inputs use exact arithmetic with the Python backend.
+    """
+    points = (
+        _point(a, "a"),
+        _point(b, "b"),
+        _point(c, "c"),
+        _point(p, "p"),
+    )
+    match backend:
+        case "python":
+            determinant = intxs_py.incircle(*points)
+        case "fortran":
+            determinant = float(intx_f.incircle(*map(_fortran_point, points)))
+        case _:
+            raise ValueError(f"Unsupported backend {backend!r}.")
+
+    if not oriented:
+        return determinant
+
+    orientation = orient_v2(a, b, c, backend=backend)
+    if orientation == 0:
+        raise ValueError(
+            "Cannot normalise an in-circle determinant for a collinear triangle."
+        )
+    return determinant if orientation > 0 else -determinant
+
+
 def on_segment(
     a: ArrayLike, b: ArrayLike, p: ArrayLike, backend: Backend = "fortran"
 ) -> bool:
