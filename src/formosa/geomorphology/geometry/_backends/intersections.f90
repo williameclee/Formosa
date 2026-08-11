@@ -3,7 +3,7 @@
 !! This internal module is called by the Python geometry API and
 !! other FORTRAN routines and is not intended to be used directly.
 !!
-!! Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+!! Last modified: 2026-08-11, En-Chi Lee (williameclee@gmail.com)
 module intersections
     use iso_c_binding, only: c_int8_t
     implicit none(type, external)
@@ -25,19 +25,9 @@ contains
         ! Arguments
         real, intent(in) :: p1(2), p2(2), p3(2)
         ! Outputs
-        integer(c_int8_t) :: o
-        ! Local variables
-        real :: xprod
+        real :: o
 
-        xprod = (p2(1) - p1(1))*(p3(2) - p1(2)) - (p2(2) - p1(2))*(p3(1) - p1(1))
-
-        if (xprod == 0) then
-            o = 0
-        else if (xprod < 0) then
-            o = -1
-        else
-            o = 1
-        end if
+        o = (p2(1) - p1(1))*(p3(2) - p1(2)) - (p2(2) - p1(2))*(p3(1) - p1(1))
     end function orient_v2
 
     pure function on_segment(a, b, p) result(on_flag)
@@ -74,7 +64,7 @@ contains
         integer(c_int8_t) :: flag
         ! Local variables
         logical(kind=1) :: eq_l1al2a, eq_l1al2b, eq_l1bl2a, eq_l1bl2b
-        integer(c_int8_t) :: o1, o2, o3, o4
+        real :: o1, o2, o3, o4
         real :: a0, a1, c0, c1, tmp, overlap0, overlap1
 
         flag = -1
@@ -100,7 +90,8 @@ contains
         o2 = orient_v2(l1a, l1b, l2b)
         o3 = orient_v2(l2a, l2b, l1a)
         o4 = orient_v2(l2a, l2b, l1b)
-        if ((o1*o2 < 0) .and. (o3*o4) < 0) then ! Interior-interior crossing
+        if ((((o1 < 0) .and. (o2 > 0)) .or. ((o1 > 0) .and. (o2 < 0))) .and. &
+            (((o3 < 0) .and. (o4 > 0)) .or. ((o3 > 0) .and. (o4 < 0)))) then ! Interior-interior crossing
             flag = 1
             return
         end if

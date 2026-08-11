@@ -10,28 +10,40 @@ Last modified: 2026-08-11, En-Chi Lee (williameclee@gmail.com)
 import numpy as np
 from enum import IntFlag
 
-import numpy.typing as npt
+from typing import overload
+from numpy.typing import NDArray
+from formosa.utils.typing import Real, NpReal
 
 
+@overload
 def orient_v2(
-    p1: npt.NDArray[np.number],
-    p2: npt.NDArray[np.number],
-    p3: npt.NDArray[np.number],
-) -> int:
-    """
-    Computes the orientation of 3 2D points using exact comparisons.
-    """
-    xprod = (p2[0] - p1[0]) * (p3[1] - p1[1]) - (p2[1] - p1[1]) * (p3[0] - p1[0])
-    if xprod == 0:
-        return 0
-    if xprod < 0:
-        return -1
-    return 1
+    p1: NDArray[np.integer], p2: NDArray[np.integer], p3: NDArray[np.integer]
+) -> int: ...
 
 
-def on_segment(
-    a: npt.NDArray[np.number], b: npt.NDArray[np.number], p: npt.NDArray[np.number]
-) -> bool:
+@overload
+def orient_v2(
+    p1: NDArray[np.floating], p2: NDArray[np.floating], p3: NDArray[np.floating]
+) -> float: ...
+
+
+@overload
+def orient_v2(
+    p1: NDArray[NpReal], p2: NDArray[NpReal], p3: NDArray[NpReal]
+) -> Real: ...
+
+
+def orient_v2(p1: NDArray[NpReal], p2: NDArray[NpReal], p3: NDArray[NpReal]) -> Real:
+    """
+    Computes the signed determinant of three two-dimensional points.
+    """
+    p1x, p1y = p1.tolist()
+    p2x, p2y = p2.tolist()
+    p3x, p3y = p3.tolist()
+    return (p2x - p1x) * (p3y - p1y) - (p2y - p1y) * (p3x - p1x)
+
+
+def on_segment(a: NDArray[NpReal], b: NDArray[NpReal], p: NDArray[NpReal]) -> bool:
     """
     Determines whether a 2D point lies on a closed line segment.
     """
@@ -46,10 +58,7 @@ def on_segment(
 
 
 def bboxes_overlap(
-    p1: npt.NDArray[np.number],
-    p2: npt.NDArray[np.number],
-    p3: npt.NDArray[np.number],
-    p4: npt.NDArray[np.number],
+    p1: NDArray[NpReal], p2: NDArray[NpReal], p3: NDArray[NpReal], p4: NDArray[NpReal]
 ) -> bool:
     """
     Determines whether 2 closed 2D segment bounding boxes overlap.
@@ -73,10 +82,10 @@ class IntersectionKind(IntFlag):
 
 
 def lines_intersect_v2(
-    l1a: npt.NDArray[np.number],
-    l1b: npt.NDArray[np.number],
-    l2a: npt.NDArray[np.number],
-    l2b: npt.NDArray[np.number],
+    l1a: NDArray[NpReal],
+    l1b: NDArray[NpReal],
+    l2a: NDArray[NpReal],
+    l2b: NDArray[NpReal],
 ) -> IntersectionKind:
     """
     Classifies the intersection of 2 closed 2D line segments.
@@ -112,7 +121,9 @@ def lines_intersect_v2(
     o2 = orient_v2(l1a, l1b, l2b)
     o3 = orient_v2(l2a, l2b, l1a)
     o4 = orient_v2(l2a, l2b, l1b)
-    if o1 * o2 < 0 and o3 * o4 < 0:
+    opposite_12 = (o1 < 0 and o2 > 0) or (o1 > 0 and o2 < 0)
+    opposite_34 = (o3 < 0 and o4 > 0) or (o3 > 0 and o4 < 0)
+    if opposite_12 and opposite_34:
         return IntersectionKind.INTERIOR_CROSSING
 
     if o1 == 0 and o2 == 0 and o3 == 0 and o4 == 0:

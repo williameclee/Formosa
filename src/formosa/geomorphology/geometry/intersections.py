@@ -11,10 +11,11 @@ from formosa.geomorphology._native import intersections as intx_f
 from formosa.geomorphology.geometry._backends.intersections_py import IntersectionKind
 import formosa.geomorphology.geometry._backends.intersections_py as intxs_py
 
-import numpy.typing as npt
+from numpy.typing import NDArray, ArrayLike
+from formosa.utils.typing import Real, NpReal
 
 
-def _point(value: npt.ArrayLike, name: str) -> npt.NDArray[np.number]:
+def _point(value: ArrayLike, name: str) -> NDArray[NpReal]:
     """
     Returns a validated, real-valued 2D point.
     """
@@ -30,7 +31,7 @@ def _point(value: npt.ArrayLike, name: str) -> npt.NDArray[np.number]:
     return point
 
 
-def _fortran_point(value: npt.NDArray[np.number]) -> npt.NDArray[np.float32]:
+def _fortran_point(value: NDArray[NpReal]) -> NDArray[np.float32]:
     """
     Converts a point to the representation consumed by the FORTRAN
     backend.
@@ -39,29 +40,27 @@ def _fortran_point(value: npt.NDArray[np.number]) -> npt.NDArray[np.float32]:
 
 
 def orient_v2(
-    p1: npt.ArrayLike,
-    p2: npt.ArrayLike,
-    p3: npt.ArrayLike,
-    backend: Backend = "fortran",
-) -> int:
+    p1: ArrayLike, p2: ArrayLike, p3: ArrayLike, backend: Backend = "fortran"
+) -> Real:
     """
-    Computes the orientation of 3 2D points using exact comparisons.
+    Returns the signed determinant of three two-dimensional points.
+
+    A positive result indicates a counterclockwise turn, a negative result a
+    clockwise turn, and zero collinearity. Integer inputs use exact arithmetic
+    with the Python backend.
     """
     points = (_point(p1, "p1"), _point(p2, "p2"), _point(p3, "p3"))
     match backend:
         case "python":
-            return int(intxs_py.orient_v2(*points))
+            return intxs_py.orient_v2(*points)
         case "fortran":
-            return int(intx_f.orient_v2(*map(_fortran_point, points)))
+            return float(intx_f.orient_v2(*map(_fortran_point, points)))
         case _:
             raise ValueError(f"Unsupported backend {backend!r}.")
 
 
 def on_segment(
-    a: npt.ArrayLike,
-    b: npt.ArrayLike,
-    p: npt.ArrayLike,
-    backend: Backend = "fortran",
+    a: ArrayLike, b: ArrayLike, p: ArrayLike, backend: Backend = "fortran"
 ) -> bool:
     """
     Determines whether a 2D point lies on a closed line segment.
@@ -93,10 +92,10 @@ def on_segment(
 
 
 def bboxes_overlap(
-    l1a: npt.ArrayLike,
-    l1b: npt.ArrayLike,
-    l2a: npt.ArrayLike,
-    l2b: npt.ArrayLike,
+    l1a: ArrayLike,
+    l1b: ArrayLike,
+    l2a: ArrayLike,
+    l2b: ArrayLike,
     backend: Backend = "fortran",
 ) -> bool:
     """
@@ -138,10 +137,10 @@ def bboxes_overlap(
 
 
 def lines_intersect_v2(
-    l1a: npt.ArrayLike,
-    l1b: npt.ArrayLike,
-    l2a: npt.ArrayLike,
-    l2b: npt.ArrayLike,
+    l1a: ArrayLike,
+    l1b: ArrayLike,
+    l2a: ArrayLike,
+    l2b: ArrayLike,
     backend: Backend = "fortran",
 ) -> int:
     """
