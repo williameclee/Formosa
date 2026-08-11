@@ -4,10 +4,11 @@ Classifies line-segment intersections using the Python backend.
 This module implements internal routines called by the public-facing
 geometry API and is not intended to be used directly.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-11, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
+from enum import IntFlag
 
 import numpy.typing as npt
 
@@ -61,16 +62,27 @@ def bboxes_overlap(
     )
 
 
+class IntersectionKind(IntFlag):
+    DISJOINT_SEGMENTS = -1
+    ENDPOINT_CONTACT = 0
+    INTERIOR_CROSSING = 1
+    COLLINEAR_OVERLAP = 2
+    IDENTICAL_SEGMENTS = 3
+    T_JUNCTION = 4
+    DEGENERATE_SEGMENT = 5
+
+
 def lines_intersect_v2(
     l1a: npt.NDArray[np.number],
     l1b: npt.NDArray[np.number],
     l2a: npt.NDArray[np.number],
     l2b: npt.NDArray[np.number],
-) -> int:
+) -> IntersectionKind:
     """
     Classifies the intersection of 2 closed 2D line segments.
 
-    The retuned flag has the following interpretation:
+    The return flag has the following interpretation (as in
+    :class:`IntersectionKind`):
         - `-1`: Disjoint segments
         - `0`: Endpoint contact
         - `1`: Interior 'X' crossing
@@ -85,23 +97,23 @@ def lines_intersect_v2(
     l2b = np.asarray(l2b)
 
     if np.array_equal(l1a, l1b) or np.array_equal(l2a, l2b):
-        return 5
+        return IntersectionKind.DEGENERATE_SEGMENT
     if not bboxes_overlap(l1a, l1b, l2a, l2b):
-        return -1
+        return IntersectionKind.DISJOINT_SEGMENTS
 
     eq_l1al2a = np.array_equal(l1a, l2a)
     eq_l1al2b = np.array_equal(l1a, l2b)
     eq_l1bl2a = np.array_equal(l1b, l2a)
     eq_l1bl2b = np.array_equal(l1b, l2b)
     if (eq_l1al2a and eq_l1bl2b) or (eq_l1al2b and eq_l1bl2a):
-        return 3
+        return IntersectionKind.IDENTICAL_SEGMENTS
 
     o1 = orient_v2(l1a, l1b, l2a)
     o2 = orient_v2(l1a, l1b, l2b)
     o3 = orient_v2(l2a, l2b, l1a)
     o4 = orient_v2(l2a, l2b, l1b)
     if o1 * o2 < 0 and o3 * o4 < 0:
-        return 1
+        return IntersectionKind.INTERIOR_CROSSING
 
     if o1 == 0 and o2 == 0 and o3 == 0 and o4 == 0:
         if abs(l1b[0] - l1a[0]) >= abs(l1b[1] - l1a[1]):
@@ -114,13 +126,13 @@ def lines_intersect_v2(
         overlap0 = max(a0, c0)
         overlap1 = min(a1, c1)
         if overlap1 < overlap0:
-            return -1
+            return IntersectionKind.DISJOINT_SEGMENTS
         if overlap1 <= overlap0:
-            return 0
-        return 2
+            return IntersectionKind.ENDPOINT_CONTACT
+        return IntersectionKind.COLLINEAR_OVERLAP
 
     if eq_l1al2a or eq_l1al2b or eq_l1bl2a or eq_l1bl2b:
-        return 0
+        return IntersectionKind.ENDPOINT_CONTACT
 
     if (
         on_segment(l1a, l1b, l2a)
@@ -128,5 +140,5 @@ def lines_intersect_v2(
         or on_segment(l2a, l2b, l1a)
         or on_segment(l2a, l2b, l1b)
     ):
-        return 4
-    return -1
+        return IntersectionKind.T_JUNCTION
+    return IntersectionKind.DISJOINT_SEGMENTS

@@ -2,7 +2,7 @@
 Edits flow graphs by concatenating, splitting, and removing graph
 elements.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-11, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
@@ -354,7 +354,6 @@ def insert_endpt(
         return orders, ijs, endpts
 
     if isinstance(ivert, int):
-        assert isinstance(iarc, int)  # Just for static type checking
         orders, ijs, endpts = _insert_endpt(
             orders, ijs, endpts=endpts, iarc=iarc, ivert=ivert
         )

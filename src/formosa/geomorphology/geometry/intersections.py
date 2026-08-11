@@ -1,13 +1,14 @@
 """
 Classifies intersections between two-dimensional line segments.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-11, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
 
 from formosa.utils import Backend
 from formosa.geomorphology._native import intersections as intx_f
+from formosa.geomorphology.geometry._backends.intersections_py import IntersectionKind
 import formosa.geomorphology.geometry._backends.intersections_py as intxs_py
 
 import numpy.typing as npt
@@ -146,7 +147,8 @@ def lines_intersect_v2(
     """
     Classifies the intersection of 2 closed 2D line segments.
 
-    The retuned flag has the following interpretation:
+    The return flag has the following interpretation (as in
+    :class:`IntersectionKind`):
       - `-1`: Disjoint segments
       - `0`: Endpoint contact
       - `1`: Interior 'X' crossing
