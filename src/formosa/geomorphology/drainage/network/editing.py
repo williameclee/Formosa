@@ -10,16 +10,15 @@ import numpy as np
 import warnings
 
 import numpy.typing as npt
-from typing import Iterable, Optional, TypeVar, overload
-
-NpIndex = TypeVar("NpIndex", np.int32, np.int64, np.intp)
+from typing import Iterable, Optional, overload
+from formosa.utils.typing import NpIndex, NpCoords
 
 
 def concat_flowgraph(
     arc_orders: npt.NDArray[np.integer],
-    vertex_ijs: npt.NDArray[np.integer],
-    arc_endpts: npt.NDArray[np.integer],
-) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.integer], npt.NDArray[np.integer]]:
+    vertex_ijs: npt.NDArray[NpCoords],
+    arc_endpts: npt.NDArray[NpIndex],
+) -> tuple[npt.NDArray[np.integer], npt.NDArray[NpCoords], npt.NDArray[NpIndex]]:
     """
     Concatenates arcs of the same order in a flow graph, separated by NaNs.
     It mainly serves to reduce the number of drawing calls when visualising the graph.
@@ -68,7 +67,7 @@ def concat_flowgraph(
     s_vertex_ijs = np.full(
         (output_size, vertex_ijs.shape[1]), np.nan, dtype=output_dtype
     )
-    s_arc_endpts = np.zeros((s_arc_orders.size, 2), dtype=np.int32)
+    s_arc_endpts = np.zeros((s_arc_orders.size, 2), dtype=arc_endpts.dtype)
 
     cursor = 0
     group_id = 0
@@ -87,9 +86,8 @@ def concat_flowgraph(
 
 
 def remove_unused_vertices(
-    vertices: npt.NDArray[np.number],
-    endpts: npt.NDArray[NpIndex],
-) -> tuple[npt.NDArray[np.number], npt.NDArray[NpIndex]]:
+    vertices: npt.NDArray[NpCoords], endpts: npt.NDArray[NpIndex]
+) -> tuple[npt.NDArray[NpCoords], npt.NDArray[NpIndex]]:
     """
     Removes stored vertices that are not referenced by any graph arc.
 
@@ -145,9 +143,7 @@ def remove_unused_vertices(
 
 
 def _find_vertex_id(
-    verts: npt.NDArray[np.number],
-    vert: npt.NDArray[np.number],
-    n: Optional[int] = None,
+    verts: npt.NDArray[NpCoords], vert: npt.NDArray[NpCoords], n: Optional[int] = None
 ) -> int | list[int]:
     """
     Finds the index (or indices) of a vertex in a list of vertices.
@@ -193,20 +189,18 @@ def _find_vertex_id(
 
 @overload
 def _find_arc_id_of_vertex(
-    endpts: npt.NDArray[np.integer], ivert: int, is_inclusive: bool = True
+    endpts: npt.NDArray[NpIndex], ivert: int, is_inclusive: bool = True
 ) -> Optional[int]: ...
 
 
 @overload
 def _find_arc_id_of_vertex(
-    endpts: npt.NDArray[np.integer], ivert: Iterable[int], is_inclusive: bool = True
+    endpts: npt.NDArray[NpIndex], ivert: Iterable[int], is_inclusive: bool = True
 ) -> Optional[list[int]]: ...
 
 
 def _find_arc_id_of_vertex(
-    endpts: npt.NDArray[np.integer],
-    ivert: int | Iterable[int],
-    is_inclusive: bool = True,
+    endpts: npt.NDArray[NpIndex], ivert: int | Iterable[int], is_inclusive: bool = True
 ) -> Optional[int | list[int]]:
     """
     Finds the indices of the arcs that contain the vertices of a list of given indices.
@@ -251,11 +245,11 @@ def _find_arc_id_of_vertex(
 
 def insert_endpt(
     orders: npt.NDArray[np.integer],
-    ijs: npt.NDArray[np.number],
-    endpts: npt.NDArray[np.integer],
-    add_endpt: npt.NDArray[np.number] | int,
+    ijs: npt.NDArray[NpCoords],
+    endpts: npt.NDArray[NpIndex],
+    add_endpt: npt.NDArray[NpCoords] | int,
     remove_unused: bool = False,
-) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.number], npt.NDArray[np.integer]]:
+) -> tuple[npt.NDArray[np.integer], npt.NDArray[NpCoords], npt.NDArray[NpIndex]]:
     """
     Turns an interior vertex of a flow graph in to an endpoint.
 
@@ -298,7 +292,11 @@ def insert_endpt(
         + f"but got {np.size(orders, 0)} and {np.size(endpts, 0)}, respectively, instead."
     )
 
-    def _return_graph(orders, ijs, endpts):
+    def _return_graph(
+        orders: npt.NDArray[np.integer],
+        ijs: npt.NDArray[NpCoords],
+        endpts: npt.NDArray[NpIndex],
+    ) -> tuple[npt.NDArray[np.integer], npt.NDArray[NpCoords], npt.NDArray[NpIndex]]:
         if remove_unused:
             ijs, endpts = remove_unused_vertices(ijs, endpts)
         return orders, ijs, endpts
@@ -332,7 +330,13 @@ def insert_endpt(
         ivert: int | list[int] = int(iverts[0]) if iverts.size == 1 else iverts.tolist()
     iarc = _find_arc_id_of_vertex(endpts, ivert)
 
-    def _insert_endpt(orders, ijs, endpts, iarc, ivert):
+    def _insert_endpt(
+        orders: npt.NDArray[np.integer],
+        ijs: npt.NDArray[NpCoords],
+        endpts: npt.NDArray[NpIndex],
+        iarc: int,
+        ivert: int,
+    ) -> tuple[npt.NDArray[np.integer], npt.NDArray[NpCoords], npt.NDArray[NpIndex]]:
         # Skip if the additional endpoint is already an endpoint
         if (endpts[iarc, 0] == ivert) or (endpts[iarc, 1] == ivert):
             return orders, ijs, endpts
@@ -350,7 +354,10 @@ def insert_endpt(
         return orders, ijs, endpts
 
     if isinstance(ivert, int):
-        orders, ijs, endpts = _insert_endpt(orders, ijs, endpts, iarc, ivert)
+        assert isinstance(iarc, int)  # Just for static type checking
+        orders, ijs, endpts = _insert_endpt(
+            orders, ijs, endpts=endpts, iarc=iarc, ivert=ivert
+        )
         return _return_graph(orders, ijs, endpts)
 
     assert isinstance(iarc, list)  # Just for static type checking

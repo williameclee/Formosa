@@ -16,6 +16,7 @@ import formosa.geomorphology.drainage.network._backends.validation_py as val_py
 
 from typing import Optional
 import numpy.typing as npt
+from formosa.utils.typing import NpIndex, NpCoords
 
 
 class GraphTopologyError(RuntimeError):
@@ -103,10 +104,10 @@ def _valid_flow_edges(
 
 
 def _validate_flowgraph_coverage(
-    vertex_ijs: npt.NDArray[np.integer],
-    arc_endpts: npt.NDArray[np.integer],
-    dsi: npt.NDArray[np.integer],
-    dsj: npt.NDArray[np.integer],
+    vertex_ijs: npt.NDArray[NpIndex],
+    arc_endpts: npt.NDArray[NpIndex],
+    dsi: npt.NDArray[NpIndex],
+    dsj: npt.NDArray[NpIndex],
     has_valid_ds: npt.NDArray[np.bool_],
 ) -> None:
     """
@@ -144,8 +145,8 @@ def _validate_flowgraph_coverage(
 
 
 def _locate_invalid_graph_topology_fortran(
-    vertex_xys: npt.NDArray[np.number],
-    arc_endpts: npt.NDArray[np.integer],
+    vertex_xys: npt.NDArray[NpCoords],
+    arc_endpts: npt.NDArray[NpIndex],
 ) -> Optional[npt.NDArray[np.int32]]:
     """
     Returns every topology violation using the capacity-aware FORTRAN scanner.
@@ -215,8 +216,8 @@ def _locate_invalid_graph_topology_fortran(
 
 
 def locate_invalid_graph_topology(
-    vertex_xys: npt.NDArray[np.number],
-    arc_endpts: npt.NDArray[np.integer],
+    vertex_xys: npt.NDArray[NpCoords],
+    arc_endpts: npt.NDArray[NpIndex],
     backend: Backend = "fortran",
 ) -> Optional[npt.NDArray[np.int32]]:
     """
@@ -289,8 +290,8 @@ def locate_invalid_graph_topology(
 
 def _ignore_identical_intergraph_arcs(
     intxs: Optional[npt.NDArray[np.int32]],
-    vertices: npt.NDArray[np.number],
-    endpts: npt.NDArray[np.integer],
+    vertices: npt.NDArray[NpCoords],
+    endpts: npt.NDArray[NpIndex],
     graph_ids: npt.NDArray[np.integer],
 ) -> Optional[npt.NDArray[np.int32]]:
     """
@@ -323,8 +324,8 @@ def _ignore_identical_intergraph_arcs(
 
 
 def _locate_disallowed_graph_topology(
-    vertices: npt.NDArray[np.number],
-    endpts: npt.NDArray[np.integer],
+    vertices: npt.NDArray[NpCoords],
+    endpts: npt.NDArray[NpIndex],
     graph_ids: Optional[npt.NDArray[np.integer]] = None,
 ) -> Optional[npt.NDArray[np.int32]]:
     """
