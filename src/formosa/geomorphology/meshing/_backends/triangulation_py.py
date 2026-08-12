@@ -5,6 +5,7 @@ This internal module implements incremental Bowyer-Watson
 triangulation for the public meshing API.
 
 Created: 2026-08-12, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-13, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
@@ -200,3 +201,68 @@ def triangulate_points(vtxs: NDArray[NpCoords]) -> NDArray[NpCanonIndex]:
         raise GraphTopologyError("Point set did not produce any finite triangles.")
 
     return np.asarray(triangles, dtype=NpCanonIndex)
+
+
+def find_triangle_neighbours(
+    triangles: NDArray[NpCanonIndex],
+) -> tuple[
+    NDArray[NpCanonIndex],
+    dict[tuple[int, int], tuple[int, int]],
+]:
+    """
+    Builds triangle-to-triangle adjacency and an edge lookup.
+
+    Returns
+    -------
+    neighbours : NDArray[int32]
+        `neighbours[itri, side]` is the triangle across that side,
+        or `-1` at the mesh boundary.
+    edge_owners : dict[tuple[int, int], tuple[int, int]]
+        Maps a canonical edge to one incident `(triangle, side)`.
+    """
+    triangles = np.asarray(triangles)
+
+    if triangles.ndim != 2 or triangles.shape[1] != 3:
+        raise ValueError("Triangles must have shape (F, 3).")
+    if np.any(triangles < 0):
+        raise ValueError("Triangle vertex IDs must be non-negative.")
+
+    ntris = triangles.shape[0]
+    neighbours = np.full((ntris, 3), -1, dtype=np.int32)
+
+    # key -> (triangle ID, side ID, directed start)
+    owners: dict[tuple[int, int], tuple[int, int, int]] = {}
+
+    for itri, (a, b, c) in enumerate(triangles):
+        if a == b or b == c or c == a:
+            raise ValueError(f"Triangle {itri} is degenerate.")
+
+        for iside, (u, v) in enumerate(((b, c), (c, a), (a, b))):
+            u = int(u)
+            v = int(v)
+            key = (u, v) if u < v else (v, u)
+
+            previous = owners.get(key)
+            if previous is None:
+                owners[key] = (itri, iside, u)
+                continue
+
+            jtri, jside, other_start = previous
+
+            if neighbours[jtri, jside] != -1:
+                raise ValueError(f"Edge {key} belongs to more than two triangles.")
+
+            # Adjacent CCW triangles must traverse their shared edge
+            # in opposite directions.
+            if other_start == u:
+                raise ValueError(
+                    f"Triangles incident to edge {key} have inconsistent orientation."
+                )
+
+            neighbours[itri, iside] = jtri
+            neighbours[jtri, jside] = itri
+
+    edge_owners = {
+        edge: (itri, iside) for edge, (itri, iside, _) in owners.items()
+    }
+    return neighbours, edge_owners
