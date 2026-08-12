@@ -29,3 +29,22 @@ def test_fortran_triangulation_rejects_coordinates_outside_int32():
 
     with pytest.raises(OverflowError, match="representable as int32"):
         tri_m.triangulate_points(vtxs, backend="fortran")
+
+
+def test_fortran_triangulation_accepts_uint32_inside_int32_range():
+    vtxs = np.array([[0, 0], [0, 4], [4, 0]], dtype=np.uint32)
+
+    triangles = tri_m.triangulate_points(vtxs, backend="fortran")  # type: ignore
+
+    assert triangles.shape == (1, 3)
+    assert triangles.dtype == np.int32
+
+
+def test_fortran_triangulation_rejects_uint32_outside_int32_range():
+    vtxs = np.array(
+        [[0, 0], [0, 1], [np.iinfo(np.int32).max + 1, 0]],
+        dtype=np.uint32,
+    )
+
+    with pytest.raises(OverflowError, match="representable as int32"):
+        tri_m.triangulate_points(vtxs, backend="fortran")  # type: ignore

@@ -25,6 +25,13 @@ def _mesh_edges(triangles: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return np.unique(edges, axis=0, return_counts=True)
 
 
+def _coordinate_edges(
+    vtxs: np.ndarray, triangles: np.ndarray
+) -> set[tuple[tuple[int, int], tuple[int, int]]]:
+    edges, _ = _mesh_edges(triangles)
+    return {tuple(sorted((tuple(vtxs[u]), tuple(vtxs[v])))) for u, v in edges}  # type: ignore
+
+
 def _assert_valid_delaunay(vtxs: np.ndarray, triangles: np.ndarray) -> None:
     assert triangles.ndim == 2
     assert triangles.shape[1] == 3
@@ -69,11 +76,7 @@ def test_python_supertriangle_matches_native_construction():
     )
     assert supertriangle == (2, 3, 4)
     assert (
-        orient_v2(
-            *(all_vtxs[vertex_id] for vertex_id in supertriangle),
-            backend="python",
-        )
-        > 0
+        orient_v2(*(all_vtxs[vtx_id] for vtx_id in supertriangle), backend="python") > 0
     )
 
 
@@ -84,15 +87,160 @@ def test_python_supertriangle_matches_native_construction():
         np.array([[0, 0], [0, 4], [4, 0]], dtype=np.int32),
         np.array([[0, 0], [0, 2], [2, 0], [2, 2]], dtype=np.int32),
         np.array([[0, 0], [0, 4], [4, 0], [4, 4], [2, 2]], dtype=np.int32),
-        np.array(
-            [[1, 1], [2, 7], [4, 3], [6, 9], [8, 2], [9, 6]],
-            dtype=np.int32,
-        ),
+        np.array([[1, 1], [2, 7], [4, 3], [6, 9], [8, 2], [9, 6]], dtype=np.int32),
     ],
 )
 def test_triangulate_points_produces_valid_delaunay_mesh(points, backend):
     triangles = tri_m.triangulate_points(points, backend=backend)
     _assert_valid_delaunay(points, triangles)
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+@pytest.mark.parametrize("shape", [(2, 2), (3, 3), (5, 5), (3, 7)])
+def test_triangulate_regular_raster_grid(shape, backend):
+    nrows, ncols = shape
+    vtxs = np.indices(shape).reshape(2, -1).T.astype(np.int32)
+
+    triangles = tri_m.triangulate_points(vtxs, backend=backend)
+
+    assert triangles.shape == (2 * (nrows - 1) * (ncols - 1), 3)
+    _assert_valid_delaunay(vtxs, triangles)
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+@pytest.mark.parametrize(
+    "vtxs",
+    [
+        np.array([[0, 0], [4, 0], [0, 4], [4, 4], [2, 0]], dtype=np.int32),
+        np.array(
+            [[0, 0], [1, 0], [2, 0], [3, 0], [0, 3], [3, 3]],
+            dtype=np.int32,
+        ),
+        np.array(
+            [[0, 0], [4, 0], [0, 4], [4, 4], [1, 1], [2, 2], [3, 3]],
+            dtype=np.int32,
+        ),
+    ],
+)
+def test_triangulate_accepts_collinear_subsets(vtxs, backend):
+    triangles = tri_m.triangulate_points(vtxs, backend=backend)
+
+    _assert_valid_delaunay(vtxs, triangles)
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_triangulation_is_invariant_to_input_order(backend):
+    vtxs = np.array(
+        [[0, 0], [1, 5], [3, 2], [5, 7], [8, 1], [9, 6], [4, 4]],
+        dtype=np.int32,
+    )
+    expected_edges = _coordinate_edges(
+        vtxs, tri_m.triangulate_points(vtxs, backend=backend)
+    )
+    rng = np.random.default_rng(20260812)
+
+    for _ in range(10):
+        permuted_vtxs = vtxs[rng.permutation(vtxs.shape[0])]
+        triangles = tri_m.triangulate_points(permuted_vtxs, backend=backend)
+        assert _coordinate_edges(permuted_vtxs, triangles) == expected_edges
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_cocircular_permutations_produce_valid_triangulations(backend):
+    vtxs = np.array([[0, 0], [0, 4], [4, 0], [4, 4]], dtype=np.int32)
+
+    for permutation in (
+        np.array([0, 1, 2, 3]),
+        np.array([3, 2, 1, 0]),
+        np.array([1, 3, 0, 2]),
+    ):
+        permuted_vtxs = vtxs[permutation]
+        triangles = tri_m.triangulate_points(permuted_vtxs, backend=backend)
+        _assert_valid_delaunay(permuted_vtxs, triangles)
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+@pytest.mark.parametrize("nvtxs", [10, 30, 100])
+def test_triangulate_deterministic_random_raster_points(nvtxs, backend):
+    rng = np.random.default_rng(20260812 + nvtxs)
+    candidates = rng.integers(0, 10_000, size=(nvtxs * 2, 2), dtype=np.int32)
+    vtxs = np.unique(candidates, axis=0)[:nvtxs]
+    assert vtxs.shape[0] == nvtxs
+
+    triangles = tri_m.triangulate_points(vtxs, backend=backend)
+
+    _assert_valid_delaunay(vtxs, triangles)
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+@pytest.mark.parametrize("offset", [-10_000, 10_000])
+def test_triangulation_is_translation_invariant(offset, backend):
+    vtxs = np.array(
+        [[0, 0], [1, 5], [3, 2], [5, 7], [8, 1], [9, 6], [4, 4]],
+        dtype=np.int32,
+    )
+    translated_vtxs = vtxs + offset
+
+    triangles = tri_m.triangulate_points(vtxs, backend=backend)
+    translated_triangles = tri_m.triangulate_points(translated_vtxs, backend=backend)
+
+    np.testing.assert_array_equal(
+        np.sort(_mesh_edges(triangles)[0], axis=0),
+        np.sort(_mesh_edges(translated_triangles)[0], axis=0),
+    )
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+@pytest.mark.parametrize("scale", [2, 7, 1_000])
+def test_triangulation_is_scale_invariant(scale, backend):
+    vtxs = np.array(
+        [[0, 0], [1, 5], [3, 2], [5, 7], [8, 1], [9, 6], [4, 4]],
+        dtype=np.int32,
+    )
+
+    triangles = tri_m.triangulate_points(vtxs, backend=backend)
+    scaled_triangles = tri_m.triangulate_points(vtxs * scale, backend=backend)
+
+    np.testing.assert_array_equal(
+        np.sort(_mesh_edges(triangles)[0], axis=0),
+        np.sort(_mesh_edges(scaled_triangles)[0], axis=0),
+    )
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason="Super-triangle coordinates can overflow int32.",
+)
+@pytest.mark.parametrize("backend", BACKENDS)
+@pytest.mark.parametrize(
+    "vtxs",
+    [
+        np.array(
+            [
+                [np.iinfo(np.int32).max - 7, 0],
+                [np.iinfo(np.int32).max, 0],
+                [np.iinfo(np.int32).max - 7, 7],
+            ],
+            dtype=np.int32,
+        ),
+        np.array(
+            [
+                [np.iinfo(np.int32).min, 0],
+                [np.iinfo(np.int32).min + 7, 0],
+                [np.iinfo(np.int32).min, 7],
+            ],
+            dtype=np.int32,
+        ),
+        np.array(
+            [[-300_000_000, 0], [300_000_000, 0], [0, 1]],
+            dtype=np.int32,
+        ),
+    ],
+)
+def test_triangulate_int32_extreme_coordinates(vtxs, backend):
+    triangles = tri_m.triangulate_points(vtxs, backend=backend)
+
+    _assert_valid_delaunay(vtxs, triangles)
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
@@ -109,6 +257,52 @@ def test_triangulate_rejects_collinear_vertices(backend):
 
     with pytest.raises(GraphTopologyError):
         tri_m.triangulate_points(vtxs, backend=backend)
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+@pytest.mark.parametrize(
+    "vtxs",
+    [
+        np.array([0, 1], dtype=np.int32),
+        np.zeros((3, 3), dtype=np.int32),
+    ],
+)
+def test_triangulate_rejects_invalid_shapes(vtxs, backend):
+    with pytest.raises(ValueError, match="shape"):
+        tri_m.triangulate_points(vtxs, backend=backend)
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+@pytest.mark.parametrize("nvtxs", [0, 1, 2])
+def test_triangulate_rejects_too_few_vertices(nvtxs, backend):
+    vtxs = np.arange(nvtxs * 2, dtype=np.int32).reshape(nvtxs, 2)
+
+    with pytest.raises(ValueError, match="At least three points"):
+        tri_m.triangulate_points(vtxs, backend=backend)
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+@pytest.mark.parametrize("dtype", [np.bool_, np.str_, object])
+def test_triangulate_rejects_non_numeric_coordinates(dtype, backend):
+    vtxs = np.array([[0, 0], [0, 2], [2, 0]], dtype=dtype)
+
+    with pytest.raises(TypeError):
+        tri_m.triangulate_points(vtxs, backend=backend)
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_triangulate_accepts_noncontiguous_vertex_array(backend):
+    storage = np.zeros((6, 4), dtype=np.int32)
+    storage[:, ::2] = np.array(
+        [[0, 0], [0, 4], [4, 0], [4, 4], [1, 2], [3, 1]],
+        dtype=np.int32,
+    )
+    vtxs = storage[:, ::2]
+    assert not vtxs.flags.c_contiguous
+
+    triangles = tri_m.triangulate_points(vtxs, backend=backend)
+
+    _assert_valid_delaunay(vtxs, triangles)
 
 
 def test_triangulate_points_rejects_unknown_backend():
