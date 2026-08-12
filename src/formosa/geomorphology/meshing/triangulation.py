@@ -5,6 +5,7 @@ This module dispatches to the Python or FORTRAN backend and
 normalises native inputs, outputs, and errors.
 
 Created: 2026-08-12, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-13, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
@@ -25,15 +26,34 @@ _TRIANGULATION_ERRORS = {
 }
 
 
+def _canonicalise_triangles(
+    triangles: NDArray[NpCanonIndex],
+) -> NDArray[NpCanonIndex]:
+    """
+    Returns CCW triangles in a deterministic vertex and row order.
+    """
+    triangles = np.asarray(triangles, dtype=NpCanonIndex, order="C")
+
+    # Cyclic rotation such that the smallest index appears first
+    starts = np.argmin(triangles, axis=1)
+    offsets = np.arange(3)
+    triangles = np.take_along_axis(
+        triangles, (starts[:, np.newaxis] + offsets) % 3, axis=1
+    )
+
+    # Sort by first, then second, then third index
+    order = np.lexsort((triangles[:, 2], triangles[:, 1], triangles[:, 0]))
+    return np.ascontiguousarray(triangles[order], dtype=NpCanonIndex)
+
+
 def triangulate_points(
     vtxs: NDArray[NpCoords], backend: Backend = "fortran"
 ) -> NDArray[NpCanonIndex]:
     """
     Computes an unconstrained Delaunay triangulation of 2D points.
 
-    The returned triangle vertex IDs are zero-based for both
-    backends. The native backend currently accepts only coordinates
-    representable as signed 32-bit integers.
+    Each counterclockwise triangle starts with its smallest vertex
+    ID, and triangles are ordered lexicographically.
 
     Parameters
     ----------
@@ -47,6 +67,11 @@ def triangulate_points(
     -------
     NDArray[int32], shape (F, 3)
         Counterclockwise triangle vertex IDs.
+
+    Notes
+    -----
+    The native (FORTRAN) backend currently accepts only coordinates
+    representable as `int32`.
     """
     vtxs = np.asarray(vtxs)
     tri_py._validate_triangulate_points(vtxs)
@@ -80,4 +105,4 @@ def triangulate_points(
             )  # Truncate and convert back to 0-based index
         case _:
             raise ValueError(f"Unknown backend: {backend}")
-    return triangles
+    return _canonicalise_triangles(triangles)
