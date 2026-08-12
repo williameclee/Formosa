@@ -2,7 +2,7 @@
 Verifies line-segment intersection parity across configured
 backends.
 
-Last modified: 2026-08-11, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-12, En-Chi Lee (williameclee@gmail.com)
 """
 
 import pytest
@@ -84,15 +84,36 @@ def test_public_wrappers_select_backend(backend, function, args, expected):
         ((-0.5, 1.25), (0.75, 2.5), (2.0, 3.75), 0.0, True),
         ((0.1, 0.2), (1.4, -0.3), (-0.7, 2.1), 2.07, True),
         (
+            np.array((0.125, -0.25), dtype=np.float32),
+            np.array((1.625, 0.5), dtype=np.float32),
+            np.array((-0.375, 2.0), dtype=np.float32),
+            3.75,
+            True,
+        ),  # Test float32
+        (
+            np.array((0.125, -0.25), dtype=np.float64),
+            np.array((1.625, 0.5), dtype=np.float64),
+            np.array((-0.375, 2.0), dtype=np.float64),
+            3.75,
+            True,
+        ),  # Tes float64
+        (
             np.array((0, 0), dtype=np.int32),
             np.array((50_000, 0), dtype=np.int32),
             np.array((0, 50_000), dtype=np.int32),
             2_500_000_000,
             False,
-        ),  # Test overflow
+        ),  # Test no overflow
+        (
+            np.array((0, 0), dtype=np.int32),
+            np.array((50_000, 49_999), dtype=np.int32),
+            np.array((49_999, 49_998), dtype=np.int32),
+            -1,
+            False,
+        ),  # Test nearly collinear
     ],
 )
-def test_orient_v2(p1, p2, p3, exp_det, is_float, backend):
+def test_orientv2(p1, p2, p3, exp_det, is_float, backend):
     det = intx_m.orient_v2(p1, p2, p3, backend=backend)
     if is_float:
         assert det == pytest.approx(exp_det, rel=1e-6, abs=1e-7)
@@ -105,17 +126,30 @@ def test_orient_v2(p1, p2, p3, exp_det, is_float, backend):
         assert intx_m.orient_v2(p1, p3, p2, backend=backend) == -exp_det
 
 
-def test_orient_v2_python_resolves_nearly_collinear_integer_points():
-    # The exact determinant is -1 despite both products being about 2.5e9.
-    p1 = np.array((0, 0), dtype=np.int32)
-    p2 = np.array((50_000, 49_999), dtype=np.int32)
-    p3 = np.array((49_999, 49_998), dtype=np.int32)
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_integer_predicates_int64(backend):
+    translation = np.array((2**40, -(2**40)), dtype=np.int64)
+    a = translation + np.array((0, 0), dtype=np.int64)
+    b = translation + np.array((2, 0), dtype=np.int64)
+    c = translation + np.array((0, 2), dtype=np.int64)
+    p = translation + np.array((1, 1), dtype=np.int64)
 
-    assert intx_m.orient_v2(p1, p2, p3, backend="python") == -1
+    assert intx_m.orient_v2(a, b, c, backend=backend) == 4
+    assert intx_m.incircle(a, b, c, p, backend=backend) == 8
+
+
+def test_fortran_int32_predicates_saturate_before_narrowing():
+    a = np.array((0, 0), dtype=np.int32)
+    b = np.array((50_000, 0), dtype=np.int32)
+    c = np.array((0, 50_000), dtype=np.int32)
+    p = np.array((25_000, 25_000), dtype=np.int32)
+
+    assert intx_m.intx_f.orient_v2_int32(a, b, c) == np.iinfo(np.int32).max
+    assert intx_m.intx_f.incircle_int32(a, b, c, p) == np.iinfo(np.int32).max
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_orient_v2_float_translation_invariance(backend):
+def test_orientv2_float_translation_invariance(backend):
     p1 = np.array((-1.25, 2.5))
     p2 = np.array((3.75, -0.5))
     p3 = np.array((2.0, 4.25))
@@ -131,7 +165,7 @@ def test_orient_v2_float_translation_invariance(backend):
 
 @pytest.mark.parametrize("backend", BACKENDS)
 @pytest.mark.parametrize("scale", [0.25, 2.5, -3.0])
-def test_orient_v2_float_scaling_is_quadratic(backend, scale):
+def test_orientv2_float_quadratic_scaling(backend, scale):
     p1 = np.array((-0.5, 1.25))
     p2 = np.array((2.0, -0.75))
     p3 = np.array((4.5, 3.0))
@@ -142,19 +176,7 @@ def test_orient_v2_float_scaling_is_quadratic(backend, scale):
     assert scaled == pytest.approx(scale * scale * determinant, rel=1e-6, abs=1e-6)
 
 
-@pytest.mark.parametrize("dtype", [np.float32, np.float64])
-def test_orient_v2_python_preserves_fractional_determinant(dtype):
-    p1 = np.array((0.125, -0.25), dtype=dtype)
-    p2 = np.array((1.625, 0.5), dtype=dtype)
-    p3 = np.array((-0.375, 2.0), dtype=dtype)
-
-    determinant = intx_m.orient_v2(p1, p2, p3, backend="python")
-
-    assert determinant == pytest.approx(3.75)
-    assert isinstance(determinant, float)
-
-
-def test_public_wrapper_rejects_unknown_backend():
+def test_orientv2_unknown_backend():
     with pytest.raises(ValueError, match="Unsupported backend"):
         intx_m.orient_v2((0, 0), (1, 0), (1, 1), backend="unknown")  # type: ignore
 
@@ -170,24 +192,6 @@ def test_public_wrapper_rejects_unknown_backend():
 def test_public_wrapper_validates_points(point, error):
     with pytest.raises(error):
         intx_m.orient_v2(point, (1, 0), (1, 1), backend="python")
-
-
-@pytest.mark.parametrize("backend", BACKENDS)
-@pytest.mark.parametrize(
-    ("p", "expected"),
-    [
-        ((1, 1), 8),  # Inside, at the circumcentre.
-        ((2, 2), 0),  # On the circumcircle.
-        ((3, 3), -24),  # Outside the circumcircle.
-    ],
-)
-def test_incircle_classifies_point_for_counterclockwise_triangle(p, expected, backend):
-    a, b, c = (0, 0), (2, 0), (0, 2)
-
-    determinant = intx_m.incircle(a, b, c, p, backend=backend)
-
-    assert determinant == pytest.approx(expected)
-    assert intx_m.incircle(a, c, b, p, backend=backend) == pytest.approx(-expected)
 
 
 @pytest.mark.parametrize("backend", BACKENDS)

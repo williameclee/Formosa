@@ -1,7 +1,12 @@
 """
-Classifies intersections between two-dimensional line segments.
+Evaluates two-dimensional geometric predicates.
 
-Last modified: 2026-08-11, En-Chi Lee (williameclee@gmail.com)
+This module exposes the public orientation, in-circle, and
+line-segment intersection API. It dispatches calculations to the
+internal Python or FORTRAN backend and selects C-interoperable
+integer overloads where possible.
+
+Last modified: 2026-08-12, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
@@ -39,22 +44,102 @@ def _fortran_point(value: NDArray[NpReal]) -> NDArray[np.float32]:
     return np.asarray(value, dtype=np.float32, order="F")
 
 
+def _dint_dtype(points: tuple[NDArray[NpReal], ...]) -> np.dtype | None:
+    """
+    Selects a lossless C-interoperable integer input kind, if
+    possible.
+    """
+    if not all(np.issubdtype(point.dtype, np.integer) for point in points):
+        return None
+
+    minimum = min(int(np.min(point)) for point in points)
+    maximum = max(int(np.max(point)) for point in points)
+    if np.iinfo(np.int32).min <= minimum and maximum <= np.iinfo(np.int32).max:
+        return np.dtype(np.int32)
+    if np.iinfo(np.int64).min <= minimum and maximum <= np.iinfo(np.int64).max:
+        return np.dtype(np.int64)
+    return None
+
+
+def _fint_points(
+    points: tuple[NDArray[NpReal], ...], dtype: np.dtype
+) -> tuple[NDArray[np.integer], ...]:
+    """
+    Converts integer points to a C-interoperable FORTRAN
+    representation.
+    """
+    return tuple(np.asarray(point, dtype=dtype, order="F") for point in points)
+
+
 def orient_v2(
     p1: ArrayLike, p2: ArrayLike, p3: ArrayLike, backend: Backend = "fortran"
 ) -> Real:
     """
-    Returns the signed determinant of three two-dimensional points.
+    Calculates the signed orientation determinant of 3 2D points.
 
-    A positive result indicates a counterclockwise turn, a negative result a
-    clockwise turn, and zero collinearity. Integer inputs use exact arithmetic
-    with the Python backend.
+    A positive result indicates a counterclockwise turn, a negative
+    result indicates a clockwise turn, and zero indicates
+    collinearity.
+
+    Parameters
+    ----------
+    p1 : ArrayLike
+        First real-valued coordinate with shape `(2,)`.
+    p2 : ArrayLike
+        Second real-valued coordinate with shape `(2,)`.
+    p3 : ArrayLike
+        Third real-valued coordinate with shape `(2,)`.
+    backend : {"fortran", "python"}, optional
+        Computational backend.
+        Default backend is `"fortran"`.
+
+    Returns
+    -------
+    det : int | float
+        Signed orientation determinant.
+
+        All-integer inputs return an integer when a C-interoperable
+        integer kind can represent the coordinates. Other inputs
+        return a float.
+
+    Raises
+    ------
+    ValueError
+        If a point does not have shape `(2,)` or the backend is
+        unsupported.
+    TypeError
+        If a point contains non-numeric or complex-valued
+        coordinates.
+
+    Notes
+    -----
+    The Python backend uses exact integer arithmetic. The FORTRAN
+    backend uses double-precision intermediates for integer inputs
+    and same-kind saturating results. If a 32-bit result saturates,
+    this wrapper retries the calculation using the 64-bit overload.
+    The anticipated coordinate magnitudes of up to approximately
+    100000 are represented exactly in double precision; integer
+    coordinates above `2**53` may not be.
     """
     points = (_point(p1, "p1"), _point(p2, "p2"), _point(p3, "p3"))
     match backend:
         case "python":
             return intxs_py.orient_v2(*points)
         case "fortran":
-            return float(intx_f.orient_v2(*map(_fortran_point, points)))
+            match _dint_dtype(points):
+                case dtype if dtype == np.dtype(np.int32):
+                    det = intx_f.orient_v2_int32(
+                        *_fint_points(points, dtype)  # type: ignore
+                    )
+                    if det in (np.iinfo(np.int32).min, np.iinfo(np.int32).max):
+                        det = intx_f.orient_v2_int64(
+                            *_fint_points(points, np.dtype(np.int64))
+                        )
+                    return det
+                case dtype if dtype == np.dtype(np.int64):
+                    return intx_f.orient_v2_int64(*_fint_points(points, dtype))  # type: ignore
+                case _:
+                    return float(intx_f.orient_v2_real(*map(_fortran_point, points)))
         case _:
             raise ValueError(f"Unsupported backend {backend!r}.")
 
@@ -70,43 +155,61 @@ def incircle(
     """
     Calculates the signed in-circle determinant for 4 2D points.
 
-    - Positive determinant means `p` lies inside their circumcircle;
-    - 0 means it is cocircular;
-    - Negative determinant means it lies outside.
+    For counterclockwise triangle vertices, a positive result places
+    `p` inside their circumcircle, zero places it on the circle, and
+    a negative result places it outside. Reversing the triangle
+    orientation reverses the determinant sign.
 
-    When `oriented=Dalse`, the sign of the determinant depends on 
-    the orientation of the triangle. For counterclockwise triangle
-    vertices `a`, `b`, and `c`, the sign is the same as described
-    above. Reversing the triangle orientation reverses the sign.
+    When `oriented=True`, the result is normalised so that the
+    classification is independent of the order of the triangle
+    vertices.
 
     Parameters
     ----------
-    a : NDArray[number]
-        First point of the triangle.
-        Must be a 2-by-0 real-valued coordinate.
-    b : NDArray[number]
-        Second point of the triangle.
-        Must be a 2-by-0 real-valued coordinate.
-    c : NDArray[number]
-        Third point of the triangle.
-        Must be a 2-by-0 real-valued coordinate.
-    p : NDArray[number]
-        Point to test against the triangle's circumcircle.
-        Must be a 2-by-0 real-valued coordinate.
+    a : ArrayLike
+        First real-valued triangle coordinate with shape `(2,)`.
+    b : ArrayLike
+        Second real-valued triangle coordinate with shape `(2,)`.
+    c : ArrayLike
+        Third real-valued triangle coordinate with shape `(2,)`.
+    p : ArrayLike
+        Real-valued test coordinate with shape `(2,)`.
     oriented : bool, optional
         Whether to normalise the determinant sign for the
         orientation of `a`, `b`, and `c`.
-        A collinear triangle raises `ValueError` in this mode.
         Default option is `False`.
+    backend : {"fortran", "python"}, optional
+        Computational backend.
+        Default backend is `"fortran"`.
 
     Returns
     -------
     det : int | float
         Signed in-circle determinant.
 
+        All-integer inputs return an integer when a C-interoperable
+        integer kind can represent the coordinates. Other inputs
+        return a float.
+
+    Raises
+    ------
+    ValueError
+        If a point does not have shape `(2,)`, the backend is
+        unsupported, or sign normalisation is requested for a
+        collinear triangle.
+    TypeError
+        If a point contains non-numeric or complex-valued
+        coordinates.
+
     Notes
     -----
-    Integer inputs use exact arithmetic with the Python backend.
+    The Python backend uses exact integer arithmetic. The FORTRAN
+    backend uses double-precision intermediates for integer inputs
+    and same-kind saturating results. If a 32-bit result saturates,
+    this wrapper retries the calculation using the 64-bit overload.
+    The anticipated coordinate magnitudes of up to approximately
+    100000 are represented exactly in double precision; integer
+    coordinates above `2**53` may not be.
     """
     points = (
         _point(a, "a"),
@@ -116,21 +219,32 @@ def incircle(
     )
     match backend:
         case "python":
-            determinant = intxs_py.incircle(*points)
+            det = intxs_py.incircle(*points)
         case "fortran":
-            determinant = float(intx_f.incircle(*map(_fortran_point, points)))
+            match _dint_dtype(points):
+                case dtype if dtype == np.dtype(np.int32):
+                    det = intx_f.incircle_int32(*_fint_points(points, dtype))  # type: ignore
+                    if det in (np.iinfo(np.int32).min, np.iinfo(np.int32).max):
+                        det = intx_f.incircle_int64(
+                            *_fint_points(points, np.dtype(np.int64))
+                        )
+                    det = det
+                case dtype if dtype == np.dtype(np.int64):
+                    det = intx_f.incircle_int64(*_fint_points(points, dtype))  # type: ignore
+                case _:
+                    det = float(intx_f.incircle_real(*map(_fortran_point, points)))
         case _:
             raise ValueError(f"Unsupported backend {backend!r}.")
 
     if not oriented:
-        return determinant
+        return det
 
-    orientation = orient_v2(a, b, c, backend=backend)
-    if orientation == 0:
+    orient = orient_v2(a, b, c, backend=backend)
+    if orient == 0:
         raise ValueError(
             "Cannot normalise an in-circle determinant for a collinear triangle."
         )
-    return determinant if orientation > 0 else -determinant
+    return det if orient > 0 else -det
 
 
 def on_segment(
@@ -149,6 +263,9 @@ def on_segment(
         Must be a 2-by-0 real-valued coordinate.
     p : NDArray[number]
         Point to check.
+    backend : {"fortran", "python"}, optional
+            Computational backend.
+            Default backend is `"fortran"`.
 
     Returns
     -------

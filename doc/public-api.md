@@ -120,8 +120,8 @@ All public geometry predicates accept `backend="fortran"` or `backend="python"` 
 
 | Symbol | Import path | Purpose | Backend | Tests | Notes |
 | --- | --- | --- | --- | --- | --- |
-| [`orient_v2`](../src/formosa/geomorphology/geometry/intersections.py) | `.geomorphology.geometry.orient_v2` | Returns the signed orientation determinant of 3 2-D points. | FORTRAN + Python | [Parity](../tests/test_geometry_intersections.py) | Python integer inputs use exact arithmetic; the FORTRAN backend uses single-precision coordinates. |
-| [`incircle`](../src/formosa/geomorphology/geometry/intersections.py) | `.geomorphology.geometry.incircle` | Returns the signed in-circle determinant of 4 2-D points. | FORTRAN + Python | [Parity](../tests/test_geometry_intersections.py) | `orientation_independent=True` normalizes the sign for either triangle winding; Python integer inputs use exact arithmetic. |
+| [`orient_v2`](../src/formosa/geomorphology/geometry/intersections.py) | `.geomorphology.geometry.orient_v2` | Returns the signed orientation determinant of 3 2-D points. | FORTRAN + Python | [Parity](../tests/test_geometry_intersections.py) | Python integer inputs use exact arithmetic; the FORTRAN integer overloads use widened intermediates and same-kind saturating results. |
+| [`incircle`](../src/formosa/geomorphology/geometry/intersections.py) | `.geomorphology.geometry.incircle` | Returns the signed in-circle determinant of 4 2-D points. | FORTRAN + Python | [Parity](../tests/test_geometry_intersections.py) | `oriented=True` normalizes the sign for either triangle winding; FORTRAN integer overloads preserve the input kind and saturate on result overflow. |
 | [`on_segment`](../src/formosa/geomorphology/geometry/intersections.py) | `.geomorphology.geometry.on_segment` | Tests whether a point lies on a closed line segment. | FORTRAN + Python | [Parity](../tests/test_geometry_intersections.py) | Endpoints count as on the segment. |
 | [`bboxes_overlap`](../src/formosa/geomorphology/geometry/intersections.py) | `.geomorphology.geometry.bboxes_overlap` | Tests whether two closed segment bounding boxes overlap. | FORTRAN + Python | [Parity](../tests/test_geometry_intersections.py) | Bounding-box overlap does not itself imply segment intersection. |
 | [`lines_intersect_v2`](../src/formosa/geomorphology/geometry/intersections.py) | `.geomorphology.geometry.lines_intersect_v2` | Classifies intersection between two closed 2-D line segments. | FORTRAN + Python | [Parity](../tests/test_geometry_intersections.py) | Used by flow-graph topology validation. |
@@ -171,4 +171,4 @@ To re-audit the declared public boundary, inspect all package `__init__.py` file
 
 Maintainer: [En-Chi Lee (`@williameclee`)](https://github.com/williameclee)
 
-Last updated: 2026-08-11
+Last updated: 2026-08-12
