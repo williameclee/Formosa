@@ -4,10 +4,16 @@
 !! direction code decoding, raster masking, and priority queues used
 !! by other FORTRAN modules.
 !!
-!! Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+!! Last modified: 2026-08-12, En-Chi Lee (williameclee@gmail.com)
 module utils
     use iso_c_binding, only: c_int8_t
     implicit none(type, external)
+
+    integer, parameter :: ERR_NO_ERROR = 0
+    integer, parameter :: ERR_INVALID_INPUT = 1
+    integer, parameter :: ERR_ALLOCATION_FAILURE = 2
+    integer, parameter :: ERR_OVERFLOW = 3
+    integer, parameter :: ERR_COMPUTATION_FAILURE = 4
 contains
 
     logical pure function array2d_oob(i, j, nrows, ncols) result(is_oob)
