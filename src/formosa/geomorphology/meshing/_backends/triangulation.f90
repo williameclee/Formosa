@@ -14,7 +14,8 @@ module meshing_triangulation
     use utils, only: ERR_NO_ERROR, ERR_ALLOCATION_FAILURE, &
                      ERR_OVERFLOW, ERR_COMPUTATION_FAILURE
     use intersections, only: incircle, orient_v2
-    private :: add_supertriangle, insert_vertex, toggle_edge
+    private :: add_supertriangle, insert_vertex, toggle_edge, &
+               find_triangle_side_neighbour
 contains
     !> Copies the input vertices, appends a counterclockwise
     !! triangle that encloses their bounding box, and initialises

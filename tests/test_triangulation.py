@@ -333,3 +333,55 @@ def test_triangulate_points_rejects_unknown_backend():
 
     with pytest.raises(ValueError, match="Unknown backend"):
         tri_m.triangulate_points(vtxs, backend="unknown")  # type: ignore
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+@pytest.mark.parametrize(
+    ("triangles", "expected"),
+    [
+        (
+            np.array([[0, 1, 2]], dtype=np.int32),
+            np.array([[-1, -1, -1]], dtype=np.int32),
+        ),
+        (
+            np.array([[0, 1, 2], [1, 3, 2]], dtype=np.int32),
+            np.array([[1, -1, -1], [-1, 0, -1]], dtype=np.int32),
+        ),
+        (
+            np.array([[0, 1, 4], [0, 4, 3], [1, 2, 5], [1, 5, 4]], dtype=np.int32),
+            np.array(
+                [[3, 1, -1], [-1, -1, 0], [-1, 3, -1], [-1, 0, 2]], dtype=np.int32
+            ),
+        ),
+    ],
+)
+def test_find_triangle_neighbours(triangles, expected, backend):
+    neighbours = tri_m.find_triangle_neighbours(triangles, backend=backend)
+
+    np.testing.assert_array_equal(neighbours, expected)
+    assert neighbours.dtype == np.int32
+    assert neighbours.flags.c_contiguous
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_find_triangle_neighbours_accepts_noncontiguous_input(backend):
+    storage = np.array([[0, 99, 1, 99, 2, 99], [1, 99, 3, 99, 2, 99]], dtype=np.int32)
+    triangles = storage[:, ::2]
+    assert not triangles.flags.c_contiguous
+
+    neighbours = tri_m.find_triangle_neighbours(triangles, backend=backend)
+
+    np.testing.assert_array_equal(neighbours, [[1, -1, -1], [-1, 0, -1]])
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_find_triangle_neighbours_rejects_invalid_shape(backend):
+    with pytest.raises(ValueError, match="shape"):
+        tri_m.find_triangle_neighbours(np.array([0, 1, 2]), backend=backend)
+
+
+def test_find_triangle_neighbours_rejects_unknown_backend():
+    triangles = np.array([[0, 1, 2]], dtype=np.int32)
+
+    with pytest.raises(ValueError, match="Unknown backend"):
+        tri_m.find_triangle_neighbours(triangles, backend="unknown")  # type: ignore

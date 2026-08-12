@@ -60,8 +60,11 @@ def triangulate_points(
     vtxs : NDArray[int]
         Unique point coordinates.
         At least 3 points are required.
-    backend : {"python", "fortran"}, optional
-        Triangulation implementation to use.
+    backend : {'fortran', 'python'}, optional
+        Backend to use for computation.
+        `'fortran'` uses the FORTRAN extension for performance,
+        while `'python'` uses a pure Python implementation.
+        Default backend is `'fortran'`.
 
     Returns
     -------
@@ -106,3 +109,61 @@ def triangulate_points(
         case _:
             raise ValueError(f"Unknown backend: {backend}")
     return _canonicalise_triangles(triangles)
+
+
+def find_triangle_neighbours(
+    triangles: NDArray[NpCanonIndex], backend: Backend = "fortran"
+) -> NDArray[NpCanonIndex]:
+    """
+    Finds the triangle adjacent across each triangle side.
+
+    Side `i` lies opposite vertex `i`. Boundary sides have
+    neighbour ID `-1`.
+
+    Parameters
+    ----------
+    triangles : NDArray[int], shape (F, 3)
+        0-based triangle vertex IDs.
+    backend : {'fortran', 'python'}, optional
+        Backend to use for computation.
+        `'fortran'` uses the FORTRAN extension for performance,
+        while `'python'` uses a pure Python implementation.
+        Default backend is `'fortran'`.
+
+    Returns
+    -------
+    NDArray[int32], shape (F, 3)
+        0-based neighbouring triangle IDs, with `-1` at the
+        mesh boundary.
+    """
+    triangles = np.asarray(triangles)
+    if triangles.ndim != 2 or triangles.shape[1] != 3:
+        raise ValueError("Triangles must have shape (F, 3).")
+    if not np.issubdtype(triangles.dtype, np.integer):
+        raise TypeError("Triangle vertex IDs must be integers.")
+    if np.any(triangles < 0):
+        raise ValueError("Triangle vertex IDs must be non-negative.")
+
+    match backend:
+        case "python":
+            neighbours, _ = tri_py.find_triangle_neighbours(triangles)
+        case "fortran":
+            int32_info = np.iinfo(np.int32)
+            if np.any(triangles >= int32_info.max):
+                raise OverflowError(
+                    "The FORTRAN triangulation backend requires vertex IDs "
+                    + "smaller than the int32 maximum."
+                )
+            triangles_f = np.asfortranarray(triangles.T, dtype=np.int32) + 1
+            neighbours_f, err_code = tri_f.find_triangle_neighbours(triangles_f)
+            raise_fortran_error(
+                "find_triangle_neighbours",
+                err_code,
+                errors=_TRIANGULATION_ERRORS,
+            )
+            neighbours = neighbours_f.T.astype(NpCanonIndex, order="C")
+            neighbours[neighbours >= 0] -= 1
+        case _:
+            raise ValueError(f"Unknown backend: {backend}")
+
+    return np.ascontiguousarray(neighbours, dtype=NpCanonIndex)
