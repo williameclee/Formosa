@@ -7,6 +7,7 @@
 !! wrapper returns 0-based IDs.
 !!
 !! Created: 2026-08-12, En-Chi Lee (williameclee@gmail.com)
+!! Last modified: 2026-08-13, En-Chi Lee (williameclee@gmail.com)
 
 module meshing_triangulation
     use iso_c_binding, only: c_int32_t, c_int64_t
@@ -295,4 +296,95 @@ contains
 
         if (ntris <= 0) err_code = ERR_COMPUTATION_FAILURE
     end subroutine triangulate_points
+
+    pure subroutine find_triangle_side_neighbour( &
+        ivtx, jvtx, itri, iside, neighbours, edges, nedges, err_code)
+        implicit none(type, external)
+        ! Arguments
+        integer(c_int32_t), intent(in) :: ivtx, jvtx, itri
+            !! Vertex indices of the triangles
+        integer, intent(in) :: iside
+        integer(c_int32_t), intent(inout) :: neighbours(:, :)
+        integer(c_int32_t), intent(inout) :: edges(:, :)
+        integer, intent(inout) :: nedges
+        integer, intent(inout) :: err_code
+        ! Local variables
+        integer :: iedge
+        logical :: found_edge
+
+        ! Find if the edge is already in the buffer
+        found_edge = .false.
+        if (nedges > 0) then
+            do iedge = 1, nedges
+                if (.not. ((edges(1, iedge) == ivtx) .and. &
+                           (edges(2, iedge) == jvtx))) cycle
+                found_edge = .true.
+                exit
+            end do
+        end if
+
+        if (found_edge) then
+            neighbours(iside, itri) = edges(3, iedge)
+            neighbours(edges(4, iedge), edges(3, iedge)) = itri
+            ! Remove the edge since it is already found
+            edges(:, iedge) = edges(:, nedges)
+            nedges = nedges - 1
+            return
+        end if
+
+        ! Insert the edge to the buffer
+        if (nedges >= size(edges, 2)) then
+            err_code = ERR_OVERFLOW
+            return
+        end if
+        nedges = nedges + 1
+        edges(1, nedges) = ivtx
+        edges(2, nedges) = jvtx
+        edges(3, nedges) = itri
+        edges(4, nedges) = iside
+    end subroutine find_triangle_side_neighbour
+
+    pure subroutine find_triangle_neighbours( &
+        ntris, triangles, neighbours, err_code)
+        implicit none(type, external)
+        ! Arguments
+        integer, intent(in) :: ntris
+            !! Number of triangles in the 'triangles' array.
+        integer(c_int32_t), intent(in) :: triangles(3, ntris)
+            !! Vertex indices of the triangles
+        ! Outputs
+        integer(c_int32_t), intent(out) :: neighbours(3, ntris)
+        integer, intent(out) :: err_code
+        ! Local variables
+        integer :: itri
+        integer :: ivtx, jvtx
+        integer(c_int32_t), parameter :: no_neighbour = -1
+        integer :: nedges
+        integer(c_int32_t), allocatable :: edges(:, :)
+        integer :: alloc_stat
+        integer :: iside
+
+        err_code = ERR_NO_ERROR
+        allocate (edges(4, ntris*3), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = ERR_ALLOCATION_FAILURE
+            return
+        end if
+
+        neighbours = no_neighbour
+        nedges = 0
+        do itri = 1, ntris
+            do iside = 1, 3
+                ! Skip if complement already found
+                if (neighbours(iside, itri) /= no_neighbour) cycle
+
+                ivtx = triangles(modulo(iside, 3) + 1, itri)
+                jvtx = triangles(modulo(iside + 1, 3) + 1, itri)
+                call find_triangle_side_neighbour( &
+                    min(ivtx, jvtx), max(ivtx, jvtx), itri, iside, &
+                    neighbours, edges, nedges, err_code)
+                if (err_code /= ERR_NO_ERROR) return
+            end do
+        end do
+    end subroutine find_triangle_neighbours
 end module meshing_triangulation

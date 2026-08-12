@@ -5,6 +5,7 @@ This module covers behaviour shared by both backends and native
 input validation and error translation.
 
 Created: 2026-08-12, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-13, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
@@ -93,6 +94,32 @@ def test_python_supertriangle_matches_native_construction():
 def test_triangulate_points_produces_valid_delaunay_mesh(points, backend):
     triangles = tri_m.triangulate_points(points, backend=backend)
     _assert_valid_delaunay(points, triangles)
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_triangulate_points_returns_canonical_triangle_order(backend):
+    vtxs = np.array(
+        [[0, 0], [1, 5], [3, 2], [5, 7], [8, 1], [9, 6], [4, 4]],
+        dtype=np.int32,
+    )
+
+    triangles = tri_m.triangulate_points(vtxs, backend=backend)
+
+    assert np.all(triangles[:, 0] == np.min(triangles, axis=1))
+    order = np.lexsort((triangles[:, 2], triangles[:, 1], triangles[:, 0]))
+    np.testing.assert_array_equal(order, np.arange(triangles.shape[0]))
+
+
+def test_triangulate_points_backend_order_is_identical():
+    vtxs = np.array(
+        [[0, 0], [1, 5], [3, 2], [5, 7], [8, 1], [9, 6], [4, 4]],
+        dtype=np.int32,
+    )
+
+    np.testing.assert_array_equal(
+        tri_m.triangulate_points(vtxs, backend="python"),
+        tri_m.triangulate_points(vtxs, backend="fortran"),
+    )
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
