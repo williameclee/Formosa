@@ -20,21 +20,19 @@ class ConstraintInput:
 
 def _make_boundary_constraints(shape: tuple[int, int]) -> ConstraintInput:
     """
-    Creates boundary constraints based on the given raster shape.
+    Creates a rectangular boundary from its 4 corners.
+
+    Additional constraint vertices on the perimeter are inserted
+    later while normalising boundary-aligned edges.
     """
 
     if len(shape) != 2 or shape[0] < 2 or shape[1] < 2:
-        raise ValueError("shape must contain at least two rows and two columns")
+        raise ValueError("shape must contain at least two rows and two columns.")
     nrows, ncols = shape
     bdry_indices = np.array(
-        [(0, j) for j in range(ncols)]
-        + [(i, ncols - 1) for i in range(1, nrows)]
-        + [(nrows - 1, j) for j in range(ncols - 2, -1, -1)]
-        + [(i, 0) for i in range(nrows - 2, 0, -1)],
+        [(0, 0), (0, ncols - 1), (nrows - 1, ncols - 1), (nrows - 1, 0), (0, 0)],
         dtype=NpCanonIndex,
     )
-    # Repeat the first perimeter vertex to represent the closing edge.
-    bdry_indices = np.vstack((bdry_indices, bdry_indices[0]))
     return ConstraintInput(
         FlowGraph(
             bdry_indices,
@@ -42,6 +40,67 @@ def _make_boundary_constraints(shape: tuple[int, int]) -> ConstraintInput:
         ),
         kind=ConstraintKind.BOUNDARY,
     )
+
+
+def _split_boundary_aligned_edges(
+    indices: NDArray[NpCanonIndex],
+    edges: NDArray[NpCanonIndex],
+    edge_kinds: NDArray[np.uint8],
+    shape: tuple[int, int],
+) -> tuple[NDArray[NpCanonIndex], NDArray[np.uint8]]:
+    """
+    Splits perimeter edges at every existing perimeter vertex.
+    """
+    nrows, ncols = shape
+    rows = indices[:, 0]
+    cols = indices[:, 1]
+    sides = {
+        "top": np.flatnonzero((rows == 0) & (cols >= 0) & (cols < ncols)),
+        "bottom": np.flatnonzero((rows == nrows - 1) & (cols >= 0) & (cols < ncols)),
+        "left": np.flatnonzero((cols == 0) & (rows >= 0) & (rows < nrows)),
+        "right": np.flatnonzero((cols == ncols - 1) & (rows >= 0) & (rows < nrows)),
+    }
+    side_axes = {"top": 1, "bottom": 1, "left": 0, "right": 0}
+    for name, vertex_ids in sides.items():
+        axis = side_axes[name]
+        sides[name] = vertex_ids[np.argsort(indices[vertex_ids, axis])]
+
+    split_edges: list[NDArray[NpCanonIndex]] = []
+    split_kinds: list[NDArray[np.uint8]] = []
+    for edge, kind in zip(edges, edge_kinds):
+        a, b = indices[edge]
+        side_name: Optional[str] = None
+        axis = 0
+        if (
+            a[0] == b[0]
+            and a[0] in (0, nrows - 1)
+            and np.all((a[1] >= 0, a[1] < ncols, b[1] >= 0, b[1] < ncols))
+        ):
+            side_name = "top" if a[0] == 0 else "bottom"
+            axis = 1
+        elif (
+            a[1] == b[1]
+            and a[1] in (0, ncols - 1)
+            and np.all((a[0] >= 0, a[0] < nrows, b[0] >= 0, b[0] < nrows))
+        ):
+            side_name = "left" if a[1] == 0 else "right"
+            axis = 0
+
+        if side_name is None:
+            split_edges.append(edge.reshape(1, 2))
+            split_kinds.append(np.array([kind], dtype=np.uint8))
+            continue
+
+        side_ids = sides[side_name]
+        side_values = indices[side_ids, axis]
+        low, high = sorted((int(a[axis]), int(b[axis])))
+        chain = side_ids[(side_values >= low) & (side_values <= high)]
+        split_edges.append(
+            np.column_stack((chain[:-1], chain[1:])).astype(NpCanonIndex)
+        )
+        split_kinds.append(np.full(chain.size - 1, kind, dtype=np.uint8))
+
+    return np.concatenate(split_edges), np.concatenate(split_kinds)
 
 
 @dataclass
@@ -133,10 +192,14 @@ class ConstraintGraph:
 
         # Deduplicate
         indices, inv_ids = np.unique(all_indices, axis=0, return_inverse=True)
-        all_edges = inv_ids[all_edges]
+        all_edges = inv_ids[all_edges].astype(NpCanonIndex)
         if np.any(all_edges[:, 0] == all_edges[:, 1]):
             raise GraphTopologyError(
                 "An arc contains consecutive vertices at the same raster index."
+            )
+        if shape is not None:
+            all_edges, all_edge_kinds = _split_boundary_aligned_edges(
+                indices, all_edges, all_edge_kinds, shape
             )
         all_edges.sort(axis=1)
         edges, edge_inv_ids = np.unique(all_edges, axis=0, return_inverse=True)

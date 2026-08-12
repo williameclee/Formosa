@@ -73,13 +73,35 @@ def _validate_constraints_boundary(
     shape: tuple[int, int],
 ):
     nrows, ncols = shape
-    perimeter = np.array(
-        [(0, j) for j in range(ncols)]
-        + [(i, ncols - 1) for i in range(1, nrows)]
-        + [(nrows - 1, j) for j in range(ncols - 2, -1, -1)]
-        + [(i, 0) for i in range(nrows - 2, 0, -1)],
+    corners = np.array(
+        [(0, 0), (0, ncols - 1), (nrows - 1, ncols - 1), (nrows - 1, 0)],
         dtype=NpCanonIndex,
     )
+    on_perim = (
+        ((indices[:, 0] == 0) | (indices[:, 0] == nrows - 1))
+        & (indices[:, 1] >= 0)
+        & (indices[:, 1] < ncols)
+    ) | (
+        ((indices[:, 1] == 0) | (indices[:, 1] == ncols - 1))
+        & (indices[:, 0] >= 0)
+        & (indices[:, 0] < nrows)
+    )
+    perim_vtxs = np.unique(np.vstack((indices[on_perim], corners)), axis=0)
+    top = perim_vtxs[perim_vtxs[:, 0] == 0]
+    top = top[np.argsort(top[:, 1])]
+    right = perim_vtxs[(perim_vtxs[:, 1] == ncols - 1) & (perim_vtxs[:, 0] > 0)]
+    right = right[np.argsort(right[:, 0])]
+    bottom = perim_vtxs[
+        (perim_vtxs[:, 0] == nrows - 1) & (perim_vtxs[:, 1] < ncols - 1)
+    ]
+    bottom = bottom[np.argsort(bottom[:, 1])[::-1]]
+    left = perim_vtxs[
+        (perim_vtxs[:, 1] == 0)
+        & (perim_vtxs[:, 0] > 0)
+        & (perim_vtxs[:, 0] < nrows - 1)
+    ]
+    left = left[np.argsort(left[:, 0])[::-1]]
+    perimeter = np.vstack((top, right, bottom, left))
     exp_bdry = {
         tuple(sorted((tuple(a), tuple(b))))
         for a, b in zip(perimeter, np.roll(perimeter, -1, axis=0))
@@ -101,6 +123,7 @@ def _validate_constraints_boundary(
 def _validate_constraints_intersections(
     indices: NDArray[NpCanonIndex],
     edges: NDArray[NpCanonIndex],
+    edge_kinds: NDArray[np.uint8],
     backend: Backend = "fortran",
 ):
     # Present every constraint edge as an independent two-vertex arc. The
@@ -117,9 +140,8 @@ def _validate_constraints_intersections(
     if intxs is None:
         return
     elif np.all(
-        intxs[:, 4]
-        == IntersectionKind.DISJOINT_SEGMENTS | intxs[:, 4]
-        == IntersectionKind.ENDPOINT_CONTACT
+        (intxs[:, 4] == IntersectionKind.DISJOINT_SEGMENTS)
+        | (intxs[:, 4] == IntersectionKind.ENDPOINT_CONTACT)
     ):
         return
 
@@ -140,7 +162,16 @@ def _validate_constraints_intersections(
         for record in intxs
     ]
     raise GraphTopologyError(
-        f"Constraint edges do not form a planar straight-line graph: {details}."
+        f"Constraint edges must form a planar straight-line graph, "
+        + f"but found {len(details)} violations:\n"
+        + "\n".join(
+            f"Edge IDs: {detail["edge_ids"][0]} (kind: {edge_kinds[detail["edge_ids"][0]]}) "
+            + f"({indices[edges[detail["edge_ids"][0],0],0]}, {indices[edges[detail["edge_ids"][0],0],1]})--({indices[edges[detail["edge_ids"][0],1],0]}, {indices[edges[detail["edge_ids"][0],1],1]}), "
+            + f"{detail["edge_ids"][1]} (kind: {edge_kinds[detail["edge_ids"][1]]}) "
+            + f"({indices[edges[detail["edge_ids"][1],0],0]}, {indices[edges[detail["edge_ids"][1],0],1]})--({indices[edges[detail["edge_ids"][1],1],0]}, {indices[edges[detail["edge_ids"][1],1],1]}), "
+            + f"violation: {detail["type"]}"
+            for detail in details
+        )
     )
 
 
@@ -196,4 +227,4 @@ def validate_constraints(
     if shape is not None:
         _validate_constraints_boundary(indices, edges, edge_kinds, shape)
 
-    _validate_constraints_intersections(indices, edges, backend)
+    _validate_constraints_intersections(indices, edges, edge_kinds, backend)
