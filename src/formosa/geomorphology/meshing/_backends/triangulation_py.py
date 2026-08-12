@@ -37,15 +37,15 @@ def add_supertriangle(
     maxx = int(np.max(all_vtxs[:, 0]))
     miny = int(np.min(all_vtxs[:, 1]))
     maxy = int(np.max(all_vtxs[:, 1]))
-    span = max(maxx - minx, maxy - miny, 1)
+    xspan = max(maxx - minx, 1)
+    yspan = max(maxy - miny, 1)
     midx = minx + (maxx - minx) // 2
-    midy = miny + (maxy - miny) // 2
 
     super_vtxs = np.array(
         [
-            (midx - 4 * span, midy - 2 * span),
-            (midx + 4 * span, midy - 2 * span),
-            (midx, midy + 4 * span),
+            (midx - 3 * xspan, miny - yspan),
+            (midx + 3 * xspan, miny - yspan),
+            (midx, maxy + 2 * yspan),
         ],
         dtype=all_vtxs.dtype,
     )
