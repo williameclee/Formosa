@@ -120,7 +120,7 @@ contains
     !! cavity boundary.
     pure subroutine insert_vertex( &
         ivtx, vtxs, triangles, ntris, &
-        bad_tris, bad_tri_ids, edges, err_code)
+        bad_tri_ids, edges, err_code)
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: ivtx
@@ -134,9 +134,6 @@ contains
         integer, intent(inout) :: ntris
             !! Number of triangles actually in the 'triangles'
             !! array.
-        logical(kind=1), intent(inout) :: bad_tris(size(triangles, 2))
-            !! Workspace marking active triangles in the insertion
-            !! cavity.
         integer, intent(inout) :: bad_tri_ids(size(triangles, 2))
             !! Workspace containing IDs of triangles in the cavity.
         integer, intent(inout) :: edges(2, size(vtxs, 2))
@@ -144,7 +141,7 @@ contains
         integer, intent(inout) :: err_code
             !! Shared backend status code.
         ! Local variables
-        integer :: itri
+        integer :: itri, ibadtri
         integer :: nbadtris
         integer :: nedges, iedge
         integer :: jvtx, kvtx
@@ -161,13 +158,9 @@ contains
             if (incircle(vtxs(:, triangles(1, itri)), &
                          vtxs(:, triangles(2, itri)), &
                          vtxs(:, triangles(3, itri)), &
-                         vtxs(:, ivtx)) > 0) then
-                bad_tris(itri) = .true.
-                nbadtris = nbadtris + 1
-                bad_tri_ids(nbadtris) = itri
-            else
-                bad_tris(itri) = .false.
-            end if
+                         vtxs(:, ivtx)) <= 0) cycle
+            nbadtris = nbadtris + 1
+            bad_tri_ids(nbadtris) = itri
         end do
         if (nbadtris <= 0) then
             err_code = ERR_COMPUTATION_FAILURE
@@ -176,8 +169,8 @@ contains
 
         ! Add bad edges to the buffer
         nedges = 0
-        do itri = 1, ntris
-            if (.not. bad_tris(itri)) cycle
+        do ibadtri = 1, nbadtris
+            itri = bad_tri_ids(ibadtri)
             call toggle_edge( &
                 triangles(1, itri), triangles(2, itri), &
                 edges, nedges, err_code)
@@ -250,8 +243,6 @@ contains
         integer :: alloc_stat
         integer(c_int32_t), allocatable :: all_vtxs(:, :)
             !! Input and super-triangle coordinates.
-        logical(kind=1), allocatable :: bad_tris(:)
-            !! Per-triangle cavity-membership workspace.
         integer, allocatable :: bad_tri_ids(:)
             !! IDs of triangles in the current insertion cavity.
         integer, allocatable :: edges(:, :)
@@ -264,8 +255,7 @@ contains
             err_code = ERR_ALLOCATION_FAILURE
             return
         end if
-        allocate (bad_tris(size(triangles, 2)), &
-                  bad_tri_ids(size(triangles, 2)), &
+        allocate (bad_tri_ids(size(triangles, 2)), &
                   edges(2, size(all_vtxs, 2)), &
                   stat=alloc_stat)
         if (alloc_stat /= 0) then
@@ -283,7 +273,7 @@ contains
         do ivtx = 1, nvtxs
             call insert_vertex( &
                 ivtx, all_vtxs, triangles, ntris, &
-                bad_tris, bad_tri_ids, edges, err_code)
+                bad_tri_ids, edges, err_code)
             if (err_code /= ERR_NO_ERROR) return
         end do
 
