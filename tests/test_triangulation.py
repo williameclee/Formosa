@@ -72,7 +72,7 @@ def test_python_supertriangle_matches_native_construction():
     np.testing.assert_array_equal(all_vtxs[:2], vtxs)
     np.testing.assert_array_equal(
         all_vtxs[2:],
-        [[-31, -17], [33, -17], [1, 31]],
+        [[-23, -10], [25, -10], [1, 14]],
     )
     assert supertriangle == (2, 3, 4)
     assert (
@@ -207,10 +207,6 @@ def test_triangulation_is_scale_invariant(scale, backend):
     )
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="Super-triangle coordinates can overflow int32.",
-)
 @pytest.mark.parametrize("backend", BACKENDS)
 @pytest.mark.parametrize(
     "vtxs",

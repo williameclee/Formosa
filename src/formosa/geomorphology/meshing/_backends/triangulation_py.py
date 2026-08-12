@@ -28,10 +28,15 @@ def add_supertriangle(
     if vtxs.shape[0] == 0:
         raise ValueError("At least one point is required.")
 
-    minx = int(np.min(vtxs[:, 0]))
-    maxx = int(np.max(vtxs[:, 0]))
-    miny = int(np.min(vtxs[:, 1]))
-    maxy = int(np.max(vtxs[:, 1]))
+    if np.issubdtype(vtxs.dtype, np.integer):
+        all_vtxs = vtxs.astype(np.int64, copy=False)
+    else:
+        all_vtxs = vtxs
+
+    minx = int(np.min(all_vtxs[:, 0]))
+    maxx = int(np.max(all_vtxs[:, 0]))
+    miny = int(np.min(all_vtxs[:, 1]))
+    maxy = int(np.max(all_vtxs[:, 1]))
     span = max(maxx - minx, maxy - miny, 1)
     midx = minx + (maxx - minx) // 2
     midy = miny + (maxy - miny) // 2
@@ -42,7 +47,7 @@ def add_supertriangle(
             (midx + 4 * span, midy - 2 * span),
             (midx, midy + 4 * span),
         ],
-        dtype=vtxs.dtype,
+        dtype=all_vtxs.dtype,
     )
 
     supertriangle = (
@@ -51,7 +56,7 @@ def add_supertriangle(
         int(vtxs.shape[0] + 2),
     )
 
-    return (np.vstack((vtxs, super_vtxs)), supertriangle)
+    return (np.vstack((all_vtxs, super_vtxs)), supertriangle)  # type: ignore
 
 
 def edge_key(u: int, v: int) -> tuple[int, int]:

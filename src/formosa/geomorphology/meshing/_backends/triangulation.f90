@@ -1,13 +1,15 @@
 !> Triangulates raster-grid vertices using the FORTRAN backend.
 !!
 !! This internal module implements incremental Bowyer-Watson
-!! triangulation for integer 2D coordinates. Triangle and vertex IDs
-!! are 1-based internally; the Python wrapper returns 0-based IDs.
+!! triangulation for integer 2D coordinates. Internal coordinates
+!! use 64-bit integers so the super-triangle can enclose any int32
+!! input. Triangle and vertex IDs are 1-based internally; the Python
+!! wrapper returns 0-based IDs.
 !!
 !! Created: 2026-08-12, En-Chi Lee (williameclee@gmail.com)
 
 module meshing_triangulation
-    use iso_c_binding, only: c_int32_t
+    use iso_c_binding, only: c_int32_t, c_int64_t
     use utils, only: ERR_NO_ERROR, ERR_ALLOCATION_FAILURE, &
                      ERR_OVERFLOW, ERR_COMPUTATION_FAILURE
     use intersections, only: incircle, orient_v2
@@ -23,7 +25,7 @@ contains
         integer(c_int32_t), intent(in) :: vtxs(:, :)
             !! 2D index coordinates of the vertices.
         ! Outputs
-        integer(c_int32_t), intent(inout) :: all_vtxs(:, :)
+        integer(c_int64_t), intent(inout) :: all_vtxs(:, :)
             !! Input coordinates followed by the super-triangle.
         integer(c_int32_t), intent(inout) :: triangles(:, :)
             !! Vertex indices of the triangles.
@@ -36,29 +38,32 @@ contains
         ! Local variables
         integer :: nvtxs
             !! Number of vertices in the input
-        integer :: minx, maxx, miny, maxy, midx, midy, span
+        integer(c_int64_t) :: minx, maxx, miny, maxy
+        integer(c_int64_t) :: midx, xspan, yspan
             !! Bounding-box limits, integer centre, and maximum
-            !! extent.
+            !! extents.
 
         nvtxs = size(vtxs, 2)
         ! Copy the points
-        all_vtxs(:, 1:nvtxs) = vtxs
+        all_vtxs(:, 1:nvtxs) = int(vtxs, kind=c_int64_t)
 
         ! Add the supertriangle's vertices
-        minx = minval(vtxs(1, :))
-        maxx = maxval(vtxs(1, :))
-        miny = minval(vtxs(2, :))
-        maxy = maxval(vtxs(2, :))
+        minx = minval(all_vtxs(1, 1:nvtxs))
+        maxx = maxval(all_vtxs(1, 1:nvtxs))
+        miny = minval(all_vtxs(2, 1:nvtxs))
+        maxy = maxval(all_vtxs(2, 1:nvtxs))
 
-        span = max(maxx - minx, maxy - miny)
-        span = max(span, 1)
+        xspan = max(maxx - minx, 1_c_int64_t)
+        yspan = max(maxy - miny, 1_c_int64_t)
 
         midx = minx + (maxx - minx)/2
-        midy = miny + (maxy - miny)/2
 
-        all_vtxs(:, nvtxs + 1) = [midx - 4*span, midy - 2*span]
-        all_vtxs(:, nvtxs + 2) = [midx + 4*span, midy - 2*span]
-        all_vtxs(:, nvtxs + 3) = [midx, midy + 4*span]
+        all_vtxs(:, nvtxs + 1) = &
+            [midx - 3*xspan, miny - yspan]
+        all_vtxs(:, nvtxs + 2) = &
+            [midx + 3*xspan, miny - yspan]
+        all_vtxs(:, nvtxs + 3) = &
+            [midx, maxy + 2*yspan]
 
         ! Add the supertriangle's faces
         if (ntris >= size(triangles, 2)) then
@@ -125,7 +130,7 @@ contains
         ! Arguments
         integer, intent(in) :: ivtx
             !! ID of the vertex in 'vtxs' to insert.
-        integer(c_int32_t), intent(in) :: vtxs(:, :)
+        integer(c_int64_t), intent(in) :: vtxs(:, :)
             !! Coordinates of the vertices.
             !! This should include the vertices of the super-
             !! triangle.
@@ -146,7 +151,7 @@ contains
         integer :: nedges, iedge
         integer :: jvtx, kvtx
             !! Endpoint IDs of the current cavity edge.
-        integer(c_int32_t) :: orient
+        integer(c_int64_t) :: orient
             !! Signed orientation determinant for a candidate
             !! triangle.
 
@@ -241,7 +246,7 @@ contains
         ! Local variables
         integer :: ivtx, itri
         integer :: alloc_stat
-        integer(c_int32_t), allocatable :: all_vtxs(:, :)
+        integer(c_int64_t), allocatable :: all_vtxs(:, :)
             !! Input and super-triangle coordinates.
         integer, allocatable :: bad_tri_ids(:)
             !! IDs of triangles in the current insertion cavity.
