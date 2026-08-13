@@ -39,11 +39,6 @@ def _validate_triangulate_points(vtxs: NDArray[NpCoords]) -> None:
             "Vertices must be unique, "
             + f"but found {vtxs.shape[0]-n_unq_pts} duplicates."
         )
-    if np.any(vtxs < 0):
-        bad_vtxs = vtxs[np.any(vtxs < 0, axis=1)]
-        raise ValueError(
-            "Vertices must be non-negative, " + f"but got {np.size(bad_vtxs,0)} invalid vertices."
-        )
 
 
 def _canonicalise_triangles(

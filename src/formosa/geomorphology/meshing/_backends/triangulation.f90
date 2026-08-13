@@ -15,6 +15,7 @@ module meshing_triangulation
                      ERR_OVERFLOW, ERR_COMPUTATION_FAILURE
     use intersections, only: incircle, orient_v2
     private :: make_initial_facets, insert_vertex, toggle_edge
+    private :: find_triangle_side_neighbour
 contains
     pure subroutine make_initial_facets(vtxs, facets, seeds, iinf, err_code)
         implicit none(type, external)
