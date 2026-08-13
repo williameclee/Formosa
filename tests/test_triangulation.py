@@ -14,7 +14,6 @@ import pytest
 from formosa.geomorphology.drainage.network import GraphTopologyError
 from formosa.geomorphology.geometry import incircle, orient_v2
 from formosa.geomorphology.meshing import triangulation as tri_m
-from formosa.geomorphology.meshing._backends import triangulation_py as tri_py
 from formosa.utils import BACKENDS
 
 
@@ -65,22 +64,6 @@ def _assert_valid_delaunay(vtxs: np.ndarray, triangles: np.ndarray) -> None:
     assert np.all((incidence == 1) | (incidence == 2))
 
 
-def test_python_supertriangle_matches_native_construction():
-    vtxs = np.array([[-3, 2], [5, -4]], dtype=np.int32)
-
-    all_vtxs, supertriangle = tri_py.add_supertriangle(vtxs)
-
-    np.testing.assert_array_equal(all_vtxs[:2], vtxs)
-    np.testing.assert_array_equal(
-        all_vtxs[2:],
-        [[-23, -10], [25, -10], [1, 14]],
-    )
-    assert supertriangle == (2, 3, 4)
-    assert (
-        orient_v2(*(all_vtxs[vtx_id] for vtx_id in supertriangle), backend="python") > 0
-    )
-
-
 @pytest.mark.parametrize("backend", BACKENDS)
 @pytest.mark.parametrize(
     "points",
@@ -89,6 +72,7 @@ def test_python_supertriangle_matches_native_construction():
         np.array([[0, 0], [0, 2], [2, 0], [2, 2]], dtype=np.int32),
         np.array([[0, 0], [0, 4], [4, 0], [4, 4], [2, 2]], dtype=np.int32),
         np.array([[1, 1], [2, 7], [4, 3], [6, 9], [8, 2], [9, 6]], dtype=np.int32),
+        np.array([[10, 7], [11, 0], [11, 1], [11, 11]], dtype=np.int32),
     ],
 )
 def test_triangulate_points_produces_valid_delaunay_mesh(points, backend):
@@ -200,7 +184,7 @@ def test_triangulate_deterministic_random_raster_points(nvtxs, backend):
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-@pytest.mark.parametrize("offset", [-10_000, 10_000])
+@pytest.mark.parametrize("offset", [10_000, 20_123])
 def test_triangulation_is_translation_invariant(offset, backend):
     vtxs = np.array(
         [[0, 0], [1, 5], [3, 2], [5, 7], [8, 1], [9, 6], [4, 4]],
@@ -247,15 +231,7 @@ def test_triangulation_is_scale_invariant(scale, backend):
             dtype=np.int32,
         ),
         np.array(
-            [
-                [np.iinfo(np.int32).min, 0],
-                [np.iinfo(np.int32).min + 7, 0],
-                [np.iinfo(np.int32).min, 7],
-            ],
-            dtype=np.int32,
-        ),
-        np.array(
-            [[-300_000_000, 0], [300_000_000, 0], [0, 1]],
+            [[0, 0], [600_000_000, 0], [300_000_000, 1]],
             dtype=np.int32,
         ),
     ],
@@ -300,7 +276,7 @@ def test_triangulate_rejects_invalid_shapes(vtxs, backend):
 def test_triangulate_rejects_too_few_vertices(nvtxs, backend):
     vtxs = np.arange(nvtxs * 2, dtype=np.int32).reshape(nvtxs, 2)
 
-    with pytest.raises(ValueError, match="At least three points"):
+    with pytest.raises(ValueError, match="At least 3 vertices"):
         tri_m.triangulate_points(vtxs, backend=backend)
 
 

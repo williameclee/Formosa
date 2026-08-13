@@ -14,67 +14,107 @@ module meshing_triangulation
     use utils, only: ERR_NO_ERROR, ERR_ALLOCATION_FAILURE, &
                      ERR_OVERFLOW, ERR_COMPUTATION_FAILURE
     use intersections, only: incircle, orient_v2
-    private :: add_supertriangle, insert_vertex, toggle_edge, &
-               find_triangle_side_neighbour
+    private :: make_initial_facets, insert_vertex, toggle_edge
 contains
-    !> Copies the input vertices, appends a counterclockwise
-    !! triangle that encloses their bounding box, and initialises
-    !! the triangulation with that triangle.
-    pure subroutine add_supertriangle( &
-        vtxs, all_vtxs, triangles, ntris, err_code)
+    pure subroutine make_initial_facets(vtxs, facets, seeds, iinf, err_code)
         implicit none(type, external)
         ! Arguments
         integer(c_int32_t), intent(in) :: vtxs(:, :)
             !! 2D index coordinates of the vertices.
         ! Outputs
-        integer(c_int64_t), intent(inout) :: all_vtxs(:, :)
-            !! Input coordinates followed by the super-triangle.
-        integer(c_int32_t), intent(inout) :: triangles(:, :)
-            !! Vertex indices of the triangles.
-        integer, intent(inout) :: ntris
-            !! Number of triangles in the 'triangles' array.
-        integer, intent(inout) :: err_code
-            !! Shared backend status code
-            !! - Set to OVERFLOW if no face slot is available for
-            !! the initial triangle.
+        integer(c_int32_t), intent(out) :: facets(:, :)
+        integer(c_int32_t), intent(out) :: seeds(3)
+        integer(c_int32_t), intent(out) :: iinf
+        integer, intent(out) :: err_code
         ! Local variables
-        integer :: nvtxs
-            !! Number of vertices in the input
-        integer(c_int64_t) :: minx, maxx, miny, maxy
-        integer(c_int64_t) :: midx, xspan, yspan
-            !! Bounding-box limits, integer centre, and maximum
-            !! extents.
+        integer(c_int32_t) :: ivtx, jvtx
+        integer(c_int32_t) :: orient
+        integer(c_int32_t) :: facet(3)
 
-        nvtxs = size(vtxs, 2)
-        ! Copy the points
-        all_vtxs(:, 1:nvtxs) = int(vtxs, kind=c_int64_t)
+        err_code = 0
 
-        ! Add the supertriangle's vertices
-        minx = minval(all_vtxs(1, 1:nvtxs))
-        maxx = maxval(all_vtxs(1, 1:nvtxs))
-        miny = minval(all_vtxs(2, 1:nvtxs))
-        maxy = maxval(all_vtxs(2, 1:nvtxs))
+        ! Find the first facet
+        ivtx = 0
+        do jvtx = 3, size(vtxs, 2)
+            orient = orient_v2(vtxs(:, 1), vtxs(:, 2), vtxs(:, jvtx))
+            if (orient /= 0) then
+                ivtx = jvtx
+                exit
+            end if
+        end do
 
-        xspan = max(maxx - minx, 1_c_int64_t)
-        yspan = max(maxy - miny, 1_c_int64_t)
-
-        midx = minx + (maxx - minx)/2
-
-        all_vtxs(:, nvtxs + 1) = &
-            [midx - 3*xspan, miny - yspan]
-        all_vtxs(:, nvtxs + 2) = &
-            [midx + 3*xspan, miny - yspan]
-        all_vtxs(:, nvtxs + 3) = &
-            [midx, maxy + 2*yspan]
-
-        ! Add the supertriangle's faces
-        if (ntris >= size(triangles, 2)) then
-            err_code = ERR_OVERFLOW
+        if (ivtx == 0) then
+            ! All vertices are collinear
+            err_code = ERR_COMPUTATION_FAILURE
+            return
+        elseif (size(facets, 2) < 4) then
+            ! Not enough space to store all the triangles
+            err_code = ERR_COMPUTATION_FAILURE
             return
         end if
-        ntris = ntris + 1
-        triangles(:, ntris) = [nvtxs + 1, nvtxs + 2, nvtxs + 3]
-    end subroutine add_supertriangle
+
+        seeds = [1, 2, ivtx]
+        iinf = size(vtxs, 2) + 1
+
+        if (orient > 0) then
+            facet = [1, 2, ivtx]
+        else
+            facet = [1, ivtx, 2]
+        end if
+        facets(:, 1) = facet
+        facets(:, 2) = [iinf, facet(2), facet(1)]
+        facets(:, 3) = [iinf, facet(3), facet(2)]
+        facets(:, 4) = [iinf, facet(1), facet(3)]
+    end subroutine make_initial_facets
+
+    pure logical function is_bad_facet(tri, ivtx, vtxs, iinf) result(flag)
+        implicit none(type, external)
+        ! Arguments
+        integer(c_int32_t), intent(in) :: vtxs(:, :)
+            !! Coordinates of the vertices.
+        integer(c_int32_t), intent(in) :: tri(3)
+        integer(c_int32_t), intent(in) :: ivtx
+        integer(c_int32_t), intent(in) :: iinf
+        ! Local variables
+        integer :: inf_cnt
+        integer :: jinf, jvtx, kvtx
+        integer :: orient
+
+        inf_cnt = count(tri == iinf)
+
+        ! Base case: no infinite vertex
+        if (inf_cnt == 0) then
+            flag = incircle( &
+                   vtxs(:, tri(1)), vtxs(:, tri(2)), vtxs(:, tri(3)), &
+                   vtxs(:, ivtx)) > 0
+            return
+        end if
+
+        ! Special case: has infinite vertex
+        ! Find where the infinite vertex is, and rotate the
+        ! triangle
+        if (tri(1) == iinf) jinf = 1
+        if (tri(2) == iinf) jinf = 2
+        if (tri(3) == iinf) jinf = 3
+        jvtx = tri(modulo(jinf, 3) + 1)
+        kvtx = tri(modulo(jinf + 1, 3) + 1)
+
+        orient = orient_v2(vtxs(:, jvtx), vtxs(:, kvtx), vtxs(:, ivtx))
+        if (orient > 0) then
+            flag = .true.
+        elseif (orient == 0) then
+            if (min(vtxs(1, jvtx), vtxs(1, kvtx)) <= vtxs(1, ivtx) .and. &
+                vtxs(1, ivtx) <= max(vtxs(1, jvtx), vtxs(1, kvtx)) .and. &
+                min(vtxs(2, jvtx), vtxs(2, kvtx)) <= vtxs(2, ivtx) .and. &
+                vtxs(2, ivtx) <= max(vtxs(2, jvtx), vtxs(2, kvtx))) then
+                flag = .true.
+            else
+                flag = .false.
+            end if
+        else
+            flag = .false.
+        end if
+    end function is_bad_facet
 
     !> Toggles a canonical edge in the cavity-edge buffer.
     !!
@@ -103,8 +143,9 @@ contains
         ! Find if the edge is already in the buffer
         if (nedges > 0) then
             do iedge = 1, nedges
-                if (.not. ((edges(1, iedge) == jvtx) .and. &
-                           (edges(2, iedge) == kvtx))) cycle
+                ! The edge could be stored in either orientation (but should be the opposite of the current one)
+                if (min(edges(1, iedge), edges(2, iedge)) /= jvtx) cycle
+                if (max(edges(1, iedge), edges(2, iedge)) /= kvtx) cycle
                 ! A repeated edge is interior, remove from the buffer
                 edges(:, iedge) = edges(:, nedges)
                 nedges = nedges - 1
@@ -117,8 +158,8 @@ contains
             return
         end if
         nedges = nedges + 1
-        edges(1, nedges) = jvtx
-        edges(2, nedges) = kvtx
+        ! Store in the CCW direction
+        edges(:, nedges) = [vtx1, vtx2]
     end subroutine toggle_edge
 
     !> Inserts one vertex using the Bowyer-Watson cavity operation.
@@ -126,16 +167,17 @@ contains
     !! by counterclockwise triangles joining the vertex to the
     !! cavity boundary.
     pure subroutine insert_vertex( &
-        ivtx, vtxs, triangles, ntris, &
+        ivtx, vtxs, triangles, ntris, iinf, &
         bad_tri_ids, edges, err_code)
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: ivtx
             !! ID of the vertex in 'vtxs' to insert.
-        integer(c_int64_t), intent(in) :: vtxs(:, :)
+        integer(c_int32_t), intent(in) :: vtxs(:, :)
             !! Coordinates of the vertices.
             !! This should include the vertices of the super-
             !! triangle.
+        integer(c_int32_t), intent(in) :: iinf
         integer(c_int32_t), intent(inout) :: triangles(:, :)
             !! Vertex indices of the triangles
         integer, intent(inout) :: ntris
@@ -162,10 +204,7 @@ contains
         ! Find triangles whose circumcircle contains the new vertex
         nbadtris = 0
         do itri = 1, ntris
-            if (incircle(vtxs(:, triangles(1, itri)), &
-                         vtxs(:, triangles(2, itri)), &
-                         vtxs(:, triangles(3, itri)), &
-                         vtxs(:, ivtx)) <= 0) cycle
+            if (.not. is_bad_facet(triangles(:, itri), ivtx, vtxs, iinf)) cycle
             nbadtris = nbadtris + 1
             bad_tri_ids(nbadtris) = itri
         end do
@@ -212,10 +251,11 @@ contains
             orient = orient_v2( &
                      vtxs(:, jvtx), vtxs(:, kvtx), vtxs(:, ivtx))
 
-            if (orient > 0) then
+            ! Should already be oriented CCW?
+            if ((count([jvtx, kvtx, ivtx] == iinf) >= 1) .or. (orient > 0)) then
                 triangles(:, itri) = [jvtx, kvtx, ivtx]
-            else if (orient < 0) then
-                triangles(:, itri) = [kvtx, jvtx, ivtx]
+                ! else if (orient < 0) then
+                !     triangles(:, itri) = [kvtx, jvtx, ivtx]
             else
                 err_code = ERR_COMPUTATION_FAILURE
                 return
@@ -226,7 +266,7 @@ contains
     !> Triangulates unique integer vertices using incremental
     !! Bowyer-Watson.
     pure subroutine triangulate_points( &
-        nvtxs, vtxs, triangles, ntris, err_code)
+        nvtxs, vtxs, facets, ntris, err_code)
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nvtxs
@@ -234,7 +274,7 @@ contains
         integer(c_int32_t), intent(in) :: vtxs(2, nvtxs)
             !! 2D index coordinates of the vertices
         ! Outputs
-        integer(c_int32_t), intent(out) :: triangles(3, nvtxs*2 + 16)
+        integer(c_int32_t), intent(out) :: facets(3, nvtxs*2 + 16)
             !! Vertex indices of the triangles
         integer, intent(out) :: ntris
             !! Number of triangles actually in the 'triangles' array
@@ -246,10 +286,10 @@ contains
             !!   - 3: triangle or edge capacity exceeded
             !!   - 4: invalid or degenerate triangulation data
         ! Local variables
-        integer :: ivtx, itri
         integer :: alloc_stat
-        integer(c_int64_t), allocatable :: all_vtxs(:, :)
-            !! Input and super-triangle coordinates.
+        integer :: ivtx, itri
+        integer(c_int32_t) :: seeds(3)
+        integer(c_int32_t) :: iinf
         integer, allocatable :: bad_tri_ids(:)
             !! IDs of triangles in the current insertion cavity.
         integer, allocatable :: edges(:, :)
@@ -257,38 +297,34 @@ contains
 
         err_code = ERR_NO_ERROR
 
-        allocate (all_vtxs(2, nvtxs + 3), stat=alloc_stat)
-        if (alloc_stat /= 0) then
-            err_code = ERR_ALLOCATION_FAILURE
-            return
-        end if
-        allocate (bad_tri_ids(size(triangles, 2)), &
-                  edges(2, size(all_vtxs, 2)), &
+        allocate (bad_tri_ids(size(facets, 2)), &
+                  edges(2, size(vtxs, 2)), &
                   stat=alloc_stat)
         if (alloc_stat /= 0) then
             err_code = ERR_ALLOCATION_FAILURE
             return
         end if
 
-        ! Make the first super triangle
-        ntris = 0
-        call add_supertriangle( &
-            vtxs, all_vtxs, triangles, ntris, err_code)
+        ! Make the first triangles
+        call make_initial_facets(vtxs, facets, seeds, iinf, err_code)
         if (err_code /= ERR_NO_ERROR) return
+        ntris = 4
 
         ! Insert vertices one at a time
         do ivtx = 1, nvtxs
+            ! Skip already-processed seed vertices
+            if (any(seeds == ivtx)) cycle
             call insert_vertex( &
-                ivtx, all_vtxs, triangles, ntris, &
+                ivtx, vtxs, facets, ntris, iinf, &
                 bad_tri_ids, edges, err_code)
             if (err_code /= ERR_NO_ERROR) return
         end do
 
-        ! Remove unneeded triangles connected to the super triangle
+        ! Remove unneeded triangles connected to the infinite vertex
         itri = 1
         do while (itri <= ntris)
-            if (any(triangles(:, itri) > nvtxs)) then
-                triangles(:, itri) = triangles(:, ntris)
+            if (any(facets(:, itri) == iinf)) then
+                facets(:, itri) = facets(:, ntris)
                 ntris = ntris - 1
             else
                 itri = itri + 1

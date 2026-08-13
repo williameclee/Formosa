@@ -26,6 +26,26 @@ _TRIANGULATION_ERRORS = {
 }
 
 
+def _validate_triangulate_points(vtxs: NDArray[NpCoords]) -> None:
+    if vtxs.ndim != 2 or vtxs.shape[1] != 2:
+        raise ValueError("Vertices must have shape (V, 2), " + f"but got {vtxs.shape}.")
+    if vtxs.shape[0] < 3:
+        raise ValueError(
+            "At least 3 vertices are required, " + f"but only got {vtxs.shape[0]}."
+        )
+    n_unq_pts = np.unique(vtxs, axis=0).shape[0]
+    if n_unq_pts != vtxs.shape[0]:
+        raise ValueError(
+            "Vertices must be unique, "
+            + f"but found {vtxs.shape[0]-n_unq_pts} duplicates."
+        )
+    if np.any(vtxs < 0):
+        bad_vtxs = vtxs[np.any(vtxs < 0, axis=1)]
+        raise ValueError(
+            "Vertices must be non-negative, " + f"but got {np.size(bad_vtxs,0)} invalid vertices."
+        )
+
+
 def _canonicalise_triangles(
     triangles: NDArray[NpCanonIndex],
 ) -> NDArray[NpCanonIndex]:
@@ -58,8 +78,9 @@ def triangulate_points(
     Parameters
     ----------
     vtxs : NDArray[int]
-        Unique point coordinates.
-        At least 3 points are required.
+        Unique vertex coordinate indices.
+        At least 3 points are required, and all indices must be
+        non-negative.
     backend : {'fortran', 'python'}, optional
         Backend to use for computation.
         `'fortran'` uses the FORTRAN extension for performance,
@@ -77,7 +98,7 @@ def triangulate_points(
     representable as `int32`.
     """
     vtxs = np.asarray(vtxs)
-    tri_py._validate_triangulate_points(vtxs)
+    _validate_triangulate_points(vtxs)
 
     match backend:
         case "python":
