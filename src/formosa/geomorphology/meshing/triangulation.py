@@ -263,3 +263,42 @@ def flip_triangle_edge(
         case _:
             raise ValueError(f"Unknown backend: {backend}")
     return f_triangles, f_nabrs
+
+
+def _find_crossing_edges(
+    vtxs: NDArray[NpCoords],
+    triangles: NDArray[NpCanonIndex],
+    nabrs: NDArray[NpCanonIndex],
+    edge: tuple[int, int],
+    backend: Backend,
+) -> list[tuple[int, int, tuple[int, int]]]:
+    """
+    Dispatches the internal proper-crossing edge query to a backend.
+
+    Notes
+    -----
+    Function not meant for public use.
+    """
+    match backend:
+        case "python":
+            return tri_py._find_crossing_edges(vtxs, triangles, nabrs, edge)
+        case "fortran":
+            vtxs_f = np.asfortranarray(vtxs.T, dtype=np.int32)
+            triangles_f = np.asfortranarray(triangles.T, dtype=np.int32) + 1
+            nabrs_f = np.asfortranarray(nabrs.T, dtype=np.int32)
+            nabrs_f[nabrs_f >= 0] += 1
+            edge_f = np.asarray(edge, dtype=np.int32) + 1
+            crossings_f, ncrossings, err_code = tri_f.find_crossing_edges(
+                vtxs_f, triangles_f, nabrs_f, edge_f
+            )
+            raise_fortran_error(
+                "find_crossing_edges", err_code, errors=_TRIANGULATION_ERRORS
+            )
+            crossings = crossings_f[:, :ncrossings].T.astype(NpCanonIndex, order="C")
+            crossings -= 1
+            return [
+                (int(itri), int(iside), (int(a), int(b)))
+                for itri, iside, a, b in crossings
+            ]
+        case _:
+            raise ValueError(f"Unknown backend: {backend}")

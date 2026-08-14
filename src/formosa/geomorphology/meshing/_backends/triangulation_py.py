@@ -371,3 +371,89 @@ def flip_triangle_edge(
     )
     return f_triangles, f_nabrs
 
+
+def _find_crossing_edges(
+    vtxs: NDArray[NpCoords],
+    triangles: NDArray[NpCanonIndex],
+    nabrs: NDArray[NpCanonIndex],
+    edge: tuple[int, int],
+) -> list[tuple[int, int, tuple[int, int]]]:
+    """
+    Finds unique interior edges properly crossing a constraint edge.
+
+    Parameters
+    ----------
+    vtxs : NDArray[NpCoords]
+        Vertex coordinates of shape `(N, 2)`.
+    triangles : NDArray[NpCanonIndex]
+        Triangle vertex index matrix of shape `(F, 3)`.
+    nabrs : NDArray[NpCanonIndex]
+        Triangle neighbour index matrix of shape `(F, 3)`.
+    edge : tuple[int, int]
+        Endpoint indices `(u, v)` defining the target constraint
+        line segment.
+
+    Returns
+    -------
+    crossings : list[tuple[int, int, tuple[int, int]]]
+        List of crossing mesh edge descriptors. Each entry is a
+        tuple containing:
+        - `itri`: Triangle index owning the edge.
+        - `iside`: Local side index (0, 1, or 2) corresponding to
+            the edge.
+        - `key`: Canonical edge representation `(a, b)` with
+            `a < b`.
+    """
+    # Extract unique interior edges as (triangle, side) pairs,
+    # selecting the smaller triangle ID to avoid double counting
+    ntris = triangles.shape[0]
+    itris = np.repeat(np.arange(ntris), 3)
+    isides = np.tile(np.arange(3), ntris)
+    flat_nabrs = nabrs.ravel()
+    unq_intr_edges = (flat_nabrs >= 0) & (itris < flat_nabrs)
+    itris = itris[unq_intr_edges]
+    isides = isides[unq_intr_edges]
+
+    # Gather endpoint indices and coordinates for each candidate mesh edge
+    a_vtx_ids = triangles[itris, (isides + 1) % 3]
+    b_vtx_ids = triangles[itris, (isides + 2) % 3]
+    vtxs_ = np.asarray(vtxs, dtype=np.result_type(vtxs.dtype, np.int64))
+    u_coord: NDArray[NpCoords] = vtxs_[edge[0]]
+    v_coord: NDArray[NpCoords] = vtxs_[edge[1]]
+    a_coord: NDArray[NpCoords] = vtxs_[triangles[itris, (isides + 1) % 3]]
+    b_coord: NDArray[NpCoords] = vtxs_[triangles[itris, (isides + 2) % 3]]
+
+    # Compute orientation of mesh edge endpoints relative to constraint vector
+    uv_coord = v_coord - u_coord
+    ua_coord = a_coord - u_coord
+    ub_coord = b_coord - u_coord
+    orient_uva: NDArray[NpCoords] = (
+        uv_coord[0] * ua_coord[:, 1] - uv_coord[1] * ua_coord[:, 0]
+    )
+    orient_uvb: NDArray[NpCoords] = (
+        uv_coord[0] * ub_coord[:, 1] - uv_coord[1] * ub_coord[:, 0]
+    )
+
+    # Compute orientation of constraint endpoints relative to mesh edge vectors
+    ab_coord = b_coord - a_coord
+    au_coord = u_coord - a_coord
+    av_coord = v_coord - a_coord
+    orient_abu = ab_coord[:, 0] * au_coord[:, 1] - ab_coord[:, 1] * au_coord[:, 0]
+    orient_abv = ab_coord[:, 0] * av_coord[:, 1] - ab_coord[:, 1] * av_coord[:, 0]
+
+    # Classify proper line-segment crossings with strict opposite orientations
+    crossing: NDArray[np.bool_] = (
+        ((orient_uva != 0) & (orient_uvb != 0))  # Non-collinear endpoints
+        & ((orient_abu != 0) & (orient_abv != 0))  # Non-collinear endpoints
+        & ((orient_uva > 0) != (orient_uvb > 0))
+        & ((orient_abu > 0) != (orient_abv > 0))
+    )
+
+    # Pack crossing edge descriptors into output list
+    return [
+        (int(itri), int(iside), edge_key(int(a), int(b)))
+        for itri, iside, a, b in zip(
+            itris[crossing], isides[crossing], a_vtx_ids[crossing], b_vtx_ids[crossing]
+        )
+    ]
+

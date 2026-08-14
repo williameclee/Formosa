@@ -141,13 +141,23 @@ contains
         end do
     end subroutine mask2ij
 
+    !> Takes the modulo of ***a*** with respect to ***p***, but
+    !! returns a result in the range [1, ***p***] instead of
+    !! [0, ***p***-1].
+    elemental function mod1(a, p) result(b)
+        implicit none(type, external)
+        integer, intent(in) :: a, p
+        integer :: b
+        b = modulo(a - 1, p) + 1
+    end function mod1
+
     !> Increments ***a*** by ***s*** and wraps it back to the range
     !! [1, ***p***].
     pure function modshift(a, s, p) result(b)
         implicit none(type, external)
         integer, intent(in) :: a, s, p
         integer :: b
-        b = modulo(a + s - 1, p) + 1
+        b = mod1(a + s, p)
     end function modshift
 
     pure function find_noflow_code(offsets, codes, default_noflow_code) result(noflow_code)

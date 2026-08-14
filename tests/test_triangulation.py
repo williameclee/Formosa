@@ -440,3 +440,52 @@ def test_flip_triangle_edge_rejects_boundary_edge(backend):
 def test_flip_triangle_edge_rejects_unflippable_quadrilateral(vtxs, triangles, backend):
     with pytest.raises(GraphTopologyError):
         tri_m.flip_triangle_edge(vtxs, triangles, 0, 0, backend=backend)
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+@pytest.mark.parametrize("scale", [1, 100_000])
+def test_find_crossing_edges_returns_unique_canonical_edges(backend, scale):
+    vtxs = np.array([[0, 0], [0, 1], [1, 0], [1, 1]], dtype=np.int32) * scale
+    triangles = np.array([[0, 2, 1], [2, 3, 1]], dtype=np.int32)
+    nabrs = tri_m.find_triangle_neighbours(triangles, backend=backend)
+
+    crossings = tri_m._find_crossing_edges(vtxs, triangles, nabrs, (0, 3), backend)
+
+    assert crossings == [(0, 0, (1, 2))]
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+@pytest.mark.parametrize("edge", [(0, 1), (0, 2), (0, 4)])
+def test_find_crossing_edges_excludes_nonproper_intersections(backend, edge):
+    vtxs = np.array([[0, 0], [0, 2], [2, 0], [2, 2], [1, 1]], dtype=np.int32)
+    triangles = np.array([[0, 2, 4], [2, 3, 4], [3, 1, 4], [1, 0, 4]], dtype=np.int32)
+    nabrs = tri_m.find_triangle_neighbours(triangles, backend=backend)
+
+    crossings = tri_m._find_crossing_edges(vtxs, triangles, nabrs, edge, backend)
+
+    assert crossings == []
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_find_crossing_edges_preserves_mesh_order(backend):
+    vtxs = np.indices((2, 4)).reshape(2, -1).T.astype(np.int32)
+    triangles = np.array(
+        [
+            [0, 4, 5],
+            [0, 5, 1],
+            [1, 5, 6],
+            [1, 6, 2],
+            [2, 6, 7],
+            [2, 7, 3],
+        ],
+        dtype=np.int32,
+    )
+    nabrs = tri_m.find_triangle_neighbours(triangles, backend=backend)
+
+    crossings = tri_m._find_crossing_edges(vtxs, triangles, nabrs, (0, 7), backend)
+
+    assert crossings == [
+        (1, 0, (1, 5)),
+        (2, 1, (1, 6)),
+        (3, 0, (2, 6)),
+    ]

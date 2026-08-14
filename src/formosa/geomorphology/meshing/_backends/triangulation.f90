@@ -14,7 +14,7 @@ module meshing_triangulation
     use utils, only: ERR_NO_ERROR, ERR_INVALID_INPUT, &
                      ERR_ALLOCATION_FAILURE, ERR_OVERFLOW, &
                      ERR_COMPUTATION_FAILURE, &
-                     modshift
+                     mod1, modshift
     use intersections, only: incircle, orient_v2
     private :: make_initial_facets, insert_vertex, toggle_edge
     private :: find_triangle_side_neighbour
@@ -548,4 +548,156 @@ contains
         call update_flipped_neighbours( &
             nabrs, f_nabrs, itri, iside, jtri, jside)
     end subroutine flip_triangle_edge
+
+    !> Finds unique interior edges properly crossing a constraint
+    !! edge.
+    !!
+    !! Determines proper line-segment intersections between
+    !! unique interior triangulation edges and a target constraint
+    !! segment using 64-bit 2D cross-product orientation
+    !! predicates.
+    subroutine find_crossing_edges( &
+        vtxs, triangles, nabrs, nvtxs, ntris, edge, xngs, nxngs, err_code)
+        implicit none(type, external)
+        ! Arguments
+        integer, intent(in) :: nvtxs
+            !! Number of vertices in the triangulation.
+        integer, intent(in) :: ntris
+            !! Number of triangles in the triangulation.
+        integer(c_int32_t), intent(in) :: vtxs(2, nvtxs)
+            !! 2D index coordinates of the vertices.
+        integer(c_int32_t), intent(in) :: triangles(3, ntris)
+            !! Vertex indices of the triangles.
+        integer(c_int32_t), intent(in) :: nabrs(3, ntris)
+            !! Triangle neighbour indices across sides.
+        integer, intent(in) :: edge(2)
+            !! Endpoint vertex IDs of the constraint edge.
+        ! Outputs
+        integer(c_int32_t), intent(out) :: xngs(4, ntris)
+            !! Descriptor columns [itri, iside, vtx1, vtx2] for
+            !! crossing interior mesh edges.
+        integer(c_int32_t), intent(out) :: nxngs
+            !! Total number of crossing mesh edges found.
+        integer, intent(out) :: err_code
+            !! Shared backend status code
+            !!   - 0: completed successfully
+            !!   - 2: workspace allocation failed
+        ! Local variables
+        integer :: itris(3*ntris), isides(3*ntris)
+            !! Triangle and side IDs owning each unique interior
+            !! edge.
+        integer :: itri, iside, iedge, nedges, ixng
+            !! Loop indices and counters for candidate and
+            !! crossing edges.
+        integer(c_int32_t), allocatable :: ia(:), ib(:)
+            !! Endpoint vertex IDs of unique interior mesh edges.
+        integer(c_int64_t) :: u(2), v(2), uv(2)
+            !! Coordinates of constraint endpoints and target
+            !! constraint vector.
+        integer(c_int64_t), allocatable :: a(:, :), b(:, :)
+            !! Endpoint coordinates of unique interior mesh edges.
+        integer(c_int64_t), allocatable :: &
+            ab(:, :), au(:, :), av(:, :), ua(:, :), ub(:, :)
+            !! Difference vectors for 2D orientation calculations.
+        integer(c_int64_t), allocatable :: &
+            orient_uva(:), orient_uvb(:), &
+            orient_abu(:), orient_abv(:)
+            !! 2D cross-product orientation determinants.
+        logical(kind=1), allocatable :: is_xng(:)
+            !! Boolean mask identifying proper crossing edges.
+        integer :: alloc_stat
+            !! Dynamic allocation status code.
+
+        err_code = ERR_NO_ERROR
+
+        ! Extract unique interior edges
+        nedges = 0
+        do iedge = 1, ntris*3
+            itri = (iedge - 1)/3 + 1
+            iside = mod1(iedge, 3)
+            if (nabrs(iside, itri) == no_neighbour) cycle
+            if (itri >= nabrs(iside, itri)) cycle
+            nedges = nedges + 1
+            itris(nedges) = itri
+            isides(nedges) = iside
+        end do
+
+        ! Fetch vertex coordinates and their distance vectors
+        u = vtxs(:, edge(1))
+        v = vtxs(:, edge(2))
+        uv = v - u
+        allocate (ia(nedges), ib(nedges), &
+                  a(2, nedges), b(2, nedges), ab(2, nedges), &
+                  stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = ERR_ALLOCATION_FAILURE
+            return
+        end if
+
+        do iedge = 1, nedges
+            itri = itris(iedge)
+            iside = isides(iedge)
+            ia(iedge) = triangles(modshift(iside, 1, 3), itri)
+            ib(iedge) = triangles(modshift(iside, 2, 3), itri)
+            a(:, iedge) = vtxs(:, ia(iedge))
+            b(:, iedge) = vtxs(:, ib(iedge))
+        end do
+
+        ab = b - a
+
+        allocate (ua(2, nedges), ub(2, nedges), &
+                  orient_uva(nedges), orient_uvb(nedges), &
+                  stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = ERR_ALLOCATION_FAILURE
+            return
+        end if
+
+        ! Compute orientation of edge endpoints relative to
+        ! constraint vector
+        ua = a - spread(u, dim=2, ncopies=nedges)
+        ub = b - spread(u, dim=2, ncopies=nedges)
+        orient_uva = uv(1)*ua(2, :) - uv(2)*ua(1, :)
+        orient_uvb = uv(1)*ub(2, :) - uv(2)*ub(1, :)
+
+        allocate (orient_abu(nedges), orient_abv(nedges), &
+                  stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = ERR_ALLOCATION_FAILURE
+            return
+        end if
+
+        ! Compute orientation of constraint endpoints relative to
+        ! mesh edge vectors
+        call move_alloc(from=ua, to=au)
+        call move_alloc(from=ub, to=av)
+        ab = b - a
+        au = spread(u, dim=2, ncopies=nedges) - a
+        av = spread(v, dim=2, ncopies=nedges) - a
+        orient_abu = ab(1, :)*au(2, :) - ab(2, :)*au(1, :)
+        orient_abv = ab(1, :)*av(2, :) - ab(2, :)*av(1, :)
+
+        ! Classify proper line-segment crossings (Xs) with strict
+        ! opposite orientations
+        allocate (is_xng(nedges), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = ERR_ALLOCATION_FAILURE
+            return
+        end if
+        is_xng = (orient_uva /= 0) .and. (orient_uvb /= 0) .and. &
+                 (orient_abu /= 0) .and. (orient_abv /= 0) .and. &
+                 ((orient_uva > 0) .neqv. (orient_uvb > 0)) .and. &
+                 ((orient_abu > 0) .neqv. (orient_abv > 0))
+        nxngs = count(is_xng)
+
+        ! Pack crossing edge descriptors into output matrix
+        ixng = 0
+        do iedge = 1, nedges
+            if (.not. is_xng(iedge)) cycle
+            ixng = ixng + 1
+            xngs(:, ixng) = &
+                [itris(iedge), isides(iedge), &
+                 min(ia(iedge), ib(iedge)), max(ia(iedge), ib(iedge))]
+        end do
+    end subroutine find_crossing_edges
 end module meshing_triangulation
