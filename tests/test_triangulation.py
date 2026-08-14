@@ -5,7 +5,7 @@ This module covers behaviour shared by both backends and native
 input validation and error translation.
 
 Created: 2026-08-12, En-Chi Lee (williameclee@gmail.com)
-Last modified: 2026-08-13, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-14, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
@@ -361,3 +361,82 @@ def test_find_triangle_neighbours_rejects_unknown_backend():
 
     with pytest.raises(ValueError, match="Unknown backend"):
         tri_m.find_triangle_neighbours(triangles, backend="unknown")  # type: ignore
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_flip_triangle_edge_replaces_convex_quadrilateral_diagonal(backend):
+    vtxs = np.array([[0, 0], [1, 0], [0, 1], [1, 1]], dtype=np.int32)
+    triangles = np.array([[0, 1, 2], [1, 3, 2]], dtype=np.int32)
+    nabrs = tri_m.find_triangle_neighbours(triangles, backend=backend)
+
+    f_triangles, f_nabrs = tri_m.flip_triangle_edge(
+        vtxs, triangles, 0, 0, nabrs=nabrs, backend=backend
+    )
+
+    np.testing.assert_array_equal(f_triangles, [[0, 1, 3], [0, 3, 2]])
+    np.testing.assert_array_equal(f_nabrs, [[-1, 1, -1], [-1, -1, 0]])
+    np.testing.assert_array_equal(triangles, [[0, 1, 2], [1, 3, 2]])
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_flip_triangle_edge_updates_outside_neighbours(backend):
+    vtxs = np.array([[0, 0], [1, 0], [0, 1], [1, 1], [2, 0], [-1, 0]], dtype=np.int32)
+    triangles = np.array([[0, 1, 2], [1, 3, 2], [1, 4, 3], [5, 0, 2]], dtype=np.int32)
+    nabrs = tri_m.find_triangle_neighbours(triangles, backend=backend)
+
+    f_triangles, f_nabrs = tri_m.flip_triangle_edge(
+        vtxs, triangles, 0, 0, nabrs=nabrs, backend=backend
+    )
+
+    recomputed = tri_m.find_triangle_neighbours(f_triangles, backend=backend)
+    np.testing.assert_array_equal(f_nabrs, recomputed)
+    np.testing.assert_array_equal(
+        f_nabrs,
+        [[2, 1, -1], [-1, 3, 0], [-1, 0, -1], [1, -1, -1]],
+    )
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_flip_triangle_edge_is_topologically_reversible(backend):
+    vtxs = np.array([[0, 0], [1, 0], [0, 1], [1, 1]], dtype=np.int32)
+    triangles = np.array([[0, 1, 2], [1, 3, 2]], dtype=np.int32)
+    f_triangles, f_nabrs = tri_m.flip_triangle_edge(
+        vtxs, triangles, 0, 0, backend=backend
+    )
+
+    restored, _ = tri_m.flip_triangle_edge(
+        vtxs, f_triangles, 0, 1, nabrs=f_nabrs, backend=backend
+    )
+
+    np.testing.assert_array_equal(
+        np.sort(np.sort(restored, axis=1), axis=0),
+        np.sort(np.sort(triangles, axis=1), axis=0),
+    )
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_flip_triangle_edge_rejects_boundary_edge(backend):
+    vtxs = np.array([[0, 0], [1, 0], [0, 1]], dtype=np.int32)
+    triangles = np.array([[0, 1, 2]], dtype=np.int32)
+
+    with pytest.raises(GraphTopologyError):
+        tri_m.flip_triangle_edge(vtxs, triangles, 0, 0, backend=backend)
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+@pytest.mark.parametrize(
+    ("vtxs", "triangles"),
+    [
+        (
+            np.array([[0, 1], [0, 0], [2, 0], [-1, -1]], dtype=np.int32),
+            np.array([[0, 1, 2], [3, 2, 1]], dtype=np.int32),
+        ),
+        (
+            np.array([[0, 1], [0, 0], [2, 0], [0, -1]], dtype=np.int32),
+            np.array([[0, 1, 2], [3, 2, 1]], dtype=np.int32),
+        ),
+    ],
+)
+def test_flip_triangle_edge_rejects_unflippable_quadrilateral(vtxs, triangles, backend):
+    with pytest.raises(GraphTopologyError):
+        tri_m.flip_triangle_edge(vtxs, triangles, 0, 0, backend=backend)

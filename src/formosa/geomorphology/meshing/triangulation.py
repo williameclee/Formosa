@@ -5,7 +5,7 @@ This module dispatches to the Python or FORTRAN backend and
 normalises native inputs, outputs, and errors.
 
 Created: 2026-08-12, En-Chi Lee (williameclee@gmail.com)
-Last modified: 2026-08-13, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-14, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
@@ -14,6 +14,7 @@ from formosa.geomorphology._native import meshing_triangulation as tri_f
 import formosa.geomorphology.meshing._backends.triangulation_py as tri_py
 from formosa.geomorphology.drainage.network import GraphTopologyError
 
+from typing import Optional
 from numpy.typing import NDArray
 from formosa.utils import Backend, raise_fortran_error
 from formosa.utils.typing import NpCoords, NpCanonIndex
@@ -183,3 +184,82 @@ def find_triangle_neighbours(
             raise ValueError(f"Unknown backend: {backend}")
 
     return np.ascontiguousarray(neighbours, dtype=NpCanonIndex)
+
+
+def flip_triangle_edge(
+    vtxs: NDArray[NpCoords],
+    triangles: NDArray[NpCanonIndex],
+    itri: int,
+    iside: int,
+    nabrs: Optional[NDArray[NpCanonIndex]] = None,
+    backend: Backend = "python",
+) -> tuple[NDArray[NpCanonIndex], NDArray[NpCanonIndex]]:
+    vtxs = np.asarray(vtxs)
+    triangles = np.asarray(triangles)
+    if nabrs is not None:
+        nabrs = np.asarray(nabrs)
+    else:
+        nabrs = find_triangle_neighbours(triangles, backend=backend)
+
+    if vtxs.ndim != 2 or vtxs.shape[1] != 2:
+        raise ValueError(f"Vertices must have shape (V, 2), but got {vtxs.shape}.")
+
+    if triangles.ndim != 2 or triangles.shape[1] != 3:
+        raise ValueError(
+            f"Triangles must have shape (F, 3), but got {triangles.shape}."
+        )
+    elif np.any(triangles < 0) or np.any(triangles >= vtxs.shape[0]):
+        raise IndexError("Some triangles reference invalid vertex.")
+
+    if nabrs.shape != triangles.shape:
+        raise ValueError(
+            "Neighbours must have the same shape as triangles, "
+            + f"but got {nabrs.shape} and {triangles.shape}."
+        )
+    elif np.any(nabrs < -1) or np.any(nabrs >= triangles.shape[0]):
+        raise IndexError("Some triangle sides reference invalid neighbour.")
+
+    if itri < 0 or itri >= triangles.shape[0]:
+        raise IndexError(f"Triangle ID {itri} is out of bounds.")
+    if iside < 0 or iside >= 3:
+        raise IndexError(f"Triangle side ID {iside} is out of bounds.")
+
+    match backend:
+        case "python":
+            f_triangles, f_nabrs = tri_py.flip_triangle_edge(
+                vtxs, triangles, nabrs, itri, iside
+            )
+        case "fortran":
+            if not np.issubdtype(vtxs.dtype, np.integer):
+                raise TypeError(
+                    "The FORTRAN triangulation backend requires integer coordinates, "
+                    + f"but got {vtxs.dtype}."
+                )
+            int32_info = np.iinfo(np.int32)
+            if np.any(vtxs < int32_info.min) or np.any(vtxs > int32_info.max):
+                raise OverflowError(
+                    "The FORTRAN triangulation backend requires coordinates "
+                    + "representable as int32."
+                )
+            if np.any(triangles >= int32_info.max):
+                raise OverflowError(
+                    "The FORTRAN triangulation backend requires vertex IDs "
+                    + "smaller than the int32 maximum."
+                )
+
+            vtxs_f = np.asfortranarray(vtxs.T, dtype=np.int32)
+            triangles_f = np.asfortranarray(triangles.T, dtype=np.int32) + 1
+            nabrs_f = np.asfortranarray(nabrs.T, dtype=np.int32)
+            nabrs_f[nabrs_f >= 0] += 1
+            f_triangles_f, f_nabrs_f, err_code = tri_f.flip_triangle_edge(
+                vtxs_f, triangles_f, nabrs_f, itri + 1, iside + 1
+            )
+            raise_fortran_error(
+                "flip_triangle_edge", err_code, errors=_TRIANGULATION_ERRORS
+            )
+            f_triangles = f_triangles_f.T.astype(NpCanonIndex, order="C") - 1
+            f_nabrs = f_nabrs_f.T.astype(NpCanonIndex, order="C")
+            f_nabrs[f_nabrs >= 0] -= 1
+        case _:
+            raise ValueError(f"Unknown backend: {backend}")
+    return f_triangles, f_nabrs

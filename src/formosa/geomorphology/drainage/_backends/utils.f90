@@ -4,7 +4,7 @@
 !! direction code decoding, raster masking, and priority queues used
 !! by other FORTRAN modules.
 !!
-!! Last modified: 2026-08-12, En-Chi Lee (williameclee@gmail.com)
+!! Last modified: 2026-08-14, En-Chi Lee (williameclee@gmail.com)
 module utils
     use iso_c_binding, only: c_int8_t
     implicit none(type, external)
@@ -140,6 +140,15 @@ contains
             end do
         end do
     end subroutine mask2ij
+
+    !> Increments ***a*** by ***s*** and wraps it back to the range
+    !! [1, ***p***].
+    pure function modshift(a, s, p) result(b)
+        implicit none(type, external)
+        integer, intent(in) :: a, s, p
+        integer :: b
+        b = modulo(a + s - 1, p) + 1
+    end function modshift
 
     pure function find_noflow_code(offsets, codes, default_noflow_code) result(noflow_code)
         !! For pairs of flow direction codes and their corresponding

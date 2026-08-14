@@ -7,15 +7,20 @@
 !! wrapper returns 0-based IDs.
 !!
 !! Created: 2026-08-12, En-Chi Lee (williameclee@gmail.com)
-!! Last modified: 2026-08-13, En-Chi Lee (williameclee@gmail.com)
+!! Last modified: 2026-08-14, En-Chi Lee (williameclee@gmail.com)
 
 module meshing_triangulation
     use iso_c_binding, only: c_int32_t, c_int64_t
-    use utils, only: ERR_NO_ERROR, ERR_ALLOCATION_FAILURE, &
-                     ERR_OVERFLOW, ERR_COMPUTATION_FAILURE
+    use utils, only: ERR_NO_ERROR, ERR_INVALID_INPUT, &
+                     ERR_ALLOCATION_FAILURE, ERR_OVERFLOW, &
+                     ERR_COMPUTATION_FAILURE, &
+                     modshift
     use intersections, only: incircle, orient_v2
     private :: make_initial_facets, insert_vertex, toggle_edge
     private :: find_triangle_side_neighbour
+    private :: update_flipped_neighbours
+    ! Moule variables
+    integer(c_int32_t), parameter :: no_neighbour = -1
 contains
     pure subroutine make_initial_facets(vtxs, facets, seeds, iinf, err_code)
         implicit none(type, external)
@@ -396,7 +401,6 @@ contains
         ! Local variables
         integer :: itri
         integer :: ivtx, jvtx
-        integer(c_int32_t), parameter :: no_neighbour = -1
         integer :: nedges
         integer(c_int32_t), allocatable :: edges(:, :)
         integer :: alloc_stat
@@ -425,4 +429,123 @@ contains
             end do
         end do
     end subroutine find_triangle_neighbours
+
+    pure subroutine update_flipped_neighbours( &
+        nabrs, f_nabrs, itri, iside, jtri, jside)
+        implicit none(type, external)
+        ! Arguments
+        integer(c_int32_t), intent(in) :: nabrs(:, :)
+        integer, intent(in) :: itri, iside, jtri, jside
+        ! Outputs
+        integer(c_int32_t), intent(out) :: f_nabrs(:, :)
+        ! Local variables
+        integer(c_int32_t) :: inabrs(3), jnabrs(3)
+        integer :: innabr, jnnabr
+        integer :: inside
+
+        f_nabrs = nabrs
+        ! Change the 2 triangles
+        inabrs = nabrs(:, itri)
+        jnabrs = nabrs(:, jtri)
+        f_nabrs(:, itri) = &
+            [jnabrs(modshift(jside, 1, 3)), jtri, &
+             inabrs(modshift(iside, 2, 3))]
+        f_nabrs(:, jtri) = &
+            [jnabrs(modshift(jside, 2, 3)), &
+             inabrs(modshift(iside, 1, 3)), itri]
+
+        ! This outside neighbour moves from jtri to itri
+        innabr = jnabrs(modshift(jside, 1, 3))
+        if (innabr /= no_neighbour) then
+            do inside = 1, 3
+                if (nabrs(inside, innabr) == jtri) then
+                    f_nabrs(inside, innabr) = itri
+                    exit
+                end if
+            end do
+        end if
+        ! This outside neighbour moves from itri to jtri
+        jnnabr = inabrs(modshift(iside, 1, 3))
+        if (jnnabr /= no_neighbour) then
+            do inside = 1, 3
+                if (nabrs(inside, jnnabr) == itri) then
+                    f_nabrs(inside, jnnabr) = jtri
+                    exit
+                end if
+            end do
+        end if
+    end subroutine update_flipped_neighbours
+
+    pure subroutine flip_triangle_edge( &
+        vtxs, triangles, nabrs, f_triangles, f_nabrs, &
+        nvtxs, ntris, itri, iside, err_code)
+        implicit none(type, external)
+        ! Arguments
+        integer, intent(in) :: nvtxs, ntris
+        integer(c_int32_t), intent(in) :: vtxs(2, nvtxs)
+        integer(c_int32_t), intent(in) :: triangles(3, ntris)
+        integer(c_int32_t), intent(in) :: nabrs(3, ntris)
+        integer, intent(in) :: itri, iside
+        ! Outputs
+        integer(c_int32_t), intent(out) :: f_triangles(3, ntris)
+        integer(c_int32_t), intent(out) :: f_nabrs(3, ntris)
+        integer, intent(out) :: err_code
+        ! Local variables
+        integer :: jtri, jside
+        integer(c_int32_t) :: p, q, u, v
+        integer(c_int64_t) :: orient_u, orient_v
+
+        err_code = ERR_NO_ERROR
+
+        if ((itri < 1) .or. (itri > ntris)) then
+            err_code = ERR_INVALID_INPUT
+            return
+        elseif ((iside < 1) .or. (iside > 3)) then
+            err_code = ERR_INVALID_INPUT
+            return
+        end if
+
+        ! Find the triangle/side sharing the edge
+        jtri = nabrs(iside, itri)
+        if (jtri < 1) then
+            err_code = ERR_COMPUTATION_FAILURE
+            return
+        end if
+        do jside = 1, 3
+            if (nabrs(jside, jtri) == itri) then
+                exit
+            elseif (jside == 3) then
+                ! No matching side found, something must be wrong
+                err_code = ERR_COMPUTATION_FAILURE
+                return
+            end if
+        end do
+
+        ! Find the vertices
+        p = triangles(iside, itri)
+        q = triangles(jside, jtri)
+        u = triangles(modshift(iside, 1, 3), itri)
+        v = triangles(modshift(iside, 2, 3), itri)
+
+        orient_u = orient_v2(vtxs(:, p), vtxs(:, q), vtxs(:, u))
+        orient_v = orient_v2(vtxs(:, p), vtxs(:, q), vtxs(:, v))
+        ! Check the edge is actually flippable
+        if ((orient_u == 0) .or. (orient_v == 0)) then
+            ! Degenerate triangle (collinear)
+            err_code = ERR_COMPUTATION_FAILURE
+            return
+        elseif ((orient_u > 0) .eqv. (orient_v > 0)) then
+            ! Not convex, or they should have opposite signs
+            err_code = ERR_COMPUTATION_FAILURE
+            return
+        end if
+
+        ! Flip the triangles
+        f_triangles = triangles
+        f_triangles(:, itri) = [p, u, q]
+        f_triangles(:, jtri) = [p, q, v]
+        ! Update the neighbours
+        call update_flipped_neighbours( &
+            nabrs, f_nabrs, itri, iside, jtri, jside)
+    end subroutine flip_triangle_edge
 end module meshing_triangulation

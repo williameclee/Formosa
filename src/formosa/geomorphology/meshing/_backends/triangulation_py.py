@@ -5,7 +5,7 @@ This internal module implements incremental Bowyer-Watson
 triangulation for the public meshing API.
 
 Created: 2026-08-12, En-Chi Lee (williameclee@gmail.com)
-Last modified: 2026-08-13, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-14, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
@@ -292,3 +292,82 @@ def find_triangle_neighbours(
         edge: (itri, iside) for edge, (itri, iside, _) in owners.items()
     }
     return neighbours, edge_owners
+
+
+def _update_flipped_neighbours(
+    nabrs: NDArray[NpCanonIndex], itri: int, iside: int, jtri: int, jside: int
+) -> NDArray[NpCanonIndex]:
+    f_nabrs = np.array(nabrs, dtype=NpCanonIndex, order="C", copy=True)
+    inabrs = nabrs[itri]
+    jnabrs = nabrs[jtri]
+    f_nabrs[itri] = (jnabrs[(jside + 1) % 3], jtri, inabrs[(iside + 2) % 3])
+    f_nabrs[jtri] = (jnabrs[(jside + 2) % 3], inabrs[(iside + 1) % 3], itri)
+    moved_to_i = int(jnabrs[(jside + 1) % 3])
+    if moved_to_i != -1:
+        f_nabrs[moved_to_i][f_nabrs[moved_to_i] == jtri] = itri
+
+    moved_to_j = int(inabrs[(iside + 1) % 3])
+    if moved_to_j != -1:
+        f_nabrs[moved_to_j][f_nabrs[moved_to_j] == itri] = jtri
+    return f_nabrs
+
+
+def flip_triangle_edge(
+    vtxs: NDArray[NpCoords],
+    triangles: NDArray[NpCanonIndex],
+    nabrs: NDArray[NpCanonIndex],
+    itri: int,
+    iside: int,
+) -> tuple[NDArray[NpCanonIndex], NDArray[NpCanonIndex]]:
+    """
+    Flips one interior triangle edge in a convex quadrilateral.
+
+    The input arrays are not modified. Neighbours are recomputed
+    after the flip to keep this initial implementation simple.
+    """
+    if itri < 0 or itri >= triangles.shape[0]:
+        raise IndexError(f"Triangle ID {itri} is out of bounds.")
+    elif iside < 0 or iside >= 3:
+        raise IndexError(f"Triangle side ID {iside} is out of bounds.")
+
+    jtri = int(nabrs[itri, iside])
+    if jtri == -1:
+        raise GraphTopologyError("A boundary edge cannot be flipped.")
+
+    # Find which corresponding side is the edge to the other traingle
+    reciprocal_sides = np.flatnonzero(nabrs[jtri] == itri)
+    if reciprocal_sides.size != 1:
+        raise GraphTopologyError(
+            f"Triangles {itri} and {jtri} do not have reciprocal neighbours."
+        )
+    jside = int(reciprocal_sides[0])
+
+    p = int(triangles[itri, iside])  # Not-edge vertex
+    u = int(triangles[itri, (iside + 1) % 3])  # Edge vertex 1
+    v = int(triangles[itri, (iside + 2) % 3])  # Edge vertex 2
+    if not ({u, v} <= set(map(int, triangles[jtri]))):
+        raise GraphTopologyError(
+            f"Neighbouring triangles {itri} and {jtri} do not share one edge."
+        )
+    q = int(triangles[jtri, jside])  # Not edge vertex of the other triangle
+
+    if len({p, q, u, v}) != 4:
+        raise GraphTopologyError("The incident triangles do not form a quadrilateral.")
+
+    orient_u = orient_v2(vtxs[p], vtxs[q], vtxs[u], backend="python")
+    orient_v = orient_v2(vtxs[p], vtxs[q], vtxs[v], backend="python")
+    if orient_u == 0 or orient_v == 0:
+        raise GraphTopologyError("The flipped edge would create a degenerate triangle.")
+    if (orient_u > 0) == (orient_v > 0):
+        raise GraphTopologyError(
+            "The incident triangles do not form a convex quadrilateral."
+        )
+
+    f_triangles = np.array(triangles, dtype=NpCanonIndex, order="C", copy=True)
+    f_triangles[itri] = (p, u, q)
+    f_triangles[jtri] = (p, q, v)
+    f_nabrs = _update_flipped_neighbours(
+        nabrs, itri, iside, jtri, jside
+    )
+    return f_triangles, f_nabrs
+
