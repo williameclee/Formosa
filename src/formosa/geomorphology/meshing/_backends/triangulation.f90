@@ -18,7 +18,9 @@ module meshing_triangulation
     use intersections, only: incircle, orient_v2, xcross, xcross_orient
     private :: make_initial_facets, insert_vertex, toggle_edge
     private :: find_triangle_side_neighbour
-    private :: update_flipped_neighbours, edge_locked, edge_match, update_edge_record
+    private :: update_flipped_neighbours
+    private :: edge_locked, edge_match, update_edge_record
+    private :: remove_crossing, restore_deluanay_triangulation
     ! Moule variables
     integer(c_int32_t), parameter :: no_neighbour = -1
 contains
@@ -619,8 +621,9 @@ contains
     !! unique interior triangulation edges and a target constraint
     !! segment using 64-bit 2D cross-product orientation
     !! predicates.
-    subroutine find_crossing_edges( &
-        vtxs, triangles, nabrs, nvtxs, ntris, edge, xngs, nxngs, err_code)
+    pure subroutine find_crossing_edges( &
+        vtxs, triangles, nabrs, nvtxs, ntris, &
+        edge, xngs, nxngs, err_code)
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nvtxs
@@ -763,17 +766,17 @@ contains
 
     !> Checks if an edge is locked (i.e. a constraint) and cannot be
     !! flipped.
-    pure logical function edge_locked(a, b, locked_edges, nedges)
+    pure logical function edge_locked(edge, locked_edges, nedges)
         implicit none(type, external)
         ! Arguments
-        integer(c_int32_t), intent(in) :: a, b
+        integer(c_int32_t), intent(in) :: edge(2)
         integer(c_int32_t), intent(in) :: locked_edges(2, nedges)
         integer, intent(in) :: nedges
         integer(c_int32_t) :: lo, hi
         integer :: iedge
 
-        lo = min(a, b)
-        hi = max(a, b)
+        lo = minval(edge)
+        hi = maxval(edge)
         edge_locked = .false.
 
         do iedge = 1, nedges
@@ -787,32 +790,177 @@ contains
 
     !> Checks if the vertices of a specific edge is the same as
     !! claimed.
-    pure logical function edge_match(triangles, itri, iside, a, b)
+    pure logical function edge_match(triangles, edge)
         implicit none(type, external)
         ! Arguments
         integer(c_int32_t), intent(in) :: triangles(:, :)
-        integer, intent(in) :: itri, iside
-        integer, intent(in) :: a, b
-            !! Claimed vertex indices for the iside-th edge of the
-            !! itri-th triangle.
+        integer, intent(in) :: edge(4)
         ! Local variables
         integer :: ar, br
             !! Actual vertex indices for the iside-th edge of the
             !! itri-th triangle.
 
-        ar = triangles(modshift(iside, 1, 3), itri)
-        br = triangles(modshift(iside, 2, 3), itri)
-        edge_match = (a == ar .and. b == br) .or. (a == br .and. b == ar)
+        ar = triangles(modshift(edge(2), 1, 3), edge(1))
+        br = triangles(modshift(edge(2), 2, 3), edge(1))
+        edge_match = (edge(3) == ar .and. edge(4) == br) .or. &
+                     (edge(3) == br .and. edge(4) == ar)
     end function edge_match
 
-    subroutine recover_constraint_edge( &
-        vtxs, nvtxs, triangles, nabrs, ntris, edge, locked_edges, nledges, err_code)
+    pure subroutine remove_crossing( &
+        vtxs, faces, nabrs, nvtxs, ntris, edge, &
+        xngs, nxngs, ixng, new_edges, nedges, nfailed, err_code)
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nvtxs
         integer, intent(in) :: ntris
         integer(c_int32_t), intent(in) :: vtxs(2, nvtxs)
-        integer(c_int32_t), intent(inout) :: triangles(3, ntris)
+        integer(c_int32_t), intent(inout) :: faces(3, ntris)
+        integer(c_int32_t), intent(inout) :: nabrs(3, ntris)
+        integer(c_int32_t), intent(in) :: edge(2)
+        integer(c_int32_t), intent(inout) :: xngs(4, ntris)
+        integer, intent(inout) :: nxngs, ixng
+        integer(c_int32_t), intent(inout) :: new_edges(4, ntris)
+        integer, intent(inout) :: nedges
+        integer, intent(inout) :: nfailed
+        integer, intent(out) :: err_code
+        ! Local variables
+        integer :: iface, iside, jface, jside
+        integer(c_int32_t) :: vk(2), vl(2), vm(2), vn(2)
+        integer :: k, l, m, n
+        integer(c_int32_t) :: new_edge(4)
+        integer(c_int32_t) :: changed_edges(4, 4)
+
+        if (.not. edge_match(faces, xngs(:, ixng))) then
+            err_code = ERR_COMPUTATION_FAILURE
+            return
+        end if
+        ! Get the coordinates
+        iface = xngs(1, ixng)
+        iside = xngs(2, ixng)
+        k = xngs(3, ixng)
+        l = xngs(4, ixng)
+        vk = vtxs(:, k)
+        vl = vtxs(:, l)
+        ! Note: 'nabrs' ordered such that the i-th edge is
+        ! composed of the j-th and k-th vertices of the facet
+        m = faces(iside, iface)
+        vm = vtxs(:, m)
+        call find_edge_sharing_triangle(nabrs, iface, iside, jface, jside, err_code)
+        if (err_code /= ERR_NO_ERROR) return
+        n = faces(jside, jface)
+        vn = vtxs(:, n)
+
+        ! Swap edge if quadrilateral is convex
+        if (.not. is_convex(vm, vn, vk, vl)) then
+            nfailed = nfailed + 1
+            ! If looped through all edges and none is flippable
+            if (nfailed >= nxngs) then
+                err_code = ERR_COMPUTATION_FAILURE
+                return
+            end if
+            return
+        end if
+        call flip_triangle_edge( &
+            vtxs, faces, nabrs, nvtxs, ntris, iface, iside, &
+            changed_edges, err_code)
+        if (err_code /= ERR_NO_ERROR) return
+        ! Update potentially changed edges
+        call update_edge_record(xngs, nxngs, changed_edges)
+        call update_edge_record(new_edges, nedges, changed_edges)
+
+        ! Replace the original crossing
+        ! The new side is always the 2nd side of the triangle
+        new_edge = [iface, 2, min(m, n), max(m, n)]
+        nfailed = 0
+
+        ! Check if the new edge is the constraint, or if it still crosses the constraint
+        if (new_edge(3) == minval(edge) .and. new_edge(4) == maxval(edge)) then
+            new_edges(:, nedges) = new_edge
+            return
+        elseif (xcross(vtxs(:, edge(1)), vtxs(:, edge(2)), vm, vn)) then
+            xngs(:, ixng) = new_edge
+        else
+            ! Remove the crossing
+            xngs(:, ixng) = xngs(:, nxngs)
+            nxngs = nxngs - 1
+            if (nxngs > 0) ixng = modshift(ixng, -1, nxngs)
+            ! Record the new edge
+            nedges = nedges + 1
+            new_edges(:, nedges) = new_edge
+        end if
+    end subroutine remove_crossing
+
+    pure subroutine restore_deluanay_triangulation( &
+        vtxs, faces, nabrs, nvtxs, ntris, edge, err_code)
+        implicit none(type, external)
+        ! Arguments
+        integer, intent(in) :: nvtxs
+        integer, intent(in) :: ntris
+        integer(c_int32_t), intent(in) :: vtxs(2, nvtxs)
+        integer(c_int32_t), intent(inout) :: faces(3, ntris)
+        integer(c_int32_t), intent(inout) :: nabrs(3, ntris)
+        integer(c_int32_t), intent(in) :: edge(2)
+        ! Outputs
+        integer, intent(out) :: err_code
+        ! Local variables
+        integer(c_int32_t) :: changed_edges(4, 4)
+        integer(c_int32_t) :: edges(4, ntris)
+        integer :: iedge, nedges
+        integer(c_int32_t) :: vk(2), vl(2), vm(2), vn(2)
+        integer :: k, l, m, n
+        integer :: jside
+        integer :: itri, iside, jtri
+        logical :: swapped
+        do
+            swapped = .false.
+            do iedge = 1, nedges
+                if (.not. edge_match(faces, edges(:, iedge))) then
+                    err_code = ERR_COMPUTATION_FAILURE
+                    return
+                end if
+                itri = edges(1, iedge)
+                iside = edges(2, iedge)
+                k = faces(modshift(iside, 1, 3), itri)
+                l = faces(modshift(iside, 2, 3), itri)
+                ! Skip if this is the constraint
+                if ((k == edge(1) .and. l == edge(2)) .or. &
+                    (k == edge(2) .and. l == edge(1))) cycle
+                vk = vtxs(:, k)
+                vl = vtxs(:, l)
+                ! Note: 'nabrs' ordered such that the i-th edge is
+                ! composed of the j-th and k-th vertices of the facet
+                m = faces(iside, itri)
+                vm = vtxs(:, m)
+                call find_edge_sharing_triangle( &
+                    nabrs, itri, iside, jtri, jside, err_code)
+                if (err_code /= ERR_NO_ERROR) return
+                n = faces(jside, jtri)
+                vn = vtxs(:, n)
+
+                if (.not. is_convex(vm, vn, vk, vl)) cycle
+                if (.not. incircle(vk, vl, vm, vn) > 0) cycle
+                call flip_triangle_edge( &
+                    vtxs, faces, nabrs, nvtxs, ntris, itri, iside, &
+                    changed_edges, err_code)
+                if (err_code /= ERR_NO_ERROR) return
+                swapped = .true.
+                ! Update changed edges in the record (including itself)
+                call update_edge_record(edges, nedges, changed_edges)
+                edges(:, iedge) = [itri, 2, min(m, n), max(m, n)]
+            end do
+            if (.not. swapped) exit
+        end do
+    end subroutine restore_deluanay_triangulation
+
+    pure subroutine recover_constraint_edge( &
+        vtxs, nvtxs, faces, nabrs, ntris, &
+        edge, locked_edges, nledges, err_code)
+        implicit none(type, external)
+        ! Arguments
+        integer, intent(in) :: nvtxs
+        integer, intent(in) :: ntris
+        integer(c_int32_t), intent(in) :: vtxs(2, nvtxs)
+        integer(c_int32_t), intent(inout) :: faces(3, ntris)
         integer(c_int32_t), intent(inout) :: nabrs(3, ntris)
         integer(c_int32_t), intent(in) :: edge(2)
         integer, intent(in) :: nledges
@@ -823,28 +971,23 @@ contains
         integer(c_int32_t) :: xngs(4, ntris)
             !! Descriptor columns [itri, iside, vtx1, vtx2] for
             !! crossing interior mesh edges.
-        integer(c_int32_t) :: changed_edges(4, 4)
-        integer(c_int32_t) :: new_edge(4)
         integer(c_int32_t) :: new_edges(4, ntris)
-        integer :: iedge, nedges
+        integer :: nedges
         integer :: ixng, nxngs
-        integer(c_int32_t) :: vk(2), vl(2), vm(2), vn(2)
-        integer :: k, l, m, n
-        integer :: jside
-        integer :: itri, iside, jtri
         integer :: nfailed
-        logical :: swapped
 
         err_code = ERR_NO_ERROR
 
         ! Check if constraint already satisfied
-        if (any(any(triangles == edge(1), 1) .and. &
-                any(triangles == edge(2), 1))) then
+        if (any(any(faces == edge(1), 1) .and. &
+                any(faces == edge(2), 1))) then
             return
         end if
 
         ! Find intersecting edges
-        call find_crossing_edges(vtxs, triangles, nabrs, nvtxs, ntris, edge, xngs, nxngs, err_code)
+        call find_crossing_edges( &
+            vtxs, faces, nabrs, nvtxs, ntris, edge, xngs, nxngs, &
+            err_code)
         if (err_code /= ERR_NO_ERROR) return
         if (nxngs <= 0) then
             err_code = ERR_COMPUTATION_FAILURE
@@ -852,8 +995,8 @@ contains
         end if
         ! Check the edges are actually flippable
         do ixng = 1, nxngs
-            if (edge_locked(xngs(3, ixng), xngs(4, ixng), &
-                            locked_edges, nledges)) then
+            if (edge_locked( &
+                xngs(3:4, ixng), locked_edges, nledges)) then
                 err_code = ERR_COMPUTATION_FAILURE
                 return
             end if
@@ -865,114 +1008,29 @@ contains
         nfailed = 0
         do while (nxngs > 0)
             ixng = modshift(ixng, 1, nxngs)
-            if (.not. edge_match( &
-                triangles, xngs(1, ixng), xngs(2, ixng), xngs(3, ixng), xngs(4, ixng))) then
+            ! Make sure the crossing data is not corrupted
+            if (.not. edge_match(faces, xngs(:, ixng))) then
                 err_code = ERR_COMPUTATION_FAILURE
                 return
             end if
-            ! Get the coordinates
-            itri = xngs(1, ixng)
-            iside = xngs(2, ixng)
-            k = xngs(3, ixng)
-            l = xngs(4, ixng)
-            vk = vtxs(:, k)
-            vl = vtxs(:, l)
-            ! Note: 'nabrs' ordered such that the i-th edge is
-            ! composed of the j-th and k-th vertices of the facet
-            m = triangles(iside, itri)
-            vm = vtxs(:, m)
-            call find_edge_sharing_triangle(nabrs, itri, iside, jtri, jside, err_code)
-            if (err_code /= ERR_NO_ERROR) return
-            n = triangles(jside, jtri)
-            vn = vtxs(:, n)
-
-            ! Swap edge if quadrilateral is convex
-            if (.not. is_convex(vm, vn, vk, vl)) then
-                nfailed = nfailed + 1
-                ! If looped through all edges and none is flippable
-                if (nfailed >= nxngs) then
-                    err_code = ERR_COMPUTATION_FAILURE
-                    return
-                end if
-                cycle
-            end if
-            call flip_triangle_edge( &
-                vtxs, triangles, nabrs, nvtxs, ntris, itri, iside, &
-                changed_edges, err_code)
-            if (err_code /= ERR_NO_ERROR) return
-            ! Update potentially changed edges
-            call update_edge_record(xngs, nxngs, changed_edges)
-            call update_edge_record(new_edges, nedges, changed_edges)
-
-            ! Replace the original crossing
-            ! The new side is always the 2nd side of the triangle
-            new_edge = [itri, 2, min(m, n), max(m, n)]
-            nfailed = 0
-
-            ! Check if the new edge is the constraint, or if it still crosses the constraint
-            if (new_edge(3) == minval(edge) .and. new_edge(4) == maxval(edge)) then
-                ! The new new edge is the constraint edge, we can exit
-                exit
-            elseif (xcross(vtxs(:, edge(1)), vtxs(:, edge(2)), vm, vn)) then
-                xngs(:, ixng) = new_edge
-            else
-                ! Remove the crossing
-                xngs(:, ixng) = xngs(:, nxngs)
-                nxngs = nxngs - 1
-                if (nxngs > 0) ixng = modshift(ixng, -1, nxngs)
-                ! Record the new edge
-                nedges = nedges + 1
-                new_edges(:, nedges) = new_edge
-            end if
+            call remove_crossing( &
+                vtxs, faces, nabrs, nvtxs, ntris, edge, &
+                xngs, nxngs, ixng, new_edges, nedges, nfailed, &
+                err_code)
+            ! Exit if the constraint is recovered
+            if (new_edges(3, nedges) == minval(edge) .and. &
+                new_edges(4, nedges) == maxval(edge)) exit
         end do
 
         ! Make sure the constraint is successfully recovered
-        if (.not. any(any(triangles == edge(1), 1) .and. &
-                      any(triangles == edge(2), 1))) then
+        if (.not. any(any(faces == edge(1), 1) .and. &
+                      any(faces == edge(2), 1))) then
             err_code = ERR_COMPUTATION_FAILURE
             return
         end if
 
-        ! Loop through all new edges to check their deluaney condition
-        do
-            swapped = .false.
-            do iedge = 1, nedges
-                if (.not. edge_match( &
-                    triangles, new_edges(1, iedge), new_edges(2, iedge), new_edges(3, iedge), new_edges(4, iedge))) then
-                    err_code = ERR_COMPUTATION_FAILURE
-                    return
-                end if
-                itri = new_edges(1, iedge)
-                iside = new_edges(2, iedge)
-                k = triangles(modshift(iside, 1, 3), itri)
-                l = triangles(modshift(iside, 2, 3), itri)
-                ! Skip if this is the constraint
-                if ((k == edge(1) .and. l == edge(2)) .or. &
-                    (k == edge(2) .and. l == edge(1))) cycle
-                vk = vtxs(:, k)
-                vl = vtxs(:, l)
-                ! Note: 'nabrs' ordered such that the i-th edge is
-                ! composed of the j-th and k-th vertices of the facet
-                m = triangles(iside, itri)
-                vm = vtxs(:, m)
-                call find_edge_sharing_triangle( &
-                    nabrs, itri, iside, jtri, jside, err_code)
-                if (err_code /= ERR_NO_ERROR) return
-                n = triangles(jside, jtri)
-                vn = vtxs(:, n)
-
-                if (.not. is_convex(vm, vn, vk, vl)) cycle
-                if (.not. incircle(vk, vl, vm, vn) > 0) cycle
-                call flip_triangle_edge( &
-                    vtxs, triangles, nabrs, nvtxs, ntris, itri, iside, &
-                    changed_edges, err_code)
-                if (err_code /= ERR_NO_ERROR) return
-                swapped = .true.
-                ! Update changed edges in the record (including itself)
-                call update_edge_record(new_edges, nedges, changed_edges)
-                new_edges(:, iedge) = [itri, 2, min(m, n), max(m, n)]
-            end do
-            if (.not. swapped) exit
-        end do
+        ! Loop through all new edges to check their Deluanay condition
+        call restore_deluanay_triangulation( &
+            vtxs, faces, nabrs, nvtxs, ntris, edge, err_code)
     end subroutine recover_constraint_edge
 end module meshing_triangulation
