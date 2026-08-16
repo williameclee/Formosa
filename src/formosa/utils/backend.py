@@ -10,9 +10,10 @@ BACKENDS = ("fortran", "python")
 Backend: TypeAlias = Literal["fortran", "python"]
 
 DEFAULT_ERROR_MAP: dict[int, tuple[type[Exception], str]] = {
-    1: (ValueError, "invalid input"),
-    2: (MemoryError, "unable to allocate backend workspace"),
-    3: (RuntimeError, "array or index capacity exceeded"),
+    1: (ValueError, "received invalid input"),
+    2: (MemoryError, "failed to allocate backend workspace"),
+    3: (RuntimeError, "exceeded some array or index capacity"),
+    4: (RuntimeError, "encountered backend computation failure"),
 }
 
 
