@@ -7,7 +7,7 @@
 !! wrapper returns 0-based IDs.
 !!
 !! Created: 2026-08-12, En-Chi Lee (williameclee@gmail.com)
-!! Last modified: 2026-08-14, En-Chi Lee (williameclee@gmail.com)
+!! Last modified: 2026-08-16, En-Chi Lee (williameclee@gmail.com)
 
 module meshing_triangulation
     use iso_c_binding, only: c_int32_t, c_int64_t
@@ -15,7 +15,7 @@ module meshing_triangulation
                      ERR_ALLOCATION_FAILURE, ERR_OVERFLOW, &
                      ERR_COMPUTATION_FAILURE, &
                      mod1, modshift
-    use intersections, only: incircle, orient_v2
+    use intersections, only: incircle, orient_v2, xcross, xcross_orient
     private :: make_initial_facets, insert_vertex, toggle_edge
     private :: find_triangle_side_neighbour
     private :: update_flipped_neighbours
@@ -684,10 +684,7 @@ contains
             err_code = ERR_ALLOCATION_FAILURE
             return
         end if
-        is_xng = (orient_uva /= 0) .and. (orient_uvb /= 0) .and. &
-                 (orient_abu /= 0) .and. (orient_abv /= 0) .and. &
-                 ((orient_uva > 0) .neqv. (orient_uvb > 0)) .and. &
-                 ((orient_abu > 0) .neqv. (orient_abv > 0))
+        is_xng = xcross_orient(orient_uva, orient_uvb, orient_abu, orient_abv)
         nxngs = count(is_xng)
 
         ! Pack crossing edge descriptors into output matrix

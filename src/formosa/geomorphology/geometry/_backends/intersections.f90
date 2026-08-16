@@ -6,7 +6,7 @@
 !! and other FORTRAN routines and is not intended to be used
 !! directly.
 !!
-!! Last modified: 2026-08-12, En-Chi Lee (williameclee@gmail.com)
+!! Last modified: 2026-08-16, En-Chi Lee (williameclee@gmail.com)
 module intersections
     use iso_c_binding, only: c_double, c_int8_t, c_int32_t, c_int64_t
     implicit none(type, external)
@@ -16,6 +16,16 @@ module intersections
         module procedure orient_v2_int32
         module procedure orient_v2_int64
     end interface orient_v2
+    interface xcross_orient
+        module procedure xcross_orient_real
+        module procedure xcross_orient_int32
+        module procedure xcross_orient_int64
+    end interface xcross_orient
+    interface xcross
+        module procedure xcross_real
+        module procedure xcross_int32
+        module procedure xcross_int64
+    end interface xcross
     interface incircle
         module procedure incircle_real
         module procedure incircle_int32
@@ -254,6 +264,87 @@ contains
                   p(2) <= max(a(2), b(2))
     end function on_segment
 
+    elemental function xcross_orient_real(o_abc, o_abd, o_cda, o_cdb) &
+        result(flag)
+        implicit none(type, external)
+        ! Arguments
+        real, intent(in) :: o_abc, o_abd, o_cda, o_cdb
+        logical(kind=1) :: flag
+
+        flag = ((o_abc /= 0) .and. (o_abd /= 0) .and. &
+                (o_cda /= 0) .and. (o_cdb /= 0) .and. &
+                ((o_abc > 0) .neqv. (o_abd > 0)) .and. &
+                ((o_cda > 0) .neqv. (o_cdb > 0)))
+    end function xcross_orient_real
+
+    elemental function xcross_orient_int32(o_abc, o_abd, o_cda, o_cdb) &
+        result(flag)
+        implicit none(type, external)
+        ! Arguments
+        integer(c_int32_t), intent(in) :: o_abc, o_abd, o_cda, o_cdb
+        logical(kind=1) :: flag
+
+        flag = ((o_abc /= 0) .and. (o_abd /= 0) .and. &
+                (o_cda /= 0) .and. (o_cdb /= 0) .and. &
+                ((o_abc > 0) .neqv. (o_abd > 0)) .and. &
+                ((o_cda > 0) .neqv. (o_cdb > 0)))
+    end function xcross_orient_int32
+
+    elemental function xcross_orient_int64(o_abc, o_abd, o_cda, o_cdb) &
+        result(flag)
+        implicit none(type, external)
+        ! Arguments
+        integer(c_int64_t), intent(in) :: o_abc, o_abd, o_cda, o_cdb
+        logical(kind=1) :: flag
+
+        flag = ((o_abc /= 0) .and. (o_abd /= 0) .and. &
+                (o_cda /= 0) .and. (o_cdb /= 0) .and. &
+                ((o_abc > 0) .neqv. (o_abd > 0)) .and. &
+                ((o_cda > 0) .neqv. (o_cdb > 0)))
+    end function xcross_orient_int64
+
+    pure function xcross_real(a, b, c, d) result(flag)
+        implicit none(type, external)
+        ! Arguments
+        real, intent(in) :: a(2), b(2), c(2), d(2)
+        logical(kind=1) :: flag
+        real :: o_abc, o_abd, o_cda, o_cdb
+
+        o_abc = orient_v2(a, b, c)
+        o_abd = orient_v2(a, b, d)
+        o_cda = orient_v2(c, d, a)
+        o_cdb = orient_v2(c, d, b)
+        flag = xcross_orient(o_abc, o_abd, o_cda, o_cdb)
+    end function xcross_real
+
+    pure function xcross_int32(a, b, c, d) result(flag)
+        implicit none(type, external)
+        ! Arguments
+        integer(c_int32_t), intent(in) :: a(2), b(2), c(2), d(2)
+        logical(kind=1) :: flag
+        integer(c_int32_t) :: o_abc, o_abd, o_cda, o_cdb
+
+        o_abc = orient_v2(a, b, c)
+        o_abd = orient_v2(a, b, d)
+        o_cda = orient_v2(c, d, a)
+        o_cdb = orient_v2(c, d, b)
+        flag = xcross_orient(o_abc, o_abd, o_cda, o_cdb)
+    end function xcross_int32
+
+    pure function xcross_int64(a, b, c, d) result(flag)
+        implicit none(type, external)
+        ! Arguments
+        integer(c_int64_t), intent(in) :: a(2), b(2), c(2), d(2)
+        logical(kind=1) :: flag
+        integer(c_int64_t) :: o_abc, o_abd, o_cda, o_cdb
+
+        o_abc = orient_v2(a, b, c)
+        o_abd = orient_v2(a, b, d)
+        o_cda = orient_v2(c, d, a)
+        o_cdb = orient_v2(c, d, b)
+        flag = xcross_orient(o_abc, o_abd, o_cda, o_cdb)
+    end function xcross_int64
+
     !> Classifies the intersection of 2 closed 2D line segments.
     !!
     !! Flags:
@@ -294,12 +385,12 @@ contains
             return
         end if
 
+        ! Interior-interior crossing
         o1 = orient_v2_real(l1a, l1b, l2a)
         o2 = orient_v2_real(l1a, l1b, l2b)
         o3 = orient_v2_real(l2a, l2b, l1a)
         o4 = orient_v2_real(l2a, l2b, l1b)
-        if ((((o1 < 0) .and. (o2 > 0)) .or. ((o1 > 0) .and. (o2 < 0))) .and. &
-            (((o3 < 0) .and. (o4 > 0)) .or. ((o3 > 0) .and. (o4 < 0)))) then ! Interior-interior crossing
+        if (xcross_orient(o1, o2, o3, o4)) then
             flag = 1
             return
         end if
