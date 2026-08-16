@@ -22,7 +22,7 @@ from types import SimpleNamespace
     [
         (1, ValueError, "invalid input"),
         (2, MemoryError, "allocate backend workspace"),
-        (3, RuntimeError, "array or index capacity exceeded"),
+        (3, RuntimeError, "exceeded some array or index capacity"),
         (99, RuntimeError, "unknown"),
     ],
 )
