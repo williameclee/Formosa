@@ -431,83 +431,92 @@ contains
     end subroutine find_triangle_neighbours
 
     pure subroutine update_flipped_neighbours( &
-        nabrs, f_nabrs, itri, iside, jtri, jside)
+        nabrs, itri, iside, jtri, jside)
         implicit none(type, external)
         ! Arguments
-        integer(c_int32_t), intent(in) :: nabrs(:, :)
+        integer(c_int32_t), intent(inout) :: nabrs(:, :)
         integer, intent(in) :: itri, iside, jtri, jside
-        ! Outputs
-        integer(c_int32_t), intent(out) :: f_nabrs(:, :)
         ! Local variables
         integer(c_int32_t) :: inabrs(3), jnabrs(3)
         integer :: innabr, jnnabr
-        integer :: inside
+        integer :: inside, inside_i, inside_j
 
-        f_nabrs = nabrs
-        ! Change the 2 triangles
+        ! Preserve both rows and locate reciprocal outside-neighbour
+        ! entries before changing the neighbour table.
         inabrs = nabrs(:, itri)
         jnabrs = nabrs(:, jtri)
-        f_nabrs(:, itri) = &
-            [jnabrs(modshift(jside, 1, 3)), jtri, &
-             inabrs(modshift(iside, 2, 3))]
-        f_nabrs(:, jtri) = &
-            [jnabrs(modshift(jside, 2, 3)), &
-             inabrs(modshift(iside, 1, 3)), itri]
-
-        ! This outside neighbour moves from jtri to itri
         innabr = jnabrs(modshift(jside, 1, 3))
+        jnnabr = inabrs(modshift(iside, 1, 3))
+        inside_i = 0
+        inside_j = 0
         if (innabr /= no_neighbour) then
             do inside = 1, 3
                 if (nabrs(inside, innabr) == jtri) then
-                    f_nabrs(inside, innabr) = itri
+                    inside_i = inside
                     exit
                 end if
             end do
         end if
-        ! This outside neighbour moves from itri to jtri
-        jnnabr = inabrs(modshift(iside, 1, 3))
         if (jnnabr /= no_neighbour) then
             do inside = 1, 3
                 if (nabrs(inside, jnnabr) == itri) then
-                    f_nabrs(inside, jnnabr) = jtri
+                    inside_j = inside
                     exit
                 end if
             end do
         end if
+
+        ! Change the two incident triangles.
+        nabrs(:, itri) = &
+            [jnabrs(modshift(jside, 1, 3)), jtri, &
+             inabrs(modshift(iside, 2, 3))]
+        nabrs(:, jtri) = &
+            [jnabrs(modshift(jside, 2, 3)), &
+             inabrs(modshift(iside, 1, 3)), itri]
+
+        ! Update the reciprocal entries in the outside neighbours.
+        if (inside_i > 0) nabrs(inside_i, innabr) = itri
+        if (inside_j > 0) nabrs(inside_j, jnnabr) = jtri
     end subroutine update_flipped_neighbours
 
-    pure subroutine flip_triangle_edge( &
-        vtxs, triangles, nabrs, f_triangles, f_nabrs, &
-        nvtxs, ntris, itri, iside, err_code)
+    !> Tests if a quadrilateral span by
+    !! ***a***-***c***-***b***-***d*** (i.e. ***a*** & ***b*** are
+    !! opposites, and so are ***c*** & ***d***) is convex.
+    pure logical function is_convex(a, b, c, d) result(flag)
         implicit none(type, external)
         ! Arguments
-        integer, intent(in) :: nvtxs, ntris
-        integer(c_int32_t), intent(in) :: vtxs(2, nvtxs)
-        integer(c_int32_t), intent(in) :: triangles(3, ntris)
-        integer(c_int32_t), intent(in) :: nabrs(3, ntris)
-        integer, intent(in) :: itri, iside
-        ! Outputs
-        integer(c_int32_t), intent(out) :: f_triangles(3, ntris)
-        integer(c_int32_t), intent(out) :: f_nabrs(3, ntris)
-        integer, intent(out) :: err_code
+        integer(c_int32_t), intent(in) :: a(2), b(2), c(2), d(2)
         ! Local variables
-        integer :: jtri, jside
-        integer(c_int32_t) :: p, q, u, v
         integer(c_int64_t) :: orient_u, orient_v
 
-        err_code = ERR_NO_ERROR
+        orient_u = orient_v2(a, b, c)
+        orient_v = orient_v2(a, b, d)
 
-        if ((itri < 1) .or. (itri > ntris)) then
-            err_code = ERR_INVALID_INPUT
+        if ((orient_u == 0) .or. (orient_v == 0)) then
+            ! Degenerate triangle (collinear)
+            flag = .false.
             return
-        elseif ((iside < 1) .or. (iside > 3)) then
-            err_code = ERR_INVALID_INPUT
+        elseif ((orient_u > 0) .eqv. (orient_v > 0)) then
+            ! Not convex, or they should have opposite signs
+            flag = .false.
             return
         end if
 
-        ! Find the triangle/side sharing the edge
+        flag = .true.
+    end function is_convex
+
+    pure subroutine find_edge_sharing_triangle( &
+        nabrs, itri, iside, jtri, jside, err_code)
+        implicit none(type, external)
+        ! Arguments
+        integer(c_int32_t), intent(in) :: nabrs(:, :)
+        integer, intent(in) :: itri, iside
+        integer, intent(out) :: jtri, jside
+        integer, intent(out) :: err_code
+
+        err_code = ERR_NO_ERROR
         jtri = nabrs(iside, itri)
-        if (jtri < 1) then
+        if (jtri < lbound(nabrs, 2) .or. jtri > ubound(nabrs, 2)) then
             err_code = ERR_COMPUTATION_FAILURE
             return
         end if
@@ -520,6 +529,44 @@ contains
                 return
             end if
         end do
+    end subroutine find_edge_sharing_triangle
+
+    !> Flips an interior triangle edge in a convex quadrilateral.
+    !!
+    !! Notes
+    !! -----
+    !! The new edge is always at the 2nd position in the i-th
+    !! triangle (opposite from the second vertex) and the 3rd
+    !! position in the other triangle.
+    pure subroutine flip_triangle_edge( &
+        vtxs, triangles, nabrs, nvtxs, ntris, itri, iside, changes, err_code)
+        implicit none(type, external)
+        ! Arguments
+        integer, intent(in) :: nvtxs, ntris
+        integer(c_int32_t), intent(in) :: vtxs(2, nvtxs)
+        integer(c_int32_t), intent(inout) :: triangles(3, ntris)
+        integer(c_int32_t), intent(inout) :: nabrs(3, ntris)
+        integer, intent(in) :: itri, iside
+        ! Outputs
+        integer(c_int32_t), intent(out) :: changes(4, 4)
+        integer, intent(out) :: err_code
+        ! Local variables
+        integer :: jtri, jside
+        integer(c_int32_t) :: p, q, u, v
+
+        err_code = ERR_NO_ERROR
+
+        if ((itri < 1) .or. (itri > ntris)) then
+            err_code = ERR_INVALID_INPUT
+            return
+        elseif ((iside < 1) .or. (iside > 3)) then
+            err_code = ERR_INVALID_INPUT
+            return
+        end if
+
+        ! Find the triangle/side sharing the edge
+        call find_edge_sharing_triangle(nabrs, itri, iside, jtri, jside, err_code)
+        if (err_code /= ERR_NO_ERROR) return
 
         ! Find the vertices
         p = triangles(iside, itri)
@@ -527,26 +574,24 @@ contains
         u = triangles(modshift(iside, 1, 3), itri)
         v = triangles(modshift(iside, 2, 3), itri)
 
-        orient_u = orient_v2(vtxs(:, p), vtxs(:, q), vtxs(:, u))
-        orient_v = orient_v2(vtxs(:, p), vtxs(:, q), vtxs(:, v))
         ! Check the edge is actually flippable
-        if ((orient_u == 0) .or. (orient_v == 0)) then
-            ! Degenerate triangle (collinear)
-            err_code = ERR_COMPUTATION_FAILURE
-            return
-        elseif ((orient_u > 0) .eqv. (orient_v > 0)) then
-            ! Not convex, or they should have opposite signs
+        if (.not. is_convex(vtxs(:, p), vtxs(:, q), vtxs(:, u), vtxs(:, v))) then
             err_code = ERR_COMPUTATION_FAILURE
             return
         end if
 
         ! Flip the triangles
-        f_triangles = triangles
-        f_triangles(:, itri) = [p, u, q]
-        f_triangles(:, jtri) = [p, q, v]
+        triangles(:, itri) = [p, u, q]
+        triangles(:, jtri) = [p, q, v]
         ! Update the neighbours
         call update_flipped_neighbours( &
-            nabrs, f_nabrs, itri, iside, jtri, jside)
+            nabrs, itri, iside, jtri, jside)
+
+        ! Record the other changed edges
+        changes(:, 1) = [itri, 1, min(u, q), max(u, q)]
+        changes(:, 2) = [itri, 3, min(p, u), max(p, u)]
+        changes(:, 3) = [jtri, 2, min(v, p), max(v, p)]
+        changes(:, 4) = [jtri, 1, min(q, v), max(q, v)]
     end subroutine flip_triangle_edge
 
     !> Finds unique interior edges properly crossing a constraint

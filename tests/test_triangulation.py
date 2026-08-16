@@ -5,7 +5,7 @@ This module covers behaviour shared by both backends and native
 input validation and error translation.
 
 Created: 2026-08-12, En-Chi Lee (williameclee@gmail.com)
-Last modified: 2026-08-14, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-16, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
@@ -368,6 +368,7 @@ def test_flip_triangle_edge_replaces_convex_quadrilateral_diagonal(backend):
     vtxs = np.array([[0, 0], [1, 0], [0, 1], [1, 1]], dtype=np.int32)
     triangles = np.array([[0, 1, 2], [1, 3, 2]], dtype=np.int32)
     nabrs = tri_m.find_triangle_neighbours(triangles, backend=backend)
+    input_nabrs = nabrs.copy()
 
     f_triangles, f_nabrs = tri_m.flip_triangle_edge(
         vtxs, triangles, 0, 0, nabrs=nabrs, backend=backend
@@ -376,6 +377,7 @@ def test_flip_triangle_edge_replaces_convex_quadrilateral_diagonal(backend):
     np.testing.assert_array_equal(f_triangles, [[0, 1, 3], [0, 3, 2]])
     np.testing.assert_array_equal(f_nabrs, [[-1, 1, -1], [-1, -1, 0]])
     np.testing.assert_array_equal(triangles, [[0, 1, 2], [1, 3, 2]])
+    np.testing.assert_array_equal(nabrs, input_nabrs)
 
 
 @pytest.mark.parametrize("backend", BACKENDS)

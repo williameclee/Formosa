@@ -1,11 +1,11 @@
 """
-Provides the public API for unconstrained Delaunay triangulation.
+Provides the public API for Delaunay triangulation and constraint recovery.
 
 This module dispatches to the Python or FORTRAN backend and
 normalises native inputs, outputs, and errors.
 
 Created: 2026-08-12, En-Chi Lee (williameclee@gmail.com)
-Last modified: 2026-08-14, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-16, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
@@ -248,17 +248,20 @@ def flip_triangle_edge(
                 )
 
             vtxs_f = np.asfortranarray(vtxs.T, dtype=np.int32)
-            triangles_f = np.asfortranarray(triangles.T, dtype=np.int32) + 1
-            nabrs_f = np.asfortranarray(nabrs.T, dtype=np.int32)
+            triangles_f = np.array(
+                triangles.T, dtype=np.int32, order="F", copy=True
+            )
+            triangles_f += 1
+            nabrs_f = np.array(nabrs.T, dtype=np.int32, order="F", copy=True)
             nabrs_f[nabrs_f >= 0] += 1
-            f_triangles_f, f_nabrs_f, err_code = tri_f.flip_triangle_edge(
+            _, err_code = tri_f.flip_triangle_edge(
                 vtxs_f, triangles_f, nabrs_f, itri + 1, iside + 1
             )
             raise_fortran_error(
                 "flip_triangle_edge", err_code, errors=_TRIANGULATION_ERRORS
             )
-            f_triangles = f_triangles_f.T.astype(NpCanonIndex, order="C") - 1
-            f_nabrs = f_nabrs_f.T.astype(NpCanonIndex, order="C")
+            f_triangles = triangles_f.T.astype(NpCanonIndex, order="C") - 1
+            f_nabrs = nabrs_f.T.astype(NpCanonIndex, order="C")
             f_nabrs[f_nabrs >= 0] -= 1
         case _:
             raise ValueError(f"Unknown backend: {backend}")
