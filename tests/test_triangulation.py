@@ -1,5 +1,5 @@
 """
-Tests the public unconstrained Delaunay triangulation API.
+Tests the public Delaunay triangulation API.
 
 This module covers behaviour shared by both backends and native
 input validation and error translation.
@@ -491,3 +491,148 @@ def test_find_crossing_edges_preserves_mesh_order(backend):
         (2, 1, (1, 6)),
         (3, 0, (2, 6)),
     ]
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_recover_constraint_edge_flips_crossing_diagonal(backend):
+    vtxs = np.array([[0, 0], [1, 0], [0, 1], [1, 1]], dtype=np.int32)
+    triangles = np.array([[0, 1, 2], [1, 3, 2]], dtype=np.int32)
+    input_nabrs = tri_m.find_triangle_neighbours(triangles, backend=backend)
+    exp_input_nabrs = input_nabrs.copy()
+
+    recovered, nabrs = tri_m.recover_constraint_edge(
+        vtxs,
+        triangles,
+        (0, 3),
+        nabrs=input_nabrs,
+        backend=backend,
+    )
+
+    assert np.any(np.any(recovered == 0, axis=1) & np.any(recovered == 3, axis=1))
+    assert recovered.dtype == np.int32
+    assert recovered.flags.c_contiguous
+    assert nabrs.dtype == np.int32
+    assert nabrs.flags.c_contiguous
+    np.testing.assert_array_equal(nabrs, [[-1, 1, -1], [-1, -1, 0]])
+    np.testing.assert_array_equal(triangles, [[0, 1, 2], [1, 3, 2]])
+    np.testing.assert_array_equal(input_nabrs, exp_input_nabrs)
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_recover_constraint_edge_handles_multiple_crossings(backend):
+    vtxs = np.indices((2, 4)).reshape(2, -1).T.astype(np.int32)
+    triangles = np.array(
+        [
+            [0, 4, 5],
+            [0, 5, 1],
+            [1, 5, 6],
+            [1, 6, 2],
+            [2, 6, 7],
+            [2, 7, 3],
+        ],
+        dtype=np.int32,
+    )
+
+    recovered, nabrs = tri_m.recover_constraint_edge(
+        vtxs, triangles, (0, 7), backend=backend
+    )
+
+    assert np.any(np.any(recovered == 0, axis=1) & np.any(recovered == 7, axis=1))
+    assert all(
+        orient_v2(*(vtxs[vtx] for vtx in triangle), backend="python") > 0
+        for triangle in recovered
+    )
+    np.testing.assert_array_equal(
+        nabrs,
+        tri_m.find_triangle_neighbours(recovered, backend=backend),
+    )
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_recover_constraint_edge_allows_neutral_progress_flip(backend):
+    vtxs = np.array(
+        [
+            [10, 73],
+            [12, 44],
+            [14, 65],
+            [14, 87],
+            [26, 16],
+            [26, 54],
+            [28, 10],
+            [30, 43],
+        ],
+        dtype=np.int32,
+    )
+    triangles = np.array(
+        [
+            [0, 1, 2],
+            [0, 2, 3],
+            [2, 1, 5],
+            [3, 2, 5],
+            [1, 4, 7],
+            [5, 1, 7],
+            [4, 6, 7],
+        ],
+        dtype=np.int32,
+    )
+
+    recovered, _ = tri_m.recover_constraint_edge(
+        vtxs, triangles, (0, 6), backend=backend
+    )
+
+    assert np.any(np.any(recovered == 0, axis=1) & np.any(recovered == 6, axis=1))
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_recover_constraint_edge_is_noop_when_edge_exists(backend):
+    vtxs = np.array([[0, 0], [1, 0], [0, 1]], dtype=np.int32)
+    triangles = np.array([[0, 1, 2]], dtype=np.int32)
+
+    recovered, nabrs = tri_m.recover_constraint_edge(
+        vtxs, triangles, (0, 1), backend=backend
+    )
+
+    np.testing.assert_array_equal(recovered, triangles)
+    np.testing.assert_array_equal(nabrs, [[-1, -1, -1]])
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_recover_constraint_edge_does_not_flip_locked_crossing_edge(backend):
+    vtxs = np.array([[0, 0], [1, 0], [0, 1], [1, 1]], dtype=np.int32)
+    triangles = np.array([[0, 1, 2], [1, 3, 2]], dtype=np.int32)
+
+    with pytest.raises(GraphTopologyError):
+        tri_m.recover_constraint_edge(
+            vtxs, triangles, (0, 3), locked_edges={(2, 1)}, backend=backend
+        )
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_recover_constraint_edge_rejects_edge_outside_dented_mesh_boundary(backend):
+    vtxs = np.array([[0, 0], [0, 4], [1, 2], [2, 2]], dtype=np.int32)
+    triangles = np.array([[0, 3, 2], [2, 3, 1]], dtype=np.int32)
+
+    with pytest.raises(GraphTopologyError):
+        tri_m.recover_constraint_edge(vtxs, triangles, (0, 1), backend=backend)
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_exterior_guard_makes_boundary_constraint_recoverable(backend):
+    vtxs = np.array([[0, 0], [0, 4], [2, 2], [-2, 2]], dtype=np.int32)
+    triangles = np.array([[0, 2, 3], [1, 3, 2]], dtype=np.int32)
+
+    recovered, _ = tri_m.recover_constraint_edge(
+        vtxs, triangles, (0, 1), backend=backend
+    )
+    recovered = recovered[np.all(recovered < 3, axis=1)]
+
+    assert np.any(np.any(recovered == 0, axis=1) & np.any(recovered == 1, axis=1))
+    np.testing.assert_array_equal(recovered, [[0, 2, 1]])
+
+
+def test_recover_constraint_edge_rejects_unknown_backend():
+    vtxs = np.array([[0, 0], [1, 0], [0, 1]], dtype=np.int32)
+    triangles = np.array([[0, 1, 2]], dtype=np.int32)
+
+    with pytest.raises(ValueError, match="Unknown backend"):
+        tri_m.recover_constraint_edge(vtxs, triangles, (0, 1), backend="unknown")  # type: ignore

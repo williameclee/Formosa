@@ -5,7 +5,7 @@ This internal module implements incremental Bowyer-Watson
 triangulation for the public meshing API.
 
 Created: 2026-08-12, En-Chi Lee (williameclee@gmail.com)
-Last modified: 2026-08-14, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-16, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
@@ -456,4 +456,153 @@ def _find_crossing_edges(
             itris[crossing], isides[crossing], a_vtx_ids[crossing], b_vtx_ids[crossing]
         )
     ]
+
+
+def _mesh_contains_edge(
+    triangles: NDArray[NpCanonIndex], edge: tuple[int, int]
+) -> bool:
+    """
+    Checks whether a mesh contains a specified edge.
+
+    Parameters
+    ----------
+    triangles : NDArray[NpCanonIndex]
+        Triangle vertex index matrix of shape (F, 3).
+    edge : tuple[int, int]
+        Endpoint indices `(u, v)` defining the target edge.
+
+    Returns
+    -------
+    contains_edge : bool
+        `True` if both endpoints co-occur in at least one triangle, `False` otherwise.
+    """
+    u, v = edge
+    return bool(np.any(np.any(triangles == u, axis=1) & np.any(triangles == v, axis=1)))
+
+
+def _mesh_topology_key(triangles: NDArray[NpCanonIndex]) -> bytes:
+    """
+    Returns a canonical byte representation of a triangle topology.
+    """
+    canonical = np.sort(triangles, axis=1)
+    order = np.lexsort((canonical[:, 2], canonical[:, 1], canonical[:, 0]))
+    return np.ascontiguousarray(canonical[order]).tobytes()
+
+
+def recover_constraint_edge(
+    vtxs: NDArray[NpCoords],
+    triangles: NDArray[NpCanonIndex],
+    edge: tuple[int, int],
+    locked_edges: set[tuple[int, int]] | None = None,
+    nabrs: NDArray[NpCanonIndex] | None = None,
+) -> tuple[NDArray[NpCanonIndex], NDArray[NpCanonIndex]]:
+    """
+    Recovers one constraint as a mesh edge using iterative edge
+    flips.
+
+    Flips may preserve or reduce, but never increase, the number of
+    mesh edges crossing the constraint. Previously visited mesh
+    topologies are tracked to prevent infinite flipping loops.
+    Existing locked edges are preserved and never flipped. The input arrays are not modified.
+
+    Parameters
+    ----------
+    vtxs : NDArray[NpCoords]
+        Vertex coordinate matrix of shape (N, 2).
+    triangles : NDArray[NpCanonIndex]
+        Triangle vertex index matrix of shape (F, 3).
+    edge : tuple[int, int]
+        Endpoint indices `(u, v)` defining the target constraint
+        edge.
+    locked_edges : set[tuple[int, int]] | None
+        Set of canonical edge tuples `(a, b)` with `a < b` that must
+        not be flipped.
+        Default edges is `None`.
+    nabrs : NDArray[NpCanonIndex] | None
+        Triangle neighbour matrix of shape (F, 3). If `None`, it is
+        computed from `triangles`.
+        Default input is `None`.
+
+    Returns
+    -------
+    recovered_triangles : NDArray[NpCanonIndex]
+        Updated triangle vertex index matrix of shape (F, 3).
+    updated_neighbours : NDArray[NpCanonIndex]
+        Updated triangle neighbour matrix of shape (F, 3).
+
+    Raises
+    ------
+    ValueError
+        If `neighbours` is supplied but its shape does not match
+        `triangles`.
+    GraphTopologyError
+        If constraint edge crosses a locked edge, no flippable edge
+        crosses the constraint, or edge flips fail to make progress
+        towards edge recovery.
+    """
+    u, v = map(int, edge)
+
+    target = edge_key(u, v)
+    locked = {edge_key(*locked_edge) for locked_edge in (locked_edges or set())}
+
+    r_triangles = np.array(triangles, dtype=NpCanonIndex, order="C", copy=True)
+    if nabrs is None:
+        nabrs, _ = find_triangle_neighbours(r_triangles)
+    else:
+        nabrs = np.asarray(nabrs)
+        if nabrs.shape != r_triangles.shape:
+            raise ValueError(
+                "Neighbours must have the same shape as triangles, "
+                + f"but got {nabrs.shape} and {r_triangles.shape}."
+            )
+    if _mesh_contains_edge(r_triangles, target):
+        return r_triangles, nabrs
+
+    visited = {_mesh_topology_key(r_triangles)}
+    target_recovered = False
+
+    while not target_recovered:
+        xngs = _find_crossing_edges(vtxs, r_triangles, nabrs, target)
+        if not xngs:
+            raise GraphTopologyError(
+                f"Constraint edge {target} is absent but crosses no flippable mesh edge."
+            )
+
+        locked_xngs = [key for _, _, key in xngs if key in locked]
+        if locked_xngs:
+            raise GraphTopologyError(
+                f"Constraint edge {target} crosses locked mesh edge "
+                + f"{locked_xngs[0]}."
+            )
+
+        progressed = False
+        for itri, iside, _ in xngs:
+            try:
+                f_triangles, f_nabrs = flip_triangle_edge(
+                    vtxs, r_triangles, nabrs, itri, iside
+                )
+            except GraphTopologyError:
+                continue
+
+            f_xngs = _find_crossing_edges(vtxs, f_triangles, f_nabrs, target)
+            f_has_target = _mesh_contains_edge(f_triangles, target)
+            f_key = _mesh_topology_key(f_triangles)
+            if f_key in visited:
+                continue
+            if not f_has_target and len(f_xngs) > len(xngs):
+                continue
+
+            r_triangles = f_triangles
+            nabrs = f_nabrs
+            target_recovered = f_has_target
+            visited.add(f_key)
+            progressed = True
+            break
+
+        if not progressed:
+            raise GraphTopologyError(
+                f"No legal edge flip makes progress recovering constraint {target}."
+            )
+
+    return r_triangles, nabrs
 
