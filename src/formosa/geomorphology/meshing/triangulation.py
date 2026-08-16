@@ -307,6 +307,64 @@ def _find_crossing_edges(
             raise ValueError(f"Unknown backend: {backend}")
 
 
+def _validate_constraint_mesh(
+    vtxs: NDArray[NpCoords], triangles: NDArray[NpCanonIndex]
+) -> None:
+    """Validates mesh inputs shared by constraint-recovery APIs."""
+    if vtxs.ndim != 2 or vtxs.shape[1] != 2:
+        raise ValueError(f"Vertices must have shape (V, 2), but got {vtxs.shape}.")
+    if triangles.ndim != 2 or triangles.shape[1] != 3:
+        raise ValueError(
+            f"Triangles must have shape (F, 3), but got {triangles.shape}."
+        )
+    if not np.issubdtype(triangles.dtype, np.integer):
+        raise TypeError("Triangle vertex IDs must be integers.")
+    if np.any(triangles < 0) or np.any(triangles >= vtxs.shape[0]):
+        raise IndexError("Some triangles reference invalid vertex.")
+
+
+def _validate_constraint_edges(edges: NDArray[NpCanonIndex], nvtxs: int) -> None:
+    """Validates a constraint-edge matrix."""
+    if edges.ndim != 2 or edges.shape[1] != 2:
+        raise ValueError(
+            "Constraint edges must have shape (E, 2), " + f"but got {edges.shape}."
+        )
+    if not np.issubdtype(edges.dtype, np.integer):
+        raise TypeError(
+            "Constraint edge vertex IDs must be integers, " + f"but got {edges.dtype}."
+        )
+    if np.any(edges < 0):
+        raise IndexError("Constraint edge vertex IDs must be non-negative.")
+    if np.any(edges >= nvtxs):
+        raise IndexError("Constraint edge vertex IDs are out of bounds.")
+    if (count := int(np.sum(edges[:, 0] == edges[:, 1]))) > 0:
+        raise ValueError(
+            "Constraint edges cannot be self-edges, " + f"but found {count} self-edges."
+        )
+
+
+def _validate_fortran_constraint_inputs(
+    vtxs: NDArray[NpCoords], triangles: NDArray[NpCanonIndex]
+) -> None:
+    """Validates native integer representation limits."""
+    if not np.issubdtype(vtxs.dtype, np.integer):
+        raise TypeError(
+            "The FORTRAN triangulation backend requires integer coordinates, "
+            + f"but got {vtxs.dtype}."
+        )
+    int32_info = np.iinfo(np.int32)
+    if np.any(vtxs < int32_info.min) or np.any(vtxs > int32_info.max):
+        raise OverflowError(
+            "The FORTRAN triangulation backend requires coordinates "
+            + "representable as int32."
+        )
+    if np.any(triangles >= int32_info.max):
+        raise OverflowError(
+            "The FORTRAN triangulation backend requires vertex IDs "
+            + "smaller than the int32 maximum."
+        )
+
+
 def recover_constraint_edge(
     vtxs: NDArray[NpCoords],
     triangles: NDArray[NpCanonIndex],
@@ -318,17 +376,7 @@ def recover_constraint_edge(
     """Recovers one constraint as a mesh edge using iterative edge flips."""
     vtxs = np.asarray(vtxs)
     triangles = np.asarray(triangles)
-
-    if vtxs.ndim != 2 or vtxs.shape[1] != 2:
-        raise ValueError(f"Vertices must have shape (V, 2), but got {vtxs.shape}.")
-    if triangles.ndim != 2 or triangles.shape[1] != 3:
-        raise ValueError(
-            f"Triangles must have shape (F, 3), but got {triangles.shape}."
-        )
-    if not np.issubdtype(triangles.dtype, np.integer):
-        raise TypeError("Triangle vertex IDs must be integers.")
-    if np.any(triangles < 0) or np.any(triangles >= vtxs.shape[0]):
-        raise IndexError("Some triangles reference invalid vertex.")
+    _validate_constraint_mesh(vtxs, triangles)
 
     edge_array = np.asarray(edge)
     if edge_array.shape != (2,):
@@ -382,27 +430,10 @@ def recover_constraint_edge(
                 nabrs=nabrs,
             )
         case "fortran":
-            if not np.issubdtype(vtxs.dtype, np.integer):
-                raise TypeError(
-                    "The FORTRAN triangulation backend requires integer coordinates, "
-                    + f"but got {vtxs.dtype}."
-                )
-            int32_info = np.iinfo(np.int32)
-            if np.any(vtxs < int32_info.min) or np.any(vtxs > int32_info.max):
-                raise OverflowError(
-                    "The FORTRAN triangulation backend requires coordinates "
-                    + "representable as int32."
-                )
-            if np.any(triangles >= int32_info.max):
-                raise OverflowError(
-                    "The FORTRAN triangulation backend requires vertex IDs "
-                    + "smaller than the int32 maximum."
-                )
+            _validate_fortran_constraint_inputs(vtxs, triangles)
 
             vtxs_f = np.asfortranarray(vtxs.T, dtype=np.int32)
-            triangles_f = np.array(
-                triangles.T, dtype=np.int32, order="F", copy=True
-            )
+            triangles_f = np.array(triangles.T, dtype=np.int32, order="F", copy=True)
             triangles_f += 1
             nabrs_f = np.array(nabrs.T, dtype=np.int32, order="F", copy=True)
             nabrs_f[nabrs_f >= 0] += 1
@@ -424,6 +455,100 @@ def recover_constraint_edge(
             )
             recovered = triangles_f.T.astype(NpCanonIndex, order="C") - 1
             recovered_nabrs = nabrs_f.T.astype(NpCanonIndex, order="C")
+            recovered_nabrs[recovered_nabrs >= 0] -= 1
+        case _:
+            raise ValueError(f"Unknown backend: {backend}")
+
+    return (
+        np.ascontiguousarray(recovered, dtype=NpCanonIndex),
+        np.ascontiguousarray(recovered_nabrs, dtype=NpCanonIndex),
+    )
+
+
+def recover_constraint_edges(
+    vtxs: NDArray[NpCoords],
+    triangles: NDArray[NpCanonIndex],
+    edges: NDArray[NpCanonIndex],
+    backend: Backend = "fortran",
+) -> tuple[NDArray[NpCanonIndex], NDArray[NpCanonIndex]]:
+    """
+    Recovers non-crossing constraints sequentially using edge flips.
+
+    Every recovered constraint is locked before the next is
+    processed. Input arrays are not modified.
+
+    Parameters
+    ----------
+    vtxs : NDArray[int]
+        Vertex coordinate matrix of shape `(V, 2)`.
+    triangles : NDArray[int]
+        Triangle vertex matrix of shape `(F, 3)`.
+    edges : NDArray[int]
+        Constraint vertex pairs of shape `(E, 2)`.
+    backend : {'fortran', 'python'}, optional
+        Computational backend. Default is `'fortran'`.
+
+    Returns
+    -------
+    recovered_triangles : NDArray[int32]
+        Triangle matrix containing every constraint edge.
+    neighbours : NDArray[int32]
+        Updated triangle-neighbour matrix.
+
+    Raises
+    ------
+    GraphTopologyError
+        If a constraint cannot be recovered without changing an
+        earlier constraint.
+    """
+    vtxs = np.asarray(vtxs)
+    triangles = np.asarray(triangles)
+    edges = np.asarray(edges)
+    _validate_constraint_mesh(vtxs, triangles)
+    _validate_constraint_edges(edges, vtxs.shape[0])
+
+    match backend:
+        case "python":
+            recovered, recovered_nabrs = tri_py.recover_constraint_edges(
+                vtxs, triangles, edges
+            )
+        case "fortran":
+            _validate_fortran_constraint_inputs(vtxs, triangles)
+            vtxs_f = np.asfortranarray(vtxs.T, dtype=np.int32)
+            triangles_f = np.array(triangles.T, dtype=np.int32, order="F", copy=True)
+            triangles_f += 1
+            edges_f = np.asfortranarray(edges.T, dtype=np.int32) + 1
+
+            recovered_nabrs_f, failed_edge, err_code = tri_f.recover_constraint_edges(
+                vtxs_f, triangles_f, edges_f
+            )
+            if err_code != 0 and failed_edge > 0:
+                failed_index = int(failed_edge) - 1
+                u, v = map(int, edges[failed_index])
+                target = (min(u, v), max(u, v))
+                try:
+                    raise_fortran_error(
+                        "recover_constraint_edges",
+                        err_code,
+                        errors=_TRIANGULATION_ERRORS,
+                    )
+                except (
+                    GraphTopologyError,
+                    ValueError,
+                    MemoryError,
+                    RuntimeError,
+                ) as exc:
+                    raise type(exc)(
+                        f"Failed to recover constraint edge {failed_index} "
+                        + f"{target}: {exc}"
+                    ) from exc
+            raise_fortran_error(
+                "recover_constraint_edges",
+                err_code,
+                errors=_TRIANGULATION_ERRORS,
+            )
+            recovered = triangles_f.T.astype(NpCanonIndex, order="C") - 1
+            recovered_nabrs = recovered_nabrs_f.T.astype(NpCanonIndex, order="C")
             recovered_nabrs[recovered_nabrs >= 0] -= 1
         case _:
             raise ValueError(f"Unknown backend: {backend}")

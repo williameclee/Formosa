@@ -830,6 +830,8 @@ contains
         integer(c_int32_t) :: new_edge(4)
         integer(c_int32_t) :: changed_edges(4, 4)
 
+        err_code = ERR_NO_ERROR
+
         if (.not. edge_match(faces, xngs(:, ixng))) then
             err_code = ERR_COMPUTATION_FAILURE
             return
@@ -875,6 +877,7 @@ contains
 
         ! Check if the new edge is the constraint, or if it still crosses the constraint
         if (new_edge(3) == minval(edge) .and. new_edge(4) == maxval(edge)) then
+            nedges = nedges + 1
             new_edges(:, nedges) = new_edge
             return
         elseif (xcross(vtxs(:, edge(1)), vtxs(:, edge(2)), vm, vn)) then
@@ -891,7 +894,8 @@ contains
     end subroutine remove_crossing
 
     pure subroutine restore_deluanay_triangulation( &
-        vtxs, faces, nabrs, nvtxs, ntris, edge, err_code)
+        vtxs, faces, nabrs, nvtxs, ntris, edge, edges, nedges, &
+        err_code)
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nvtxs
@@ -900,17 +904,21 @@ contains
         integer(c_int32_t), intent(inout) :: faces(3, ntris)
         integer(c_int32_t), intent(inout) :: nabrs(3, ntris)
         integer(c_int32_t), intent(in) :: edge(2)
+        integer(c_int32_t), intent(inout) :: edges(4, ntris)
+        integer, intent(in) :: nedges
         ! Outputs
         integer, intent(out) :: err_code
         ! Local variables
         integer(c_int32_t) :: changed_edges(4, 4)
-        integer(c_int32_t) :: edges(4, ntris)
-        integer :: iedge, nedges
+        integer :: iedge
         integer(c_int32_t) :: vk(2), vl(2), vm(2), vn(2)
         integer :: k, l, m, n
         integer :: jside
         integer :: itri, iside, jtri
         logical :: swapped
+
+        err_code = ERR_NO_ERROR
+
         do
             swapped = .false.
             do iedge = 1, nedges
@@ -1017,6 +1025,7 @@ contains
                 vtxs, faces, nabrs, nvtxs, ntris, edge, &
                 xngs, nxngs, ixng, new_edges, nedges, nfailed, &
                 err_code)
+            if (err_code /= ERR_NO_ERROR) return
             ! Exit if the constraint is recovered
             if (new_edges(3, nedges) == minval(edge) .and. &
                 new_edges(4, nedges) == maxval(edge)) exit
@@ -1031,6 +1040,44 @@ contains
 
         ! Loop through all new edges to check their Deluanay condition
         call restore_deluanay_triangulation( &
-            vtxs, faces, nabrs, nvtxs, ntris, edge, err_code)
+            vtxs, faces, nabrs, nvtxs, ntris, edge, new_edges, &
+            nedges, err_code)
     end subroutine recover_constraint_edge
+
+    !> Recovers non-crossing constraint edges sequentially while
+    !! preserving every earlier constraint.
+    pure subroutine recover_constraint_edges( &
+        vtxs, nvtxs, faces, ntris, edges, nedges, nabrs, &
+        failed_edge, err_code)
+        implicit none(type, external)
+        ! Arguments
+        integer, intent(in) :: nvtxs, ntris, nedges
+        integer(c_int32_t), intent(in) :: vtxs(2, nvtxs)
+        integer(c_int32_t), intent(inout) :: faces(3, ntris)
+        integer(c_int32_t), intent(in) :: edges(2, nedges)
+        ! Outputs
+        integer(c_int32_t), intent(out) :: nabrs(3, ntris)
+        integer, intent(out) :: failed_edge
+            !! One-based position of the failed constraint, or zero
+            !! when all constraints were recovered.
+        integer, intent(out) :: err_code
+        ! Local variables
+        integer :: iedge
+
+        failed_edge = 0
+        err_code = ERR_NO_ERROR
+
+        call find_triangle_neighbours(ntris, faces, nabrs, err_code)
+        if (err_code /= ERR_NO_ERROR) return
+
+        do iedge = 1, nedges
+            call recover_constraint_edge( &
+                vtxs, nvtxs, faces, nabrs, ntris, edges(:, iedge), &
+                edges(:, :iedge - 1), iedge - 1, err_code)
+            if (err_code /= ERR_NO_ERROR) then
+                failed_edge = iedge
+                return
+            end if
+        end do
+    end subroutine recover_constraint_edges
 end module meshing_triangulation

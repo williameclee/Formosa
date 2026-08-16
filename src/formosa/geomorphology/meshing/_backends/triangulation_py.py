@@ -606,3 +606,70 @@ def recover_constraint_edge(
 
     return r_triangles, nabrs
 
+
+def recover_constraint_edges(
+    vtxs: NDArray[NpCoords],
+    triangles: NDArray[NpCanonIndex],
+    edges: NDArray[NpCanonIndex],
+) -> tuple[NDArray[NpCanonIndex], NDArray[NpCanonIndex]]:
+    """
+    Recovers a set of non-crossing constraint edges in a triangulation.
+
+    Constraints are recovered sequentially using edge flips. Each successfully
+    recovered edge is added to a locked set so subsequent recovery steps
+    do not alter or remove it. The input arrays are not modified.
+
+    Parameters
+    ----------
+    vtxs : NDArray[NpCoords]
+        Vertex coordinate matrix of shape (N, 2).
+    triangles : NDArray[NpCanonIndex]
+        Triangle vertex index matrix of shape (F, 3).
+    edges : NDArray[NpCanonIndex]
+        Constraint edge matrix of shape (E, 2) containing vertex index pairs.
+
+    Returns
+    -------
+    recovered_triangles : NDArray[NpCanonIndex]
+        Updated triangle vertex index matrix of shape (F, 3).
+    updated_neighbours : NDArray[NpCanonIndex]
+        Updated triangle neighbour matrix of shape (F, 3).
+
+    Raises
+    ------
+    GraphTopologyError
+        If any constraint edge fails to recover or is absent from
+        the final mesh topology.
+    """
+    recovered = np.array(triangles, dtype=NpCanonIndex, order="C", copy=True)
+    nabrs, edge_owners = find_triangle_neighbours(recovered)
+    initial_mesh_edges = set(edge_owners)
+    locked: set[tuple[int, int]] = set()
+
+    for iedge, edge in enumerate(edges):
+        target = edge_key(int(edge[0]), int(edge[1]))
+        if target in initial_mesh_edges or target in locked:
+            locked.add(target)
+            continue
+        try:
+            recovered, nabrs = recover_constraint_edge(
+                vtxs,
+                recovered,
+                target,
+                locked_edges=locked,
+                nabrs=nabrs,
+            )
+        except (GraphTopologyError, IndexError, ValueError) as exc:
+            raise type(exc)(
+                f"Failed to recover constraint edge {iedge} {target}: {exc}"
+            ) from exc
+        locked.add(target)
+
+    _, edge_owners = find_triangle_neighbours(recovered)
+    missing = [edge for edge in locked if edge not in edge_owners]
+    if missing:
+        raise GraphTopologyError(
+            f"Recovered constraint edge {missing[0]} is absent from the final mesh."
+        )
+
+    return recovered, nabrs

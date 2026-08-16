@@ -636,3 +636,92 @@ def test_recover_constraint_edge_rejects_unknown_backend():
 
     with pytest.raises(ValueError, match="Unknown backend"):
         tri_m.recover_constraint_edge(vtxs, triangles, (0, 1), backend="unknown")  # type: ignore
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_recover_constraint_edges_recovers_and_preserves_every_edge(backend):
+    vtxs = np.indices((2, 4)).reshape(2, -1).T.astype(np.int32)
+    triangles = np.array(
+        [
+            [0, 4, 5],
+            [0, 5, 1],
+            [1, 5, 6],
+            [1, 6, 2],
+            [2, 6, 7],
+            [2, 7, 3],
+        ],
+        dtype=np.int32,
+    )
+    edges = np.array([[1, 4], [2, 5], [3, 6]], dtype=np.int32)
+
+    recovered, neighbours = tri_m.recover_constraint_edges(
+        vtxs, triangles, edges, backend=backend
+    )
+
+    mesh_edges, _ = _mesh_edges(recovered)
+    mesh_edge_set = {tuple(map(int, edge)) for edge in mesh_edges}
+    assert {tuple(sorted(map(int, edge))) for edge in edges} <= mesh_edge_set
+    np.testing.assert_array_equal(
+        neighbours,
+        tri_m.find_triangle_neighbours(recovered, backend=backend),
+    )
+    np.testing.assert_array_equal(
+        triangles,
+        [[0, 4, 5], [0, 5, 1], [1, 5, 6], [1, 6, 2], [2, 6, 7], [2, 7, 3]],
+    )
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_recover_constraint_edges_accepts_empty_constraint_set(backend):
+    vtxs = np.array([[0, 0], [1, 0], [0, 1]], dtype=np.int32)
+    triangles = np.array([[0, 1, 2]], dtype=np.int32)
+
+    recovered, neighbours = tri_m.recover_constraint_edges(
+        vtxs,
+        triangles,
+        np.empty((0, 2), dtype=np.int32),
+        backend=backend,
+    )
+
+    np.testing.assert_array_equal(recovered, triangles)
+    np.testing.assert_array_equal(neighbours, [[-1, -1, -1]])
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_recover_constraint_edges_reports_failing_edge_position(backend):
+    vtxs = np.array([[0, 0], [1, 0], [0, 1], [1, 1]], dtype=np.int32)
+    triangles = np.array([[0, 1, 2], [1, 3, 2]], dtype=np.int32)
+    edges = np.array([[1, 2], [0, 3]], dtype=np.int32)
+
+    with pytest.raises(GraphTopologyError, match=r"constraint edge 1 \(0, 3\)"):
+        tri_m.recover_constraint_edges(vtxs, triangles, edges, backend=backend)
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+@pytest.mark.parametrize(
+    "edges, error, message",
+    [
+        (np.array([0, 1], dtype=np.int32), ValueError, r"shape \(E, 2\)"),
+        (np.array([[0.0, 1.0]]), TypeError, "must be integers"),
+        (np.array([[-1, 1]], dtype=np.int32), IndexError, "non-negative"),
+        (np.array([[0, 3]], dtype=np.int32), IndexError, "out of bounds"),
+        (np.array([[1, 1]], dtype=np.int32), ValueError, "1 self-edges"),
+    ],
+)
+def test_recover_constraint_edges_rejects_invalid_edge_arrays(
+    backend, edges, error, message
+):
+    vtxs = np.array([[0, 0], [1, 0], [0, 1]], dtype=np.int32)
+    triangles = np.array([[0, 1, 2]], dtype=np.int32)
+
+    with pytest.raises(error, match=message):
+        tri_m.recover_constraint_edges(vtxs, triangles, edges, backend=backend)
+
+
+def test_recover_constraint_edges_rejects_unknown_backend():
+    vtxs = np.array([[0, 0], [1, 0], [0, 1]], dtype=np.int32)
+    triangles = np.array([[0, 1, 2]], dtype=np.int32)
+    edges = np.empty((0, 2), dtype=np.int32)
+
+    with pytest.raises(ValueError, match="Unknown backend"):
+        tri_m.recover_constraint_edges(vtxs, triangles, edges, backend="unknown")  # type: ignore
