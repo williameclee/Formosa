@@ -2,7 +2,7 @@
 Verifies line-segment intersection parity across configured
 backends.
 
-Last modified: 2026-08-12, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
 """
 
 import pytest
@@ -47,10 +47,10 @@ from formosa.geomorphology.geometry.intersections import IntersectionKind
     ],
 )
 def test_intersection_parity(l1a, l1b, l2a, l2b, exp_flag, backend):
-    flag: int = intx_m.lines_intersect_v2(l1a, l1b, l2a, l2b, backend=backend)
+    flag: int = intx_m.lines_intersect(l1a, l1b, l2a, l2b, backend=backend)
     assert flag == exp_flag
     # Flip the segments; result should be the same
-    flag: int = intx_m.lines_intersect_v2(l2a, l2b, l1a, l1b, backend=backend)
+    flag: int = intx_m.lines_intersect(l2a, l2b, l1a, l1b, backend=backend)
     assert flag == exp_flag
 
 
@@ -60,7 +60,7 @@ def test_intersection_parity(l1a, l1b, l2a, l2b, exp_flag, backend):
     [
         (intx_m.on_segment, ((0, 0), (2, 0), (1, 0)), True),
         (intx_m.bboxes_overlap, ((0, 0), (2, 2), (1, 1), (3, 3)), True),
-        (intx_m.lines_intersect_v2, ((0, 0), (1, 1), (1, 0), (0, 1)), 1),
+        (intx_m.lines_intersect, ((0, 0), (1, 1), (1, 0), (0, 1)), 1),
     ],
 )
 def test_public_wrappers_select_backend(backend, function, args, expected):
@@ -114,16 +114,16 @@ def test_public_wrappers_select_backend(backend, function, args, expected):
     ],
 )
 def test_orientv2(p1, p2, p3, exp_det, is_float, backend):
-    det = intx_m.orient_v2(p1, p2, p3, backend=backend)
+    det = intx_m.orient(p1, p2, p3, backend=backend)
     if is_float:
         assert det == pytest.approx(exp_det, rel=1e-6, abs=1e-7)
         assert isinstance(det, float)
-        assert intx_m.orient_v2(p1, p3, p2, backend=backend) == pytest.approx(
+        assert intx_m.orient(p1, p3, p2, backend=backend) == pytest.approx(
             -exp_det, rel=1e-6, abs=1e-7
         )
     else:
         assert det == exp_det
-        assert intx_m.orient_v2(p1, p3, p2, backend=backend) == -exp_det
+        assert intx_m.orient(p1, p3, p2, backend=backend) == -exp_det
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
@@ -134,7 +134,7 @@ def test_integer_predicates_int64(backend):
     c = translation + np.array((0, 2), dtype=np.int64)
     p = translation + np.array((1, 1), dtype=np.int64)
 
-    assert intx_m.orient_v2(a, b, c, backend=backend) == 4
+    assert intx_m.orient(a, b, c, backend=backend) == 4
     assert intx_m.incircle(a, b, c, p, backend=backend) == 8
 
 
@@ -144,7 +144,7 @@ def test_fortran_int32_predicates_saturate_before_narrowing():
     c = np.array((0, 50_000), dtype=np.int32)
     p = np.array((25_000, 25_000), dtype=np.int32)
 
-    assert intx_m.intx_f.orient_v2_int32(a, b, c) == np.iinfo(np.int32).max
+    assert intx_m.intx_f.orient_int32(a, b, c) == np.iinfo(np.int32).max
     assert intx_m.intx_f.incircle_int32(a, b, c, p) == np.iinfo(np.int32).max
 
 
@@ -155,8 +155,8 @@ def test_orientv2_float_translation_invariance(backend):
     p3 = np.array((2.0, 4.25))
     translation = np.array((10.125, -7.75))
 
-    determinant = intx_m.orient_v2(p1, p2, p3, backend=backend)
-    translated = intx_m.orient_v2(
+    determinant = intx_m.orient(p1, p2, p3, backend=backend)
+    translated = intx_m.orient(
         p1 + translation, p2 + translation, p3 + translation, backend=backend
     )
 
@@ -170,15 +170,15 @@ def test_orientv2_float_quadratic_scaling(backend, scale):
     p2 = np.array((2.0, -0.75))
     p3 = np.array((4.5, 3.0))
 
-    determinant = intx_m.orient_v2(p1, p2, p3, backend=backend)
-    scaled = intx_m.orient_v2(scale * p1, scale * p2, scale * p3, backend=backend)
+    determinant = intx_m.orient(p1, p2, p3, backend=backend)
+    scaled = intx_m.orient(scale * p1, scale * p2, scale * p3, backend=backend)
 
     assert scaled == pytest.approx(scale * scale * determinant, rel=1e-6, abs=1e-6)
 
 
 def test_orientv2_unknown_backend():
     with pytest.raises(ValueError, match="Unsupported backend"):
-        intx_m.orient_v2((0, 0), (1, 0), (1, 1), backend="unknown")  # type: ignore
+        intx_m.orient((0, 0), (1, 0), (1, 1), backend="unknown")  # type: ignore
 
 
 @pytest.mark.parametrize(
@@ -191,7 +191,7 @@ def test_orientv2_unknown_backend():
 )
 def test_public_wrapper_validates_points(point, error):
     with pytest.raises(error):
-        intx_m.orient_v2(point, (1, 0), (1, 1), backend="python")
+        intx_m.orient(point, (1, 0), (1, 1), backend="python")
 
 
 @pytest.mark.parametrize("backend", BACKENDS)

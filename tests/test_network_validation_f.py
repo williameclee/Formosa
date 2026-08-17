@@ -1,7 +1,7 @@
 """
-Tests flow-graph topology validation using the FORTRAN backend.
+Tests flow-graph topology validation using the Fortran backend.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
 """
 
 import pytest
@@ -39,7 +39,7 @@ def _make_separated_x_pairs(
 
 def test_locate_invalid_graph_topology_retries_after_buffer_overflow():
     """
-    The public FORTRAN backend returns all results after provisional overflow.
+    The public Fortran backend returns all results after provisional overflow.
     """
     vertices, endpts = _make_separated_x_pairs()
 
@@ -64,7 +64,7 @@ def _scan_topology_with_capacity(
     capacity: int,
 ) -> tuple[np.ndarray, int, int]:
     """
-    Call the low-level scanner after converting arrays to its FORTRAN layout.
+    Call the low-level scanner after converting arrays to its Fortran layout.
     """
     vertices_f = np.asfortranarray(vertices.T, dtype=np.float32)
     endpts_f = np.asfortranarray(endpts.T + 1, dtype=np.int32)
@@ -101,28 +101,28 @@ def test_topology_scanner_capacity_boundaries(capacity):
         vertices, endpts, backend="fortran"
     )
     assert public_intxs is not None
-    expected_stored = public_intxs[:nstored].T.copy()
-    expected_stored[:-1] += 1
-    np.testing.assert_array_equal(intxs[:, :nstored], expected_stored)
+    exp_stored = public_intxs[:nstored].T.copy()
+    exp_stored[:-1] += 1
+    np.testing.assert_array_equal(intxs[:, :nstored], exp_stored)
 
 
 def test_topology_scanner_empty_input_initialises_outputs():
     """
     An empty graph produces initialized scanner outputs and public `None`.
     """
-    vertices = np.empty((0, 2), dtype=np.float32)
+    vtxs = np.empty((0, 2), dtype=np.float32)
     endpts = np.empty((0, 2), dtype=np.int32)
-    intxs, nintxs, err_code = _scan_topology_with_capacity(vertices, endpts, capacity=3)
+    intxs, nintxs, err_code = _scan_topology_with_capacity(vtxs, endpts, capacity=3)
 
     assert err_code == 0
     assert nintxs == 0
     assert intxs.shape == (5, 3)
-    assert (
-        val_m.locate_invalid_graph_topology(vertices, endpts, backend="fortran") is None
-    )
+    assert val_m.locate_invalid_graph_topology(vtxs, endpts, backend="fortran") is None
 
 
-def test_topology_wrapper_uses_single_scan_when_capacity_is_sufficient(monkeypatch: pytest.MonkeyPatch):
+def test_topology_wrapper_uses_single_scan_when_capacity_is_sufficient(
+    monkeypatch: pytest.MonkeyPatch,
+):
     """
     The wrapper avoids retrying when its provisional buffer is sufficient.
     """
@@ -145,7 +145,9 @@ def test_topology_wrapper_uses_single_scan_when_capacity_is_sufficient(monkeypat
     np.testing.assert_array_equal(intxs, [[0, 1, 0, 2, 1]])
 
 
-def test_topology_wrapper_retries_with_exact_reported_capacity(monkeypatch: pytest.MonkeyPatch):
+def test_topology_wrapper_retries_with_exact_reported_capacity(
+    monkeypatch: pytest.MonkeyPatch,
+):
     """
     An overflow retry uses the total reported by the provisional scan.
     """
@@ -174,7 +176,9 @@ def test_topology_wrapper_retries_with_exact_reported_capacity(monkeypatch: pyte
     assert intxs.shape == (5, 5)
 
 
-def test_topology_wrapper_rejects_inconsistent_retry_count(monkeypatch: pytest.MonkeyPatch):
+def test_topology_wrapper_rejects_inconsistent_retry_count(
+    monkeypatch: pytest.MonkeyPatch,
+):
     """
     A changed count during the deterministic retry raises an error.
     """
@@ -202,12 +206,14 @@ def test_topology_wrapper_rejects_inconsistent_retry_count(monkeypatch: pytest.M
     ("err_code", "exception"),
     [(1, ValueError), (2, MemoryError), (99, RuntimeError)],
 )
-def test_topology_wrapper_translates_scanner_errors(monkeypatch: pytest.MonkeyPatch, err_code, exception):
+def test_topology_wrapper_translates_scanner_errors(
+    monkeypatch: pytest.MonkeyPatch, err_code, exception
+):
     """
     Scanner status codes map to the documented Python exceptions.
     """
 
-    def fake_scan(vertex_ijs, arc_endpts, capacity):
+    def fake_scan(vtxs, arc_endpts, capacity):
         return np.empty((5, capacity), dtype=np.int32), 0, err_code
 
     monkeypatch.setattr(

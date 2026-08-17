@@ -3,10 +3,10 @@ Evaluates two-dimensional geometric predicates.
 
 This module exposes the public orientation, in-circle, and
 line-segment intersection API. It dispatches calculations to the
-internal Python or FORTRAN backend and selects C-interoperable
+internal Python or Fortran backend and selects C-interoperable
 integer overloads where possible.
 
-Last modified: 2026-08-12, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
@@ -38,7 +38,7 @@ def _point(value: ArrayLike, name: str) -> NDArray[NpReal]:
 
 def _fortran_point(value: NDArray[NpReal]) -> NDArray[np.float32]:
     """
-    Converts a point to the representation consumed by the FORTRAN
+    Converts a point to the representation consumed by the Fortran
     backend.
     """
     return np.asarray(value, dtype=np.float32, order="F")
@@ -65,13 +65,13 @@ def _fint_points(
     points: tuple[NDArray[NpReal], ...], dtype: np.dtype
 ) -> tuple[NDArray[np.integer], ...]:
     """
-    Converts integer points to a C-interoperable FORTRAN
+    Converts integer points to a C-interoperable Fortran
     representation.
     """
     return tuple(np.asarray(point, dtype=dtype, order="F") for point in points)
 
 
-def orient_v2(
+def orient(
     p1: ArrayLike, p2: ArrayLike, p3: ArrayLike, backend: Backend = "fortran"
 ) -> Real:
     """
@@ -113,7 +113,7 @@ def orient_v2(
 
     Notes
     -----
-    The Python backend uses exact integer arithmetic. The FORTRAN
+    The Python backend uses exact integer arithmetic. The Fortran
     backend uses double-precision intermediates for integer inputs
     and same-kind saturating results. If a 32-bit result saturates,
     this wrapper retries the calculation using the 64-bit overload.
@@ -124,22 +124,22 @@ def orient_v2(
     points = (_point(p1, "p1"), _point(p2, "p2"), _point(p3, "p3"))
     match backend:
         case "python":
-            return intxs_py.orient_v2(*points)
+            return intxs_py.orient(*points)
         case "fortran":
             match _dint_dtype(points):
                 case dtype if dtype == np.dtype(np.int32):
-                    det = intx_f.orient_v2_int32(
+                    det = intx_f.orient_int32(
                         *_fint_points(points, dtype)  # type: ignore
                     )
                     if det in (np.iinfo(np.int32).min, np.iinfo(np.int32).max):
-                        det = intx_f.orient_v2_int64(
+                        det = intx_f.orient_int64(
                             *_fint_points(points, np.dtype(np.int64))
                         )
                     return det
                 case dtype if dtype == np.dtype(np.int64):
-                    return intx_f.orient_v2_int64(*_fint_points(points, dtype))  # type: ignore
+                    return intx_f.orient_int64(*_fint_points(points, dtype))  # type: ignore
                 case _:
-                    return float(intx_f.orient_v2_real(*map(_fortran_point, points)))
+                    return float(intx_f.orient_real(*map(_fortran_point, points)))
         case _:
             raise ValueError(f"Unsupported backend {backend!r}.")
 
@@ -203,7 +203,7 @@ def incircle(
 
     Notes
     -----
-    The Python backend uses exact integer arithmetic. The FORTRAN
+    The Python backend uses exact integer arithmetic. The Fortran
     backend uses double-precision intermediates for integer inputs
     and same-kind saturating results. If a 32-bit result saturates,
     this wrapper retries the calculation using the 64-bit overload.
@@ -239,12 +239,12 @@ def incircle(
     if not oriented:
         return det
 
-    orient = orient_v2(a, b, c, backend=backend)
-    if orient == 0:
+    o = orient(a, b, c, backend=backend)
+    if o == 0:
         raise ValueError(
             "Cannot normalise an in-circle determinant for a collinear triangle."
         )
-    return det if orient > 0 else -det
+    return det if o > 0 else -det
 
 
 def on_segment(
@@ -327,7 +327,7 @@ def bboxes_overlap(
             raise ValueError(f"Unsupported backend {backend!r}.")
 
 
-def lines_intersect_v2(
+def lines_intersect(
     l1a: ArrayLike,
     l1b: ArrayLike,
     l2a: ArrayLike,
@@ -375,8 +375,8 @@ def lines_intersect_v2(
     )
     match backend:
         case "python":
-            return int(intxs_py.lines_intersect_v2(*points))
+            return int(intxs_py.lines_intersect(*points))
         case "fortran":
-            return int(intx_f.lines_intersect_v2(*map(_fortran_point, points)))
+            return int(intx_f.lines_intersect(*map(_fortran_point, points)))
         case _:
             raise ValueError(f"Unsupported backend {backend!r}.")

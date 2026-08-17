@@ -15,37 +15,38 @@ module meshing_triangulation
                      ERR_ALLOCATION_FAILURE, ERR_OVERFLOW, &
                      ERR_COMPUTATION_FAILURE
     use utils, only: mod1, modshift
-    use intersections, only: incircle, orient_v2, xcross, xcross_orient
+    use intersections, only: incircle, orient, xcross, xcross_orient
     private :: make_initial_facets, insert_vertex, toggle_edge
-    private :: find_triangle_side_neighbour
+    private :: find_facet_side_neighbour
     private :: update_flipped_neighbours
     private :: edge_locked, edge_match, update_edge_record
-    private :: remove_crossing, restore_deluanay_triangulation
+    private :: remove_crossing, restore_Delaunay_triangulation
     ! Moule variables
-    integer(c_int32_t), parameter :: no_neighbour = -1
+    integer(c_int32_t), parameter :: no_nabr = -1
 contains
-    pure subroutine make_initial_facets(vtxs, facets, seeds, iinf, err_code)
+    pure subroutine make_initial_facets( &
+        vtxs, faces, seeds, iinf, err_code)
         implicit none(type, external)
         ! Arguments
         integer(c_int32_t), intent(in) :: vtxs(:, :)
             !! 2D index coordinates of the vertices.
         ! Outputs
-        integer(c_int32_t), intent(out) :: facets(:, :)
+        integer(c_int32_t), intent(out) :: faces(:, :)
         integer(c_int32_t), intent(out) :: seeds(3)
         integer(c_int32_t), intent(out) :: iinf
         integer, intent(out) :: err_code
         ! Local variables
         integer(c_int32_t) :: ivtx, jvtx
-        integer(c_int32_t) :: orient
-        integer(c_int32_t) :: facet(3)
+        integer(c_int32_t) :: o
+        integer(c_int32_t) :: face(3)
 
         err_code = ERR_NO_ERROR
 
         ! Find the first facet
         ivtx = 0
         do jvtx = 3, size(vtxs, 2)
-            orient = orient_v2(vtxs(:, 1), vtxs(:, 2), vtxs(:, jvtx))
-            if (orient /= 0) then
+            o = orient(vtxs(:, 1), vtxs(:, 2), vtxs(:, jvtx))
+            if (o /= 0) then
                 ivtx = jvtx
                 exit
             end if
@@ -55,7 +56,7 @@ contains
             ! All vertices are collinear
             err_code = ERR_COMPUTATION_FAILURE
             return
-        elseif (size(facets, 2) < 4) then
+        elseif (size(faces, 2) < 4) then
             ! Not enough space to store all the triangles
             err_code = ERR_COMPUTATION_FAILURE
             return
@@ -64,15 +65,15 @@ contains
         seeds = [1, 2, ivtx]
         iinf = size(vtxs, 2) + 1
 
-        if (orient > 0) then
-            facet = [1, 2, ivtx]
+        if (o > 0) then
+            face = [1, 2, ivtx]
         else
-            facet = [1, ivtx, 2]
+            face = [1, ivtx, 2]
         end if
-        facets(:, 1) = facet
-        facets(:, 2) = [iinf, facet(2), facet(1)]
-        facets(:, 3) = [iinf, facet(3), facet(2)]
-        facets(:, 4) = [iinf, facet(1), facet(3)]
+        faces(:, 1) = face
+        faces(:, 2) = [iinf, face(2), face(1)]
+        faces(:, 3) = [iinf, face(3), face(2)]
+        faces(:, 4) = [iinf, face(1), face(3)]
     end subroutine make_initial_facets
 
     !> Tests whether a triangle belongs to an insertion cavity.
@@ -80,28 +81,29 @@ contains
     !! Finite triangles use the in-circle predicate. Facets
     !! containing the symbolic infinite vertex use hull visibility
     !! instead.
-    pure logical function is_bad_facet(tri, ivtx, vtxs, iinf) result(flag)
+    pure logical function is_bad_facet(face, ivtx, vtxs, iinf) &
+        result(flag)
         implicit none(type, external)
         ! Arguments
         integer(c_int32_t), intent(in) :: vtxs(:, :)
             !! Coordinates of the vertices.
-        integer(c_int32_t), intent(in) :: tri(3)
+        integer(c_int32_t), intent(in) :: face(3)
             !! Triangle vertex IDs in counterclockwise order.
         integer(c_int32_t), intent(in) :: ivtx
             !! ID of the candidate vertex being inserted.
         integer(c_int32_t), intent(in) :: iinf
             !! Symbolic infinite-vertex ID.
         ! Local variables
-        integer :: inf_cnt
+        integer :: ninf
         integer :: jinf, jvtx, kvtx
-        integer :: orient
+        integer :: o
 
-        inf_cnt = count(tri == iinf)
+        ninf = count(face == iinf)
 
         ! Base case: no infinite vertex
-        if (inf_cnt == 0) then
+        if (ninf == 0) then
             flag = incircle( &
-                   vtxs(:, tri(1)), vtxs(:, tri(2)), vtxs(:, tri(3)), &
+                   vtxs(:, face(1)), vtxs(:, face(2)), vtxs(:, face(3)), &
                    vtxs(:, ivtx)) > 0
             return
         end if
@@ -109,16 +111,16 @@ contains
         ! Special case: has infinite vertex
         ! Find where the infinite vertex is, and rotate the
         ! triangle
-        if (tri(1) == iinf) jinf = 1
-        if (tri(2) == iinf) jinf = 2
-        if (tri(3) == iinf) jinf = 3
-        jvtx = tri(modulo(jinf, 3) + 1)
-        kvtx = tri(modulo(jinf + 1, 3) + 1)
+        if (face(1) == iinf) jinf = 1
+        if (face(2) == iinf) jinf = 2
+        if (face(3) == iinf) jinf = 3
+        jvtx = face(modulo(jinf, 3) + 1)
+        kvtx = face(modulo(jinf + 1, 3) + 1)
 
-        orient = orient_v2(vtxs(:, jvtx), vtxs(:, kvtx), vtxs(:, ivtx))
-        if (orient > 0) then
+        o = orient(vtxs(:, jvtx), vtxs(:, kvtx), vtxs(:, ivtx))
+        if (o > 0) then
             flag = .true.
-        elseif (orient == 0) then
+        elseif (o == 0) then
             if (min(vtxs(1, jvtx), vtxs(1, kvtx)) <= vtxs(1, ivtx) .and. &
                 vtxs(1, ivtx) <= max(vtxs(1, jvtx), vtxs(1, kvtx)) .and. &
                 min(vtxs(2, jvtx), vtxs(2, kvtx)) <= vtxs(2, ivtx) .and. &
@@ -179,13 +181,13 @@ contains
         edges(:, nedges) = [vtx1, vtx2]
     end subroutine toggle_edge
 
-    !> Inserts one vertex using the Bowyer-Watson cavity operation.
+    !> Inserts 1 vertex using the Bowyer-Watson cavity operation.
     !! Triangles whose circumcircles contain the vertex are replaced
     !! by counterclockwise triangles joining the vertex to the
     !! cavity boundary.
     pure subroutine insert_vertex( &
-        ivtx, vtxs, triangles, ntris, iinf, &
-        bad_tri_ids, edges, err_code)
+        ivtx, vtxs, faces, nfaces, iinf, &
+        bad_faces, edges, err_code)
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: ivtx
@@ -195,55 +197,54 @@ contains
             !! This should include the vertices of the super-
             !! triangle.
         integer(c_int32_t), intent(in) :: iinf
-        integer(c_int32_t), intent(inout) :: triangles(:, :)
+        integer(c_int32_t), intent(inout) :: faces(:, :)
             !! Vertex indices of the triangles
-        integer, intent(inout) :: ntris
+        integer, intent(inout) :: nfaces
             !! Number of triangles actually in the 'triangles'
             !! array.
-        integer, intent(inout) :: bad_tri_ids(size(triangles, 2))
+        integer, intent(inout) :: bad_faces(size(faces, 2))
             !! Workspace containing IDs of triangles in the cavity.
         integer, intent(inout) :: edges(2, size(vtxs, 2))
             !! Workspace containing canonical cavity-boundary edges.
         integer, intent(inout) :: err_code
             !! Shared backend status code.
         ! Local variables
-        integer :: itri, ibadtri
-        integer :: nbadtris
+        integer :: iface, ibadface, nbadfaces
         integer :: nedges, iedge
         integer :: jvtx, kvtx
             !! Endpoint IDs of the current cavity edge.
-        integer(c_int64_t) :: orient
+        integer(c_int64_t) :: o
             !! Signed orientation determinant for a candidate
             !! triangle.
 
         err_code = ERR_NO_ERROR
 
         ! Find triangles whose circumcircle contains the new vertex
-        nbadtris = 0
-        do itri = 1, ntris
-            if (.not. is_bad_facet(triangles(:, itri), ivtx, vtxs, iinf)) cycle
-            nbadtris = nbadtris + 1
-            bad_tri_ids(nbadtris) = itri
+        nbadfaces = 0
+        do iface = 1, nfaces
+            if (.not. is_bad_facet(faces(:, iface), ivtx, vtxs, iinf)) cycle
+            nbadfaces = nbadfaces + 1
+            bad_faces(nbadfaces) = iface
         end do
-        if (nbadtris <= 0) then
+        if (nbadfaces <= 0) then
             err_code = ERR_COMPUTATION_FAILURE
             return
         end if
 
         ! Add bad edges to the buffer
         nedges = 0
-        do ibadtri = 1, nbadtris
-            itri = bad_tri_ids(ibadtri)
+        do ibadface = 1, nbadfaces
+            iface = bad_faces(ibadface)
             call toggle_edge( &
-                triangles(1, itri), triangles(2, itri), &
+                faces(1, iface), faces(2, iface), &
                 edges, nedges, err_code)
             if (err_code /= ERR_NO_ERROR) return
             call toggle_edge( &
-                triangles(2, itri), triangles(3, itri), &
+                faces(2, iface), faces(3, iface), &
                 edges, nedges, err_code)
             if (err_code /= ERR_NO_ERROR) return
             call toggle_edge( &
-                triangles(3, itri), triangles(1, itri), &
+                faces(3, iface), faces(1, iface), &
                 edges, nedges, err_code)
             if (err_code /= ERR_NO_ERROR) return
         end do
@@ -254,25 +255,23 @@ contains
             kvtx = edges(2, iedge)
 
             ! Find where to insert the new triangle
-            if (iedge <= nbadtris) then
-                itri = bad_tri_ids(iedge)
+            if (iedge <= nbadfaces) then
+                iface = bad_faces(iedge)
             else
-                if (ntris >= size(triangles, dim=2)) then
+                if (nfaces >= size(faces, dim=2)) then
                     err_code = ERR_OVERFLOW
                     return
                 end if
-                ntris = ntris + 1
-                itri = ntris
+                nfaces = nfaces + 1
+                iface = nfaces
             end if
             ! Insert CCW triangle
-            orient = orient_v2( &
-                     vtxs(:, jvtx), vtxs(:, kvtx), vtxs(:, ivtx))
+            o = orient( &
+                vtxs(:, jvtx), vtxs(:, kvtx), vtxs(:, ivtx))
 
             ! Should already be oriented CCW?
-            if ((count([jvtx, kvtx, ivtx] == iinf) >= 1) .or. (orient > 0)) then
-                triangles(:, itri) = [jvtx, kvtx, ivtx]
-                ! else if (orient < 0) then
-                !     triangles(:, itri) = [kvtx, jvtx, ivtx]
+            if ((count([jvtx, kvtx, ivtx] == iinf) >= 1) .or. (o > 0)) then
+                faces(:, iface) = [jvtx, kvtx, ivtx]
             else
                 err_code = ERR_COMPUTATION_FAILURE
                 return
@@ -283,10 +282,10 @@ contains
     !> Triangulates unique integer vertices using incremental
     !! Bowyer-Watson.
     !!
-    !! The returned triangles use counterclockwise, one-based vertex
+    !! The returned triangles use counterclockwise, 1-based vertex
     !! IDs. Their column order is not canonicalised by this routine.
     pure subroutine triangulate_points( &
-        nvtxs, vtxs, facets, ntris, err_code)
+        nvtxs, vtxs, faces, nfaces, err_code)
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nvtxs
@@ -294,30 +293,30 @@ contains
         integer(c_int32_t), intent(in) :: vtxs(2, nvtxs)
             !! Unique 2-D integer coordinates of the vertices.
         ! Outputs
-        integer(c_int32_t), intent(out) :: facets(3, nvtxs*2 + 16)
-            !! Counterclockwise, one-based triangle vertex IDs.
-        integer, intent(out) :: ntris
-            !! Number of active columns in 'facets'.
+        integer(c_int32_t), intent(out) :: faces(3, nvtxs*2 + 16)
+            !! Counterclockwise, 1-based triangle vertex IDs.
+        integer, intent(out) :: nfaces
+            !! Number of active columns in 'faces'.
         integer, intent(out) :: err_code
             !! Shared backend status code:
-            !!   - 0: completed successfully
-            !!   - 1: invalid input
-            !!   - 2: workspace allocation failed
-            !!   - 3: triangle or edge capacity exceeded
-            !!   - 4: invalid or degenerate triangulation data
+            !! - 0: completed successfully
+            !! - 1: invalid input
+            !! - 2: workspace allocation failed
+            !! - 3: triangle or edge capacity exceeded
+            !! - 4: invalid or degenerate triangulation data
         ! Local variables
         integer :: alloc_stat
-        integer :: ivtx, itri
+        integer :: ivtx, iface
         integer(c_int32_t) :: seeds(3)
         integer(c_int32_t) :: iinf
-        integer, allocatable :: bad_tri_ids(:)
+        integer, allocatable :: bad_faces(:)
             !! IDs of triangles in the current insertion cavity.
         integer, allocatable :: edges(:, :)
             !! Canonical cavity-boundary edge workspace.
 
         err_code = ERR_NO_ERROR
 
-        allocate (bad_tri_ids(size(facets, 2)), &
+        allocate (bad_faces(size(faces, 2)), &
                   edges(2, size(vtxs, 2)), &
                   stat=alloc_stat)
         if (alloc_stat /= 0) then
@@ -326,42 +325,41 @@ contains
         end if
 
         ! Make the first triangles
-        call make_initial_facets(vtxs, facets, seeds, iinf, err_code)
+        call make_initial_facets(vtxs, faces, seeds, iinf, err_code)
         if (err_code /= ERR_NO_ERROR) return
-        ntris = 4
+        nfaces = 4
 
         ! Insert vertices one at a time
         do ivtx = 1, nvtxs
             ! Skip already-processed seed vertices
             if (any(seeds == ivtx)) cycle
             call insert_vertex( &
-                ivtx, vtxs, facets, ntris, iinf, &
-                bad_tri_ids, edges, err_code)
+                ivtx, vtxs, faces, nfaces, iinf, &
+                bad_faces, edges, err_code)
             if (err_code /= ERR_NO_ERROR) return
         end do
 
         ! Remove unneeded triangles connected to the infinite vertex
-        itri = 1
-        do while (itri <= ntris)
-            if (any(facets(:, itri) == iinf)) then
-                facets(:, itri) = facets(:, ntris)
-                ntris = ntris - 1
+        iface = 1
+        do while (iface <= nfaces)
+            if (any(faces(:, iface) == iinf)) then
+                faces(:, iface) = faces(:, nfaces)
+                nfaces = nfaces - 1
             else
-                itri = itri + 1
+                iface = iface + 1
             end if
         end do
 
-        if (ntris <= 0) err_code = ERR_COMPUTATION_FAILURE
+        if (nfaces <= 0) err_code = ERR_COMPUTATION_FAILURE
     end subroutine triangulate_points
 
-    pure subroutine find_triangle_side_neighbour( &
-        ivtx, jvtx, itri, iside, neighbours, edges, nedges, err_code)
+    pure subroutine find_facet_side_neighbour( &
+        ivtx, jvtx, iface, iside, nabrs, edges, nedges, err_code)
         implicit none(type, external)
         ! Arguments
-        integer(c_int32_t), intent(in) :: ivtx, jvtx, itri
-            !! Vertex indices of the triangles
+        integer(c_int32_t), intent(in) :: ivtx, jvtx, iface
         integer, intent(in) :: iside
-        integer(c_int32_t), intent(inout) :: neighbours(:, :)
+        integer(c_int32_t), intent(inout) :: nabrs(:, :)
         integer(c_int32_t), intent(inout) :: edges(:, :)
         integer, intent(inout) :: nedges
         integer, intent(inout) :: err_code
@@ -381,8 +379,8 @@ contains
         end if
 
         if (found_edge) then
-            neighbours(iside, itri) = edges(3, iedge)
-            neighbours(edges(4, iedge), edges(3, iedge)) = itri
+            nabrs(iside, iface) = edges(3, iedge)
+            nabrs(edges(4, iedge), edges(3, iedge)) = iface
             ! Remove the edge since it is already found
             edges(:, iedge) = edges(:, nedges)
             nedges = nedges - 1
@@ -397,33 +395,33 @@ contains
         nedges = nedges + 1
         edges(1, nedges) = ivtx
         edges(2, nedges) = jvtx
-        edges(3, nedges) = itri
+        edges(3, nedges) = iface
         edges(4, nedges) = iside
-    end subroutine find_triangle_side_neighbour
+    end subroutine find_facet_side_neighbour
 
-    !> Finds the adjacent triangle across each triangle side.
+    !> Finds the adjacent facet across each triangle side.
     !!
     !! Side 'i' is opposite vertex 'i'. Boundary sides receive the
-    !! sentinel value 'no_neighbour'.
-    pure subroutine find_triangle_neighbours( &
-        ntris, triangles, neighbours, err_code)
+    !! sentinel value 'no_nabr'.
+    pure subroutine find_facet_neighbours( &
+        faces, nabrs, nfaces, err_code)
         implicit none(type, external)
         ! Arguments
-        integer, intent(in) :: ntris
+        integer, intent(in) :: nfaces
             !! Number of triangles in the mesh.
-        integer(c_int32_t), intent(in) :: triangles(3, ntris)
-            !! 1-based triangle vertex IDs.
+        integer(c_int32_t), intent(in) :: faces(3, nfaces)
+            !! 1-based facet vertex IDs.
         ! Outputs
-        integer(c_int32_t), intent(out) :: neighbours(3, ntris)
-            !! 1-based adjacent triangle IDs across corresponding
-            !! sides, or 'no_neighbour' at the mesh boundary.
+        integer(c_int32_t), intent(out) :: nabrs(3, nfaces)
+            !! 1-based adjacent facet IDs across corresponding
+            !! sides, or 'no_nabr' at the mesh boundary.
         integer, intent(out) :: err_code
             !! Shared backend status code:
-            !!   - 0: completed successfully
-            !!   - 2: edge-workspace allocation failed
-            !!   - 3: edge-workspace capacity exceeded
+            !! - 0: completed successfully
+            !! - 2: edge-workspace allocation failed
+            !! - 3: edge-workspace capacity exceeded
         ! Local variables
-        integer :: itri
+        integer :: iface
         integer :: ivtx, jvtx
         integer :: nedges
         integer(c_int32_t), allocatable :: edges(:, :)
@@ -431,35 +429,35 @@ contains
         integer :: iside
 
         err_code = ERR_NO_ERROR
-        allocate (edges(4, ntris*3), stat=alloc_stat)
+        allocate (edges(4, nfaces*3), stat=alloc_stat)
         if (alloc_stat /= 0) then
             err_code = ERR_ALLOCATION_FAILURE
             return
         end if
 
-        neighbours = no_neighbour
+        nabrs = no_nabr
         nedges = 0
-        do itri = 1, ntris
+        do iface = 1, nfaces
             do iside = 1, 3
                 ! Skip if complement already found
-                if (neighbours(iside, itri) /= no_neighbour) cycle
+                if (nabrs(iside, iface) /= no_nabr) cycle
 
-                ivtx = triangles(modulo(iside, 3) + 1, itri)
-                jvtx = triangles(modulo(iside + 1, 3) + 1, itri)
-                call find_triangle_side_neighbour( &
-                    min(ivtx, jvtx), max(ivtx, jvtx), itri, iside, &
-                    neighbours, edges, nedges, err_code)
+                ivtx = faces(modulo(iside, 3) + 1, iface)
+                jvtx = faces(modulo(iside + 1, 3) + 1, iface)
+                call find_facet_side_neighbour( &
+                    min(ivtx, jvtx), max(ivtx, jvtx), iface, iside, &
+                    nabrs, edges, nedges, err_code)
                 if (err_code /= ERR_NO_ERROR) return
             end do
         end do
-    end subroutine find_triangle_neighbours
+    end subroutine find_facet_neighbours
 
     pure subroutine update_flipped_neighbours( &
-        nabrs, itri, iside, jtri, jside)
+        nabrs, iface, iside, jface, jside)
         implicit none(type, external)
         ! Arguments
         integer(c_int32_t), intent(inout) :: nabrs(:, :)
-        integer, intent(in) :: itri, iside, jtri, jside
+        integer, intent(in) :: iface, iside, jface, jside
         ! Local variables
         integer(c_int32_t) :: inabrs(3), jnabrs(3)
         integer :: innabr, jnnabr
@@ -467,23 +465,23 @@ contains
 
         ! Preserve both rows and locate reciprocal outside-neighbour
         ! entries before changing the neighbour table.
-        inabrs = nabrs(:, itri)
-        jnabrs = nabrs(:, jtri)
+        inabrs = nabrs(:, iface)
+        jnabrs = nabrs(:, jface)
         innabr = jnabrs(modshift(jside, 1, 3))
         jnnabr = inabrs(modshift(iside, 1, 3))
         inside_i = 0
         inside_j = 0
-        if (innabr /= no_neighbour) then
+        if (innabr /= no_nabr) then
             do inside = 1, 3
-                if (nabrs(inside, innabr) == jtri) then
+                if (nabrs(inside, innabr) == jface) then
                     inside_i = inside
                     exit
                 end if
             end do
         end if
-        if (jnnabr /= no_neighbour) then
+        if (jnnabr /= no_nabr) then
             do inside = 1, 3
-                if (nabrs(inside, jnnabr) == itri) then
+                if (nabrs(inside, jnnabr) == iface) then
                     inside_j = inside
                     exit
                 end if
@@ -491,16 +489,16 @@ contains
         end if
 
         ! Change the two incident triangles.
-        nabrs(:, itri) = &
-            [jnabrs(modshift(jside, 1, 3)), jtri, &
+        nabrs(:, iface) = &
+            [jnabrs(modshift(jside, 1, 3)), jface, &
              inabrs(modshift(iside, 2, 3))]
-        nabrs(:, jtri) = &
+        nabrs(:, jface) = &
             [jnabrs(modshift(jside, 2, 3)), &
-             inabrs(modshift(iside, 1, 3)), itri]
+             inabrs(modshift(iside, 1, 3)), iface]
 
         ! Update the reciprocal entries in the outside neighbours.
-        if (inside_i > 0) nabrs(inside_i, innabr) = itri
-        if (inside_j > 0) nabrs(inside_j, jnnabr) = jtri
+        if (inside_i > 0) nabrs(inside_i, innabr) = iface
+        if (inside_j > 0) nabrs(inside_j, jnnabr) = jface
     end subroutine update_flipped_neighbours
 
     !> Tests if a quadrilateral span by
@@ -513,16 +511,16 @@ contains
             !! Quadrilateral coordinates, with 'a' opposite 'b' and
             !! 'c' opposite 'd'.
         ! Local variables
-        integer(c_int64_t) :: orient_u, orient_v
+        integer(c_int64_t) :: o_abc, o_abd
 
-        orient_u = orient_v2(a, b, c)
-        orient_v = orient_v2(a, b, d)
+        o_abc = orient(a, b, c)
+        o_abd = orient(a, b, d)
 
-        if ((orient_u == 0) .or. (orient_v == 0)) then
+        if ((o_abc == 0) .or. (o_abd == 0)) then
             ! Degenerate triangle (collinear)
             flag = .false.
             return
-        elseif ((orient_u > 0) .eqv. (orient_v > 0)) then
+        elseif ((o_abc > 0) .eqv. (o_abd > 0)) then
             ! Not convex, or they should have opposite signs
             flag = .false.
             return
@@ -535,16 +533,16 @@ contains
     !!
     !! The input side must be interior and have a reciprocal entry
     !! in the neighbour table.
-    pure subroutine find_edge_sharing_triangle( &
-        nabrs, itri, iside, jtri, jside, err_code)
+    pure subroutine find_edge_sharing_facets( &
+        nabrs, iface, iside, jface, jside, err_code)
         implicit none(type, external)
         ! Arguments
         integer(c_int32_t), intent(in) :: nabrs(:, :)
-            !! 1-based triangle neighbours, with 'no_neighbour' at
+            !! 1-based triangle neighbours, with 'no_nabr' at
             !! the mesh boundary.
-        integer, intent(in) :: itri, iside
+        integer, intent(in) :: iface, iside
             !! Triangle and local side identifying the input edge.
-        integer, intent(out) :: jtri, jside
+        integer, intent(out) :: jface, jside
             !! Adjacent triangle and its reciprocal local side.
         integer, intent(out) :: err_code
             !! Shared backend status code:
@@ -553,13 +551,13 @@ contains
             !!     reciprocal neighbour entry
 
         err_code = ERR_NO_ERROR
-        jtri = nabrs(iside, itri)
-        if (jtri < lbound(nabrs, 2) .or. jtri > ubound(nabrs, 2)) then
+        jface = nabrs(iside, iface)
+        if (jface < lbound(nabrs, 2) .or. jface > ubound(nabrs, 2)) then
             err_code = ERR_COMPUTATION_FAILURE
             return
         end if
         do jside = 1, 3
-            if (nabrs(jside, jtri) == itri) then
+            if (nabrs(jside, jface) == iface) then
                 exit
             elseif (jside == 3) then
                 ! No matching side found, something must be wrong
@@ -567,46 +565,47 @@ contains
                 return
             end if
         end do
-    end subroutine find_edge_sharing_triangle
+    end subroutine find_edge_sharing_facets
 
     !> Flips an interior triangle edge in a convex quadrilateral.
     !!
     !! The routine updates the two incident triangles, their
     !! neighbour records, and reciprocal records in adjacent
-    !! triangles. The new edge is side 2 of triangle 'itri' and side
+    !! triangles. The new edge is side 2 of triangle 'iface' and side
     !! 3 of the other triangle.
-    pure subroutine flip_triangle_edge( &
-        vtxs, triangles, nabrs, nvtxs, ntris, itri, iside, changes, err_code)
+    pure subroutine flip_quadrilateral_edge( &
+        vtxs, faces, nabrs, nvtxs, nfaces, iface, iside, &
+        changes, err_code)
         implicit none(type, external)
         ! Arguments
-        integer, intent(in) :: nvtxs, ntris
+        integer, intent(in) :: nvtxs, nfaces
             !! Numbers of vertices and triangles in the mesh.
         integer(c_int32_t), intent(in) :: vtxs(2, nvtxs)
             !! 2-D integer vertex coordinates.
-        integer(c_int32_t), intent(inout) :: triangles(3, ntris)
+        integer(c_int32_t), intent(inout) :: faces(3, nfaces)
             !! 1-based triangle vertex IDs, updated in place.
-        integer(c_int32_t), intent(inout) :: nabrs(3, ntris)
+        integer(c_int32_t), intent(inout) :: nabrs(3, nfaces)
             !! 1-based triangle neighbours, updated in place.
-        integer, intent(in) :: itri, iside
+        integer, intent(in) :: iface, iside
             !! Triangle and local side identifying the edge to flip.
         ! Outputs
         integer(c_int32_t), intent(out) :: changes(4, 4)
-            !! Descriptors '[itri, iside, vtx1, vtx2]' for the four
+            !! Descriptors '[iface, iside, vtx1, vtx2]' for the four
             !! non-flipped sides whose ownership may have changed.
         integer, intent(out) :: err_code
             !! Shared backend status code:
             !! - 0: completed successfully
-            !! - 1: 'itri' or 'iside' is out of bounds
+            !! - 1: 'iface' or 'iside' is out of bounds
             !! - 4: the edge is on the boundary, its neighbour
             !!     record is invalid, or the quadrilateral is not
             !!     convex
         ! Local variables
-        integer :: jtri, jside
-        integer(c_int32_t) :: p, q, u, v
+        integer :: jface, jside
+        integer(c_int32_t) :: j, k, l, m
 
         err_code = ERR_NO_ERROR
 
-        if ((itri < 1) .or. (itri > ntris)) then
+        if ((iface < 1) .or. (iface > nfaces)) then
             err_code = ERR_INVALID_INPUT
             return
         elseif ((iside < 1) .or. (iside > 3)) then
@@ -615,34 +614,34 @@ contains
         end if
 
         ! Find the triangle/side sharing the edge
-        call find_edge_sharing_triangle(nabrs, itri, iside, jtri, jside, err_code)
+        call find_edge_sharing_facets(nabrs, iface, iside, jface, jside, err_code)
         if (err_code /= ERR_NO_ERROR) return
 
         ! Find the vertices
-        p = triangles(iside, itri)
-        q = triangles(jside, jtri)
-        u = triangles(modshift(iside, 1, 3), itri)
-        v = triangles(modshift(iside, 2, 3), itri)
+        l = faces(iside, iface)
+        m = faces(jside, jface)
+        j = faces(modshift(iside, 1, 3), iface)
+        k = faces(modshift(iside, 2, 3), iface)
 
         ! Check the edge is actually flippable
-        if (.not. is_convex(vtxs(:, p), vtxs(:, q), vtxs(:, u), vtxs(:, v))) then
+        if (.not. is_convex(vtxs(:, l), vtxs(:, m), vtxs(:, j), vtxs(:, k))) then
             err_code = ERR_COMPUTATION_FAILURE
             return
         end if
 
         ! Flip the triangles
-        triangles(:, itri) = [p, u, q]
-        triangles(:, jtri) = [p, q, v]
+        faces(:, iface) = [l, j, m]
+        faces(:, jface) = [l, m, k]
         ! Update the neighbours
         call update_flipped_neighbours( &
-            nabrs, itri, iside, jtri, jside)
+            nabrs, iface, iside, jface, jside)
 
         ! Record the other changed edges
-        changes(:, 1) = [itri, 1, min(u, q), max(u, q)]
-        changes(:, 2) = [itri, 3, min(p, u), max(p, u)]
-        changes(:, 3) = [jtri, 2, min(v, p), max(v, p)]
-        changes(:, 4) = [jtri, 1, min(q, v), max(q, v)]
-    end subroutine flip_triangle_edge
+        changes(:, 1) = [iface, 1, min(j, m), max(j, m)]
+        changes(:, 2) = [iface, 3, min(l, j), max(l, j)]
+        changes(:, 3) = [jface, 2, min(k, l), max(k, l)]
+        changes(:, 4) = [jface, 1, min(m, k), max(m, k)]
+    end subroutine flip_quadrilateral_edge
 
     pure subroutine update_edge_record(edges, nedges, changed_edges)
         implicit none(type, external)
@@ -670,52 +669,51 @@ contains
     !! segment using 64-bit 2D cross-product orientation
     !! predicates.
     pure subroutine find_crossing_edges( &
-        vtxs, triangles, nabrs, nvtxs, ntris, &
+        vtxs, faces, nabrs, nvtxs, nfaces, &
         edge, xngs, nxngs, err_code)
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nvtxs
             !! Number of vertices in the triangulation.
-        integer, intent(in) :: ntris
+        integer, intent(in) :: nfaces
             !! Number of triangles in the triangulation.
         integer(c_int32_t), intent(in) :: vtxs(2, nvtxs)
             !! 2D index coordinates of the vertices.
-        integer(c_int32_t), intent(in) :: triangles(3, ntris)
+        integer(c_int32_t), intent(in) :: faces(3, nfaces)
             !! Vertex indices of the triangles.
-        integer(c_int32_t), intent(in) :: nabrs(3, ntris)
+        integer(c_int32_t), intent(in) :: nabrs(3, nfaces)
             !! Triangle neighbour indices across sides.
         integer, intent(in) :: edge(2)
             !! 1-based endpoint vertex IDs of the constraint edge.
         ! Outputs
-        integer(c_int32_t), intent(out) :: xngs(4, ntris)
-            !! Descriptor columns [itri, iside, vtx1, vtx2] for
+        integer(c_int32_t), intent(out) :: xngs(4, nfaces)
+            !! Descriptor columns [iface, iside, vtx1, vtx2] for
             !! crossing interior mesh edges.
         integer(c_int32_t), intent(out) :: nxngs
             !! Total number of crossing mesh edges found.
         integer, intent(out) :: err_code
             !! Shared backend status code:
-            !!   - 0: completed successfully
-            !!   - 2: workspace allocation failed
+            !! - 0: completed successfully
+            !! - 2: workspace allocation failed
         ! Local variables
-        integer :: itris(3*ntris), isides(3*ntris)
+        integer :: ifaces(3*nfaces), isides(3*nfaces)
             !! Triangle and side IDs owning each unique interior
             !! edge.
-        integer :: itri, iside, iedge, nedges, ixng
+        integer :: iface, iside, iedge, nedges, ixng
             !! Loop indices and counters for candidate and
             !! crossing edges.
-        integer(c_int32_t), allocatable :: ia(:), ib(:)
+        integer(c_int32_t), allocatable :: l(:), m(:)
             !! Endpoint vertex IDs of unique interior mesh edges.
-        integer(c_int64_t) :: u(2), v(2), uv(2)
+        integer(c_int64_t) :: vj(2), vk(2), vjk(2)
             !! Coordinates of constraint endpoints and target
             !! constraint vector.
-        integer(c_int64_t), allocatable :: a(:, :), b(:, :)
+        integer(c_int64_t), allocatable :: vl(:, :), vm(:, :)
             !! Endpoint coordinates of unique interior mesh edges.
         integer(c_int64_t), allocatable :: &
-            ab(:, :), au(:, :), av(:, :), ua(:, :), ub(:, :)
+            vlm(:, :), vlj(:, :), vlk(:, :), vjl(:, :), vjm(:, :)
             !! Difference vectors for 2D orientation calculations.
         integer(c_int64_t), allocatable :: &
-            orient_uva(:), orient_uvb(:), &
-            orient_abu(:), orient_abv(:)
+            o_jkl(:), o_jkm(:), o_lmj(:), o_lmk(:)
             !! 2D cross-product orientation determinants.
         logical(kind=1), allocatable :: is_xng(:)
             !! Boolean mask identifying proper crossing edges.
@@ -726,22 +724,22 @@ contains
 
         ! Extract unique interior edges
         nedges = 0
-        do iedge = 1, ntris*3
-            itri = (iedge - 1)/3 + 1
+        do iedge = 1, nfaces*3
+            iface = (iedge - 1)/3 + 1
             iside = mod1(iedge, 3)
-            if (nabrs(iside, itri) == no_neighbour) cycle
-            if (itri >= nabrs(iside, itri)) cycle
+            if (nabrs(iside, iface) == no_nabr) cycle
+            if (iface >= nabrs(iside, iface)) cycle
             nedges = nedges + 1
-            itris(nedges) = itri
+            ifaces(nedges) = iface
             isides(nedges) = iside
         end do
 
         ! Fetch vertex coordinates and their distance vectors
-        u = vtxs(:, edge(1))
-        v = vtxs(:, edge(2))
-        uv = v - u
-        allocate (ia(nedges), ib(nedges), &
-                  a(2, nedges), b(2, nedges), ab(2, nedges), &
+        vj = vtxs(:, edge(1))
+        vk = vtxs(:, edge(2))
+        vjk = vk - vj
+        allocate (l(nedges), m(nedges), &
+                  vl(2, nedges), vm(2, nedges), vlm(2, nedges), &
                   stat=alloc_stat)
         if (alloc_stat /= 0) then
             err_code = ERR_ALLOCATION_FAILURE
@@ -749,18 +747,18 @@ contains
         end if
 
         do iedge = 1, nedges
-            itri = itris(iedge)
+            iface = ifaces(iedge)
             iside = isides(iedge)
-            ia(iedge) = triangles(modshift(iside, 1, 3), itri)
-            ib(iedge) = triangles(modshift(iside, 2, 3), itri)
-            a(:, iedge) = vtxs(:, ia(iedge))
-            b(:, iedge) = vtxs(:, ib(iedge))
+            l(iedge) = faces(modshift(iside, 1, 3), iface)
+            m(iedge) = faces(modshift(iside, 2, 3), iface)
+            vl(:, iedge) = vtxs(:, l(iedge))
+            vm(:, iedge) = vtxs(:, m(iedge))
         end do
 
-        ab = b - a
+        vlm = vm - vl
 
-        allocate (ua(2, nedges), ub(2, nedges), &
-                  orient_uva(nedges), orient_uvb(nedges), &
+        allocate (vjl(2, nedges), vjm(2, nedges), &
+                  o_jkl(nedges), o_jkm(nedges), &
                   stat=alloc_stat)
         if (alloc_stat /= 0) then
             err_code = ERR_ALLOCATION_FAILURE
@@ -769,12 +767,12 @@ contains
 
         ! Compute orientation of edge endpoints relative to
         ! constraint vector
-        ua = a - spread(u, dim=2, ncopies=nedges)
-        ub = b - spread(u, dim=2, ncopies=nedges)
-        orient_uva = uv(1)*ua(2, :) - uv(2)*ua(1, :)
-        orient_uvb = uv(1)*ub(2, :) - uv(2)*ub(1, :)
+        vjl = vl - spread(vj, dim=2, ncopies=nedges)
+        vjm = vm - spread(vj, dim=2, ncopies=nedges)
+        o_jkl = vjk(1)*vjl(2, :) - vjk(2)*vjl(1, :)
+        o_jkm = vjk(1)*vjm(2, :) - vjk(2)*vjm(1, :)
 
-        allocate (orient_abu(nedges), orient_abv(nedges), &
+        allocate (o_lmj(nedges), o_lmk(nedges), &
                   stat=alloc_stat)
         if (alloc_stat /= 0) then
             err_code = ERR_ALLOCATION_FAILURE
@@ -783,13 +781,13 @@ contains
 
         ! Compute orientation of constraint endpoints relative to
         ! mesh edge vectors
-        call move_alloc(from=ua, to=au)
-        call move_alloc(from=ub, to=av)
-        ab = b - a
-        au = spread(u, dim=2, ncopies=nedges) - a
-        av = spread(v, dim=2, ncopies=nedges) - a
-        orient_abu = ab(1, :)*au(2, :) - ab(2, :)*au(1, :)
-        orient_abv = ab(1, :)*av(2, :) - ab(2, :)*av(1, :)
+        call move_alloc(from=vjl, to=vlj)
+        call move_alloc(from=vjm, to=vlk)
+        vlm = vm - vl
+        vlj = spread(vj, dim=2, ncopies=nedges) - vl
+        vlk = spread(vk, dim=2, ncopies=nedges) - vl
+        o_lmj = vlm(1, :)*vlj(2, :) - vlm(2, :)*vlj(1, :)
+        o_lmk = vlm(1, :)*vlk(2, :) - vlm(2, :)*vlk(1, :)
 
         ! Classify proper line-segment crossings (Xs) with strict
         ! opposite orientations
@@ -798,7 +796,7 @@ contains
             err_code = ERR_ALLOCATION_FAILURE
             return
         end if
-        is_xng = xcross_orient(orient_uva, orient_uvb, orient_abu, orient_abv)
+        is_xng = xcross_orient(o_jkl, o_jkm, o_lmj, o_lmk)
         nxngs = count(is_xng)
 
         ! Pack crossing edge descriptors into output matrix
@@ -807,8 +805,8 @@ contains
             if (.not. is_xng(iedge)) cycle
             ixng = ixng + 1
             xngs(:, ixng) = &
-                [itris(iedge), isides(iedge), &
-                 min(ia(iedge), ib(iedge)), max(ia(iedge), ib(iedge))]
+                [ifaces(iedge), isides(iedge), &
+                 min(l(iedge), m(iedge)), max(l(iedge), m(iedge))]
         end do
     end subroutine find_crossing_edges
 
@@ -838,36 +836,36 @@ contains
 
     !> Checks if the vertices of a specific edge is the same as
     !! claimed.
-    pure logical function edge_match(triangles, edge)
+    pure logical function edge_match(faces, edge)
         implicit none(type, external)
         ! Arguments
-        integer(c_int32_t), intent(in) :: triangles(:, :)
+        integer(c_int32_t), intent(in) :: faces(:, :)
         integer, intent(in) :: edge(4)
         ! Local variables
-        integer :: ar, br
+        integer :: j, k
             !! Actual vertex indices for the iside-th edge of the
-            !! itri-th triangle.
+            !! iface-th triangle.
 
-        ar = triangles(modshift(edge(2), 1, 3), edge(1))
-        br = triangles(modshift(edge(2), 2, 3), edge(1))
-        edge_match = (edge(3) == ar .and. edge(4) == br) .or. &
-                     (edge(3) == br .and. edge(4) == ar)
+        j = faces(modshift(edge(2), 1, 3), edge(1))
+        k = faces(modshift(edge(2), 2, 3), edge(1))
+        edge_match = (edge(3) == j .and. edge(4) == k) .or. &
+                     (edge(3) == k .and. edge(4) == j)
     end function edge_match
 
     pure subroutine remove_crossing( &
-        vtxs, faces, nabrs, nvtxs, ntris, edge, &
+        vtxs, faces, nabrs, nvtxs, nfaces, edge, &
         xngs, nxngs, ixng, new_edges, nedges, nfailed, err_code)
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nvtxs
-        integer, intent(in) :: ntris
+        integer, intent(in) :: nfaces
         integer(c_int32_t), intent(in) :: vtxs(2, nvtxs)
-        integer(c_int32_t), intent(inout) :: faces(3, ntris)
-        integer(c_int32_t), intent(inout) :: nabrs(3, ntris)
+        integer(c_int32_t), intent(inout) :: faces(3, nfaces)
+        integer(c_int32_t), intent(inout) :: nabrs(3, nfaces)
         integer(c_int32_t), intent(in) :: edge(2)
-        integer(c_int32_t), intent(inout) :: xngs(4, ntris)
+        integer(c_int32_t), intent(inout) :: xngs(4, nfaces)
         integer, intent(inout) :: nxngs, ixng
-        integer(c_int32_t), intent(inout) :: new_edges(4, ntris)
+        integer(c_int32_t), intent(inout) :: new_edges(4, nfaces)
         integer, intent(inout) :: nedges
         integer, intent(inout) :: nfailed
         integer, intent(out) :: err_code
@@ -895,7 +893,7 @@ contains
         ! composed of the j-th and k-th vertices of the facet
         m = faces(iside, iface)
         vm = vtxs(:, m)
-        call find_edge_sharing_triangle(nabrs, iface, iside, jface, jside, err_code)
+        call find_edge_sharing_facets(nabrs, iface, iside, jface, jside, err_code)
         if (err_code /= ERR_NO_ERROR) return
         n = faces(jside, jface)
         vn = vtxs(:, n)
@@ -910,8 +908,8 @@ contains
             end if
             return
         end if
-        call flip_triangle_edge( &
-            vtxs, faces, nabrs, nvtxs, ntris, iface, iside, &
+        call flip_quadrilateral_edge( &
+            vtxs, faces, nabrs, nvtxs, nfaces, iface, iside, &
             changed_edges, err_code)
         if (err_code /= ERR_NO_ERROR) return
         ! Update potentially changed edges
@@ -941,18 +939,18 @@ contains
         end if
     end subroutine remove_crossing
 
-    pure subroutine restore_deluanay_triangulation( &
-        vtxs, faces, nabrs, nvtxs, ntris, edge, edges, nedges, &
+    pure subroutine restore_Delaunay_triangulation( &
+        vtxs, faces, nabrs, nvtxs, nfaces, edge, edges, nedges, &
         err_code)
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nvtxs
-        integer, intent(in) :: ntris
+        integer, intent(in) :: nfaces
         integer(c_int32_t), intent(in) :: vtxs(2, nvtxs)
-        integer(c_int32_t), intent(inout) :: faces(3, ntris)
-        integer(c_int32_t), intent(inout) :: nabrs(3, ntris)
+        integer(c_int32_t), intent(inout) :: faces(3, nfaces)
+        integer(c_int32_t), intent(inout) :: nabrs(3, nfaces)
         integer(c_int32_t), intent(in) :: edge(2)
-        integer(c_int32_t), intent(inout) :: edges(4, ntris)
+        integer(c_int32_t), intent(inout) :: edges(4, nfaces)
         integer, intent(in) :: nedges
         ! Outputs
         integer, intent(out) :: err_code
@@ -962,7 +960,7 @@ contains
         integer(c_int32_t) :: vk(2), vl(2), vm(2), vn(2)
         integer :: k, l, m, n
         integer :: jside
-        integer :: itri, iside, jtri
+        integer :: iface, iside, jface
         logical :: swapped
 
         err_code = ERR_NO_ERROR
@@ -974,10 +972,10 @@ contains
                     err_code = ERR_COMPUTATION_FAILURE
                     return
                 end if
-                itri = edges(1, iedge)
+                iface = edges(1, iedge)
                 iside = edges(2, iedge)
-                k = faces(modshift(iside, 1, 3), itri)
-                l = faces(modshift(iside, 2, 3), itri)
+                k = faces(modshift(iside, 1, 3), iface)
+                l = faces(modshift(iside, 2, 3), iface)
                 ! Skip if this is the constraint
                 if ((k == edge(1) .and. l == edge(2)) .or. &
                     (k == edge(2) .and. l == edge(1))) cycle
@@ -985,49 +983,49 @@ contains
                 vl = vtxs(:, l)
                 ! Note: 'nabrs' ordered such that the i-th edge is
                 ! composed of the j-th and k-th vertices of the facet
-                m = faces(iside, itri)
+                m = faces(iside, iface)
                 vm = vtxs(:, m)
-                call find_edge_sharing_triangle( &
-                    nabrs, itri, iside, jtri, jside, err_code)
+                call find_edge_sharing_facets( &
+                    nabrs, iface, iside, jface, jside, err_code)
                 if (err_code /= ERR_NO_ERROR) return
-                n = faces(jside, jtri)
+                n = faces(jside, jface)
                 vn = vtxs(:, n)
 
                 if (.not. is_convex(vm, vn, vk, vl)) cycle
                 if (.not. incircle(vk, vl, vm, vn) > 0) cycle
-                call flip_triangle_edge( &
-                    vtxs, faces, nabrs, nvtxs, ntris, itri, iside, &
+                call flip_quadrilateral_edge( &
+                    vtxs, faces, nabrs, nvtxs, nfaces, iface, iside, &
                     changed_edges, err_code)
                 if (err_code /= ERR_NO_ERROR) return
                 swapped = .true.
                 ! Update changed edges in the record (including itself)
                 call update_edge_record(edges, nedges, changed_edges)
-                edges(:, iedge) = [itri, 2, min(m, n), max(m, n)]
+                edges(:, iedge) = [iface, 2, min(m, n), max(m, n)]
             end do
             if (.not. swapped) exit
         end do
-    end subroutine restore_deluanay_triangulation
+    end subroutine restore_Delaunay_triangulation
 
-    !> Recovers one constraint as a mesh edge using iterative flips.
+    !> Recovers a constraint as a mesh edge using iterative flips.
     !!
     !! Existing mesh edges in 'locked_edges' are never flipped.
     !! After the constraint is recovered, eligible new edges are
     !! flipped to restore the local Delaunay condition without
     !! removing it.
     pure subroutine recover_constraint_edge( &
-        vtxs, nvtxs, faces, nabrs, ntris, &
+        vtxs, nvtxs, faces, nabrs, nfaces, &
         edge, locked_edges, nledges, err_code)
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nvtxs
             !! Number of vertices in the mesh.
-        integer, intent(in) :: ntris
+        integer, intent(in) :: nfaces
             !! Number of triangles in the mesh.
         integer(c_int32_t), intent(in) :: vtxs(2, nvtxs)
             !! 2-D integer vertex coordinates.
-        integer(c_int32_t), intent(inout) :: faces(3, ntris)
+        integer(c_int32_t), intent(inout) :: faces(3, nfaces)
             !! 1-based triangle vertex IDs, updated in place.
-        integer(c_int32_t), intent(inout) :: nabrs(3, ntris)
+        integer(c_int32_t), intent(inout) :: nabrs(3, nfaces)
             !! 1-based triangle neighbours, updated in place.
         integer(c_int32_t), intent(in) :: edge(2)
             !! 1-based endpoint vertex IDs of the constraint.
@@ -1043,10 +1041,10 @@ contains
             !! - 4: no legal sequence of flips recovers the
             !!     constraint
         ! Local variables
-        integer(c_int32_t) :: xngs(4, ntris)
-            !! Descriptor columns [itri, iside, vtx1, vtx2] for
+        integer(c_int32_t) :: xngs(4, nfaces)
+            !! Descriptor columns [iface, iside, vtx1, vtx2] for
             !! crossing interior mesh edges.
-        integer(c_int32_t) :: new_edges(4, ntris)
+        integer(c_int32_t) :: new_edges(4, nfaces)
         integer :: nedges
         integer :: ixng, nxngs
         integer :: nfailed
@@ -1061,7 +1059,7 @@ contains
 
         ! Find intersecting edges
         call find_crossing_edges( &
-            vtxs, faces, nabrs, nvtxs, ntris, edge, xngs, nxngs, &
+            vtxs, faces, nabrs, nvtxs, nfaces, edge, xngs, nxngs, &
             err_code)
         if (err_code /= ERR_NO_ERROR) return
         if (nxngs <= 0) then
@@ -1089,7 +1087,7 @@ contains
                 return
             end if
             call remove_crossing( &
-                vtxs, faces, nabrs, nvtxs, ntris, edge, &
+                vtxs, faces, nabrs, nvtxs, nfaces, edge, &
                 xngs, nxngs, ixng, new_edges, nedges, nfailed, &
                 err_code)
             if (err_code /= ERR_NO_ERROR) return
@@ -1105,9 +1103,9 @@ contains
             return
         end if
 
-        ! Loop through all new edges to check their Deluanay condition
-        call restore_deluanay_triangulation( &
-            vtxs, faces, nabrs, nvtxs, ntris, edge, new_edges, &
+        ! Loop through all new edges to check their Delaunay condition
+        call restore_Delaunay_triangulation( &
+            vtxs, faces, nabrs, nvtxs, nfaces, edge, new_edges, &
             nedges, err_code)
     end subroutine recover_constraint_edge
 
@@ -1117,20 +1115,20 @@ contains
     !! 'faces' is updated in place. Each successfully recovered edge
     !! is passed to the next recovery step as a locked edge.
     pure subroutine recover_constraint_edges( &
-        vtxs, nvtxs, faces, ntris, edges, nedges, nabrs, &
+        vtxs, faces, nvtxs, nfaces, edges, nedges, nabrs, &
         failed_edge, err_code)
         implicit none(type, external)
         ! Arguments
-        integer, intent(in) :: nvtxs, ntris, nedges
+        integer, intent(in) :: nvtxs, nfaces, nedges
             !! Numbers of vertices, triangles, and constraints.
         integer(c_int32_t), intent(in) :: vtxs(2, nvtxs)
             !! 2D integer vertex coordinates.
-        integer(c_int32_t), intent(inout) :: faces(3, ntris)
+        integer(c_int32_t), intent(inout) :: faces(3, nfaces)
             !! 1-based triangle vertex IDs, updated in place.
         integer(c_int32_t), intent(in) :: edges(2, nedges)
             !! 1-based constraint endpoint pairs in recovery order.
         ! Outputs
-        integer(c_int32_t), intent(out) :: nabrs(3, ntris)
+        integer(c_int32_t), intent(out) :: nabrs(3, nfaces)
             !! 1-based triangle neighbours for the recovered mesh.
         integer, intent(out) :: failed_edge
             !! 1-based position of the failed constraint, or zero
@@ -1144,12 +1142,12 @@ contains
         failed_edge = 0
         err_code = ERR_NO_ERROR
 
-        call find_triangle_neighbours(ntris, faces, nabrs, err_code)
+        call find_facet_neighbours(faces, nabrs, nfaces, err_code)
         if (err_code /= ERR_NO_ERROR) return
 
         do iedge = 1, nedges
             call recover_constraint_edge( &
-                vtxs, nvtxs, faces, nabrs, ntris, edges(:, iedge), &
+                vtxs, nvtxs, faces, nabrs, nfaces, edges(:, iedge), &
                 edges(:, :iedge - 1), iedge - 1, err_code)
             if (err_code /= ERR_NO_ERROR) then
                 failed_edge = iedge

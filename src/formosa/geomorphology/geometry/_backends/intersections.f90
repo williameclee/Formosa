@@ -1,21 +1,21 @@
-!> Evaluates geometric predicates using the FORTRAN backend.
+!> Evaluates geometric predicates using the Fortran backend.
 !!
 !! This internal module provides orientation and in-circle
 !! predicates for triangulation, together with line-segment
 !! intersection routines. It is called by the Python geometry API
-!! and other FORTRAN routines and is not intended to be used
+!! and other Fortran routines and is not intended to be used
 !! directly.
 !!
-!! Last modified: 2026-08-16, En-Chi Lee (williameclee@gmail.com)
+!! Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
 module intersections
     use iso_c_binding, only: c_double, c_int8_t, c_int32_t, c_int64_t
     implicit none(type, external)
     private :: incircle_double, saturate_int32, saturate_int64
-    interface orient_v2
-        module procedure orient_v2_real
-        module procedure orient_v2_int32
-        module procedure orient_v2_int64
-    end interface orient_v2
+    interface orient
+        module procedure orient_real
+        module procedure orient_int32
+        module procedure orient_int64
+    end interface orient
     interface xcross_orient
         module procedure xcross_orient_real
         module procedure xcross_orient_int32
@@ -83,7 +83,7 @@ contains
     !! A positive result denotes counterclockwise orientation. A
     !! negative result denotes clockwise orientation. Zero denotes
     !! collinearity.
-    pure function orient_v2_real(p1, p2, p3) result(o)
+    pure function orient_real(p1, p2, p3) result(o)
         implicit none(type, external)
         ! Arguments
         real, intent(in) :: p1(2), p2(2), p3(2)
@@ -91,7 +91,7 @@ contains
         real :: o
 
         o = (p2(1) - p1(1))*(p3(2) - p1(2)) - (p2(2) - p1(2))*(p3(1) - p1(1))
-    end function orient_v2_real
+    end function orient_real
 
     !> Calculates the signed orientation determinant for 32-bit
     !! coordinates.
@@ -100,7 +100,7 @@ contains
     !! outside the 32-bit range is saturated to the corresponding
     !! integer limit. The result retains the 32-bit input kind and
     !! preserves the predicate sign.
-    pure function orient_v2_int32(p1, p2, p3) result(o)
+    pure function orient_int32(p1, p2, p3) result(o)
         implicit none(type, external)
         ! Arguments
         integer(c_int32_t), intent(in) :: p1(2), p2(2), p3(2)
@@ -114,7 +114,7 @@ contains
         p3d = real(p3, kind=c_double)
         o = saturate_int32((p2d(1) - p1d(1))*(p3d(2) - p1d(2)) - &
                            (p2d(2) - p1d(2))*(p3d(1) - p1d(1)))
-    end function orient_v2_int32
+    end function orient_int32
 
     !> Calculates the signed orientation determinant for 64-bit
     !! coordinates.
@@ -123,7 +123,7 @@ contains
     !! outside the 64-bit range is saturated to the corresponding
     !! integer limit. The result retains the 64-bit input kind and
     !! preserves the predicate sign.
-    pure function orient_v2_int64(p1, p2, p3) result(o)
+    pure function orient_int64(p1, p2, p3) result(o)
         implicit none(type, external)
         ! Arguments
         ! f2py does not currently emit its long_long typedef for
@@ -141,7 +141,7 @@ contains
         p3d = real(p3, kind=c_double)
         o = saturate_int64((p2d(1) - p1d(1))*(p3d(2) - p1d(2)) - &
                            (p2d(2) - p1d(2))*(p3d(1) - p1d(1)))
-    end function orient_v2_int64
+    end function orient_int64
 
     !> Calculates the signed in-circle determinant for real
     !! coordinates.
@@ -253,7 +253,7 @@ contains
         ! Outputs
         logical :: on_flag
 
-        if (orient_v2_real(a, b, p) /= 0) then
+        if (orient_real(a, b, p) /= 0) then
             on_flag = .false.
             return
         end if
@@ -310,10 +310,10 @@ contains
         logical(kind=1) :: flag
         real :: o_abc, o_abd, o_cda, o_cdb
 
-        o_abc = orient_v2(a, b, c)
-        o_abd = orient_v2(a, b, d)
-        o_cda = orient_v2(c, d, a)
-        o_cdb = orient_v2(c, d, b)
+        o_abc = orient(a, b, c)
+        o_abd = orient(a, b, d)
+        o_cda = orient(c, d, a)
+        o_cdb = orient(c, d, b)
         flag = xcross_orient(o_abc, o_abd, o_cda, o_cdb)
     end function xcross_real
 
@@ -324,10 +324,10 @@ contains
         logical(kind=1) :: flag
         integer(c_int32_t) :: o_abc, o_abd, o_cda, o_cdb
 
-        o_abc = orient_v2(a, b, c)
-        o_abd = orient_v2(a, b, d)
-        o_cda = orient_v2(c, d, a)
-        o_cdb = orient_v2(c, d, b)
+        o_abc = orient(a, b, c)
+        o_abd = orient(a, b, d)
+        o_cda = orient(c, d, a)
+        o_cdb = orient(c, d, b)
         flag = xcross_orient(o_abc, o_abd, o_cda, o_cdb)
     end function xcross_int32
 
@@ -338,10 +338,10 @@ contains
         logical(kind=1) :: flag
         integer(c_int64_t) :: o_abc, o_abd, o_cda, o_cdb
 
-        o_abc = orient_v2(a, b, c)
-        o_abd = orient_v2(a, b, d)
-        o_cda = orient_v2(c, d, a)
-        o_cdb = orient_v2(c, d, b)
+        o_abc = orient(a, b, c)
+        o_abd = orient(a, b, d)
+        o_cda = orient(c, d, a)
+        o_cdb = orient(c, d, b)
         flag = xcross_orient(o_abc, o_abd, o_cda, o_cdb)
     end function xcross_int64
 
@@ -355,7 +355,7 @@ contains
     !! -  3 : identical segment
     !! -  4 : endpoint-on-interior (T-junction)
     !! -  5 : degenerate segment (some line is actually a point)
-    pure function lines_intersect_v2(l1a, l1b, l2a, l2b) result(flag)
+    pure function lines_intersect(l1a, l1b, l2a, l2b) result(flag)
         implicit none(type, external)
         ! Arguments
         real, intent(in) :: l1a(2), l1b(2), l2a(2), l2b(2)
@@ -386,10 +386,10 @@ contains
         end if
 
         ! Interior-interior crossing
-        o1 = orient_v2_real(l1a, l1b, l2a)
-        o2 = orient_v2_real(l1a, l1b, l2b)
-        o3 = orient_v2_real(l2a, l2b, l1a)
-        o4 = orient_v2_real(l2a, l2b, l1b)
+        o1 = orient_real(l1a, l1b, l2a)
+        o2 = orient_real(l1a, l1b, l2b)
+        o3 = orient_real(l2a, l2b, l1a)
+        o4 = orient_real(l2a, l2b, l1b)
         if (xcross_orient(o1, o2, o3, o4)) then
             flag = 1
             return
@@ -447,6 +447,6 @@ contains
             on_segment(l2a, l2b, l1b)) then
             flag = 4
         end if
-    end function lines_intersect_v2
+    end function lines_intersect
 
 end module intersections

@@ -4,7 +4,7 @@ Classifies line-segment intersections using the Python backend.
 This module implements internal routines called by the public-facing
 geometry API and is not intended to be used directly.
 
-Last modified: 2026-08-11, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
@@ -16,24 +16,22 @@ from formosa.utils.typing import Real, NpReal
 
 
 @overload
-def orient_v2(
+def orient(
     p1: NDArray[np.integer], p2: NDArray[np.integer], p3: NDArray[np.integer]
 ) -> int: ...
 
 
 @overload
-def orient_v2(
+def orient(
     p1: NDArray[np.floating], p2: NDArray[np.floating], p3: NDArray[np.floating]
 ) -> float: ...
 
 
 @overload
-def orient_v2(
-    p1: NDArray[NpReal], p2: NDArray[NpReal], p3: NDArray[NpReal]
-) -> Real: ...
+def orient(p1: NDArray[NpReal], p2: NDArray[NpReal], p3: NDArray[NpReal]) -> Real: ...
 
 
-def orient_v2(p1: NDArray[NpReal], p2: NDArray[NpReal], p3: NDArray[NpReal]) -> Real:
+def orient(p1: NDArray[NpReal], p2: NDArray[NpReal], p3: NDArray[NpReal]) -> Real:
     """
     Computes the signed determinant of three two-dimensional points.
     """
@@ -94,7 +92,7 @@ def on_segment(a: NDArray[NpReal], b: NDArray[NpReal], p: NDArray[NpReal]) -> bo
     """
     Determines whether a 2D point lies on a closed line segment.
     """
-    if orient_v2(a, b, p) != 0:
+    if orient(a, b, p) != 0:
         return False
     return bool(
         p[0] >= min(a[0], b[0])
@@ -128,7 +126,7 @@ class IntersectionKind(IntFlag):
     DEGENERATE_SEGMENT = 5
 
 
-def lines_intersect_v2(
+def lines_intersect(
     l1a: NDArray[NpReal],
     l1b: NDArray[NpReal],
     l2a: NDArray[NpReal],
@@ -164,10 +162,10 @@ def lines_intersect_v2(
     if (eq_l1al2a and eq_l1bl2b) or (eq_l1al2b and eq_l1bl2a):
         return IntersectionKind.IDENTICAL_SEGMENTS
 
-    o1 = orient_v2(l1a, l1b, l2a)
-    o2 = orient_v2(l1a, l1b, l2b)
-    o3 = orient_v2(l2a, l2b, l1a)
-    o4 = orient_v2(l2a, l2b, l1b)
+    o1 = orient(l1a, l1b, l2a)
+    o2 = orient(l1a, l1b, l2b)
+    o3 = orient(l2a, l2b, l1a)
+    o4 = orient(l2a, l2b, l1b)
     opposite_12 = (o1 < 0 and o2 > 0) or (o1 > 0 and o2 < 0)
     opposite_34 = (o3 < 0 and o4 > 0) or (o3 > 0 and o4 < 0)
     if opposite_12 and opposite_34:

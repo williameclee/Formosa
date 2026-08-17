@@ -1,6 +1,6 @@
 # Formosa
 
-Formosa is an experimental Python package for terrain analysis, drainage network extraction, and cartographic visualisation. It has a compiled FORTRAN routines for computationally intensive geomorphology operations.
+Formosa is an experimental Python package for terrain analysis, drainage network extraction, and cartographic visualisation. It has a compiled Fortran routines for computationally intensive geomorphology operations.
 
 ## Features
 
@@ -10,7 +10,7 @@ Formosa is an experimental Python package for terrain analysis, drainage network
 - Fill depressions, resolve flats, and compute D8 flow directions.
 - Compute flow accumulation, Strahler order, watersheds, flow distances, and ridge metrics.
 - Construct, edit, and simplify drainage-network graphs.
-- Use matching FORTRAN and Python implementations for selected operations.
+- Use matching Fortran and Python implementations for selected operations.
 - Produce hillshade and terrain-oriented Matplotlib colourmaps.
 
 See the [public API inventory](doc/public-api.md) for supported import paths, backend availability, test coverage, and implementation links.
@@ -18,14 +18,14 @@ See the [public API inventory](doc/public-api.md) for supported import paths, ba
 ## Requirements
 
 - Python 3.12 or newer
-- A FORTRAN compiler supported by NumPy's F2PY and Meson
+- A Fortran compiler supported by NumPy's F2PY and Meson
 - OpenMP and `libgomp` for the native extension
 
 The current native build passes GCC-specific optimisation and OpenMP flags, so other compiler toolchains may require build configuration changes.
 
 ## Installation from Source
 
-Clone the repository and install it into an environment with a working FORTRAN toolchain:
+Clone the repository and install it into an environment with a working Fortran toolchain:
 
 ```console
 python -m pip install .
@@ -79,7 +79,7 @@ print(grid.slope)
 
 ## Backends
 
-Several public functions accept `backend="fortran"` or `backend="python"` and default to FORTRAN. Other functions are native-only, Python-only, or combine multiple implementation stages without exposing backend selection. Do not import generated extension namespaces or modules under `_backends`; those are internal implementation details.
+Several public functions accept `backend="fortran"` or `backend="python"` and default to Fortran. Other functions are native-only, Python-only, or combine multiple implementation stages without exposing backend selection. Do not import generated extension namespaces or modules under `_backends`; those are internal implementation details.
 
 The [public API inventory](doc/public-api.md#backend-labels) records backend support per function. Backend parity is tested where both implementations are available, but not every public operation currently has both backends.
 

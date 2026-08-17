@@ -1,13 +1,13 @@
-!> Validates flow-graph topology using the FORTRAN backend.
+!> Validates flow-graph topology using the Fortran backend.
 !!
 !! This internal module is called by the Python network API and
-!! other FORTRAN routines and is not intended to be used directly.
+!! other Fortran routines and is not intended to be used directly.
 !!
 !! Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
 module network_validation
     use utils, only: ERR_NO_ERROR, ERR_INVALID_INPUT, &
                      ERR_ALLOCATION_FAILURE
-    use intersections, only: lines_intersect_v2
+    use intersections, only: lines_intersect
     implicit none(type, external)
     private :: argsort_arcs, record_topology_intersection
 contains
@@ -130,7 +130,7 @@ contains
             if (arc_endpts(2, iarc) - arc_endpts(1, iarc) == 1) cycle ! Skip if arc is just a single segment
             do iseg = arc_endpts(1, iarc), arc_endpts(2, iarc) - 1
             do jseg = iseg + 1, arc_endpts(2, iarc) - 1
-                intx_flag = lines_intersect_v2( &
+                intx_flag = lines_intersect( &
                             vtxs(:, iseg), vtxs(:, iseg + 1), &
                             vtxs(:, jseg), vtxs(:, jseg + 1))
                 if (intx_flag > 0) then
@@ -165,7 +165,7 @@ contains
 
                 do iseg = arc_endpts(1, iarc), arc_endpts(2, iarc) - 1
                 do jseg = arc_endpts(1, jarc), arc_endpts(2, jarc) - 1
-                    intx_flag = lines_intersect_v2( &
+                    intx_flag = lines_intersect( &
                                 vtxs(:, iseg), vtxs(:, iseg + 1), &
                                 vtxs(:, jseg), vtxs(:, jseg + 1))
                     if (intx_flag > 0) then
