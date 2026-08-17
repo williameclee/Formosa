@@ -3,9 +3,11 @@
 !! This internal module is called by the Python network API and
 !! other FORTRAN routines and is not intended to be used directly.
 !!
-!! Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+!! Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
 module network_construction
     use iso_c_binding, only: c_int8_t, c_int16_t
+    use utils, only: ERR_NO_ERROR, ERR_INVALID_INPUT, &
+                     ERR_ALLOCATION_FAILURE, ERR_OVERFLOW
     use utils, only: fill_offset_lookup, find_noflow_code, mask2ij
     implicit none(type, external)
 contains
@@ -77,14 +79,14 @@ contains
         integer :: alloc_stat
             !! Allocation status code
 
-        err_code = 0
+        err_code = ERR_NO_ERROR
         narcs = 0
         nvertices = 0
 
         ! Create lookup tables for offsets
         allocate (offset_lookup(0:255, 2), stat=alloc_stat)
         if (alloc_stat /= 0) then
-            err_code = 2
+            err_code = ERR_ALLOCATION_FAILURE
             return
         end if
         offset_lookup = fill_offset_lookup(offsets, codes)
@@ -92,19 +94,19 @@ contains
         ! Find index of seeds
         allocate (seed_ijs(2, ncells), stat=alloc_stat)
         if (alloc_stat /= 0) then
-            err_code = 2
+            err_code = ERR_ALLOCATION_FAILURE
             deallocate (offset_lookup)
             return
         end if
         call mask2ij(seeds, seed_ijs, ncells, nseeds, err_code)
-        if (err_code /= 0) return
+        if (err_code /= ERR_NO_ERROR) return
 
         ! Find noflow code
         noflow_code = find_noflow_code(offsets, codes)
 
         allocate (seens(nrows, ncols), stat=alloc_stat)
         if (alloc_stat /= 0) then
-            err_code = 2
+            err_code = ERR_ALLOCATION_FAILURE
             deallocate (offset_lookup)
             deallocate (seed_ijs)
             return
@@ -166,7 +168,7 @@ contains
                         end if
                     end if
                     if (ivertex > size(vertex_ijs, 2)) then
-                        err_code = 3
+                        err_code = ERR_OVERFLOW
                         exit
                     end if
                     vertex_ijs(:, ivertex) = [ni, nj]
@@ -182,7 +184,7 @@ contains
 
                 seens(ni, nj) = .true.
                 if (ivertex > size(vertex_ijs, 2)) then
-                    err_code = 3
+                    err_code = ERR_OVERFLOW
                     exit
                 end if
                 vertex_ijs(:, ivertex) = [ni, nj]
@@ -191,7 +193,7 @@ contains
                 cj = nj
             end do
 
-            if (err_code /= 0) exit
+            if (err_code /= ERR_NO_ERROR) exit
 
             iarc = iarc + 1
         end do

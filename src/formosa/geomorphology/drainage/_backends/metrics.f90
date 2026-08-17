@@ -3,9 +3,11 @@
 !! This internal module is called by the Python drainage API and is
 !! not intended to be used directly.
 !!
-!! Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+!! Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
 module drainage_metrics
     use iso_c_binding, only: c_int8_t, c_int16_t
+    use utils, only: ERR_NO_ERROR, ERR_INVALID_INPUT, &
+                     ERR_ALLOCATION_FAILURE, ERR_OVERFLOW
     use utils, only: fill_offset_lookup, find_noflow_code, &
                      array2d_oob, mask2id, mask2ij, &
                      id2ij_checked, ij2id_checked
@@ -66,14 +68,15 @@ contains
         logical(kind=1), allocatable :: flood_seeds(:, :)
             !! Mask to identify initial seed cells for the flooding
             !! algorithm (valid cells with zero in-degrees)
+        integer :: alloc_stat
 
         ! Guard nrows*ncols before using it as a default-integer
         ! allocation extent or in the column-major linear-index
         ! expressions below.
-        err_code = 0
-        allocate (offset_lookup(0:255, 2), stat=err_code)
-        if (err_code /= 0) then
-            err_code = 2
+        err_code = ERR_NO_ERROR
+        allocate (offset_lookup(0:255, 2), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = ERR_ALLOCATION_FAILURE
             return
         end if
 
@@ -82,23 +85,22 @@ contains
         ! Fill the tofill buffer with all valid cells with zero
         ! in-degrees
         max_queue_size = nrows*ncols
-        allocate (flood_ijs(2, max_queue_size), stat=err_code)
-        if (err_code /= 0) then
-            err_code = 2
+        allocate (flood_ijs(2, max_queue_size), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = ERR_ALLOCATION_FAILURE
             return
         end if
-        allocate (flood_seeds(nrows, ncols), stat=err_code)
-        if (err_code /= 0) then
-            err_code = 2
+        allocate (flood_seeds(nrows, ncols), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = ERR_ALLOCATION_FAILURE
             return
         end if
         flood_seeds = valids .and. (indegs == 0)
         call mask2ij( &
             flood_seeds, flood_ijs, max_queue_size, ntofills, err_code)
-        if (err_code /= 0) return
+        if (err_code /= ERR_NO_ERROR) return
         deallocate (flood_seeds)
 
-        err_code = 0
         accums = areas
         itofill = 1
         do while (itofill <= ntofills)
@@ -126,7 +128,7 @@ contains
             if (indegs(ni, nj) > 0) cycle
             ntofills = ntofills + 1
             if (ntofills > max_queue_size) then
-                err_code = 3
+                err_code = ERR_OVERFLOW
                 return
             end if
             flood_ijs(:, ntofills) = [ni, nj]
@@ -191,37 +193,37 @@ contains
             !! processed in the flooding algorithm
         integer :: max_queue_size
             !! Maximum size of the flooding buffer ('tofill_ijs')
+        integer :: alloc_stat
 
         ! Create lookup tables for offsets
-        err_code = 0
-        allocate (offset_lookup(0:255, 2), stat=err_code)
-        if (err_code /= 0) then
-            err_code = 2
+        err_code = ERR_NO_ERROR
+        allocate (offset_lookup(0:255, 2), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = ERR_ALLOCATION_FAILURE
             return
         end if
         offset_lookup = fill_offset_lookup(offsets, codes)
 
         ! Fill tofill buffer with all valid cells with 0 in-degree
         max_queue_size = nrows*ncols
-        allocate (tofill_ijs(2, max_queue_size), stat=err_code)
-        if (err_code /= 0) then
-            err_code = 2
+        allocate (tofill_ijs(2, max_queue_size), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = ERR_ALLOCATION_FAILURE
             return
         end if
-        allocate (tofill_seeds(nrows, ncols), stat=err_code)
-        if (err_code /= 0) then
-            err_code = 2
+        allocate (tofill_seeds(nrows, ncols), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = ERR_ALLOCATION_FAILURE
             return
         end if
         tofill_seeds = valids .and. (indegs == 0)
         call mask2ij( &
             tofill_seeds, tofill_ijs, max_queue_size, ntofills, err_code)
-        if (err_code /= 0) return
+        if (err_code /= ERR_NO_ERROR) return
         deallocate (tofill_seeds)
 
         ! Main loop to fill distances using a breadth-first search
         ! starting from source cells
-        err_code = 0
         dists = 0
         itofill = 1
         do while (itofill <= ntofills)
@@ -250,7 +252,7 @@ contains
             if (indegs(ni, nj) == 0) then
                 ntofills = ntofills + 1
                 if (ntofills > max_queue_size) then
-                    err_code = 3
+                    err_code = ERR_OVERFLOW
                     return
                 end if
                 tofill_ijs(:, ntofills) = [ni, nj]
@@ -313,36 +315,36 @@ contains
             !! processed in the flooding algorithm
         integer :: max_queue_size
             !! Maximum size of the flooding buffer ('tofill_ijs')
+        integer :: alloc_stat
 
         ! Create lookup tables for offsets
-        err_code = 0
-        allocate (offset_lookup(0:255, 2), stat=err_code)
-        if (err_code /= 0) then
-            err_code = 2
+        err_code = ERR_NO_ERROR
+        allocate (offset_lookup(0:255, 2), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = ERR_ALLOCATION_FAILURE
             return
         end if
         offset_lookup = fill_offset_lookup(offsets, codes)
 
         ! Fill the tofill buffer with all valid cells with zero indegree
         max_queue_size = nrows*ncols
-        allocate (tofill_ijs(2, max_queue_size), stat=err_code)
-        if (err_code /= 0) then
-            err_code = 2
+        allocate (tofill_ijs(2, max_queue_size), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = ERR_ALLOCATION_FAILURE
             return
         end if
-        allocate (seeds(nrows, ncols), stat=err_code)
-        if (err_code /= 0) then
-            err_code = 2
+        allocate (seeds(nrows, ncols), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = ERR_ALLOCATION_FAILURE
             return
         end if
         seeds = valids .and. (indegs == 0)
         call mask2ij( &
             seeds, tofill_ijs, max_queue_size, ntofills, err_code)
-        if (err_code /= 0) return
+        if (err_code /= ERR_NO_ERROR) return
         deallocate (seeds)
 
         !! Main loop to fill distances using a breadth-first search starting from source cells
-        err_code = 0
         dists = 0.0
         itofill = 1
         do while (itofill <= ntofills)
@@ -372,7 +374,7 @@ contains
             if (indegs(ni, nj) == 0) then
                 ntofills = ntofills + 1
                 if (ntofills > max_queue_size) then
-                    err_code = 3
+                    err_code = ERR_OVERFLOW
                     return
                 end if
                 tofill_ijs(:, ntofills) = [ni, nj]
@@ -443,25 +445,25 @@ contains
         ! Find noflow code
         noflow_code = find_noflow_code(offsets, codes)
 
-        err_code = 0
+        err_code = ERR_NO_ERROR
         dists = -1
 
         ! Append all cells with noflow direction to buffer
         max_queue_size = nrows*ncols
-        allocate (seed_ids(max_queue_size), stat=err_code)
-        if (err_code /= 0) then
-            err_code = 2
+        allocate (seed_ids(max_queue_size), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = ERR_ALLOCATION_FAILURE
             return
         end if
-        allocate (seeds(nrows, ncols), stat=err_code)
-        if (err_code /= 0) then
-            err_code = 2
+        allocate (seeds(nrows, ncols), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = ERR_ALLOCATION_FAILURE
             return
         end if
         seeds = valids .and. (dirs == noflow_code)
         call mask2id( &
             seeds, seed_ids, max_queue_size, nseeds, err_code)
-        if (err_code /= 0) return
+        if (err_code /= ERR_NO_ERROR) return
         deallocate (seeds)
 
         ! Loop through seeds
@@ -471,7 +473,7 @@ contains
         allocate (tofill_ids(max_queue_size), stat=alloc_stat)
         if (alloc_stat /= 0) then
             !$omp atomic write
-            err_code = 2
+            err_code = ERR_ALLOCATION_FAILURE
         end if
         !$omp DO SCHEDULE(DYNAMIC)
         do iseed = 1, nseeds
@@ -480,7 +482,7 @@ contains
                 seed_ids(iseed), nrows, ncols, si, sj, id_is_valid)
             if (.not. id_is_valid) then
                 !$omp atomic write
-                err_code = 3
+                err_code = ERR_OVERFLOW
                 cycle
             end if
 
@@ -496,7 +498,7 @@ contains
                 ifill = ifill + 1
                 if (.not. id_is_valid) then
                     !$omp atomic write
-                    err_code = 3
+                    err_code = ERR_OVERFLOW
                     exit
                 end if
 
@@ -520,13 +522,13 @@ contains
                     nfills = nfills + 1
                     if (nfills > max_queue_size) then
                         !$omp atomic write
-                        err_code = 3
+                        err_code = ERR_OVERFLOW
                         exit
                     end if
                     cell_id = ij2id_checked(ui, uj, nrows, ncols)
                     if (cell_id == 0) then
                         !$omp atomic write
-                        err_code = 3
+                        err_code = ERR_OVERFLOW
                         exit
                     end if
                     tofill_ids(nfills) = cell_id
@@ -600,34 +602,35 @@ contains
         integer :: max_queue_size
             !! Maximum size of the buffer for cells to be processed
             !! ('tofill_ijs')
+        integer :: alloc_stat
+
+        err_code = ERR_no_ERROR
 
         ! Create lookup tables for offsets
-        err_code = 0
-        allocate (offset_lookup(0:255, 2), stat=err_code)
-        if (err_code /= 0) then
-            err_code = 2
+        allocate (offset_lookup(0:255, 2), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = ERR_ALLOCATION_FAILURE
             return
         end if
         offset_lookup = fill_offset_lookup(offsets, codes)
 
         ! Fill tofill buffer with all valid cells with 0 in-degree
         max_queue_size = nrows*ncols
-        allocate (tofill_ijs(2, max_queue_size), stat=err_code)
-        if (err_code /= 0) then
-            err_code = 2
+        allocate (tofill_ijs(2, max_queue_size), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = ERR_ALLOCATION_FAILURE
             return
         end if
-        allocate (seeds(nrows, ncols), stat=err_code)
-        if (err_code /= 0) then
-            err_code = 2
+        allocate (seeds(nrows, ncols), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = ERR_ALLOCATION_FAILURE
             return
         end if
         seeds = valids .and. (indegs == 0)
-        err_code = 0
         orders = merge(int(1, kind=c_int16_t), int(0, kind=c_int16_t), seeds)
         call mask2ij( &
             seeds, tofill_ijs, max_queue_size, ntofills, err_code)
-        if (err_code /= 0) return
+        if (err_code /= ERR_NO_ERROR) return
         deallocate (seeds)
 
         itofill = 1
@@ -691,7 +694,7 @@ contains
 
             ntofills = ntofills + 1
             if (ntofills > max_queue_size) then
-                err_code = 3
+                err_code = ERR_OVERFLOW
                 return
             end if
             tofill_ijs(:, ntofills) = [ni, nj]

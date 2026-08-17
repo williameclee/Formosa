@@ -4,9 +4,11 @@
 !! also provides raster-level analyses of the resulting flow field;
 !! flow-graph operations are implemented in the network modules.
 !!
-!! Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+!! Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
 module drainage_flowdir
     use iso_c_binding, only: c_int8_t
+    use utils, only: ERR_NO_ERROR, ERR_INVALID_INPUT, &
+                     ERR_ALLOCATION_FAILURE, ERR_OVERFLOW
     use utils, only: fill_offset_lookup, find_noflow_code, &
                      array2d_oob, mask2ij
     implicit none(type, external)
@@ -204,13 +206,13 @@ contains
             !! Current queue position and final occupied queue
             !! position
 
-        err_code = 0
+        err_code = ERR_NO_ERROR
 
         allocate (offset_lookup(0:255, 2), &
                   rem_indegs(nrows, ncols), seeds(nrows, ncols), &
                   seed_ijs(2, nrows*ncols), stat=alloc_stat)
         if (alloc_stat /= 0) then
-            err_code = 2
+            err_code = ERR_ALLOCATION_FAILURE
             return
         end if
 
@@ -218,7 +220,7 @@ contains
         offset_lookup = fill_offset_lookup(offsets, codes)
         call mask2ij( &
             seeds, seed_ijs, size(seed_ijs, dim=2), nseeds, err_code)
-        if (err_code /= 0) return
+        if (err_code /= ERR_NO_ERROR) return
         deallocate (seeds)
 
         rem_indegs = indegs
@@ -252,18 +254,11 @@ contains
             nseeds = nseeds + 1
             if (nseeds > size(seed_ijs, dim=2)) then
                 ! Buffer overflow
-                err_code = 3
-                deallocate (offset_lookup)
-                deallocate (rem_indegs)
-                deallocate (seed_ijs)
+                err_code = ERR_OVERFLOW
                 return
             end if
             seed_ijs(1, nseeds) = ni
             seed_ijs(2, nseeds) = nj
         end do
-
-        deallocate (offset_lookup)
-        deallocate (rem_indegs)
-        deallocate (seed_ijs)
     end subroutine find_acyclic_flowdirs
 end module drainage_flowdir

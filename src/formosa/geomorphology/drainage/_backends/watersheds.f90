@@ -3,9 +3,11 @@
 !! This internal module is called by the Python drainage API and
 !! other FORTRAN routines and is not intended to be used directly.
 !!
-!! Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+!! Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
 module drainage_watersheds
     use iso_c_binding, only: c_int8_t
+    use utils, only: ERR_NO_ERROR, ERR_INVALID_INPUT, &
+                     ERR_ALLOCATION_FAILURE, ERR_OVERFLOW
     use utils, only: find_noflow_code, array2d_oob, mask2id, &
                      id2ij_checked, ij2id_checked
     implicit none(type, external)
@@ -70,21 +72,21 @@ contains
         ! Find noflow code
         noflow_code = find_noflow_code(offsets, codes)
 
-        err_code = 0
+        err_code = ERR_NO_ERROR
         labels = 0
 
         ! Append all cells with noflow direction to buffer
         max_queue_size = nrows*ncols
         allocate (seed_ids(max_queue_size), seeds(nrows, ncols), &
-                  stat=err_code)
-        if (err_code /= 0) then
-            err_code = 2
+                  stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = ERR_ALLOCATION_FAILURE
             return
         end if
         seeds = valids .and. (dirs == noflow_code)
         call mask2id( &
             seeds, seed_ids, max_queue_size, nseeds, err_code)
-        if (err_code /= 0) return
+        if (err_code /= ERR_NO_ERROR) return
         deallocate (seeds)
 
         ! Loop through seeds
@@ -94,7 +96,7 @@ contains
         allocate (tofill_ids(max_queue_size), stat=alloc_stat)
         if (alloc_stat /= 0) then
             !$omp atomic write
-            err_code = 2
+            err_code = ERR_ALLOCATION_FAILURE
         end if
         !$omp DO SCHEDULE(DYNAMIC)
         do iseed = 1, nseeds
@@ -103,7 +105,7 @@ contains
                 seed_ids(iseed), nrows, ncols, si, sj, id_is_valid)
             if (.not. id_is_valid) then
                 !$omp atomic write
-                err_code = 3
+                err_code = ERR_OVERFLOW
                 cycle
             end if
 
@@ -119,7 +121,7 @@ contains
                 ifill = ifill + 1
                 if (.not. id_is_valid) then
                     !$omp atomic write
-                    err_code = 3
+                    err_code = ERR_OVERFLOW
                     exit
                 end if
 
@@ -143,13 +145,13 @@ contains
                     nfills = nfills + 1
                     if (nfills > max_queue_size) then
                         !$omp atomic write
-                        err_code = 3
+                        err_code = ERR_OVERFLOW
                         exit
                     end if
                     cell_id = ij2id_checked(ui, uj, nrows, ncols)
                     if (cell_id == 0) then
                         !$omp atomic write
-                        err_code = 3
+                        err_code = ERR_OVERFLOW
                         exit
                     end if
                     tofill_ids(nfills) = cell_id
@@ -218,19 +220,19 @@ contains
         ! Find noflow code
         noflow_code = find_noflow_code(offsets, codes)
 
-        err_code = 0
+        err_code = ERR_NO_ERROR
         flooded = .false.
 
         ! Append all cells with noflow direction to buffer
         max_queue_size = nrows*ncols
-        allocate (seed_ids(max_queue_size), stat=err_code)
-        if (err_code /= 0) then
-            err_code = 2
+        allocate (seed_ids(max_queue_size), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = ERR_ALLOCATION_FAILURE
             return
         end if
         call mask2id( &
             seeds, seed_ids, max_queue_size, nseeds, err_code)
-        if (err_code /= 0) return
+        if (err_code /= ERR_NO_ERROR) return
 
         ! Loop through seeds
         !$omp PARALLEL DEFAULT(SHARED) PRIVATE(iseed, si, sj, ci, cj, ui, uj, iofs) &
@@ -239,7 +241,7 @@ contains
         allocate (tofill_ids(max_queue_size), stat=alloc_stat)
         if (alloc_stat /= 0) then
             !$omp atomic write
-            err_code = 2
+            err_code = ERR_ALLOCATION_FAILURE
         end if
         !$omp DO SCHEDULE(DYNAMIC)
         do iseed = 1, nseeds
@@ -248,7 +250,7 @@ contains
                 seed_ids(iseed), nrows, ncols, si, sj, id_is_valid)
             if (.not. id_is_valid) then
                 !$omp atomic write
-                err_code = 3
+                err_code = ERR_OVERFLOW
                 cycle
             end if
 
@@ -267,7 +269,7 @@ contains
                 ifill = ifill + 1
                 if (.not. id_is_valid) then
                     !$omp atomic write
-                    err_code = 3
+                    err_code = ERR_OVERFLOW
                     exit
                 end if
 
@@ -291,13 +293,13 @@ contains
                     nfills = nfills + 1
                     if (nfills > max_queue_size) then
                         !$omp atomic write
-                        err_code = 3
+                        err_code = ERR_OVERFLOW
                         exit
                     end if
                     cell_id = ij2id_checked(ui, uj, nrows, ncols)
                     if (cell_id == 0) then
                         !$omp atomic write
-                        err_code = 3
+                        err_code = ERR_OVERFLOW
                         exit
                     end if
                     tofill_ids(nfills) = cell_id

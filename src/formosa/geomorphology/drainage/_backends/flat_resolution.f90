@@ -4,9 +4,11 @@
 !! follow Barnes et al. (2014), https://doi.org/10.1016/j.cageo.2013.01.009.
 !! This internal module is called by the Python drainage API.
 !!
-!! Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+!! Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
 module drainage_flat_resolution
     use iso_c_binding, only: c_int8_t
+    use utils, only: ERR_NO_ERROR, ERR_INVALID_INPUT, &
+                     ERR_ALLOCATION_FAILURE, ERR_OVERFLOW
     use utils, only: find_noflow_code, array2d_oob, mask2ij
     implicit none(type, external)
 contains
@@ -228,22 +230,24 @@ contains
             !! Elevation of the current flat region being labeled
         integer :: iofs
             !! Index for iterating through offsets
+        integer :: alloc_stat
 
-        err_code = 0
-        allocate (flat_ijs(2, nrows*ncols), stat=err_code)
-        if (err_code /= 0) then
-            err_code = 2
+        err_code = ERR_NO_ERROR
+
+        allocate (flat_ijs(2, nrows*ncols), stat=alloc_stat)
+        if (err_code /= ERR_NO_ERROR) then
+            err_code = ERR_ALLOCATION_FAILURE
             return
         end if
-        allocate (seed_ijs(2, nrows*ncols), stat=err_code)
-        if (err_code /= 0) then
-            err_code = 2
+        allocate (seed_ijs(2, nrows*ncols), stat=alloc_stat)
+        if (err_code /= ERR_NO_ERROR) then
+            err_code = ERR_ALLOCATION_FAILURE
             return
         end if
         ! Convert seed mask to list of (i, j) indices
         call mask2ij( &
             seeds, seed_ijs, size(seed_ijs, dim=2), nseeds, err_code)
-        if (err_code /= 0) return
+        if (err_code /= ERR_NO_ERROR) return
 
         flats = 0
         iflat = 1
@@ -287,7 +291,7 @@ contains
                     ! Add to tofill buffer
                     nfills = nfills + 1
                     if (nfills > size(flat_ijs, dim=2)) then
-                        err_code = 3
+                        err_code = ERR_OVERFLOW
                         return
                     end if
                     flat_ijs(:, nfills) = [ni, nj]
@@ -363,17 +367,18 @@ contains
             !! breadth-first search
         integer :: max_queue_size
             !! Maximum size of the queue buffer for high edge cells
+        integer :: alloc_stat
 
-        err_code = 0
+        err_code = ERR_NO_ERROR
         ! Each labelled flat cell is queued at most once
         ! Track breadth-first layers with an index instead of
         ! storing layer markers in the queue.
         max_queue_size = count(flats /= 0)
         z = 0
         if (max_queue_size == 0) return
-        allocate (high_edge_ijs(2, max_queue_size), stat=err_code)
-        if (err_code /= 0) then
-            err_code = 2
+        allocate (high_edge_ijs(2, max_queue_size), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = ERR_ALLOCATION_FAILURE
             return
         end if
 
@@ -381,7 +386,7 @@ contains
         call mask2ij( &
             high_edges, high_edge_ijs, size(high_edge_ijs, dim=2), nedges, &
             err_code)
-        if (err_code /= 0) return
+        if (err_code /= ERR_NO_ERROR) return
         if (nedges == 0) then
             ! No high edges found, set z to zero and exit
             deallocate (high_edge_ijs)
@@ -389,16 +394,16 @@ contains
         end if
 
         nflats = maxval(flats)
-        allocate (maxdist(nflats), stat=err_code)
-        if (err_code /= 0) then
-            err_code = 2
+        allocate (maxdist(nflats), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = ERR_ALLOCATION_FAILURE
             return
         end if
         maxdist = 0
 
-        allocate (queued(nrows, ncols), stat=err_code)
-        if (err_code /= 0) then
-            err_code = 2
+        allocate (queued(nrows, ncols), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = ERR_ALLOCATION_FAILURE
             return
         end if
         queued = .false.
@@ -421,10 +426,10 @@ contains
             iedge = iedge + 1
 
             if (array2d_oob(ci, cj, nrows, ncols)) then
-                err_code = 3
+                err_code = ERR_OVERFLOW
                 return
             else if (flats(ci, cj) == 0) then
-                err_code = 1
+                err_code = ERR_INVALID_INPUT
                 return
             end if
 
@@ -452,7 +457,7 @@ contains
                 ! Update queue
                 nedges = nedges + 1
                 if (nedges > max_queue_size) then
-                    err_code = 3
+                    err_code = ERR_OVERFLOW
                     return
                 end if
                 high_edge_ijs(:, nedges) = [ni, nj]
@@ -526,30 +531,32 @@ contains
             !! breadth-first search
         integer :: max_queue_size
             !! Maximum size of the queue buffer for low edge cells
+        integer :: alloc_stat
 
-        err_code = 0
+        err_code = ERR_NO_ERROR
+
         ! Each labelled flat cell is queued at most once
         ! Track breadth-first layers with an index instead of
         ! storing layer markers in the queue
         max_queue_size = count(flats /= 0)
         z = 0
         if (max_queue_size == 0) return
-        allocate (low_edges_ijs(2, max_queue_size), stat=err_code)
-        if (err_code /= 0) then
-            err_code = 2
+        allocate (low_edges_ijs(2, max_queue_size), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = ERR_ALLOCATION_FAILURE
             return
         end if
         call mask2ij( &
             low_edges, low_edges_ijs, size(low_edges_ijs, dim=2), nedges, &
             err_code)
-        if (err_code /= 0) return
+        if (err_code /= ERR_NO_ERROR) return
         if (nedges == 0) then
             deallocate (low_edges_ijs)
             return
         end if
-        allocate (queued(nrows, ncols), stat=err_code)
-        if (err_code /= 0) then
-            err_code = 2
+        allocate (queued(nrows, ncols), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = ERR_ALLOCATION_FAILURE
             return
         end if
         queued = .false.
@@ -571,7 +578,7 @@ contains
             iedge = iedge + 1
 
             if (array2d_oob(ci, cj, nrows, ncols)) then
-                err_code = 3
+                err_code = ERR_OVERFLOW
                 return
             end if
 
@@ -600,7 +607,7 @@ contains
                 ! Update queue
                 nedges = nedges + 1
                 if (nedges > max_queue_size) then
-                    err_code = 3
+                    err_code = ERR_OVERFLOW
                     return
                 end if
                 low_edges_ijs(:, nedges) = [ni, nj]

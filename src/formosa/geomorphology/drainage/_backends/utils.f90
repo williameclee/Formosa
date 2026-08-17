@@ -4,7 +4,7 @@
 !! direction code decoding, raster masking, and priority queues used
 !! by other FORTRAN modules.
 !!
-!! Last modified: 2026-08-14, En-Chi Lee (williameclee@gmail.com)
+!! Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
 module utils
     use iso_c_binding, only: c_int8_t
     implicit none(type, external)
@@ -84,12 +84,12 @@ contains
         integer :: ci, cj
 
         cnt = 0
-        err_code = 0
+        err_code = ERR_NO_ERROR
         do cj = lbound(mask, 2), ubound(mask, 2)
             do ci = lbound(mask, 1), ubound(mask, 1)
                 if (.not. mask(ci, cj)) cycle
                 if (cnt == nids) then
-                    err_code = 3
+                    err_code = ERR_OVERFLOW
                     return
                 end if
                 cnt = cnt + 1
@@ -125,13 +125,13 @@ contains
 
         ! Count number of valid neighbors
         cnt = 0
-        err_code = 0
+        err_code = ERR_NO_ERROR
 
         do cj = lbound(mask, 2), ubound(mask, 2)
             do ci = lbound(mask, 1), ubound(mask, 1)
                 if (.not. mask(ci, cj)) cycle
                 if (cnt == nij) then
-                    err_code = 3
+                    err_code = ERR_OVERFLOW
                     return
                 end if
                 cnt = cnt + 1
@@ -312,14 +312,14 @@ contains
         integer :: tmp_id
             !! For swapping the new cell to the right position
 
-        err_code = 0
+        err_code = ERR_NO_ERROR
 
         ! First make sure the queue is large enough
         if (queue_size < 0) then
-            err_code = 1 ! Incorrect input
+            err_code = ERR_INVALID_INPUT ! Incorrect input
             return
         elseif (queue_size >= size(queue)) then
-            err_code = 3 ! Overflow
+            err_code = ERR_OVERFLOW ! Overflow
             return
         end if
 
@@ -376,15 +376,15 @@ contains
         integer :: tmp_id
             !! For swapping the new cell to the right position
 
-        err_code = 0
+        err_code = ERR_NO_ERROR
 
         ! Check the queue is normal
         if (queue_size <= 0) then
-            err_code = 1 ! Incorrect input
+            err_code = ERR_INVALID_INPUT ! Incorrect input
             popped = 0
             return
         elseif (queue_size > size(queue)) then
-            err_code = 3 ! Overflow
+            err_code = ERR_OVERFLOW ! Overflow
             popped = 0
             return
         end if
