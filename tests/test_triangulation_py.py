@@ -4,14 +4,13 @@ Tests implementation details of the Python triangulation backend.
 This module covers Python-only triangulation helpers and local mesh
 operations that are not part of the public backend-independent API.
 
-Created: 2026-08-13, En-Chi Lee (williameclee@gmail.com)
+Created: 2026-08-16, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
 import pytest
 
 from formosa.geomorphology.drainage.network import GraphTopologyError
-from formosa.geomorphology.geometry import orient_v2
 from formosa.geomorphology.meshing._backends import triangulation_py as tri_py
 
 
@@ -34,4 +33,3 @@ def test_symbolic_infinite_predicate_rejects_invalid_cases():
 
     with pytest.raises(GraphTopologyError, match="more than 1 infinite"):
         tri_py.is_bad_triangle((iinf, iinf, 0), 1, vtxs, iinf)
-
