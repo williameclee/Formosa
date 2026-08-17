@@ -1,3 +1,12 @@
+"""
+Validates planar constraint graphs used for mesh generation.
+
+This module checks normalisation, raster bounds, boundary coverage,
+and edge intersections before triangulation.
+
+Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
+"""
+
 import numpy as np
 
 import formosa.geomorphology.drainage.network as network_m
@@ -184,6 +193,40 @@ def validate_constraints(
 ) -> None:
     """
     Validates a normalised constraint graph.
+
+    Parameters
+    ----------
+    indices : NDArray[int], shape (V, 2)
+        Unique, non-negative raster indices for constraint vertices.
+    edges : NDArray[int], shape (E, 2)
+        Unique constraint edges containing canonical, increasing
+        vertex-ID pairs.
+    edge_kinds : NDArray[uint8], shape (E,)
+        Bit flags identifying the kind of each constraint edge.
+    shape : tuple[int, int], optional
+        Raster shape used to validate vertex bounds and require
+        exact boundary coverage.
+        Default input is `None`.
+    backend : {"fortran", "python"}, optional
+        Computational backend used to detect invalid intersections.
+        Default backend is `"fortran"`.
+
+    Returns
+    -------
+    None
+        The function returns only after all validation checks pass.
+
+    Raises
+    ------
+    ValueError
+        If an input has an invalid shape or the backend is
+        unsupported.
+    TypeError
+        If an input array does not contain integers.
+    GraphTopologyError
+        If vertices or edges are out of bounds, the graph is not
+        normalised, boundary constraints are incomplete, or edges
+        contain invalid intersections.
     """
     indices = np.asarray(indices)
     edges = np.asarray(edges)

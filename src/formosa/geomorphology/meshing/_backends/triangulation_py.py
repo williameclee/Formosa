@@ -5,7 +5,7 @@ This internal module implements incremental Bowyer-Watson
 triangulation for the public meshing API.
 
 Created: 2026-08-12, En-Chi Lee (williameclee@gmail.com)
-Last modified: 2026-08-16, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
@@ -288,9 +288,7 @@ def find_triangle_neighbours(
             neighbours[itri, iside] = jtri
             neighbours[jtri, jside] = itri
 
-    edge_owners = {
-        edge: (itri, iside) for edge, (itri, iside, _) in owners.items()
-    }
+    edge_owners = {edge: (itri, iside) for edge, (itri, iside, _) in owners.items()}
     return neighbours, edge_owners
 
 
@@ -320,10 +318,9 @@ def flip_triangle_edge(
     iside: int,
 ) -> tuple[NDArray[NpCanonIndex], NDArray[NpCanonIndex]]:
     """
-    Flips one interior triangle edge in a convex quadrilateral.
+    Flips an interior triangle edge in a convex quadrilateral.
 
-    The input arrays are not modified. Neighbours are recomputed
-    after the flip to keep this initial implementation simple.
+    The input arrays are not modified.
     """
     if itri < 0 or itri >= triangles.shape[0]:
         raise IndexError(f"Triangle ID {itri} is out of bounds.")
@@ -366,9 +363,7 @@ def flip_triangle_edge(
     f_triangles = np.array(triangles, dtype=NpCanonIndex, order="C", copy=True)
     f_triangles[itri] = (p, u, q)
     f_triangles[jtri] = (p, q, v)
-    f_nabrs = _update_flipped_neighbours(
-        nabrs, itri, iside, jtri, jside
-    )
+    f_nabrs = _update_flipped_neighbours(nabrs, itri, iside, jtri, jside)
     return f_triangles, f_nabrs
 
 

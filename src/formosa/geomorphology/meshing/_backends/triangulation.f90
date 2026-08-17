@@ -1,4 +1,4 @@
-!> Triangulates raster-grid vertices using the FORTRAN backend.
+!> Triangulates raster-grid vertices using the Fortran backend.
 !!
 !! This internal module implements incremental Bowyer-Watson
 !! triangulation for integer 2D coordinates. Internal coordinates
@@ -75,14 +75,22 @@ contains
         facets(:, 4) = [iinf, facet(1), facet(3)]
     end subroutine make_initial_facets
 
+    !> Tests whether a triangle belongs to an insertion cavity.
+    !!
+    !! Finite triangles use the in-circle predicate. Facets
+    !! containing the symbolic infinite vertex use hull visibility
+    !! instead.
     pure logical function is_bad_facet(tri, ivtx, vtxs, iinf) result(flag)
         implicit none(type, external)
         ! Arguments
         integer(c_int32_t), intent(in) :: vtxs(:, :)
             !! Coordinates of the vertices.
         integer(c_int32_t), intent(in) :: tri(3)
+            !! Triangle vertex IDs in counterclockwise order.
         integer(c_int32_t), intent(in) :: ivtx
+            !! ID of the candidate vertex being inserted.
         integer(c_int32_t), intent(in) :: iinf
+            !! Symbolic infinite-vertex ID.
         ! Local variables
         integer :: inf_cnt
         integer :: jinf, jvtx, kvtx
@@ -151,7 +159,8 @@ contains
         ! Find if the edge is already in the buffer
         if (nedges > 0) then
             do iedge = 1, nedges
-                ! The edge could be stored in either orientation (but should be the opposite of the current one)
+                ! The edge could be stored in either orientation
+                !! (but should be the opposite of the current one)
                 if (min(edges(1, iedge), edges(2, iedge)) /= jvtx) cycle
                 if (max(edges(1, iedge), edges(2, iedge)) /= kvtx) cycle
                 ! A repeated edge is interior, remove from the buffer
@@ -273,21 +282,24 @@ contains
 
     !> Triangulates unique integer vertices using incremental
     !! Bowyer-Watson.
+    !!
+    !! The returned triangles use counterclockwise, one-based vertex
+    !! IDs. Their column order is not canonicalised by this routine.
     pure subroutine triangulate_points( &
         nvtxs, vtxs, facets, ntris, err_code)
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nvtxs
-            !! Number of vertices in the input
+            !! Number of vertices in the input.
         integer(c_int32_t), intent(in) :: vtxs(2, nvtxs)
-            !! 2D index coordinates of the vertices
+            !! Unique 2-D integer coordinates of the vertices.
         ! Outputs
         integer(c_int32_t), intent(out) :: facets(3, nvtxs*2 + 16)
-            !! Vertex indices of the triangles
+            !! Counterclockwise, one-based triangle vertex IDs.
         integer, intent(out) :: ntris
-            !! Number of triangles actually in the 'triangles' array
+            !! Number of active columns in 'facets'.
         integer, intent(out) :: err_code
-            !! Code indicating the status of the result
+            !! Shared backend status code:
             !!   - 0: completed successfully
             !!   - 1: invalid input
             !!   - 2: workspace allocation failed
@@ -389,17 +401,27 @@ contains
         edges(4, nedges) = iside
     end subroutine find_triangle_side_neighbour
 
+    !> Finds the adjacent triangle across each triangle side.
+    !!
+    !! Side 'i' is opposite vertex 'i'. Boundary sides receive the
+    !! sentinel value 'no_neighbour'.
     pure subroutine find_triangle_neighbours( &
         ntris, triangles, neighbours, err_code)
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: ntris
-            !! Number of triangles in the 'triangles' array.
+            !! Number of triangles in the mesh.
         integer(c_int32_t), intent(in) :: triangles(3, ntris)
-            !! Vertex indices of the triangles
+            !! 1-based triangle vertex IDs.
         ! Outputs
         integer(c_int32_t), intent(out) :: neighbours(3, ntris)
+            !! 1-based adjacent triangle IDs across corresponding
+            !! sides, or 'no_neighbour' at the mesh boundary.
         integer, intent(out) :: err_code
+            !! Shared backend status code:
+            !!   - 0: completed successfully
+            !!   - 2: edge-workspace allocation failed
+            !!   - 3: edge-workspace capacity exceeded
         ! Local variables
         integer :: itri
         integer :: ivtx, jvtx
@@ -488,6 +510,8 @@ contains
         implicit none(type, external)
         ! Arguments
         integer(c_int32_t), intent(in) :: a(2), b(2), c(2), d(2)
+            !! Quadrilateral coordinates, with 'a' opposite 'b' and
+            !! 'c' opposite 'd'.
         ! Local variables
         integer(c_int64_t) :: orient_u, orient_v
 
@@ -507,14 +531,26 @@ contains
         flag = .true.
     end function is_convex
 
+    !> Finds the triangle and local side sharing a mesh edge.
+    !!
+    !! The input side must be interior and have a reciprocal entry
+    !! in the neighbour table.
     pure subroutine find_edge_sharing_triangle( &
         nabrs, itri, iside, jtri, jside, err_code)
         implicit none(type, external)
         ! Arguments
         integer(c_int32_t), intent(in) :: nabrs(:, :)
+            !! 1-based triangle neighbours, with 'no_neighbour' at
+            !! the mesh boundary.
         integer, intent(in) :: itri, iside
+            !! Triangle and local side identifying the input edge.
         integer, intent(out) :: jtri, jside
+            !! Adjacent triangle and its reciprocal local side.
         integer, intent(out) :: err_code
+            !! Shared backend status code:
+            !! - 0: completed successfully
+            !! - 4: the edge is a boundary edge or has no
+            !!     reciprocal neighbour entry
 
         err_code = ERR_NO_ERROR
         jtri = nabrs(iside, itri)
@@ -535,23 +571,35 @@ contains
 
     !> Flips an interior triangle edge in a convex quadrilateral.
     !!
-    !! Notes
-    !! -----
-    !! The new edge is always at the 2nd position in the i-th
-    !! triangle (opposite from the second vertex) and the 3rd
-    !! position in the other triangle.
+    !! The routine updates the two incident triangles, their
+    !! neighbour records, and reciprocal records in adjacent
+    !! triangles. The new edge is side 2 of triangle 'itri' and side
+    !! 3 of the other triangle.
     pure subroutine flip_triangle_edge( &
         vtxs, triangles, nabrs, nvtxs, ntris, itri, iside, changes, err_code)
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nvtxs, ntris
+            !! Numbers of vertices and triangles in the mesh.
         integer(c_int32_t), intent(in) :: vtxs(2, nvtxs)
+            !! 2-D integer vertex coordinates.
         integer(c_int32_t), intent(inout) :: triangles(3, ntris)
+            !! 1-based triangle vertex IDs, updated in place.
         integer(c_int32_t), intent(inout) :: nabrs(3, ntris)
+            !! 1-based triangle neighbours, updated in place.
         integer, intent(in) :: itri, iside
+            !! Triangle and local side identifying the edge to flip.
         ! Outputs
         integer(c_int32_t), intent(out) :: changes(4, 4)
+            !! Descriptors '[itri, iside, vtx1, vtx2]' for the four
+            !! non-flipped sides whose ownership may have changed.
         integer, intent(out) :: err_code
+            !! Shared backend status code:
+            !! - 0: completed successfully
+            !! - 1: 'itri' or 'iside' is out of bounds
+            !! - 4: the edge is on the boundary, its neighbour
+            !!     record is invalid, or the quadrilateral is not
+            !!     convex
         ! Local variables
         integer :: jtri, jside
         integer(c_int32_t) :: p, q, u, v
@@ -637,7 +685,7 @@ contains
         integer(c_int32_t), intent(in) :: nabrs(3, ntris)
             !! Triangle neighbour indices across sides.
         integer, intent(in) :: edge(2)
-            !! Endpoint vertex IDs of the constraint edge.
+            !! 1-based endpoint vertex IDs of the constraint edge.
         ! Outputs
         integer(c_int32_t), intent(out) :: xngs(4, ntris)
             !! Descriptor columns [itri, iside, vtx1, vtx2] for
@@ -645,7 +693,7 @@ contains
         integer(c_int32_t), intent(out) :: nxngs
             !! Total number of crossing mesh edges found.
         integer, intent(out) :: err_code
-            !! Shared backend status code
+            !! Shared backend status code:
             !!   - 0: completed successfully
             !!   - 2: workspace allocation failed
         ! Local variables
@@ -960,21 +1008,40 @@ contains
         end do
     end subroutine restore_deluanay_triangulation
 
+    !> Recovers one constraint as a mesh edge using iterative flips.
+    !!
+    !! Existing mesh edges in 'locked_edges' are never flipped.
+    !! After the constraint is recovered, eligible new edges are
+    !! flipped to restore the local Delaunay condition without
+    !! removing it.
     pure subroutine recover_constraint_edge( &
         vtxs, nvtxs, faces, nabrs, ntris, &
         edge, locked_edges, nledges, err_code)
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nvtxs
+            !! Number of vertices in the mesh.
         integer, intent(in) :: ntris
+            !! Number of triangles in the mesh.
         integer(c_int32_t), intent(in) :: vtxs(2, nvtxs)
+            !! 2-D integer vertex coordinates.
         integer(c_int32_t), intent(inout) :: faces(3, ntris)
+            !! 1-based triangle vertex IDs, updated in place.
         integer(c_int32_t), intent(inout) :: nabrs(3, ntris)
+            !! 1-based triangle neighbours, updated in place.
         integer(c_int32_t), intent(in) :: edge(2)
+            !! 1-based endpoint vertex IDs of the constraint.
         integer, intent(in) :: nledges
+            !! Number of locked constraint edges.
         integer(c_int32_t), intent(in) :: locked_edges(2, nledges)
+            !! 1-based endpoint pairs that must be preserved.
         ! Outputs
         integer, intent(out) :: err_code
+            !! Shared backend status code:
+            !! - 0: completed successfully
+            !! - 2: crossing-edge workspace allocation failed
+            !! - 4: no legal sequence of flips recovers the
+            !!     constraint
         ! Local variables
         integer(c_int32_t) :: xngs(4, ntris)
             !! Descriptor columns [itri, iside, vtx1, vtx2] for
@@ -1046,21 +1113,31 @@ contains
 
     !> Recovers non-crossing constraint edges sequentially while
     !! preserving every earlier constraint.
+    !!
+    !! 'faces' is updated in place. Each successfully recovered edge
+    !! is passed to the next recovery step as a locked edge.
     pure subroutine recover_constraint_edges( &
         vtxs, nvtxs, faces, ntris, edges, nedges, nabrs, &
         failed_edge, err_code)
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nvtxs, ntris, nedges
+            !! Numbers of vertices, triangles, and constraints.
         integer(c_int32_t), intent(in) :: vtxs(2, nvtxs)
+            !! 2D integer vertex coordinates.
         integer(c_int32_t), intent(inout) :: faces(3, ntris)
+            !! 1-based triangle vertex IDs, updated in place.
         integer(c_int32_t), intent(in) :: edges(2, nedges)
+            !! 1-based constraint endpoint pairs in recovery order.
         ! Outputs
         integer(c_int32_t), intent(out) :: nabrs(3, ntris)
+            !! 1-based triangle neighbours for the recovered mesh.
         integer, intent(out) :: failed_edge
-            !! One-based position of the failed constraint, or zero
+            !! 1-based position of the failed constraint, or zero
             !! when all constraints were recovered.
         integer, intent(out) :: err_code
+            !! Shared backend status code propagated from neighbour
+            !! construction or single-edge recovery.
         ! Local variables
         integer :: iedge
 

@@ -126,6 +126,22 @@ All public geometry predicates accept `backend="fortran"` or `backend="python"` 
 | [`bboxes_overlap`](../src/formosa/geomorphology/geometry/intersections.py) | `.geomorphology.geometry.bboxes_overlap` | Tests whether two closed segment bounding boxes overlap. | FORTRAN + Python | [Parity](../tests/test_geometry_intersections.py) | Bounding-box overlap does not itself imply segment intersection. |
 | [`lines_intersect_v2`](../src/formosa/geomorphology/geometry/intersections.py) | `.geomorphology.geometry.lines_intersect_v2` | Classifies intersection between two closed 2-D line segments. | FORTRAN + Python | [Parity](../tests/test_geometry_intersections.py) | Used by flow-graph topology validation. |
 
+## Meshing
+
+The meshing API triangulates 2-D vertices and recovers edges of a planar
+straight-line graph. These functions are available from
+`formosa.geomorphology.meshing.triangulation`; constraint validation is
+available from `formosa.geomorphology.meshing.validation`.
+
+| Symbol | Import path | Purpose | Backend | Tests | Notes |
+| --- | --- | --- | --- | --- | --- |
+| [`triangulate_points`](../src/formosa/geomorphology/meshing/triangulation.py) | `.geomorphology.meshing.triangulation.triangulate_points` | Computes a canonical unconstrained Delaunay triangulation of 2-D vertices. | FORTRAN + Python | [Parity](../tests/test_triangulation.py) | Returns counterclockwise triangles in deterministic lexicographic order; the FORTRAN backend requires `int32`-representable integer coordinates. |
+| [`find_triangle_neighbours`](../src/formosa/geomorphology/meshing/triangulation.py) | `.geomorphology.meshing.triangulation.find_triangle_neighbours` | Finds the adjacent triangle across each side of every triangle. | FORTRAN + Python | [Parity](../tests/test_triangulation.py) | Uses `-1` for mesh-boundary sides. |
+| [`flip_triangle_edge`](../src/formosa/geomorphology/meshing/triangulation.py) | `.geomorphology.meshing.triangulation.flip_triangle_edge` | Replaces the diagonal of a convex pair of adjacent triangles. | FORTRAN + Python | [Parity](../tests/test_triangulation.py) | Does not mutate the supplied triangles or optional neighbour array; defaults to the Python backend. |
+| [`recover_constraint_edge`](../src/formosa/geomorphology/meshing/triangulation.py) | `.geomorphology.meshing.triangulation.recover_constraint_edge` | Recovers one constraint as a mesh edge using legal edge flips. | FORTRAN + Python | [Parity](../tests/test_triangulation.py) | Can preserve an explicit set of locked mesh edges. |
+| [`recover_constraint_edges`](../src/formosa/geomorphology/meshing/triangulation.py) | `.geomorphology.meshing.triangulation.recover_constraint_edges` | Recovers non-crossing constraints sequentially while preserving earlier constraints. | FORTRAN + Python | [Parity](../tests/test_triangulation.py) | Reports the position and canonical vertex pair of a constraint that cannot be recovered. |
+| [`validate_constraints`](../src/formosa/geomorphology/meshing/validation.py) | `.geomorphology.meshing.validation.validate_constraints` | Validates the normalisation, bounds, boundary coverage, and intersections of a constraint graph. | FORTRAN + Python | Indirect | Called by `ConstraintGraph.validate`; intersection checks use the selected backend. |
+
 ## Graphics
 
 | Symbol | Import path | Purpose | Backend | Tests | Notes |
@@ -171,4 +187,4 @@ To re-audit the declared public boundary, inspect all package `__init__.py` file
 
 Maintainer: [En-Chi Lee (`@williameclee`)](https://github.com/williameclee)
 
-Last updated: 2026-08-12
+Last updated: 2026-08-17
