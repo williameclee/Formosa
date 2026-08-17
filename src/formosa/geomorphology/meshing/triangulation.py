@@ -12,7 +12,9 @@ Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
 import numpy as np
 
 from formosa.geomorphology._native import meshing_triangulation as tri_f
+from formosa.geomorphology._native import meshing_cstr_triangulation as cstrtri_f
 import formosa.geomorphology.meshing._backends.triangulation_py as tri_py
+import formosa.geomorphology.meshing._backends.constrained_triangulation_py as cstrtri_py
 from formosa.geomorphology.drainage.network import GraphTopologyError
 
 from typing import Optional
@@ -29,7 +31,7 @@ _TRIANGULATION_ERRORS = {
 
 
 def _to_fortran_coords(vtxs: NDArray[NpCoords]) -> NDArray[np.int32]:
-    """Converts ``(V, 2)`` coordinates to native ``(2, V)`` layout."""
+    """Converts `(V, 2)` coordinates to native `(2, V)` layout."""
     return np.asfortranarray(vtxs.T, dtype=np.int32)
 
 
@@ -39,7 +41,7 @@ def _to_fortran_indices(indices: NDArray[NpCanonIndex]) -> NDArray[np.int32]:
 
 
 def _to_fortran_neighbours(nabrs: NDArray[NpCanonIndex]) -> NDArray[np.int32]:
-    """Converts neighbours to native layout without changing ``-1`` sentinels."""
+    """Converts neighbours to native layout without changing `-1` sentinels."""
     nabrs_f = np.array(nabrs.T, dtype=np.int32, order="F", copy=True)
     nabrs_f[nabrs_f >= 0] += 1
     return nabrs_f
@@ -51,7 +53,7 @@ def _from_fortran_indices(indices_f: NDArray[np.int32]) -> NDArray[NpCanonIndex]
 
 
 def _from_fortran_neighbours(nabrs_f: NDArray[np.int32]) -> NDArray[NpCanonIndex]:
-    """Converts native neighbours to row-major layout, preserving ``-1``."""
+    """Converts native neighbours to row-major layout, preserving `-1`."""
     nabrs = np.ascontiguousarray(nabrs_f.T, dtype=NpCanonIndex)
     nabrs[nabrs >= 0] -= 1
     return nabrs
@@ -368,7 +370,7 @@ def flip_quadrilateral_edge(
 
     match backend:
         case "python":
-            f_faces, f_nabrs = tri_py.flip_quadrilateral_edge(
+            f_faces, f_nabrs = cstrtri_py.flip_quadrilateral_edge(
                 vtxs, faces, nabrs, iface, iside
             )
         case "fortran":
@@ -377,7 +379,7 @@ def flip_quadrilateral_edge(
             vtxs_f = _to_fortran_coords(vtxs)
             faces_f = _to_fortran_indices(faces)
             nabrs_f = _to_fortran_neighbours(nabrs)
-            _, err_code = tri_f.flip_quadrilateral_edge(
+            _, err_code = cstrtri_f.flip_quadrilateral_edge(
                 vtxs_f, faces_f, nabrs_f, iface + 1, iside + 1
             )
             raise_fortran_error(
@@ -406,13 +408,13 @@ def _find_crossing_edges(
     """
     match backend:
         case "python":
-            return tri_py._find_crossing_edges(vtxs, faces, nabrs, edge)
+            return cstrtri_py._find_crossing_edges(vtxs, faces, nabrs, edge)
         case "fortran":
             vtxs_f = _to_fortran_coords(vtxs)
             faces_f = _to_fortran_indices(faces)
             nabrs_f = _to_fortran_neighbours(nabrs)
             edge_f = _to_fortran_indices(np.asarray(edge, dtype=NpCanonIndex))
-            xngs_f, nxngs, err_code = tri_f.find_crossing_edges(
+            xngs_f, nxngs, err_code = cstrtri_f.find_crossing_edges(
                 vtxs_f, faces_f, nabrs_f, edge_f
             )
             raise_fortran_error(
@@ -573,12 +575,8 @@ def recover_constraint_edge(
 
     match backend:
         case "python":
-            r_faces, r_nabrs = tri_py.recover_constraint_edge(
-                vtxs,
-                faces,
-                target,
-                locked_edges=locked,
-                nabrs=nabrs,
+            r_faces, r_nabrs = cstrtri_py.recover_constraint_edge(
+                vtxs, faces, target, locked_edges=locked, nabrs=nabrs
             )
         case "fortran":
             _validate_fortran_coords(vtxs)
@@ -595,7 +593,7 @@ def recover_constraint_edge(
             else:
                 locked_f = np.empty((2, 0), dtype=np.int32, order="F")
 
-            err_code = tri_f.recover_constraint_edge(
+            err_code = cstrtri_f.recover_constraint_edge(
                 vtxs_f, faces_f, nabrs_f, edge_f, locked_f
             )
             raise_fortran_error(
@@ -678,7 +676,7 @@ def recover_constraint_edges(
 
     match backend:
         case "python":
-            r_faces, r_nabrs = tri_py.recover_constraint_edges(vtxs, faces, edges)
+            r_faces, r_nabrs = cstrtri_py.recover_constraint_edges(vtxs, faces, edges)
         case "fortran":
             _validate_fortran_coords(vtxs)
             _validate_fortran_vertex_ids(faces)
@@ -686,7 +684,7 @@ def recover_constraint_edges(
             faces_f = _to_fortran_indices(faces)
             edges_f = _to_fortran_indices(edges)
 
-            r_nabrs_f, failed_edge, err_code = tri_f.recover_constraint_edges(
+            r_nabrs_f, failed_edge, err_code = cstrtri_f.recover_constraint_edges(
                 vtxs_f, faces_f, edges_f
             )
             if err_code != 0 and failed_edge > 0:

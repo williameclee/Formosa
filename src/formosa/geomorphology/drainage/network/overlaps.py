@@ -240,7 +240,7 @@ def _find_shared_vertex_neighbours(
     endpts : NDArray[int]
         A-by-2 array of inclusive arc ranges in the graph's stored vertex array.
     shared_vert_ids : NDArray[int]
-        Unique-vertex IDs in ``analysis`` for every vertex shared by the two
+        Unique-vertex IDs in `analysis` for every vertex shared by the two
         graphs.
     context : NDArray[bool]
         Mask over the shared vertices selecting those that may participate in
