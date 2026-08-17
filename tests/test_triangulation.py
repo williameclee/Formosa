@@ -488,6 +488,22 @@ def test_find_crossing_edges_preserves_mesh_order(backend):
     ]
 
 
+def test_find_crossing_edges_fortran_does_not_modify_inputs():
+    vtxs = np.array([[0, 0], [0, 1], [1, 0], [1, 1]], dtype=np.int32)
+    faces = np.array([[0, 2, 1], [2, 3, 1]], dtype=np.int32)
+    nabrs = tri_m.find_facet_neighbours(faces, backend="fortran")
+    input_vtxs = vtxs.copy()
+    input_faces = faces.copy()
+    input_nabrs = nabrs.copy()
+
+    xngs = tri_m._find_crossing_edges(vtxs, faces, nabrs, (0, 3), backend="fortran")
+
+    assert xngs == [(0, 0, (1, 2))]
+    np.testing.assert_array_equal(vtxs, input_vtxs)
+    np.testing.assert_array_equal(faces, input_faces)
+    np.testing.assert_array_equal(nabrs, input_nabrs)
+
+
 @pytest.mark.parametrize("backend", BACKENDS)
 def test_recover_constraint_edge_flips_crossing_diagonal(backend):
     vtxs = np.array([[0, 0], [1, 0], [0, 1], [1, 1]], dtype=np.int32)
@@ -528,8 +544,7 @@ def test_recover_constraint_edge_handles_multiple_crossings(backend):
 
     assert np.any(np.any(r_faces == 0, axis=1) & np.any(r_faces == 7, axis=1))
     assert all(
-        orient(*(vtxs[vtx] for vtx in face), backend="python") > 0
-        for face in r_faces
+        orient(*(vtxs[vtx] for vtx in face), backend="python") > 0 for face in r_faces
     )
     np.testing.assert_array_equal(
         nabrs, tri_m.find_facet_neighbours(r_faces, backend=backend)
@@ -641,6 +656,9 @@ def test_recover_constraint_edges_recovers_and_preserves_every_edge(backend):
     mesh_edges, _ = _mesh_edges(r_faces)
     mesh_edge_set = {tuple(map(int, edge)) for edge in mesh_edges}
     assert {tuple(sorted(map(int, edge))) for edge in edges} <= mesh_edge_set
+    assert np.all(r_faces[:, 0] == np.min(r_faces, axis=1))
+    order = np.lexsort((r_faces[:, 2], r_faces[:, 1], r_faces[:, 0]))
+    np.testing.assert_array_equal(order, np.arange(r_faces.shape[0]))
     np.testing.assert_array_equal(
         nabrs, tri_m.find_facet_neighbours(r_faces, backend=backend)
     )
@@ -660,6 +678,25 @@ def test_recover_constraint_edges_accepts_empty_constraint_set(backend):
 
     np.testing.assert_array_equal(r_faces, faces)
     np.testing.assert_array_equal(nabrs, [[-1, -1, -1]])
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_recover_constraint_edges_returns_canonical_facet_topology(backend):
+    vtxs = np.array([[0, 0], [1, 0], [0, 1], [1, 1]], dtype=np.int32)
+    faces = np.array([[3, 2, 1], [2, 0, 1]], dtype=np.int32)
+    edges = np.empty((0, 2), dtype=np.int32)
+
+    r_faces, nabrs = tri_m.recover_constraint_edges(vtxs, faces, edges, backend=backend)
+
+    np.testing.assert_array_equal(r_faces, [[0, 1, 2], [1, 3, 2]])
+    np.testing.assert_array_equal(nabrs, [[1, -1, -1], [-1, 0, -1]])
+    np.testing.assert_array_equal(
+        nabrs, tri_m.find_facet_neighbours(r_faces, backend=backend)
+    )
+    assert r_faces.dtype == np.int32
+    assert r_faces.flags.c_contiguous
+    assert nabrs.dtype == np.int32
+    assert nabrs.flags.c_contiguous
 
 
 @pytest.mark.parametrize("backend", BACKENDS)

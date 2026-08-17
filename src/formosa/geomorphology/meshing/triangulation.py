@@ -28,6 +28,59 @@ _TRIANGULATION_ERRORS = {
 }
 
 
+def _to_fortran_coords(vtxs: NDArray[NpCoords]) -> NDArray[np.int32]:
+    """Converts ``(V, 2)`` coordinates to native ``(2, V)`` layout."""
+    return np.asfortranarray(vtxs.T, dtype=np.int32)
+
+
+def _to_fortran_indices(indices: NDArray[NpCanonIndex]) -> NDArray[np.int32]:
+    """Converts zero-based row-major indices to one-based native layout."""
+    return np.asfortranarray(indices.T, dtype=np.int32) + 1
+
+
+def _to_fortran_neighbours(nabrs: NDArray[NpCanonIndex]) -> NDArray[np.int32]:
+    """Converts neighbours to native layout without changing ``-1`` sentinels."""
+    nabrs_f = np.array(nabrs.T, dtype=np.int32, order="F", copy=True)
+    nabrs_f[nabrs_f >= 0] += 1
+    return nabrs_f
+
+
+def _from_fortran_indices(indices_f: NDArray[np.int32]) -> NDArray[NpCanonIndex]:
+    """Converts one-based native indices to zero-based row-major layout."""
+    return np.ascontiguousarray(indices_f.T, dtype=NpCanonIndex) - 1
+
+
+def _from_fortran_neighbours(nabrs_f: NDArray[np.int32]) -> NDArray[NpCanonIndex]:
+    """Converts native neighbours to row-major layout, preserving ``-1``."""
+    nabrs = np.ascontiguousarray(nabrs_f.T, dtype=NpCanonIndex)
+    nabrs[nabrs >= 0] -= 1
+    return nabrs
+
+
+def _validate_fortran_coords(vtxs: NDArray[NpCoords]) -> None:
+    """Validates coordinates against the native integer representation."""
+    if not np.issubdtype(vtxs.dtype, np.integer):
+        raise TypeError(
+            "The Fortran triangulation backend requires integer coordinates, "
+            + f"but got {vtxs.dtype}."
+        )
+    int32_info = np.iinfo(np.int32)
+    if np.any(vtxs < int32_info.min) or np.any(vtxs > int32_info.max):
+        raise OverflowError(
+            "The Fortran triangulation backend requires coordinates "
+            + "representable as int32."
+        )
+
+
+def _validate_fortran_vertex_ids(faces: NDArray[NpCanonIndex]) -> None:
+    """Validates zero-based vertex IDs before conversion to one-based int32."""
+    if np.any(faces >= np.iinfo(np.int32).max):
+        raise OverflowError(
+            "The Fortran triangulation backend requires vertex IDs "
+            + "smaller than the int32 maximum."
+        )
+
+
 def _validate_triangulate_points(vtxs: NDArray[NpCoords]) -> None:
     if vtxs.ndim != 2 or vtxs.shape[1] != 2:
         raise ValueError("Vertices must have shape (V, 2), " + f"but got {vtxs.shape}.")
@@ -59,6 +112,41 @@ def _canonicalise_facets(
     # Sort by first, then second, then third index
     order = np.lexsort((faces[:, 2], faces[:, 1], faces[:, 0]))
     return np.ascontiguousarray(faces[order], dtype=NpCanonIndex)
+
+
+def _canonicalise_facet_topology(
+    faces: NDArray[NpCanonIndex],
+    nabrs: NDArray[NpCanonIndex],
+) -> tuple[NDArray[NpCanonIndex], NDArray[NpCanonIndex]]:
+    """
+    Returns facets and their neighbours in a canonical order.
+
+    Neighbour columns follow facet vertex rotations, neighbour rows
+    follow facet sorting, and neighbour IDs are remapped to the new
+    facet IDs.
+    """
+    faces = np.asarray(faces, dtype=NpCanonIndex, order="C")
+    nabrs = np.asarray(nabrs, dtype=NpCanonIndex, order="C")
+
+    starts = np.argmin(faces, axis=1)
+    offsets = np.arange(3)
+    rotations = (starts[:, np.newaxis] + offsets) % 3
+    faces = np.take_along_axis(faces, rotations, axis=1)
+    nabrs = np.take_along_axis(nabrs, rotations, axis=1)
+
+    order = np.lexsort((faces[:, 2], faces[:, 1], faces[:, 0]))
+    faces = faces[order]
+    nabrs = nabrs[order]
+
+    old_to_new = np.empty(faces.shape[0], dtype=NpCanonIndex)
+    old_to_new[order] = np.arange(faces.shape[0], dtype=NpCanonIndex)
+    interior = nabrs >= 0
+    nabrs[interior] = old_to_new[nabrs[interior]]
+
+    return (
+        np.ascontiguousarray(faces, dtype=NpCanonIndex),
+        np.ascontiguousarray(nabrs, dtype=NpCanonIndex),
+    )
 
 
 def triangulate_points(
@@ -116,29 +204,15 @@ def triangulate_points(
         case "python":
             faces = tri_py.triangulate_points(vtxs)
         case "fortran":
-            if not np.issubdtype(vtxs.dtype, np.integer):
-                raise TypeError(
-                    "The Fortran triangulation backend requires integer coordinates, "
-                    + f"but got {vtxs.dtype}."
-                )
-            int32_info = np.iinfo(np.int32)
-            if np.any(vtxs < int32_info.min) or np.any(vtxs > int32_info.max):
-                raise OverflowError(
-                    "The Fortran triangulation backend requires coordinates representable as int32, "
-                    + f"but detected overflowed coordinates."
-                )
-            points_f = np.asfortranarray(
-                vtxs.T, dtype=np.int32
-            )  # No need to convert to 1-based index
-            faces_f, nfaces, err_code = tri_f.triangulate_points(points_f)
+            _validate_fortran_coords(vtxs)
+            vtxs_f = _to_fortran_coords(vtxs)
+            faces_f, nfaces, err_code = tri_f.triangulate_points(vtxs_f)
             raise_fortran_error(
                 "triangulate_points",
                 err_code,
                 errors=_TRIANGULATION_ERRORS,
             )
-            faces = (
-                faces_f[:, :nfaces].T.astype(NpCanonIndex, order="C") - 1
-            )  # Truncate and convert back to 0-based index
+            faces = _from_fortran_indices(faces_f[:, :nfaces])
         case _:
             raise ValueError(f"Unknown backend: {backend}")
     return _canonicalise_facets(faces)
@@ -194,19 +268,13 @@ def find_facet_neighbours(
         case "python":
             nabrs, _ = tri_py.find_facet_neighbours(faces)
         case "fortran":
-            int32_info = np.iinfo(np.int32)
-            if np.any(faces >= int32_info.max):
-                raise OverflowError(
-                    "The Fortran triangulation backend requires vertex IDs "
-                    + "smaller than the int32 maximum."
-                )
-            faces_f = np.asfortranarray(faces.T, dtype=np.int32) + 1
+            _validate_fortran_vertex_ids(faces)
+            faces_f = _to_fortran_indices(faces)
             nabrs_f, err_code = tri_f.find_facet_neighbours(faces_f)
             raise_fortran_error(
                 "find_facet_neighbours", err_code, errors=_TRIANGULATION_ERRORS
             )
-            nabrs = nabrs_f.T.astype(NpCanonIndex, order="C")
-            nabrs[nabrs >= 0] -= 1
+            nabrs = _from_fortran_neighbours(nabrs_f)
         case _:
             raise ValueError(f"Unknown backend: {backend}")
 
@@ -304,37 +372,19 @@ def flip_quadrilateral_edge(
                 vtxs, faces, nabrs, iface, iside
             )
         case "fortran":
-            if not np.issubdtype(vtxs.dtype, np.integer):
-                raise TypeError(
-                    "The Fortran triangulation backend requires integer coordinates, "
-                    + f"but got {vtxs.dtype}."
-                )
-            int32_info = np.iinfo(np.int32)
-            if np.any(vtxs < int32_info.min) or np.any(vtxs > int32_info.max):
-                raise OverflowError(
-                    "The Fortran triangulation backend requires coordinates "
-                    + "representable as int32."
-                )
-            if np.any(faces >= int32_info.max):
-                raise OverflowError(
-                    "The Fortran triangulation backend requires vertex IDs "
-                    + "smaller than the int32 maximum."
-                )
-
-            vtxs_f = np.asfortranarray(vtxs.T, dtype=np.int32)
-            faces_f = np.array(faces.T, dtype=np.int32, order="F", copy=True)
-            faces_f += 1
-            nabrs_f = np.array(nabrs.T, dtype=np.int32, order="F", copy=True)
-            nabrs_f[nabrs_f >= 0] += 1
+            _validate_fortran_coords(vtxs)
+            _validate_fortran_vertex_ids(faces)
+            vtxs_f = _to_fortran_coords(vtxs)
+            faces_f = _to_fortran_indices(faces)
+            nabrs_f = _to_fortran_neighbours(nabrs)
             _, err_code = tri_f.flip_quadrilateral_edge(
                 vtxs_f, faces_f, nabrs_f, iface + 1, iside + 1
             )
             raise_fortran_error(
                 "flip_quadrilateral_edge", err_code, errors=_TRIANGULATION_ERRORS
             )
-            f_faces = faces_f.T.astype(NpCanonIndex, order="C") - 1
-            f_nabrs = nabrs_f.T.astype(NpCanonIndex, order="C")
-            f_nabrs[f_nabrs >= 0] -= 1
+            f_faces = _from_fortran_indices(faces_f)
+            f_nabrs = _from_fortran_neighbours(nabrs_f)
         case _:
             raise ValueError(f"Unknown backend: {backend}")
     return f_faces, f_nabrs
@@ -358,19 +408,17 @@ def _find_crossing_edges(
         case "python":
             return tri_py._find_crossing_edges(vtxs, faces, nabrs, edge)
         case "fortran":
-            vtxs_f = np.asfortranarray(vtxs.T, dtype=np.int32)
-            faces_f = np.asfortranarray(faces.T, dtype=np.int32) + 1
-            nabrs_f = np.asfortranarray(nabrs.T, dtype=np.int32)
-            nabrs_f[nabrs_f >= 0] += 1
-            edge_f = np.asarray(edge, dtype=np.int32) + 1
+            vtxs_f = _to_fortran_coords(vtxs)
+            faces_f = _to_fortran_indices(faces)
+            nabrs_f = _to_fortran_neighbours(nabrs)
+            edge_f = _to_fortran_indices(np.asarray(edge, dtype=NpCanonIndex))
             xngs_f, nxngs, err_code = tri_f.find_crossing_edges(
                 vtxs_f, faces_f, nabrs_f, edge_f
             )
             raise_fortran_error(
                 "find_crossing_edges", err_code, errors=_TRIANGULATION_ERRORS
             )
-            xngs = xngs_f[:, :nxngs].T.astype(NpCanonIndex, order="C")
-            xngs -= 1
+            xngs = _from_fortran_indices(xngs_f[:, :nxngs])
             return [
                 (int(iface), int(iside), (int(j), int(k)))
                 for iface, iside, j, k in xngs
@@ -416,28 +464,6 @@ def _validate_constraint_edges(edges: NDArray[NpCanonIndex], nvtxs: int) -> None
     if (count := int(np.sum(edges[:, 0] == edges[:, 1]))) > 0:
         raise ValueError(
             "Constraint edges cannot be self-edges, " + f"but found {count} self-edges."
-        )
-
-
-def _validate_fortran_constraint_inputs(
-    vtxs: NDArray[NpCoords], faces: NDArray[NpCanonIndex]
-) -> None:
-    """
-    Validates native integer representation limits.
-    """
-    if not np.issubdtype(vtxs.dtype, np.integer):
-        raise TypeError(
-            "The Fortran triangulation backend requires integer coordinates, "
-            + f"but got {vtxs.dtype}."
-        )
-    int32_info = np.iinfo(np.int32)
-    if np.any(vtxs < int32_info.min) or np.any(vtxs > int32_info.max):
-        raise OverflowError(
-            "The Fortran triangulation backend requires coordinates representable as int32."
-        )
-    if np.any(faces >= int32_info.max):
-        raise OverflowError(
-            "The Fortran triangulation backend requires vertex IDs smaller than the int32 maximum."
         )
 
 
@@ -555,17 +581,16 @@ def recover_constraint_edge(
                 nabrs=nabrs,
             )
         case "fortran":
-            _validate_fortran_constraint_inputs(vtxs, faces)
+            _validate_fortran_coords(vtxs)
+            _validate_fortran_vertex_ids(faces)
 
-            vtxs_f = np.asfortranarray(vtxs.T, dtype=np.int32)
-            faces_f = np.array(faces.T, dtype=np.int32, order="F", copy=True)
-            faces_f += 1
-            nabrs_f = np.array(nabrs.T, dtype=np.int32, order="F", copy=True)
-            nabrs_f[nabrs_f >= 0] += 1
-            edge_f = np.asarray(target, dtype=np.int32) + 1
+            vtxs_f = _to_fortran_coords(vtxs)
+            faces_f = _to_fortran_indices(faces)
+            nabrs_f = _to_fortran_neighbours(nabrs)
+            edge_f = _to_fortran_indices(np.asarray(target, dtype=NpCanonIndex))
             if locked:
-                locked_f = (
-                    np.asfortranarray(np.asarray(sorted(locked), dtype=np.int32).T) + 1
+                locked_f = _to_fortran_indices(
+                    np.asarray(sorted(locked), dtype=NpCanonIndex)
                 )
             else:
                 locked_f = np.empty((2, 0), dtype=np.int32, order="F")
@@ -578,9 +603,8 @@ def recover_constraint_edge(
                 err_code,
                 errors=_TRIANGULATION_ERRORS,
             )
-            r_faces = faces_f.T.astype(NpCanonIndex, order="C") - 1
-            r_nabrs = nabrs_f.T.astype(NpCanonIndex, order="C")
-            r_nabrs[r_nabrs >= 0] -= 1
+            r_faces = _from_fortran_indices(faces_f)
+            r_nabrs = _from_fortran_neighbours(nabrs_f)
         case _:
             raise ValueError(f"Unknown backend: {backend}")
 
@@ -601,7 +625,9 @@ def recover_constraint_edges(
     Delaunay triangulation sequentially using edge flips.
 
     Every recovered constraint is locked before the next is
-    processed. Input arrays are not modified.
+    processed. Input arrays are not modified. Returned facets start
+    with their smallest vertex ID and are ordered lexicographically;
+    neighbour rows, columns, and IDs follow that canonical order.
 
     Parameters
     ----------
@@ -618,7 +644,8 @@ def recover_constraint_edges(
     Returns
     -------
     r_faces : NDArray[int32], shape (F, 3)
-        Triangle vertex IDs for a mesh containing every constraint.
+        Triangle vertex IDs for a mesh containing every constraint,
+        in canonical lexicographic order.
     nabrs : NDArray[int32], shape (F, 3)
         Triangle neighbours for the recovered mesh.
 
@@ -653,11 +680,11 @@ def recover_constraint_edges(
         case "python":
             r_faces, r_nabrs = tri_py.recover_constraint_edges(vtxs, faces, edges)
         case "fortran":
-            _validate_fortran_constraint_inputs(vtxs, faces)
-            vtxs_f = np.asfortranarray(vtxs.T, dtype=np.int32)
-            faces_f = np.array(faces.T, dtype=np.int32, order="F", copy=True)
-            faces_f += 1
-            edges_f = np.asfortranarray(edges.T, dtype=np.int32) + 1
+            _validate_fortran_coords(vtxs)
+            _validate_fortran_vertex_ids(faces)
+            vtxs_f = _to_fortran_coords(vtxs)
+            faces_f = _to_fortran_indices(faces)
+            edges_f = _to_fortran_indices(edges)
 
             r_nabrs_f, failed_edge, err_code = tri_f.recover_constraint_edges(
                 vtxs_f, faces_f, edges_f
@@ -687,13 +714,9 @@ def recover_constraint_edges(
                 err_code,
                 errors=_TRIANGULATION_ERRORS,
             )
-            r_faces = faces_f.T.astype(NpCanonIndex, order="C") - 1
-            r_nabrs = r_nabrs_f.T.astype(NpCanonIndex, order="C")
-            r_nabrs[r_nabrs >= 0] -= 1
+            r_faces = _from_fortran_indices(faces_f)
+            r_nabrs = _from_fortran_neighbours(r_nabrs_f)
         case _:
             raise ValueError(f"Unknown backend: {backend}")
 
-    return (
-        np.ascontiguousarray(r_faces, dtype=NpCanonIndex),
-        np.ascontiguousarray(r_nabrs, dtype=NpCanonIndex),
-    )
+    return _canonicalise_facet_topology(r_faces, r_nabrs)
