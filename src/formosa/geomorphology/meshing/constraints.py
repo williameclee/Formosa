@@ -1,15 +1,23 @@
+"""
+Constructs and normalises planar constraint graphs for meshing.
+
+This module provides data structures and helpers to assemble,
+deduplicate, and normalise boundary and network constraints
+prior to constrained triangulation.
+
+Last modified: 2026-08-18, En-Chi Lee (williameclee@gmail.com)
+"""
+
 from dataclasses import dataclass
 import numpy as np
 
-from formosa.geomorphology.drainage.network import GraphTopologyError
-from formosa.geomorphology.drainage.network.models import FlowGraph
+from formosa.geomorphology.drainage.network import FlowGraph, GraphTopologyError
 from formosa.geomorphology.meshing.core import ConstraintKind
 from formosa.geomorphology.meshing.validation import validate_constraints
 
 from typing import Iterable, Optional
 from numpy.typing import NDArray
-from formosa.utils import Backend
-from formosa.utils.typing import NpCanonIndex
+from formosa.utils import Backend, NpCanonIndex
 
 
 @dataclass(frozen=True)
@@ -37,6 +45,7 @@ def _make_boundary_constraints(shape: tuple[int, int]) -> ConstraintInput:
         FlowGraph(
             bdry_indices,
             np.array([[0, bdry_indices.shape[0] - 1]], dtype=NpCanonIndex),
+            np.array([-1], dtype=np.int8),
         ),
         kind=ConstraintKind.BOUNDARY,
     )
