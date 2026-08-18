@@ -1,3 +1,9 @@
+"""
+Represents drainage networks as flow graphs.
+
+Last modified: 2026-08-18, En-Chi Lee (williameclee@gmail.com)
+"""
+
 from dataclasses import dataclass
 import numpy as np
 
