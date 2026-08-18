@@ -7,7 +7,6 @@ from .drainage import (
     get_neighbour_values,
     compute_flow_accumulation,
     compute_flow_strahler_order,
-    simplify_flowgraph,
     compute_dist2source,
     compute_dist2sink,
     label_watersheds,
@@ -18,9 +17,11 @@ from .drainage import (
     compute_dist2ridge,
     compute_ridge_strahler_order,
 )
-from .drainage.network import (
+from .drainage import (
+    FlowGraph,
     construct_flowgraph,
     concat_flowgraph,
+    simplify_flowgraph,
 )
 
 __all__ = [
@@ -35,13 +36,14 @@ __all__ = [
     "compute_ridgedir",
     "compute_ridge_strahler_order",
     "compute_slope",
-    "concat_flowgraph",
-    "construct_flowgraph",
     "count_indegree",
     "detect_ocean_basins_from_boundary",
     "fill_depressions",
     "get_neighbour_values",
     "invalidate_ocean_basins",
     "label_watersheds",
+    "FlowGraph",
+    "concat_flowgraph",
+    "construct_flowgraph",
     "simplify_flowgraph",
 ]

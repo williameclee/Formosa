@@ -1,3 +1,4 @@
+from .models import FlowGraph
 from .validation import (
     DirectedFlowCycleError,
     GraphTopologyError,
