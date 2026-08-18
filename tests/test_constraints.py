@@ -1,4 +1,8 @@
-"""Tests construction and validation of planar constraint graphs."""
+"""
+Tests construction and validation of planar constraint graphs.
+
+Last modified: 2026-08-18, En-Chi Lee (williameclee@gmail.com)
+"""
 
 import numpy as np
 
@@ -27,10 +31,12 @@ def test_boundary_edges_split_at_existing_vertices_and_merge_kinds():
     valley = FlowGraph(
         np.array([[4, 1], [4, 5]], dtype=np.int32),
         np.array([[0, 1]], dtype=np.int32),
+        np.array([1, 2]),
     )
     ridge = FlowGraph(
         np.array([[3, 3], [4, 3]], dtype=np.int32),
         np.array([[0, 1]], dtype=np.int32),
+        np.array([1, 2]),
     )
 
     graph = ConstraintGraph(

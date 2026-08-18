@@ -30,6 +30,7 @@ from .ridges import (
 )
 
 from .network import (
+    FlowGraph,
     DirectedFlowCycleError,
     GraphTopologyError,
     IncompleteFlowGraphError,
