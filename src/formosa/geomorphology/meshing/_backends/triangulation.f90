@@ -9,15 +9,18 @@
 !! wrapper returns 0-based IDs.
 !!
 !! Created: 2026-08-12, En-Chi Lee (williameclee@gmail.com)
-!! Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
+!! Last modified: 2026-08-18, En-Chi Lee (williameclee@gmail.com)
 
 module meshing_triangulation
     use iso_c_binding, only: c_int32_t, c_int64_t
     use utils, only: ERR_NO_ERROR, &
                      ERR_ALLOCATION_FAILURE, ERR_OVERFLOW, &
                      ERR_COMPUTATION_FAILURE
-    use intersections, only: incircle, orient
+    use utils, only: modshift
+    use intersections, only: incircle_pos_int32, orient
     private :: make_initial_facets, insert_vertex, toggle_edge
+    private :: is_bad_finite_facet, is_bad_infinite_facet, &
+               is_bad_facet
     private :: find_facet_side_neighbour
     ! Moule variables
     integer(c_int32_t), parameter :: no_nabr = -1
@@ -74,6 +77,62 @@ contains
         faces(:, 4) = [iinf, face(1), face(3)]
     end subroutine make_initial_facets
 
+    pure logical function is_bad_finite_facet(face, ivtx, vtxs) result(flag)
+        implicit none(type, external)
+        ! Arguments
+        integer(c_int32_t), intent(in) :: vtxs(:, :)
+            !! Coordinates of the vertices.
+        integer(c_int32_t), intent(in) :: face(3)
+            !! Triangle vertex IDs in counterclockwise order.
+        integer(c_int32_t), intent(in) :: ivtx
+            !! ID of the candidate vertex being inserted.
+        flag = incircle_pos_int32( &
+               vtxs(:, face(1)), vtxs(:, face(2)), vtxs(:, face(3)), &
+               vtxs(:, ivtx))
+    end function is_bad_finite_facet
+
+    pure logical function is_bad_infinite_facet(face, ivtx, vtxs, iinf) result(flag)
+        implicit none(type, external)
+        ! Arguments
+        integer(c_int32_t), intent(in) :: vtxs(:, :)
+            !! Coordinates of the vertices.
+        integer(c_int32_t), intent(in) :: face(3)
+            !! Triangle vertex IDs in counterclockwise order.
+        integer(c_int32_t), intent(in) :: ivtx
+            !! ID of the candidate vertex being inserted.
+        integer(c_int32_t), intent(in) :: iinf
+            !! Symbolic infinite-vertex ID.
+        ! Local variables
+        integer :: jinf, jvtx, kvtx
+        integer :: o
+
+        if (face(1) == iinf) then
+            jinf = 1
+        elseif (face(2) == iinf) then
+            jinf = 2
+        else
+            jinf = 3
+        end if
+        jvtx = face(modshift(jinf, 1, 3))
+        kvtx = face(modshift(jinf, 2, 3))
+
+        o = orient(vtxs(:, jvtx), vtxs(:, kvtx), vtxs(:, ivtx))
+        if (o > 0) then
+            flag = .true.
+        elseif (o == 0) then
+            if (min(vtxs(1, jvtx), vtxs(1, kvtx)) <= vtxs(1, ivtx) .and. &
+                vtxs(1, ivtx) <= max(vtxs(1, jvtx), vtxs(1, kvtx)) .and. &
+                min(vtxs(2, jvtx), vtxs(2, kvtx)) <= vtxs(2, ivtx) .and. &
+                vtxs(2, ivtx) <= max(vtxs(2, jvtx), vtxs(2, kvtx))) then
+                flag = .true.
+            else
+                flag = .false.
+            end if
+        else
+            flag = .false.
+        end if
+    end function is_bad_infinite_facet
+
     !> Tests whether a triangle belongs to an insertion cavity.
     !!
     !! Finite triangles use the in-circle predicate. Facets
@@ -91,44 +150,15 @@ contains
             !! ID of the candidate vertex being inserted.
         integer(c_int32_t), intent(in) :: iinf
             !! Symbolic infinite-vertex ID.
-        ! Local variables
-        integer :: ninf
-        integer :: jinf, jvtx, kvtx
-        integer :: o
-
-        ninf = count(face == iinf)
 
         ! Base case: no infinite vertex
-        if (ninf == 0) then
-            flag = incircle( &
-                   vtxs(:, face(1)), vtxs(:, face(2)), vtxs(:, face(3)), &
-                   vtxs(:, ivtx)) > 0
-            return
-        end if
-
-        ! Special case: has infinite vertex
-        ! Find where the infinite vertex is, and rotate the
-        ! triangle
-        if (face(1) == iinf) jinf = 1
-        if (face(2) == iinf) jinf = 2
-        if (face(3) == iinf) jinf = 3
-        jvtx = face(modulo(jinf, 3) + 1)
-        kvtx = face(modulo(jinf + 1, 3) + 1)
-
-        o = orient(vtxs(:, jvtx), vtxs(:, kvtx), vtxs(:, ivtx))
-        if (o > 0) then
-            flag = .true.
-        elseif (o == 0) then
-            if (min(vtxs(1, jvtx), vtxs(1, kvtx)) <= vtxs(1, ivtx) .and. &
-                vtxs(1, ivtx) <= max(vtxs(1, jvtx), vtxs(1, kvtx)) .and. &
-                min(vtxs(2, jvtx), vtxs(2, kvtx)) <= vtxs(2, ivtx) .and. &
-                vtxs(2, ivtx) <= max(vtxs(2, jvtx), vtxs(2, kvtx))) then
-                flag = .true.
-            else
-                flag = .false.
-            end if
+        if (.not. any(face == iinf)) then
+            flag = is_bad_finite_facet(face, ivtx, vtxs)
         else
-            flag = .false.
+            ! Special case: has infinite vertex
+            ! Find where the infinite vertex is, and rotate the
+            ! triangle
+            flag = is_bad_infinite_facet(face, ivtx, vtxs, iinf)
         end if
     end function is_bad_facet
 
@@ -183,9 +213,9 @@ contains
     !! Triangles whose circumcircles contain the vertex are replaced
     !! by counterclockwise triangles joining the vertex to the
     !! cavity boundary.
-    pure subroutine insert_vertex( &
+    subroutine insert_vertex( &
         ivtx, vtxs, faces, nfaces, iinf, &
-        bad_faces, edges, err_code)
+        bad_faces, bad_mask, edges, err_code)
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: ivtx
@@ -200,7 +230,9 @@ contains
         integer, intent(inout) :: nfaces
             !! Number of triangles actually in the 'triangles'
             !! array.
-        integer, intent(inout) :: bad_faces(size(faces, 2))
+        integer, intent(out) :: bad_faces(size(faces, 2))
+            !! Workspace containing IDs of triangles in the cavity.
+        logical, intent(out) :: bad_mask(size(faces, 2))
             !! Workspace containing IDs of triangles in the cavity.
         integer, intent(inout) :: edges(2, size(vtxs, 2))
             !! Workspace containing canonical cavity-boundary edges.
@@ -218,9 +250,16 @@ contains
         err_code = ERR_NO_ERROR
 
         ! Find triangles whose circumcircle contains the new vertex
+        !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(iface) &
+        !$omp SCHEDULE(STATIC)
+        do iface = 1, nfaces
+            bad_mask(iface) = is_bad_facet(faces(:, iface), ivtx, vtxs, iinf)
+        end do
+        !$omp END PARALLEL DO
+
         nbadfaces = 0
         do iface = 1, nfaces
-            if (.not. is_bad_facet(faces(:, iface), ivtx, vtxs, iinf)) cycle
+            if (.not. bad_mask(iface)) cycle
             nbadfaces = nbadfaces + 1
             bad_faces(nbadfaces) = iface
         end do
@@ -282,7 +321,7 @@ contains
     !!
     !! The returned triangles use counterclockwise, 1-based vertex
     !! IDs. Their column order is not canonicalised by this routine.
-    pure subroutine triangulate_points( &
+    subroutine triangulate_points( &
         nvtxs, vtxs, faces, nfaces, err_code)
         implicit none(type, external)
         ! Arguments
@@ -309,12 +348,13 @@ contains
         integer(c_int32_t) :: iinf
         integer, allocatable :: bad_faces(:)
             !! IDs of triangles in the current insertion cavity.
+        logical, allocatable :: bad_mask(:)
         integer, allocatable :: edges(:, :)
             !! Canonical cavity-boundary edge workspace.
 
         err_code = ERR_NO_ERROR
 
-        allocate (bad_faces(size(faces, 2)), &
+        allocate (bad_faces(size(faces, 2)), bad_mask(size(faces, 2)), &
                   edges(2, size(vtxs, 2)), &
                   stat=alloc_stat)
         if (alloc_stat /= 0) then
@@ -333,7 +373,7 @@ contains
             if (any(seeds == ivtx)) cycle
             call insert_vertex( &
                 ivtx, vtxs, faces, nfaces, iinf, &
-                bad_faces, edges, err_code)
+                bad_faces, bad_mask, edges, err_code)
             if (err_code /= ERR_NO_ERROR) return
         end do
 

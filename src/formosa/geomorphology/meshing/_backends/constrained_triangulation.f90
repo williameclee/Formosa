@@ -8,20 +8,116 @@
 !! internally; the Python wrapper returns 0-based IDs.
 !!
 !! Created: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
+!! Last modified: 2026-08-18, En-Chi Lee (williameclee@gmail.com)
 
 module meshing_cstr_triangulation
-    use iso_c_binding, only: c_int32_t, c_int64_t
+    use iso_c_binding, only: c_int32_t
     use utils, only: ERR_NO_ERROR, ERR_INVALID_INPUT, &
                      ERR_ALLOCATION_FAILURE, &
                      ERR_COMPUTATION_FAILURE
-    use utils, only: mod1, modshift
-    use intersections, only: incircle, orient, xcross, xcross_orient
+    use utils, only: modshift
+    use intersections, only: incircle_pos_int32, orient, xcross, &
+                             bboxes_overlap
     use meshing_triangulation, only: no_nabr, find_facet_neighbours
     private :: update_flipped_neighbours
     private :: edge_locked, edge_match, update_edge_record
     private :: remove_crossing, restore_delaunay_triangulation
     ! Moule variables
 contains
+    pure subroutine find_existing_constraints( &
+        faces, nabrs, nvtxs, nfaces, cstrs, ncstrs, &
+        present, err_code)
+        implicit none(type, external)
+        integer, intent(in) :: nvtxs, nfaces, ncstrs
+        integer(c_int32_t), intent(in) :: faces(3, nfaces)
+        integer(c_int32_t), intent(in) :: nabrs(3, nfaces)
+        integer(c_int32_t), intent(in) :: cstrs(2, ncstrs)
+        ! Outputs
+        logical(kind=1), intent(out) :: present(ncstrs)
+        integer, intent(out) :: err_code
+        ! Local variables
+        integer, allocatable :: cnts(:), starts(:), cursors(:)
+        integer(c_int32_t), allocatable :: los(:), his(:)
+        integer(c_int32_t), allocatable :: upper_vertices(:)
+        integer :: iface, iside, jface, iedge, nedges, icstr, ivtx
+        integer :: lo, hi
+        integer :: alloc_stat
+
+        err_code = ERR_NO_ERROR
+
+        ! Count all lower indices of a constraint edge
+        allocate (cnts(nvtxs), los(nfaces*3), his(nfaces*3), &
+                  stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = ERR_ALLOCATION_FAILURE
+            return
+        end if
+        cnts = 0
+        nedges = 0
+        iedge = 0
+        do iface = 1, nfaces
+        do iside = 1, 3
+            iedge = iedge + 1
+            ! Only count each edge once
+            jface = nabrs(iside, iface)
+            if (jface /= no_nabr .and. iface > jface) then
+                los(iedge) = 0
+                cycle
+            end if
+            lo = min(faces(modshift(iside, 1, 3), iface), &
+                     faces(modshift(iside, 2, 3), iface))
+            hi = max(faces(modshift(iside, 1, 3), iface), &
+                     faces(modshift(iside, 2, 3), iface))
+            los(iedge) = lo
+            his(iedge) = hi
+            cnts(lo) = cnts(lo) + 1
+            nedges = nedges + 1
+        end do
+        end do
+
+        ! Construct compressed sparse row offsets
+        allocate (starts(nvtxs), cursors(nvtxs), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = ERR_ALLOCATION_FAILURE
+            return
+        end if
+        starts(1) = 1
+        do ivtx = 2, nvtxs
+            starts(ivtx) = starts(ivtx - 1) + cnts(ivtx - 1)
+        end do
+        cursors = starts
+
+        ! Populate the upper indices of the edge
+        allocate (upper_vertices(nedges), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = ERR_ALLOCATION_FAILURE
+            return
+        end if
+        iedge = 0
+        do iface = 1, nfaces
+        do iside = 1, 3
+            iedge = iedge + 1
+            if (los(iedge) == 0) cycle
+            lo = los(iedge)
+            upper_vertices(cursors(lo)) = his(iedge)
+            cursors(lo) = cursors(lo) + 1
+        end do
+        end do
+
+        ! Find if each constraint is in the triangulation
+        present = .false.
+        do icstr = 1, ncstrs
+            lo = minval(cstrs(:, icstr))
+            hi = maxval(cstrs(:, icstr))
+            do iedge = starts(lo), starts(lo) + cnts(lo) - 1
+                if (upper_vertices(iedge) == hi) then
+                    present(icstr) = .true.
+                    exit
+                end if
+            end do
+        end do
+    end subroutine find_existing_constraints
+
     pure subroutine update_flipped_neighbours( &
         nabrs, iface, iside, jface, jside)
         implicit none(type, external)
@@ -81,7 +177,7 @@ contains
             !! Quadrilateral coordinates, with 'a' opposite 'b' and
             !! 'c' opposite 'd'.
         ! Local variables
-        integer(c_int64_t) :: o_abc, o_abd
+        integer(c_int32_t) :: o_abc, o_abd
 
         o_abc = orient(a, b, c)
         o_abd = orient(a, b, d)
@@ -266,117 +362,31 @@ contains
             !! - 0: completed successfully
             !! - 2: workspace allocation failed
         ! Local variables
-        integer :: ifaces(3*nfaces), isides(3*nfaces)
-            !! Triangle and side IDs owning each unique interior
-            !! edge.
-        integer :: iface, iside, iedge, nedges, ixng
-            !! Loop indices and counters for candidate and
-            !! crossing edges.
-        integer(c_int32_t), allocatable :: l(:), m(:)
-            !! Endpoint vertex IDs of unique interior mesh edges.
-        integer(c_int64_t) :: vj(2), vk(2), vjk(2)
-            !! Coordinates of constraint endpoints and target
-            !! constraint vector.
-        integer(c_int64_t), allocatable :: vl(:, :), vm(:, :)
-            !! Endpoint coordinates of unique interior mesh edges.
-        integer(c_int64_t), allocatable :: &
-            vlm(:, :), vlj(:, :), vlk(:, :), vjl(:, :), vjm(:, :)
-            !! Difference vectors for 2D orientation calculations.
-        integer(c_int64_t), allocatable :: &
-            o_jkl(:), o_jkm(:), o_lmj(:), o_lmk(:)
-            !! 2D cross-product orientation determinants.
-        logical(kind=1), allocatable :: is_xng(:)
-            !! Boolean mask identifying proper crossing edges.
-        integer :: alloc_stat
-            !! Dynamic allocation status code.
+        integer :: iface, iside, jface
+        integer(c_int32_t) :: lo, hi
 
         err_code = ERR_NO_ERROR
 
-        ! Extract unique interior edges
-        nedges = 0
-        do iedge = 1, nfaces*3
-            iface = (iedge - 1)/3 + 1
-            iside = mod1(iedge, 3)
-            if (nabrs(iside, iface) == no_nabr) cycle
-            if (iface >= nabrs(iside, iface)) cycle
-            nedges = nedges + 1
-            ifaces(nedges) = iface
-            isides(nedges) = iside
+        nxngs = 0
+        do iface = 1, nfaces
+        do iside = 1, 3
+            ! Only count each edge once
+            jface = nabrs(iside, iface)
+            if (jface == no_nabr) cycle
+            if (iface > jface) cycle
+            lo = min(faces(modshift(iside, 1, 3), iface), &
+                     faces(modshift(iside, 2, 3), iface))
+            hi = max(faces(modshift(iside, 1, 3), iface), &
+                     faces(modshift(iside, 2, 3), iface))
+            ! Record if crosses
+            if (.not. bboxes_overlap( &
+                vtxs(:, edge(1)), vtxs(:, edge(2)), &
+                vtxs(:, lo), vtxs(:, hi))) cycle
+            if (.not. xcross(vtxs(:, edge(1)), vtxs(:, edge(2)), &
+                             vtxs(:, lo), vtxs(:, hi))) cycle
+            nxngs = nxngs + 1
+            xngs(:, nxngs) = [iface, iside, lo, hi]
         end do
-
-        ! Fetch vertex coordinates and their distance vectors
-        vj = vtxs(:, edge(1))
-        vk = vtxs(:, edge(2))
-        vjk = vk - vj
-        allocate (l(nedges), m(nedges), &
-                  vl(2, nedges), vm(2, nedges), vlm(2, nedges), &
-                  stat=alloc_stat)
-        if (alloc_stat /= 0) then
-            err_code = ERR_ALLOCATION_FAILURE
-            return
-        end if
-
-        do iedge = 1, nedges
-            iface = ifaces(iedge)
-            iside = isides(iedge)
-            l(iedge) = faces(modshift(iside, 1, 3), iface)
-            m(iedge) = faces(modshift(iside, 2, 3), iface)
-            vl(:, iedge) = vtxs(:, l(iedge))
-            vm(:, iedge) = vtxs(:, m(iedge))
-        end do
-
-        vlm = vm - vl
-
-        allocate (vjl(2, nedges), vjm(2, nedges), &
-                  o_jkl(nedges), o_jkm(nedges), &
-                  stat=alloc_stat)
-        if (alloc_stat /= 0) then
-            err_code = ERR_ALLOCATION_FAILURE
-            return
-        end if
-
-        ! Compute orientation of edge endpoints relative to
-        ! constraint vector
-        vjl = vl - spread(vj, dim=2, ncopies=nedges)
-        vjm = vm - spread(vj, dim=2, ncopies=nedges)
-        o_jkl = vjk(1)*vjl(2, :) - vjk(2)*vjl(1, :)
-        o_jkm = vjk(1)*vjm(2, :) - vjk(2)*vjm(1, :)
-
-        allocate (o_lmj(nedges), o_lmk(nedges), &
-                  stat=alloc_stat)
-        if (alloc_stat /= 0) then
-            err_code = ERR_ALLOCATION_FAILURE
-            return
-        end if
-
-        ! Compute orientation of constraint endpoints relative to
-        ! mesh edge vectors
-        call move_alloc(from=vjl, to=vlj)
-        call move_alloc(from=vjm, to=vlk)
-        vlm = vm - vl
-        vlj = spread(vj, dim=2, ncopies=nedges) - vl
-        vlk = spread(vk, dim=2, ncopies=nedges) - vl
-        o_lmj = vlm(1, :)*vlj(2, :) - vlm(2, :)*vlj(1, :)
-        o_lmk = vlm(1, :)*vlk(2, :) - vlm(2, :)*vlk(1, :)
-
-        ! Classify proper line-segment crossings (Xs) with strict
-        ! opposite orientations
-        allocate (is_xng(nedges), stat=alloc_stat)
-        if (alloc_stat /= 0) then
-            err_code = ERR_ALLOCATION_FAILURE
-            return
-        end if
-        is_xng = xcross_orient(o_jkl, o_jkm, o_lmj, o_lmk)
-        nxngs = count(is_xng)
-
-        ! Pack crossing edge descriptors into output matrix
-        ixng = 0
-        do iedge = 1, nedges
-            if (.not. is_xng(iedge)) cycle
-            ixng = ixng + 1
-            xngs(:, ixng) = &
-                [ifaces(iedge), isides(iedge), &
-                 min(l(iedge), m(iedge)), max(l(iedge), m(iedge))]
         end do
     end subroutine find_crossing_edges
 
@@ -463,7 +473,8 @@ contains
         ! composed of the j-th and k-th vertices of the facet
         m = faces(iside, iface)
         vm = vtxs(:, m)
-        call find_edge_sharing_facets(nabrs, iface, iside, jface, jside, err_code)
+        call find_edge_sharing_facets( &
+            nabrs, iface, iside, jface, jside, err_code)
         if (err_code /= ERR_NO_ERROR) return
         n = faces(jside, jface)
         vn = vtxs(:, n)
@@ -562,7 +573,7 @@ contains
                 vn = vtxs(:, n)
 
                 if (.not. is_convex(vm, vn, vk, vl)) cycle
-                if (.not. incircle(vk, vl, vm, vn) > 0) cycle
+                if (.not. incircle_pos_int32(vk, vl, vm, vn)) cycle
                 call flip_quadrilateral_edge( &
                     vtxs, faces, nabrs, nvtxs, nfaces, iface, iside, &
                     changed_edges, err_code)
@@ -707,6 +718,7 @@ contains
             !! Shared backend status code propagated from neighbour
             !! construction or single-edge recovery.
         ! Local variables
+        logical(kind=1) :: present(nedges)
         integer :: iedge
 
         failed_edge = 0
@@ -715,7 +727,13 @@ contains
         call find_facet_neighbours(faces, nabrs, nfaces, err_code)
         if (err_code /= ERR_NO_ERROR) return
 
+        call find_existing_constraints( &
+            faces, nabrs, nvtxs, nfaces, edges, nedges, &
+            present, err_code)
+        if (err_code /= ERR_NO_ERROR) return
+
         do iedge = 1, nedges
+            if (present(iedge)) cycle
             call recover_constraint_edge( &
                 vtxs, nvtxs, faces, nabrs, nfaces, edges(:, iedge), &
                 edges(:, :iedge - 1), iedge - 1, err_code)

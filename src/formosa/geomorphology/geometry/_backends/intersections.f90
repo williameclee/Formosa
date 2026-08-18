@@ -6,11 +6,15 @@
 !! and other Fortran routines and is not intended to be used
 !! directly.
 !!
-!! Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
+!! Last modified: 2026-08-18, En-Chi Lee (williameclee@gmail.com)
 module intersections
     use iso_c_binding, only: c_double, c_int8_t, c_int32_t, c_int64_t
     implicit none(type, external)
     private :: incircle_double, saturate_int32, saturate_int64
+    interface bboxes_overlap
+        module procedure bboxes_overlap_int32
+        module procedure bboxes_overlap_real
+    end interface bboxes_overlap
     interface orient
         module procedure orient_real
         module procedure orient_int32
@@ -32,7 +36,21 @@ module intersections
         module procedure incircle_int64
     end interface incircle
 contains
-    pure function bboxes_overlap(p1, p2, p3, p4) result(flag_overlap)
+    pure function bboxes_overlap_int32(p1, p2, p3, p4) result(flag_overlap)
+        implicit none(type, external)
+        ! Arguments
+        integer(c_int32_t), intent(in) :: p1(2), p2(2), p3(2), p4(2)
+        ! Outputs
+        logical(kind=1) :: flag_overlap
+
+        flag_overlap = &
+            (max(min(p1(1), p2(1)), min(p3(1), p4(1))) <= &
+             min(max(p1(1), p2(1)), max(p3(1), p4(1)))) .and. &
+            (max(min(p1(2), p2(2)), min(p3(2), p4(2))) <= &
+             min(max(p1(2), p2(2)), max(p3(2), p4(2))))
+    end function bboxes_overlap_int32
+
+    pure function bboxes_overlap_real(p1, p2, p3, p4) result(flag_overlap)
         implicit none(type, external)
         ! Arguments
         real, intent(in) :: p1(2), p2(2), p3(2), p4(2)
@@ -44,7 +62,7 @@ contains
              min(max(p1(1), p2(1)), max(p3(1), p4(1)))) .and. &
             (max(min(p1(2), p2(2)), min(p3(2), p4(2))) <= &
              min(max(p1(2), p2(2)), max(p3(2), p4(2))))
-    end function bboxes_overlap
+    end function bboxes_overlap_real
 
     pure function saturate_int32(value) result(saturated)
         implicit none(type, external)
@@ -195,6 +213,20 @@ contains
                               real(c, kind=c_double), real(p, kind=c_double)))
     end function incircle_int32
 
+    !> Calculates the sign of the in-circle determinant for 32-bit
+    !! coordinates.
+    pure function incircle_pos_int32(a, b, c, p) result(pos)
+        implicit none(type, external)
+        ! Arguments
+        integer(c_int32_t), intent(in) :: a(2), b(2), c(2), p(2)
+        ! Outputs
+        logical(kind=1) :: pos
+
+        pos = incircle_double( &
+              real(a, kind=c_double), real(b, kind=c_double), &
+              real(c, kind=c_double), real(p, kind=c_double)) > 0
+    end function incircle_pos_int32
+
     !> Calculates the signed in-circle determinant for 64-bit
     !! coordinates.
     !!
@@ -216,8 +248,7 @@ contains
                               real(c, kind=c_double), real(p, kind=c_double)))
     end function incircle_int64
 
-    !> Calculates the signed in-circle determinant for 32-bit
-    !! coordinates.
+    !> Calculates the signed in-circle determinant.
     pure function incircle_double(a, b, c, p) result(det)
         ! Double-precision implementation shared by the integer
         ! entry points.

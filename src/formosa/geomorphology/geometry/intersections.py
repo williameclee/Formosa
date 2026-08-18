@@ -6,7 +6,7 @@ line-segment intersection API. It dispatches calculations to the
 internal Python or Fortran backend and selects C-interoperable
 integer overloads where possible.
 
-Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-18, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
@@ -322,7 +322,7 @@ def bboxes_overlap(
         case "python":
             return bool(intxs_py.bboxes_overlap(*points))
         case "fortran":
-            return bool(intx_f.bboxes_overlap(*map(_fortran_point, points)))
+            return bool(intx_f.bboxes_overlap_real(*map(_fortran_point, points)))
         case _:
             raise ValueError(f"Unsupported backend {backend!r}.")
 
