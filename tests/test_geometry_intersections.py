@@ -2,7 +2,7 @@
 Verifies line-segment intersection parity across configured
 backends.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
 """
 
 import pytest
@@ -10,6 +10,7 @@ import numpy as np
 
 from formosa.utils import BACKENDS
 import formosa.geomorphology.geometry.intersections as intx_m
+from formosa.geomorphology.geometry.intersections import IntersectionKind
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
@@ -17,39 +18,39 @@ import formosa.geomorphology.geometry.intersections as intx_m
     ("l1a", "l1b", "l2a", "l2b", "exp_flag"),
     [
         # Parallel lines
-        ((0, 0), (0, 1), (1, 0), (1, 1), -1),
-        ((0, 0), (3, 3), (1, 2), (0, 3), -1),
-        ((0, 0), (1, 0), (2, 0), (3, 0), -1),
+        ((0, 0), (0, 1), (1, 0), (1, 1), IntersectionKind.DISJOINT_SEGMENTS),
+        ((0, 0), (3, 3), (1, 2), (0, 3), IntersectionKind.DISJOINT_SEGMENTS),
+        ((0, 0), (1, 0), (2, 0), (3, 0), IntersectionKind.DISJOINT_SEGMENTS),
         # Sharing endpoints
-        ((0, 0), (1, 0), (1, 0), (1, 1), 0),
-        ((0, 0), (1, 0), (1, 0), (2, 0), 0),
-        ((0, 0), (-2, -2), (3, 1), (-2, -2), 0),
+        ((0, 0), (1, 0), (1, 0), (1, 1), IntersectionKind.ENDPOINT_CONTACT),
+        ((0, 0), (1, 0), (1, 0), (2, 0), IntersectionKind.ENDPOINT_CONTACT),
+        ((0, 0), (-2, -2), (3, 1), (-2, -2), IntersectionKind.ENDPOINT_CONTACT),
         # Crossing
-        ((0, 0), (1, 1), (1, 0), (0, 1), 1),
-        ((0, 0), (3, 3), (1, 2), (3, 0), 1),
+        ((0, 0), (1, 1), (1, 0), (0, 1), IntersectionKind.INTERIOR_CROSSING),
+        ((0, 0), (3, 3), (1, 2), (3, 0), IntersectionKind.INTERIOR_CROSSING),
         # Collinear overlapping lines
-        ((0, 0), (0, 2), (0, 1), (0, 3), 2),
-        ((0, 0), (4, 0), (1, 0), (3, 0), 2),
-        ((0, 0), (2, 2), (1, 1), (3, 3), 2),
+        ((0, 0), (0, 2), (0, 1), (0, 3), IntersectionKind.COLLINEAR_OVERLAP),
+        ((0, 0), (4, 0), (1, 0), (3, 0), IntersectionKind.COLLINEAR_OVERLAP),
+        ((0, 0), (2, 2), (1, 1), (3, 3), IntersectionKind.COLLINEAR_OVERLAP),
         # Collinear overlapping lines, sharing endpoints
-        ((0, 0), (0, 2), (0, 1), (0, 2), 2),
-        ((0, 0), (3, 3), (2, 2), (3, 3), 2),
+        ((0, 0), (0, 2), (0, 1), (0, 2), IntersectionKind.COLLINEAR_OVERLAP),
+        ((0, 0), (3, 3), (2, 2), (3, 3), IntersectionKind.COLLINEAR_OVERLAP),
         # Identical lines
-        ((0, 0), (0, 1), (0, 0), (0, 1), 3),
-        ((2, 5), (4, 3), (4, 3), (2, 5), 3),
+        ((0, 0), (0, 1), (0, 0), (0, 1), IntersectionKind.IDENTICAL_SEGMENTS),
+        ((2, 5), (4, 3), (4, 3), (2, 5), IntersectionKind.IDENTICAL_SEGMENTS),
         # T junction
-        ((0, 0), (2, 0), (1, 1), (1, 0), 4),
-        ((-1, -1), (3, 1), (1, 0), (5, 7), 4),
+        ((0, 0), (2, 0), (1, 1), (1, 0), IntersectionKind.T_JUNCTION),
+        ((-1, -1), (3, 1), (1, 0), (5, 7), IntersectionKind.T_JUNCTION),
         # degenerate segment (some line is actually a point)
-        ((0, 0), (0, 0), (0, 0), (1, 1), 5),
-        ((0, 0), (0, 0), (1, 1), (1, 1), 5),
+        ((0, 0), (0, 0), (0, 0), (1, 1), IntersectionKind.DEGENERATE_SEGMENT),
+        ((0, 0), (0, 0), (1, 1), (1, 1), IntersectionKind.DEGENERATE_SEGMENT),
     ],
 )
 def test_intersection_parity(l1a, l1b, l2a, l2b, exp_flag, backend):
-    flag: int = intx_m.lines_intersect_v2(l1a, l1b, l2a, l2b, backend=backend)
+    flag: int = intx_m.lines_intersect(l1a, l1b, l2a, l2b, backend=backend)
     assert flag == exp_flag
     # Flip the segments; result should be the same
-    flag: int = intx_m.lines_intersect_v2(l2a, l2b, l1a, l1b, backend=backend)
+    flag: int = intx_m.lines_intersect(l2a, l2b, l1a, l1b, backend=backend)
     assert flag == exp_flag
 
 
@@ -57,18 +58,9 @@ def test_intersection_parity(l1a, l1b, l2a, l2b, exp_flag, backend):
 @pytest.mark.parametrize(
     ("function", "args", "expected"),
     [
-        (intx_m.orient_v2, ((0, 0), (1, 0), (1, 1)), 1),
         (intx_m.on_segment, ((0, 0), (2, 0), (1, 0)), True),
-        (
-            intx_m.bboxes_overlap,
-            ((0, 0), (2, 2), (1, 1), (3, 3)),
-            True,
-        ),
-        (
-            intx_m.lines_intersect_v2,
-            ((0, 0), (1, 1), (1, 0), (0, 1)),
-            1,
-        ),
+        (intx_m.bboxes_overlap, ((0, 0), (2, 2), (1, 1), (3, 3)), True),
+        (intx_m.lines_intersect, ((0, 0), (1, 1), (1, 0), (0, 1)), 1),
     ],
 )
 def test_public_wrappers_select_backend(backend, function, args, expected):
@@ -78,9 +70,115 @@ def test_public_wrappers_select_backend(backend, function, args, expected):
     assert type(result) is type(expected)
 
 
-def test_public_wrapper_rejects_unknown_backend():
+@pytest.mark.parametrize("backend", BACKENDS)
+@pytest.mark.parametrize(
+    ("p1", "p2", "p3", "exp_det", "is_float"),
+    [
+        ((0, 0), (4, 0), (1, 3), 12, False),
+        ((0, 0), (1, 3), (4, 0), -12, False),
+        ((-3, 2), (1, 4), (5, 6), 0, False),
+        ((2, 2), (2, 2), (8, -1), 0, False),
+        ((-4, 7), (3, -2), (8, 6), 101, False),
+        ((0.5, 0.25), (2.0, 0.25), (0.5, 2.25), 3.0, True),
+        ((0.5, 0.25), (0.5, 2.25), (2.0, 0.25), -3.0, True),
+        ((-0.5, 1.25), (0.75, 2.5), (2.0, 3.75), 0.0, True),
+        ((0.1, 0.2), (1.4, -0.3), (-0.7, 2.1), 2.07, True),
+        (
+            np.array((0.125, -0.25), dtype=np.float32),
+            np.array((1.625, 0.5), dtype=np.float32),
+            np.array((-0.375, 2.0), dtype=np.float32),
+            3.75,
+            True,
+        ),  # Test float32
+        (
+            np.array((0.125, -0.25), dtype=np.float64),
+            np.array((1.625, 0.5), dtype=np.float64),
+            np.array((-0.375, 2.0), dtype=np.float64),
+            3.75,
+            True,
+        ),  # Tes float64
+        (
+            np.array((0, 0), dtype=np.int32),
+            np.array((50_000, 0), dtype=np.int32),
+            np.array((0, 50_000), dtype=np.int32),
+            2_500_000_000,
+            False,
+        ),  # Test no overflow
+        (
+            np.array((0, 0), dtype=np.int32),
+            np.array((50_000, 49_999), dtype=np.int32),
+            np.array((49_999, 49_998), dtype=np.int32),
+            -1,
+            False,
+        ),  # Test nearly collinear
+    ],
+)
+def test_orientv2(p1, p2, p3, exp_det, is_float, backend):
+    det = intx_m.orient(p1, p2, p3, backend=backend)
+    if is_float:
+        assert det == pytest.approx(exp_det, rel=1e-6, abs=1e-7)
+        assert isinstance(det, float)
+        assert intx_m.orient(p1, p3, p2, backend=backend) == pytest.approx(
+            -exp_det, rel=1e-6, abs=1e-7
+        )
+    else:
+        assert det == exp_det
+        assert intx_m.orient(p1, p3, p2, backend=backend) == -exp_det
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_integer_predicates_int64(backend):
+    translation = np.array((2**40, -(2**40)), dtype=np.int64)
+    a = translation + np.array((0, 0), dtype=np.int64)
+    b = translation + np.array((2, 0), dtype=np.int64)
+    c = translation + np.array((0, 2), dtype=np.int64)
+    p = translation + np.array((1, 1), dtype=np.int64)
+
+    assert intx_m.orient(a, b, c, backend=backend) == 4
+    assert intx_m.incircle(a, b, c, p, backend=backend) == 8
+
+
+def test_fortran_int32_predicates_saturate_before_narrowing():
+    a = np.array((0, 0), dtype=np.int32)
+    b = np.array((50_000, 0), dtype=np.int32)
+    c = np.array((0, 50_000), dtype=np.int32)
+    p = np.array((25_000, 25_000), dtype=np.int32)
+
+    assert intx_m.intx_f.orient_int32(a, b, c) == np.iinfo(np.int32).max
+    assert intx_m.intx_f.incircle_int32(a, b, c, p) == np.iinfo(np.int32).max
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_orientv2_float_translation_invariance(backend):
+    p1 = np.array((-1.25, 2.5))
+    p2 = np.array((3.75, -0.5))
+    p3 = np.array((2.0, 4.25))
+    translation = np.array((10.125, -7.75))
+
+    determinant = intx_m.orient(p1, p2, p3, backend=backend)
+    translated = intx_m.orient(
+        p1 + translation, p2 + translation, p3 + translation, backend=backend
+    )
+
+    assert translated == pytest.approx(determinant, rel=1e-6, abs=1e-6)
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+@pytest.mark.parametrize("scale", [0.25, 2.5, -3.0])
+def test_orientv2_float_quadratic_scaling(backend, scale):
+    p1 = np.array((-0.5, 1.25))
+    p2 = np.array((2.0, -0.75))
+    p3 = np.array((4.5, 3.0))
+
+    determinant = intx_m.orient(p1, p2, p3, backend=backend)
+    scaled = intx_m.orient(scale * p1, scale * p2, scale * p3, backend=backend)
+
+    assert scaled == pytest.approx(scale * scale * determinant, rel=1e-6, abs=1e-6)
+
+
+def test_orientv2_unknown_backend():
     with pytest.raises(ValueError, match="Unsupported backend"):
-        intx_m.orient_v2((0, 0), (1, 0), (1, 1), backend="unknown")  # type: ignore
+        intx_m.orient((0, 0), (1, 0), (1, 1), backend="unknown")  # type: ignore
 
 
 @pytest.mark.parametrize(
@@ -93,4 +191,60 @@ def test_public_wrapper_rejects_unknown_backend():
 )
 def test_public_wrapper_validates_points(point, error):
     with pytest.raises(error):
-        intx_m.orient_v2(point, (1, 0), (1, 1), backend="python")
+        intx_m.orient(point, (1, 0), (1, 1), backend="python")
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+@pytest.mark.parametrize(
+    ("a", "b", "c", "p", "exp_det"),
+    [
+        ((0, 0), (2, 0), (0, 2), (1, 1), 8),
+        ((0, 0), (2, 0), (0, 2), (2, 2), 0),
+        ((0, 0), (2, 0), (0, 2), (3, 3), -24),
+        ((0.25, -0.5), (2.25, -0.5), (0.25, 1.5), (1.0, 0.25), 7.5),
+        (
+            np.array((0, 0), dtype=np.int32),
+            np.array((50_000, 0), dtype=np.int32),
+            np.array((0, 50_000), dtype=np.int32),
+            np.array((25_000, 25_000), dtype=np.int32),
+            3_125_000_000_000_000_000,
+        ),
+    ],  # Triangles should all be oriented CCW, the test will make CW ones
+)
+def test_incircle(a, b, c, p, exp_det, backend):
+    det_ccw = intx_m.incircle(a, b, c, p, oriented=True, backend=backend)
+    det_cw = intx_m.incircle(a, c, b, p, oriented=True, backend=backend)
+    assert det_ccw == pytest.approx(exp_det)
+    assert det_cw == pytest.approx(exp_det)
+    det_ccw = intx_m.incircle(a, b, c, p, oriented=False, backend=backend)
+    det_cw = intx_m.incircle(a, c, b, p, oriented=False, backend=backend)
+    assert det_ccw == pytest.approx(exp_det)
+    assert det_cw == pytest.approx(-exp_det)
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_incircle_oriented_rejects_collinear_triangle(backend):
+    with pytest.raises(ValueError, match="collinear triangle"):
+        intx_m.incircle((0, 0), (1, 1), (2, 2), (0, 1), oriented=True, backend=backend)
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+def test_incircle_translation_invariance(backend):
+    points = np.array(((0.25, -0.5), (2.5, 0.25), (-0.75, 2.0), (0.5, 0.75)))
+    translation = np.array((13.25, -8.5))
+
+    det = intx_m.incircle(*points, backend=backend)
+    trans_det = intx_m.incircle(*(points + translation), backend=backend)
+
+    assert trans_det == pytest.approx(det, rel=1e-5, abs=1e-5)
+
+
+@pytest.mark.parametrize("backend", BACKENDS)
+@pytest.mark.parametrize("scale", [0.25, 2.5, -3.0])
+def test_incircle_scaling_is_quartic(backend, scale):
+    points = np.array(((0.25, -0.5), (2.5, 0.25), (-0.75, 2.0), (0.5, 0.75)))
+
+    det = intx_m.incircle(*points, backend=backend)
+    det_scaled = intx_m.incircle(*(scale * points), backend=backend)
+
+    assert det_scaled == pytest.approx(scale**4 * det, rel=1e-5, abs=1e-5)

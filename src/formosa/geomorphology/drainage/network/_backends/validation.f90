@@ -1,11 +1,13 @@
-!> Validates flow-graph topology using the FORTRAN backend.
+!> Validates flow-graph topology using the Fortran backend.
 !!
 !! This internal module is called by the Python network API and
-!! other FORTRAN routines and is not intended to be used directly.
+!! other Fortran routines and is not intended to be used directly.
 !!
-!! Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+!! Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
 module network_validation
-    use intersections, only: lines_intersect_v2
+    use utils, only: ERR_NO_ERROR, ERR_INVALID_INPUT, &
+                     ERR_ALLOCATION_FAILURE
+    use intersections, only: lines_intersect
     implicit none(type, external)
     private :: argsort_arcs, record_topology_intersection
 contains
@@ -61,15 +63,16 @@ contains
         if (nintxs <= size(intxs, 2)) intxs(:, nintxs) = record
     end subroutine record_topology_intersection
 
-    pure subroutine scan_invalid_graph_topology( &
-        vertex_ijs, arc_endpts, capacity, intxs, nintxs, err_code)
-        !! Scans all candidate segment pairs and returns the total violation count.
-        !!
-        !! Only the first 'capacity' violations are stored in 'intxs'.
+    !> Scans all candidate segment pairs and returns the total
+    !! violation count.
+    !!
+    !! Only the first 'capacity' violations are stored in 'intxs'.
+    subroutine scan_invalid_graph_topology( &
+        vtxs, arc_endpts, capacity, intxs, nintxs, err_code)
         implicit none(type, external)
         ! Arguments
-        real, intent(in), contiguous :: vertex_ijs(:, :)
-            !! Vertex coordinates arranged as '(2, nvertices)'
+        real, intent(in), contiguous :: vtxs(:, :)
+            !! Vertex coordinates arranged as (2, V).
         integer, intent(in), contiguous :: arc_endpts(:, :)
             !! Inclusive, one-based arc endpoint indices arranged as '(2, narcs)'
         integer, intent(in) :: capacity
@@ -93,16 +96,16 @@ contains
         integer, allocatable :: idx(:)
 
         nintxs = 0
-        err_code = 0
+        err_code = ERR_NO_ERROR
 
         if (size(arc_endpts, 1) /= 2) then
-            err_code = 1
+            err_code = ERR_INVALID_INPUT
             return
-        else if (size(vertex_ijs, 1) /= 2) then
-            err_code = 1
+        else if (size(vtxs, 1) /= 2) then
+            err_code = ERR_INVALID_INPUT
             return
         else if (capacity < 1) then
-            err_code = 1
+            err_code = ERR_INVALID_INPUT
             return
         end if
         narcs = size(arc_endpts, 2)
@@ -112,14 +115,14 @@ contains
         ! Construct the bounding boxes for each arc
         allocate (arc_bboxes(4, narcs), stat=alloc_stat)
         if (alloc_stat /= 0) then
-            err_code = 2
+            err_code = ERR_ALLOCATION_FAILURE
             return
         end if
         do iarc = 1, narcs
-            arc_bboxes(1, iarc) = minval(vertex_ijs(1, arc_endpts(1, iarc):arc_endpts(2, iarc)))
-            arc_bboxes(2, iarc) = minval(vertex_ijs(2, arc_endpts(1, iarc):arc_endpts(2, iarc)))
-            arc_bboxes(3, iarc) = maxval(vertex_ijs(1, arc_endpts(1, iarc):arc_endpts(2, iarc)))
-            arc_bboxes(4, iarc) = maxval(vertex_ijs(2, arc_endpts(1, iarc):arc_endpts(2, iarc)))
+            arc_bboxes(1, iarc) = minval(vtxs(1, arc_endpts(1, iarc):arc_endpts(2, iarc)))
+            arc_bboxes(2, iarc) = minval(vtxs(2, arc_endpts(1, iarc):arc_endpts(2, iarc)))
+            arc_bboxes(3, iarc) = maxval(vtxs(1, arc_endpts(1, iarc):arc_endpts(2, iarc)))
+            arc_bboxes(4, iarc) = maxval(vtxs(2, arc_endpts(1, iarc):arc_endpts(2, iarc)))
         end do
 
         ! Check arcs against themselves first
@@ -127,9 +130,9 @@ contains
             if (arc_endpts(2, iarc) - arc_endpts(1, iarc) == 1) cycle ! Skip if arc is just a single segment
             do iseg = arc_endpts(1, iarc), arc_endpts(2, iarc) - 1
             do jseg = iseg + 1, arc_endpts(2, iarc) - 1
-                intx_flag = lines_intersect_v2( &
-                            vertex_ijs(:, iseg), vertex_ijs(:, iseg + 1), &
-                            vertex_ijs(:, jseg), vertex_ijs(:, jseg + 1))
+                intx_flag = lines_intersect( &
+                            vtxs(:, iseg), vtxs(:, iseg + 1), &
+                            vtxs(:, jseg), vtxs(:, jseg + 1))
                 if (intx_flag > 0) then
                     call record_topology_intersection( &
                         [iarc, iarc, iseg, jseg, intx_flag], intxs, nintxs)
@@ -140,8 +143,7 @@ contains
 
         allocate (idx(narcs), stat=alloc_stat)
         if (alloc_stat /= 0) then
-            err_code = 2
-            deallocate (arc_bboxes)
+            err_code = ERR_ALLOCATION_FAILURE
             return
         end if
         idx = argsort_arcs(arc_bboxes)
@@ -149,11 +151,11 @@ contains
         ! Check every arc against each other
         do i = 1, narcs
             iarc = idx(i)
-            do j = i + 1, narcs
+            jloop: do j = i + 1, narcs
                 jarc = idx(j)
 
                 ! Skip if min x of right arc is greater than max x of left arc
-                if (arc_bboxes(1, jarc) > arc_bboxes(3, iarc)) exit
+                if (arc_bboxes(1, jarc) > arc_bboxes(3, iarc)) exit jloop
 
                 ! Inline fast overlap check (no min/max calls)
                 if (arc_bboxes(1, iarc) > arc_bboxes(3, jarc) .or. &
@@ -163,9 +165,9 @@ contains
 
                 do iseg = arc_endpts(1, iarc), arc_endpts(2, iarc) - 1
                 do jseg = arc_endpts(1, jarc), arc_endpts(2, jarc) - 1
-                    intx_flag = lines_intersect_v2( &
-                                vertex_ijs(:, iseg), vertex_ijs(:, iseg + 1), &
-                                vertex_ijs(:, jseg), vertex_ijs(:, jseg + 1))
+                    intx_flag = lines_intersect( &
+                                vtxs(:, iseg), vtxs(:, iseg + 1), &
+                                vtxs(:, jseg), vtxs(:, jseg + 1))
                     if (intx_flag > 0) then
                         ! Sort by arc ID
                         if (iarc < jarc) then
@@ -178,10 +180,7 @@ contains
                     end if
                 end do
                 end do
-            end do
+            end do jloop
         end do
-
-        deallocate (idx)
-        deallocate (arc_bboxes)
     end subroutine scan_invalid_graph_topology
 end module network_validation

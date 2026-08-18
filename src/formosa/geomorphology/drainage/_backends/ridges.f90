@@ -5,9 +5,11 @@
 !! then applies conventional drainage operations to the reciprocal
 !! field. This internal module is called by the Python drainage API.
 !!
-!! Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+!! Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
 module drainage_ridges
     use iso_c_binding, only: c_int8_t
+    use utils, only: ERR_NO_ERROR, ERR_INVALID_INPUT, &
+                     ERR_ALLOCATION_FAILURE, ERR_OVERFLOW
     use utils, only: fill_offset_lookup, array2d_oob, ij2id_checked
     use distances, only: l2dist_xy
     implicit none(type, external)
@@ -108,7 +110,7 @@ contains
         integer :: new_lvl_capacity, alloc_stat
             !! Requested level-buffer capacity and allocation status.
 
-        err_code = 0
+        err_code = ERR_NO_ERROR
         topo_cnt = 0
         lvl_end = 0
         nvalid = 0
@@ -136,7 +138,7 @@ contains
                 new_lvl_capacity = min(size(lvl_ends)*2, nrows*ncols)
                 allocate (grown_lvl_ends(new_lvl_capacity), stat=alloc_stat)
                 if (alloc_stat /= 0) then
-                    err_code = 2
+                    err_code = ERR_ALLOCATION_FAILURE
                     return
                 end if
                 grown_lvl_ends(1:nlvls - 1) = lvl_ends
@@ -160,7 +162,7 @@ contains
             lvl_end = next_lvl_end
         end do
         topo_cnt = lvl_end
-        if (topo_cnt /= nvalid) err_code = 1
+        if (topo_cnt /= nvalid) err_code = ERR_INVALID_INPUT
     end subroutine build_flowtree_topology
 
     subroutine propagate_flowtree_metadata( &
@@ -296,12 +298,12 @@ contains
         integer :: alloc_stat
             !! Status returned by workspace allocation statements.
 
-        err_code = 0
+        err_code = ERR_NO_ERROR
         topo_cnt = 0
         allocate (indegs(nrows*ncols), topo_order(nrows*ncols), &
                   lvl_ends(max(1, min(nrows*ncols, 1024))), stat=alloc_stat)
         if (alloc_stat /= 0) then
-            err_code = 2
+            err_code = ERR_ALLOCATION_FAILURE
             if (allocated(indegs)) deallocate (indegs)
             if (allocated(topo_order)) deallocate (topo_order)
             if (allocated(lvl_ends)) deallocate (lvl_ends)
@@ -314,7 +316,7 @@ contains
         call build_flowtree_topology( &
             valids, ds_ids, indegs, nrows, ncols, &
             topo_order, topo_cnt, lvl_ends, nlvls, err_code)
-        if (err_code /= 0) then
+        if (err_code /= ERR_NO_ERROR) then
             deallocate (indegs, topo_order, lvl_ends)
             return
         end if
@@ -497,19 +499,19 @@ contains
                            -1, -1, -1, 0, 0, 1, 1, 1], [8, 2]))
 
         ! Create lookup tables for offsets
-        err_code = 0
+        err_code = ERR_NO_ERROR
         if (nrows < 1 .or. ncols < 1) then
-            err_code = 3
+            err_code = ERR_OVERFLOW
             maxbdists = 0.0
             return
         else if (ncols > huge(nrows)/nrows) then
-            err_code = 3
+            err_code = ERR_OVERFLOW
             maxbdists = 0.0
             return
         end if
-        allocate (offset_lookup(0:255, 2), stat=err_code)
-        if (err_code /= 0) then
-            err_code = 2
+        allocate (offset_lookup(0:255, 2), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = ERR_ALLOCATION_FAILURE
             return
         end if
         offset_lookup = fill_offset_lookup(offsets, codes)
@@ -518,7 +520,7 @@ contains
                   sink_ids(nrows*ncols), sink_dists(nrows*ncols), &
                   is_boundary(nrows*ncols), stat=alloc_stat)
         if (alloc_stat /= 0) then
-            err_code = 2
+            err_code = ERR_ALLOCATION_FAILURE
             deallocate (offset_lookup)
             return
         end if
@@ -527,7 +529,7 @@ contains
             dirs, valids, x, y, offset_lookup, nrows, ncols, &
             ds_ids, depths, sink_ids, sink_dists, &
             topo_order, topo_cnt, err_code)
-        if (err_code /= 0) then
+        if (err_code /= ERR_NO_ERROR) then
             deallocate (offset_lookup, ds_ids, depths, sink_ids, &
                         sink_dists, is_boundary)
             return

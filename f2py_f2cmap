@@ -1,0 +1,2 @@
+# Maps interoperable 8-bit integers for the internal F2PY backend.
+dict(integer=dict(c_int8_t="char", c_signed_char="char"))

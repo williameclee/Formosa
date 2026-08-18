@@ -20,9 +20,8 @@ from formosa.geomorphology.drainage.network.editing import remove_unused_vertice
 from formosa.geomorphology._native import network_simplification as simp_f
 
 import numpy.typing as npt
-from typing import Optional, TypeVar, overload
-
-NpIndex = TypeVar("NpIndex", np.int32, np.int64, np.intp)
+from typing import Optional, overload
+from formosa.utils.typing import NpIndex, NpCoords
 
 
 def _convert_index_array_to_F_fmt(vertices: npt.NDArray) -> npt.NDArray:
@@ -39,20 +38,20 @@ def _convert_index_array_to_F_fmt(vertices: npt.NDArray) -> npt.NDArray:
 
 def _simplify_multiple_flowgraphs(
     orders_list: list[npt.NDArray[np.integer]] | tuple[npt.NDArray[np.integer], ...],
-    vertices_list: list[npt.NDArray[np.number]] | tuple[npt.NDArray[np.number], ...],
+    vertices_list: list[npt.NDArray[NpCoords]] | tuple[npt.NDArray[NpCoords], ...],
     endpts_list: list[npt.NDArray[NpIndex]] | tuple[npt.NDArray[NpIndex], ...],
     tol: int | float,
     check_topology: bool,
     backend: Backend,
 ) -> tuple[
     list[npt.NDArray[np.integer]] | tuple[npt.NDArray[np.integer], ...],
-    list[npt.NDArray[np.number]] | tuple[npt.NDArray[np.number], ...],
+    list[npt.NDArray[NpCoords]] | tuple[npt.NDArray[NpCoords], ...],
     list[npt.NDArray[NpIndex]] | tuple[npt.NDArray[NpIndex], ...],
     list[npt.NDArray[np.bool_]] | tuple[npt.NDArray[np.bool_], ...],
 ]:
     def is_empty_graph(
         orders: npt.NDArray[np.integer],
-        vertices: npt.NDArray[np.number],
+        vertices: npt.NDArray[NpCoords],
         endpts: npt.NDArray[NpIndex],
     ) -> bool:
         return (
@@ -100,8 +99,8 @@ def _simplify_multiple_flowgraphs(
     endpts_shps: list[tuple] = []
 
     all_orders_list: list[npt.NDArray[np.integer]] = []
-    all_vertices_list: list[npt.NDArray[np.number]] = []
-    all_endpts_list: list[npt.NDArray[np.intp]] = []
+    all_vertices_list: list[npt.NDArray[NpCoords]] = []
+    all_endpts_list: list[npt.NDArray[NpIndex]] = []
     all_graph_ids_list: list[npt.NDArray[np.uint8]] = []
 
     for i, (vertices, endpts, orders) in enumerate(
@@ -177,7 +176,7 @@ def _simplify_multiple_flowgraphs(
 
     # Separate the simplified graph back into multiple graphs
     s_orders_list: list[npt.NDArray[np.integer]] = []
-    s_vertices_list: list[npt.NDArray[np.number]] = []
+    s_vertices_list: list[npt.NDArray[NpCoords]] = []
     s_endpts_list: list[npt.NDArray[NpIndex]] = []
     keeps_list: list[npt.NDArray[np.bool_]] = []
 
@@ -222,7 +221,7 @@ def _simplify_multiple_flowgraphs(
 
 def _simplify_single_flowgraph(
     orders: npt.NDArray[np.integer],
-    vertices: npt.NDArray[np.number],
+    vertices: npt.NDArray[NpCoords],
     endpts: npt.NDArray[NpIndex],
     tol: float,
     check_topology: bool,
@@ -230,7 +229,7 @@ def _simplify_single_flowgraph(
     graph_ids: Optional[npt.NDArray[np.integer]] = None,
 ) -> tuple[
     npt.NDArray[np.integer],
-    npt.NDArray[np.number],
+    npt.NDArray[NpCoords],
     npt.NDArray[NpIndex],
     npt.NDArray[np.bool_],
 ]:
@@ -308,7 +307,7 @@ def _simplify_single_flowgraph(
 @overload
 def simplify_flowgraph(
     arc_orders: npt.NDArray[np.integer],
-    vertex_xys: npt.NDArray[np.number],
+    vertex_xys: npt.NDArray[NpCoords],
     arc_endpts: npt.NDArray[NpIndex],
     tol: int | float = 1,
     check_topology: bool = True,
@@ -316,7 +315,7 @@ def simplify_flowgraph(
     backend: Backend = "fortran",
 ) -> tuple[
     npt.NDArray[np.integer],
-    npt.NDArray[np.number],
+    npt.NDArray[NpCoords],
     npt.NDArray[NpIndex],
     npt.NDArray[np.bool_],
 ]: ...
@@ -325,7 +324,7 @@ def simplify_flowgraph(
 @overload
 def simplify_flowgraph(
     arc_orders: list[npt.NDArray[np.integer]],
-    vertex_xys: list[npt.NDArray[np.number]],
+    vertex_xys: list[npt.NDArray[NpCoords]],
     arc_endpts: list[npt.NDArray[NpIndex]],
     tol: int | float = 1,
     check_topology: bool = True,
@@ -333,7 +332,7 @@ def simplify_flowgraph(
     backend: Backend = "fortran",
 ) -> tuple[
     list[npt.NDArray[np.integer]],
-    list[npt.NDArray[np.number]],
+    list[npt.NDArray[NpCoords]],
     list[npt.NDArray[NpIndex]],
     list[npt.NDArray[np.bool_]],
 ]: ...
@@ -342,7 +341,7 @@ def simplify_flowgraph(
 @overload
 def simplify_flowgraph(
     arc_orders: tuple[npt.NDArray[np.integer], ...],
-    vertex_xys: tuple[npt.NDArray[np.number], ...],
+    vertex_xys: tuple[npt.NDArray[NpCoords], ...],
     arc_endpts: tuple[npt.NDArray[NpIndex], ...],
     tol: int | float = 1,
     check_topology: bool = True,
@@ -350,7 +349,7 @@ def simplify_flowgraph(
     backend: Backend = "fortran",
 ) -> tuple[
     tuple[npt.NDArray[np.integer], ...],
-    tuple[npt.NDArray[np.number], ...],
+    tuple[npt.NDArray[NpCoords], ...],
     tuple[npt.NDArray[NpIndex], ...],
     tuple[npt.NDArray[np.bool_], ...],
 ]: ...
@@ -363,9 +362,9 @@ def simplify_flowgraph(
         | tuple[npt.NDArray[np.integer], ...]
     ),
     vertex_xys: (
-        npt.NDArray[np.number]
-        | list[npt.NDArray[np.number]]
-        | tuple[npt.NDArray[np.number], ...]
+        npt.NDArray[NpCoords]
+        | list[npt.NDArray[NpCoords]]
+        | tuple[npt.NDArray[NpCoords], ...]
     ),
     arc_endpts: (
         npt.NDArray[NpIndex]

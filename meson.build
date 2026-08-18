@@ -18,6 +18,8 @@ ext_suffix = run_command(
   check: true,
 ).stdout().strip()
 
+f2py_f2cmap = files('f2py_f2cmap')
+
 custom_target(
   '_native',
   input: files(
@@ -33,11 +35,14 @@ custom_target(
     'src/formosa/geomorphology/drainage/_backends/flat_resolution.f90',
     'src/formosa/geomorphology/drainage/_backends/flowdir.f90',
     'src/formosa/geomorphology/drainage/_backends/ridges.f90',
+    'src/formosa/geomorphology/meshing/_backends/triangulation.f90',
+    'src/formosa/geomorphology/meshing/_backends/constrained_triangulation.f90',
   ),
   output: ['_native' + ext_suffix],
   command: [
     py.full_path(),
     '-m', 'numpy.f2py',
+    '--f2cmap', f2py_f2cmap,
     '-m', '_native',
     # OpenMP flags
     '--f90flags="-march=native -fopenmp -O3"', # -pg for profiling
@@ -47,4 +52,5 @@ custom_target(
   install: true,
   install_dir: pkg_geom_plat_dir,
   build_by_default: true,
+  depend_files: f2py_f2cmap,
 )

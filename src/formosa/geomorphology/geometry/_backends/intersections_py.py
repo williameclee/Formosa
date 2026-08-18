@@ -4,37 +4,95 @@ Classifies line-segment intersections using the Python backend.
 This module implements internal routines called by the public-facing
 geometry API and is not intended to be used directly.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
+from enum import IntFlag
 
-import numpy.typing as npt
+from typing import overload
+from numpy.typing import NDArray
+from formosa.utils.typing import Real, NpReal
 
 
-def orient_v2(
-    p1: npt.NDArray[np.number],
-    p2: npt.NDArray[np.number],
-    p3: npt.NDArray[np.number],
-) -> int:
+@overload
+def orient(
+    p1: NDArray[np.integer], p2: NDArray[np.integer], p3: NDArray[np.integer]
+) -> int: ...
+
+
+@overload
+def orient(
+    p1: NDArray[np.floating], p2: NDArray[np.floating], p3: NDArray[np.floating]
+) -> float: ...
+
+
+@overload
+def orient(p1: NDArray[NpReal], p2: NDArray[NpReal], p3: NDArray[NpReal]) -> Real: ...
+
+
+def orient(p1: NDArray[NpReal], p2: NDArray[NpReal], p3: NDArray[NpReal]) -> Real:
     """
-    Computes the orientation of 3 2D points using exact comparisons.
+    Computes the signed determinant of three two-dimensional points.
     """
-    xprod = (p2[0] - p1[0]) * (p3[1] - p1[1]) - (p2[1] - p1[1]) * (p3[0] - p1[0])
-    if xprod == 0:
-        return 0
-    if xprod < 0:
-        return -1
-    return 1
+    p1x, p1y = p1.tolist()
+    p2x, p2y = p2.tolist()
+    p3x, p3y = p3.tolist()
+    return (p2x - p1x) * (p3y - p1y) - (p2y - p1y) * (p3x - p1x)
 
 
-def on_segment(
-    a: npt.NDArray[np.number], b: npt.NDArray[np.number], p: npt.NDArray[np.number]
-) -> bool:
+@overload
+def incircle(
+    a: NDArray[np.integer],
+    b: NDArray[np.integer],
+    c: NDArray[np.integer],
+    p: NDArray[np.integer],
+) -> int: ...
+
+
+@overload
+def incircle(
+    a: NDArray[np.floating],
+    b: NDArray[np.floating],
+    c: NDArray[np.floating],
+    p: NDArray[np.floating],
+) -> float: ...
+
+
+@overload
+def incircle(
+    a: NDArray[NpReal], b: NDArray[NpReal], c: NDArray[NpReal], p: NDArray[NpReal]
+) -> Real: ...
+
+
+def incircle(
+    a: NDArray[NpReal], b: NDArray[NpReal], c: NDArray[NpReal], p: NDArray[NpReal]
+) -> Real:
+    """
+    Calculates the signed in-circle determinant for 4 2D points.
+    """
+    ax, ay = a.tolist()
+    bx, by = b.tolist()
+    cx, cy = c.tolist()
+    px, py = p.tolist()
+
+    adx, ady = ax - px, ay - py
+    bdx, bdy = bx - px, by - py
+    cdx, cdy = cx - px, cy - py
+    abdet = adx * bdy - bdx * ady
+    bcdet = bdx * cdy - cdx * bdy
+    cadet = cdx * ady - adx * cdy
+    alift = adx * adx + ady * ady
+    blift = bdx * bdx + bdy * bdy
+    clift = cdx * cdx + cdy * cdy
+    return alift * bcdet + blift * cadet + clift * abdet
+
+
+def on_segment(a: NDArray[NpReal], b: NDArray[NpReal], p: NDArray[NpReal]) -> bool:
     """
     Determines whether a 2D point lies on a closed line segment.
     """
-    if orient_v2(a, b, p) != 0:
+    if orient(a, b, p) != 0:
         return False
     return bool(
         p[0] >= min(a[0], b[0])
@@ -45,10 +103,7 @@ def on_segment(
 
 
 def bboxes_overlap(
-    p1: npt.NDArray[np.number],
-    p2: npt.NDArray[np.number],
-    p3: npt.NDArray[np.number],
-    p4: npt.NDArray[np.number],
+    p1: NDArray[NpReal], p2: NDArray[NpReal], p3: NDArray[NpReal], p4: NDArray[NpReal]
 ) -> bool:
     """
     Determines whether 2 closed 2D segment bounding boxes overlap.
@@ -61,16 +116,27 @@ def bboxes_overlap(
     )
 
 
-def lines_intersect_v2(
-    l1a: npt.NDArray[np.number],
-    l1b: npt.NDArray[np.number],
-    l2a: npt.NDArray[np.number],
-    l2b: npt.NDArray[np.number],
-) -> int:
+class IntersectionKind(IntFlag):
+    DISJOINT_SEGMENTS = -1
+    ENDPOINT_CONTACT = 0
+    INTERIOR_CROSSING = 1
+    COLLINEAR_OVERLAP = 2
+    IDENTICAL_SEGMENTS = 3
+    T_JUNCTION = 4
+    DEGENERATE_SEGMENT = 5
+
+
+def lines_intersect(
+    l1a: NDArray[NpReal],
+    l1b: NDArray[NpReal],
+    l2a: NDArray[NpReal],
+    l2b: NDArray[NpReal],
+) -> IntersectionKind:
     """
     Classifies the intersection of 2 closed 2D line segments.
 
-    The retuned flag has the following interpretation:
+    The return flag has the following interpretation (as in
+    :class:`IntersectionKind`):
         - `-1`: Disjoint segments
         - `0`: Endpoint contact
         - `1`: Interior 'X' crossing
@@ -85,23 +151,25 @@ def lines_intersect_v2(
     l2b = np.asarray(l2b)
 
     if np.array_equal(l1a, l1b) or np.array_equal(l2a, l2b):
-        return 5
+        return IntersectionKind.DEGENERATE_SEGMENT
     if not bboxes_overlap(l1a, l1b, l2a, l2b):
-        return -1
+        return IntersectionKind.DISJOINT_SEGMENTS
 
     eq_l1al2a = np.array_equal(l1a, l2a)
     eq_l1al2b = np.array_equal(l1a, l2b)
     eq_l1bl2a = np.array_equal(l1b, l2a)
     eq_l1bl2b = np.array_equal(l1b, l2b)
     if (eq_l1al2a and eq_l1bl2b) or (eq_l1al2b and eq_l1bl2a):
-        return 3
+        return IntersectionKind.IDENTICAL_SEGMENTS
 
-    o1 = orient_v2(l1a, l1b, l2a)
-    o2 = orient_v2(l1a, l1b, l2b)
-    o3 = orient_v2(l2a, l2b, l1a)
-    o4 = orient_v2(l2a, l2b, l1b)
-    if o1 * o2 < 0 and o3 * o4 < 0:
-        return 1
+    o1 = orient(l1a, l1b, l2a)
+    o2 = orient(l1a, l1b, l2b)
+    o3 = orient(l2a, l2b, l1a)
+    o4 = orient(l2a, l2b, l1b)
+    opposite_12 = (o1 < 0 and o2 > 0) or (o1 > 0 and o2 < 0)
+    opposite_34 = (o3 < 0 and o4 > 0) or (o3 > 0 and o4 < 0)
+    if opposite_12 and opposite_34:
+        return IntersectionKind.INTERIOR_CROSSING
 
     if o1 == 0 and o2 == 0 and o3 == 0 and o4 == 0:
         if abs(l1b[0] - l1a[0]) >= abs(l1b[1] - l1a[1]):
@@ -114,13 +182,13 @@ def lines_intersect_v2(
         overlap0 = max(a0, c0)
         overlap1 = min(a1, c1)
         if overlap1 < overlap0:
-            return -1
+            return IntersectionKind.DISJOINT_SEGMENTS
         if overlap1 <= overlap0:
-            return 0
-        return 2
+            return IntersectionKind.ENDPOINT_CONTACT
+        return IntersectionKind.COLLINEAR_OVERLAP
 
     if eq_l1al2a or eq_l1al2b or eq_l1bl2a or eq_l1bl2b:
-        return 0
+        return IntersectionKind.ENDPOINT_CONTACT
 
     if (
         on_segment(l1a, l1b, l2a)
@@ -128,5 +196,5 @@ def lines_intersect_v2(
         or on_segment(l2a, l2b, l1a)
         or on_segment(l2a, l2b, l1b)
     ):
-        return 4
-    return -1
+        return IntersectionKind.T_JUNCTION
+    return IntersectionKind.DISJOINT_SEGMENTS

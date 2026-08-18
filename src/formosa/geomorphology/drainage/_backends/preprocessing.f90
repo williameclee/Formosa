@@ -3,8 +3,10 @@
 !! This internal module is called by the Python drainage API and is
 !! not intended to be used directly.
 !!
-!! Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+!! Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
 module drainage_preprocessing
+    use utils, only: ERR_NO_ERROR, ERR_INVALID_INPUT, &
+                     ERR_ALLOCATION_FAILURE, ERR_OVERFLOW
     use utils, only: array2d_oob, mask2id, &
                      id2ij_checked, ij2id_checked, &
                      push_priority_queue, pop_priority_queue
@@ -39,7 +41,7 @@ contains
         integer :: si, sj
 
         ! Queue the boundary ocean cells
-        err_code = 0
+        err_code = ERR_NO_ERROR
         nseeds = 0
 
         ! Leftmost column
@@ -50,7 +52,7 @@ contains
             if (z(si, sj) > ocean_lvl) cycle
             if ((.not. flood_below) .and. (z(si, sj) < ocean_lvl)) cycle
             if (nseeds >= size(seed_ids, dim=1)) then
-                err_code = 3
+                err_code = ERR_OVERFLOW
                 return
             end if
             nseeds = nseeds + 1
@@ -63,7 +65,7 @@ contains
             if (z(si, sj) > ocean_lvl) cycle
             if ((.not. flood_below) .and. (z(si, sj) < ocean_lvl)) cycle
             if (nseeds >= size(seed_ids, dim=1)) then
-                err_code = 3
+                err_code = ERR_OVERFLOW
                 return
             end if
             nseeds = nseeds + 1
@@ -76,7 +78,7 @@ contains
             if (z(si, sj) > ocean_lvl) cycle
             if ((.not. flood_below) .and. (z(si, sj) < ocean_lvl)) cycle
             if (nseeds >= size(seed_ids, dim=1)) then
-                err_code = 3
+                err_code = ERR_OVERFLOW
                 return
             end if
             nseeds = nseeds + 1
@@ -89,7 +91,7 @@ contains
             if (z(si, sj) > ocean_lvl) cycle
             if ((.not. flood_below) .and. (z(si, sj) < ocean_lvl)) cycle
             if (nseeds >= size(seed_ids, dim=1)) then
-                err_code = 3
+                err_code = ERR_OVERFLOW
                 return
             end if
             nseeds = nseeds + 1
@@ -134,12 +136,13 @@ contains
         integer :: iseed, nseeds, icell, ncells
         integer :: iofs
         logical(kind=1) :: is_valid
+        integer :: alloc_stat
 
         allocate (seed_ids((nrows + ncols)*2 - 2), &
                   basin_ids(nrows*ncols), processed(nrows, ncols), &
-                  stat=err_code)
-        if (err_code /= 0) then
-            err_code = 2
+                  stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = ERR_ALLOCATION_FAILURE
             if (allocated(seed_ids)) deallocate (seed_ids)
             if (allocated(processed)) deallocate (processed)
             return
@@ -149,7 +152,7 @@ contains
         call fill_boundary_ocean_queue( &
             z, valids, nrows, ncols, seed_ids, nseeds, &
             ocean_lvl, flood_below, err_code)
-        if (err_code /= 0) return
+        if (err_code /= ERR_NO_ERROR) return
 
         basins = 0
         if (nseeds == 0) return
@@ -256,7 +259,7 @@ contains
             cid = ij2id_checked(ci, cj, nrows, ncols)
             call push_priority_queue( &
                 pqueue, pqueue_size, cid, z, err_code)
-            if (err_code /= 0) return
+            if (err_code /= ERR_NO_ERROR) return
             processed(ci, cj) = .true.
         end do
         ! Bottom row
@@ -267,7 +270,7 @@ contains
             cid = ij2id_checked(ci, cj, nrows, ncols)
             call push_priority_queue( &
                 pqueue, pqueue_size, cid, z, err_code)
-            if (err_code /= 0) return
+            if (err_code /= ERR_NO_ERROR) return
             processed(ci, cj) = .true.
         end do
         ! Leftmost column
@@ -278,7 +281,7 @@ contains
             cid = ij2id_checked(ci, cj, nrows, ncols)
             call push_priority_queue( &
                 pqueue, pqueue_size, cid, z, err_code)
-            if (err_code /= 0) return
+            if (err_code /= ERR_NO_ERROR) return
             processed(ci, cj) = .true.
         end do
         ! Rightmost column
@@ -289,7 +292,7 @@ contains
             cid = ij2id_checked(ci, cj, nrows, ncols)
             call push_priority_queue( &
                 pqueue, pqueue_size, cid, z, err_code)
-            if (err_code /= 0) return
+            if (err_code /= ERR_NO_ERROR) return
             processed(ci, cj) = .true.
         end do
 
@@ -304,7 +307,7 @@ contains
                     call push_priority_queue( &
                         pqueue, pqueue_size, &
                         ij2id_checked(ci, cj, nrows, ncols), z, err_code)
-                    if (err_code /= 0) return
+                    if (err_code /= ERR_NO_ERROR) return
                     processed(ci, cj) = .true.
                     cycle
                 end if
@@ -324,7 +327,7 @@ contains
                     nid = ij2id_checked(ni, nj, nrows, ncols)
                     call push_priority_queue( &
                         pqueue, pqueue_size, nid, z, err_code)
-                    if (err_code /= 0) return
+                    if (err_code /= ERR_NO_ERROR) return
                     processed(ni, nj) = .true.
                 end do
             end do
@@ -359,11 +362,12 @@ contains
         logical(kind=1), allocatable :: processed(:, :)
         integer, allocatable :: pqueue(:)
         integer :: pqueue_size
+        integer :: alloc_stat
 
         allocate (processed(nrows, ncols), pqueue(nrows*ncols), &
-                  stat=err_code)
-        if (err_code /= 0) then
-            err_code = 2
+                  stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = ERR_ALLOCATION_FAILURE
             if (allocated(processed)) deallocate (processed)
             if (allocated(pqueue)) deallocate (pqueue)
             return
@@ -377,13 +381,13 @@ contains
         call fill_sink_priority_queue( &
             z, valids, more_sinks, processed, &
             pqueue, pqueue_size, offsets, err_code)
-        if (err_code /= 0) return
+        if (err_code /= ERR_NO_ERROR) return
 
         ! Start processing the cells
         do while (pqueue_size > 0)
             call pop_priority_queue( &
                 pqueue, pqueue_size, cid, z_filled, err_code)
-            if (err_code /= 0) return
+            if (err_code /= ERR_NO_ERROR) return
             call id2ij_checked(cid, nrows, ncols, ci, cj, is_valid)
             do iofs = 1, noffsets
                 ni = ci + offsets(iofs, 1)
@@ -398,7 +402,7 @@ contains
                 nid = ij2id_checked(ni, nj, nrows, ncols)
                 call push_priority_queue( &
                     pqueue, pqueue_size, nid, z_filled, err_code)
-                if (err_code /= 0) return
+                if (err_code /= ERR_NO_ERROR) return
             end do
         end do
     end subroutine fill_depressions
@@ -427,12 +431,13 @@ contains
         integer :: iofs
         integer :: ilabel
         logical(kind=1) :: is_valid
+        integer :: alloc_stat
 
         queue_size = count(mask)
         allocate (seed_queue(queue_size), flood_queue(queue_size), &
-                  stat=err_code)
-        if (err_code /= 0) then
-            err_code = 2
+                  stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = ERR_ALLOCATION_FAILURE
             return
         end if
 
@@ -441,7 +446,7 @@ contains
 
         ! Fill the seed queue
         call mask2id(mask, seed_queue, queue_size, nseeds, err_code)
-        if (err_code /= 0) return
+        if (err_code /= ERR_NO_ERROR) return
 
         ! Go through each cell
         ilabel = 0

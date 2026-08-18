@@ -1,13 +1,15 @@
 from .intersections import (
     bboxes_overlap,
-    lines_intersect_v2,
+    incircle,
+    lines_intersect,
     on_segment,
-    orient_v2,
+    orient,
 )
 
 __all__ = [
     "bboxes_overlap",
-    "lines_intersect_v2",
+    "incircle",
+    "lines_intersect",
     "on_segment",
-    "orient_v2",
+    "orient",
 ]

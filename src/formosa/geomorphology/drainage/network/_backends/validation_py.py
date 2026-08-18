@@ -4,10 +4,10 @@ Validates flow-graph topology using the Python backend.
 This module implements internal routines called by the public-facing
 network API and is not intended to be used directly.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
 """
 
-from formosa.geomorphology.geometry.intersections import lines_intersect_v2
+from formosa.geomorphology.geometry.intersections import lines_intersect
 
 
 import numpy as np
@@ -40,7 +40,7 @@ def locate_invalid_graph_topology(
             continue
         for iseg in range(start_idx, end_idx):
             for jseg in range(iseg + 1, end_idx):
-                intx_flag = lines_intersect_v2(
+                intx_flag = lines_intersect(
                     vertex_ijs[iseg],
                     vertex_ijs[iseg + 1],
                     vertex_ijs[jseg],
@@ -79,7 +79,7 @@ def locate_invalid_graph_topology(
 
             for iseg in range(start_i, end_i):
                 for jseg in range(start_j, end_j):
-                    intx_flag = lines_intersect_v2(
+                    intx_flag = lines_intersect(
                         vertex_ijs[iseg],
                         vertex_ijs[iseg + 1],
                         vertex_ijs[jseg],

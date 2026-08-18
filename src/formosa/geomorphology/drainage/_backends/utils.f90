@@ -4,10 +4,16 @@
 !! direction code decoding, raster masking, and priority queues used
 !! by other FORTRAN modules.
 !!
-!! Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+!! Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
 module utils
     use iso_c_binding, only: c_int8_t
     implicit none(type, external)
+
+    integer, parameter :: ERR_NO_ERROR = 0
+    integer, parameter :: ERR_INVALID_INPUT = 1
+    integer, parameter :: ERR_ALLOCATION_FAILURE = 2
+    integer, parameter :: ERR_OVERFLOW = 3
+    integer, parameter :: ERR_COMPUTATION_FAILURE = 4
 contains
 
     logical pure function array2d_oob(i, j, nrows, ncols) result(is_oob)
@@ -78,12 +84,12 @@ contains
         integer :: ci, cj
 
         cnt = 0
-        err_code = 0
+        err_code = ERR_NO_ERROR
         do cj = lbound(mask, 2), ubound(mask, 2)
             do ci = lbound(mask, 1), ubound(mask, 1)
                 if (.not. mask(ci, cj)) cycle
                 if (cnt == nids) then
-                    err_code = 3
+                    err_code = ERR_OVERFLOW
                     return
                 end if
                 cnt = cnt + 1
@@ -119,13 +125,13 @@ contains
 
         ! Count number of valid neighbors
         cnt = 0
-        err_code = 0
+        err_code = ERR_NO_ERROR
 
         do cj = lbound(mask, 2), ubound(mask, 2)
             do ci = lbound(mask, 1), ubound(mask, 1)
                 if (.not. mask(ci, cj)) cycle
                 if (cnt == nij) then
-                    err_code = 3
+                    err_code = ERR_OVERFLOW
                     return
                 end if
                 cnt = cnt + 1
@@ -134,6 +140,25 @@ contains
             end do
         end do
     end subroutine mask2ij
+
+    !> Takes the modulo of ***a*** with respect to ***p***, but
+    !! returns a result in the range [1, ***p***] instead of
+    !! [0, ***p***-1].
+    elemental function mod1(a, p) result(b)
+        implicit none(type, external)
+        integer, intent(in) :: a, p
+        integer :: b
+        b = modulo(a - 1, p) + 1
+    end function mod1
+
+    !> Increments ***a*** by ***s*** and wraps it back to the range
+    !! [1, ***p***].
+    pure function modshift(a, s, p) result(b)
+        implicit none(type, external)
+        integer, intent(in) :: a, s, p
+        integer :: b
+        b = mod1(a + s, p)
+    end function modshift
 
     pure function find_noflow_code(offsets, codes, default_noflow_code) result(noflow_code)
         !! For pairs of flow direction codes and their corresponding
@@ -287,14 +312,14 @@ contains
         integer :: tmp_id
             !! For swapping the new cell to the right position
 
-        err_code = 0
+        err_code = ERR_NO_ERROR
 
         ! First make sure the queue is large enough
         if (queue_size < 0) then
-            err_code = 1 ! Incorrect input
+            err_code = ERR_INVALID_INPUT ! Incorrect input
             return
         elseif (queue_size >= size(queue)) then
-            err_code = 3 ! Overflow
+            err_code = ERR_OVERFLOW ! Overflow
             return
         end if
 
@@ -351,15 +376,15 @@ contains
         integer :: tmp_id
             !! For swapping the new cell to the right position
 
-        err_code = 0
+        err_code = ERR_NO_ERROR
 
         ! Check the queue is normal
         if (queue_size <= 0) then
-            err_code = 1 ! Incorrect input
+            err_code = ERR_INVALID_INPUT ! Incorrect input
             popped = 0
             return
         elseif (queue_size > size(queue)) then
-            err_code = 3 ! Overflow
+            err_code = ERR_OVERFLOW ! Overflow
             popped = 0
             return
         end if

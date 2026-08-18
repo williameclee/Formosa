@@ -254,7 +254,7 @@ class DEMGrid:
         self._ridge_dist: None | npt.NDArray[np.float32] = None
 
     @property
-    def shape(self) -> tuple[int]:
+    def shape(self) -> tuple[int, int]:
         return self.dem.shape
 
     @property
