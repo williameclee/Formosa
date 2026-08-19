@@ -110,7 +110,18 @@ contains
         end do
     end subroutine build_elevation_pyramid
 
-    pure real function block_min_distance2( &
+    pure real function min_dist2boundary(ci, cj, irange, jrange, dx, dy) result(dist)
+        implicit none(type, external)
+        ! Arguments
+        integer, intent(in) :: ci, cj
+        integer, intent(in) :: irange(2), jrange(2)
+        real, intent(in) :: dx, dy
+
+        dist = min(dy*(min(ci - irange(1), irange(2) - ci) + 0.5), &
+                   dx*(min(cj - jrange(1), jrange(2) - cj) + 0.5))
+    end function min_dist2boundary
+
+    pure real function min_dist2block( &
         p, lvl, bi, bj, ci, cj, dx, dy) result(dist2)
         implicit none(type, external)
         ! Arguments
@@ -142,7 +153,7 @@ contains
         di = max(0, ifirst - ci, ci - ilast)
         dj = max(0, jfirst - cj, cj - jlast)
         dist2 = dy**2*di**2 + dx**2*dj**2
-    end function block_min_distance2
+    end function min_dist2block
 
     subroutine find_neighbour_ilp( &
         z, valids, isos, offsets, ilp_is, ilp_js, dx, dy)
@@ -217,7 +228,7 @@ contains
         if (p%levels(lvl)%zmax(bi, bj) <= cz) return
         ! Return if too far
         if ((best_dist2 >= 0) .and. &
-            (block_min_distance2(p, lvl, bi, bj, ci, cj, dx, dy) > best_dist2)) return
+            (min_dist2block(p, lvl, bi, bj, ci, cj, dx, dy) > best_dist2)) return
 
         if (lvl == 0) then
             dist2 = l2dist2_xy(dy*ci, dx*cj, dy*bi, dx*bj)
@@ -243,7 +254,7 @@ contains
     end subroutine search_ilp
 
     subroutine calculate_isolation( &
-        z, valids, isos, ilp_is, ilp_js, nrows, ncols, &
+        z, valids, isos, ilp_is, ilp_js, censored, nrows, ncols, &
         dx, dy, err_code)
         implicit none(type, external)
         ! Arguments
@@ -259,6 +270,7 @@ contains
         real, intent(out) :: isos(nrows, ncols)
         integer, intent(out) :: ilp_is(nrows, ncols), ilp_js(nrows, ncols)
             !! Cell indices for the isolation limit point (ILP)
+        logical(kind=1), intent(out) :: censored(nrows, ncols)
         integer, intent(out) :: err_code
         ! Local variables
         integer, parameter :: offsets1(2, 8) = reshape( &
@@ -272,6 +284,7 @@ contains
         real :: dist2
         type(elevation_pyramid) :: pyramid
         integer, parameter :: pyramid_factor = 2
+        real :: dist_bdry
 
         err_code = ERR_NO_ERROR
         ilp_is = -1
@@ -307,6 +320,22 @@ contains
                 1, 1, ci, cj, z(ci, cj), dx, dy, dist2, &
                 ilp_is(ci, cj), ilp_js(ci, cj))
             if (dist2 > 0) isos(ci, cj) = sqrt(real(dist2))
+        end do
+        end do
+        !$omp END PARALLEL DO
+
+        ! If the isolation in larger than the cell's distance to
+        ! the nearest boundary, it is just an upper bound because
+        ! the search area is truncated
+        !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(cj, ci, dist_bdry) &
+        !$omp COLLAPSE(2) &
+        !$omp SCHEDULE(STATIC)
+        do cj = 1, ncols
+        do ci = 1, nrows
+            dist_bdry = min_dist2boundary(ci, cj, [1, nrows], [1, ncols], dx, dy)
+            censored(ci, cj) = &
+                valids(ci, cj) .and. &
+                (isos(ci, cj) == 0 .or. (dist_bdry < isos(ci, cj)))
         end do
         end do
         !$omp END PARALLEL DO

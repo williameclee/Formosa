@@ -12,9 +12,9 @@ from formosa.geomorphology.terrain import calculate_isolation
 
 def _brute_force_isolation(
     dem: np.ndarray, valids: np.ndarray, dx: float, dy: float
-) -> tuple[np.ndarray, np.ndarray]:
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
     """
-    Returns exact isolation distances and whether an ILP exists.
+    Returns exact isolation distances, ILP existence, and censoring.
     """
     nrows, ncols = dem.shape
     rows, cols = np.indices(dem.shape)
@@ -34,7 +34,16 @@ def _brute_force_isolation(
             isos[ci, cj] = np.sqrt(np.min(dist2))
             has_ilp[ci, cj] = True
 
-    return isos, has_ilp
+    row_margin = (
+        np.minimum(rows, nrows - 1 - rows).astype(np.float64) + 0.5
+    ) * dy
+    col_margin = (
+        np.minimum(cols, ncols - 1 - cols).astype(np.float64) + 0.5
+    ) * dx
+    boundary_distance = np.minimum(row_margin, col_margin)
+    censored = valids & (~has_ilp | (isos > boundary_distance))
+
+    return isos, has_ilp, censored
 
 
 @pytest.mark.parametrize(
@@ -57,10 +66,15 @@ def test_calculate_isolation_matches_brute_force(shape, dx, dy, include_invalids
         valids.flat[::4] = False
         valids.flat[-1] = True
 
-    expected_isos, expected_has_ilp = _brute_force_isolation(dem, valids, dx, dy)
-    isos, ilpis, ilpjs = calculate_isolation(dem, valids, dx=dx, dy=dy)
+    expected_isos, expected_has_ilp, expected_censored = _brute_force_isolation(
+        dem, valids, dx, dy
+    )
+    isos, ilpis, ilpjs, censored = calculate_isolation(
+        dem, valids, dx=dx, dy=dy
+    )
 
     np.testing.assert_allclose(isos, expected_isos, rtol=1e-6, atol=1e-6)
+    np.testing.assert_array_equal(censored, expected_censored)
     assert np.all(ilpis[~expected_has_ilp] == -1)
     assert np.all(ilpjs[~expected_has_ilp] == -1)
 
@@ -81,10 +95,11 @@ def test_anisotropic_spacing_can_make_distant_row_cell_nearest():
     dem[2, 3] = 6.0  # One column away: distance 10.
     dem[4, 2] = 7.0  # Two rows away: distance 2.
 
-    isos, ilpis, ilpjs = calculate_isolation(dem, dx=10.0, dy=1.0)
+    isos, ilpis, ilpjs, censored = calculate_isolation(dem, dx=10.0, dy=1.0)
 
     assert isos[2, 2] == pytest.approx(2.0)
     assert (ilpis[2, 2], ilpjs[2, 2]) == (4, 2)
+    assert not censored[2, 2]
 
 
 def test_equal_elevations_do_not_qualify_as_higher():
@@ -98,7 +113,7 @@ def test_equal_elevations_do_not_qualify_as_higher():
         dtype=np.float32,
     )
 
-    isos, ilpis, ilpjs = calculate_isolation(dem)
+    isos, ilpis, ilpjs, censored = calculate_isolation(dem)
 
     assert isos[1, 1] == pytest.approx(np.sqrt(5.0))
     assert (ilpis[1, 1], ilpjs[1, 1]) == (2, 3)
@@ -106,6 +121,7 @@ def test_equal_elevations_do_not_qualify_as_higher():
     assert (ilpis[2, 2], ilpjs[2, 2]) == (2, 3)
     assert isos[2, 3] == 0.0
     assert (ilpis[2, 3], ilpjs[2, 3]) == (-1, -1)
+    assert censored[2, 3]
 
 
 def test_nonfinite_and_masked_higher_cells_are_ignored():
@@ -120,14 +136,16 @@ def test_nonfinite_and_masked_higher_cells_are_ignored():
     valids = np.ones(dem.shape, dtype=bool)
     valids[0, 0] = False
 
-    isos, ilpis, ilpjs = calculate_isolation(dem, valids)
+    isos, ilpis, ilpjs, censored = calculate_isolation(dem, valids)
 
     assert isos[1, 1] == pytest.approx(np.sqrt(2.0))
     assert (ilpis[1, 1], ilpjs[1, 1]) == (2, 2)
     assert isos[0, 0] == 0.0
     assert (ilpis[0, 0], ilpjs[0, 0]) == (-1, -1)
+    assert not censored[0, 0]
     assert isos[1, 2] == 0.0
     assert (ilpis[1, 2], ilpjs[1, 2]) == (-1, -1)
+    assert not censored[1, 2]
 
 
 @pytest.mark.parametrize("shape", [(1, 1), (2, 3), (5, 4)])
@@ -135,11 +153,41 @@ def test_all_invalid_cells_have_no_isolation_limit_point(shape):
     dem = np.ones(shape, dtype=np.float32)
     valids = np.zeros(shape, dtype=bool)
 
-    isos, ilpis, ilpjs = calculate_isolation(dem, valids)
+    isos, ilpis, ilpjs, censored = calculate_isolation(dem, valids)
 
     assert np.all(isos == 0.0)
     assert np.all(ilpis == -1)
     assert np.all(ilpjs == -1)
+    assert not np.any(censored)
+
+
+def test_censoring_uses_outer_raster_footprint():
+    dem = np.zeros((5, 5), dtype=np.float32)
+    dem[2, 2] = 5.0
+    dem[0, 0] = 6.0
+
+    isos, _, _, censored = calculate_isolation(dem)
+
+    # The centre is 2.5 cells from the raster footprint, but its ILP
+    # is sqrt(8) cells away at the corner.
+    assert isos[2, 2] == pytest.approx(np.sqrt(8.0))
+    assert censored[2, 2]
+
+    # Every positive-radius search from a boundary-cell centre extends
+    # beyond its half-cell-wide footprint margin.
+    assert isos[0, 1] == pytest.approx(1.0)
+    assert censored[0, 1]
+
+
+def test_isolation_circle_inside_raster_footprint_is_not_censored():
+    dem = np.zeros((7, 7), dtype=np.float32)
+    dem[3, 3] = 5.0
+    dem[3, 5] = 6.0
+
+    isos, _, _, censored = calculate_isolation(dem)
+
+    assert isos[3, 3] == pytest.approx(2.0)
+    assert not censored[3, 3]
 
 
 @pytest.mark.parametrize(

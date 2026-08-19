@@ -46,22 +46,25 @@ def calculate_isolation(
     valids: Optional[NDArray[np.bool_]] = None,
     dx: Coords = 1.0,
     dy: Coords = 1.0,
-) -> tuple[NDArray[np.float32], NDArray[NpCanonIndex], NDArray[NpCanonIndex]]:
+) -> tuple[
+    NDArray[np.float32], NDArray[NpCanonIndex], NDArray[NpCanonIndex], NDArray[np.bool_]
+]:
     """
-    Calculates terrain isolation within a raster neighbourhood.
+    Calculates terrain *isolation* of a DEM.
 
     For each valid cell, the isolation is the grid distance to the
-    nearest strictly higher cell selected by the native terrain
-    backend.
+    nearest strictly higher cell (the isolation limiting point,
+    ILP). For the highest cell(s) in the DEM, the isolation is
+    returned as 0.
 
     Parameters
     ----------
     dem : NDArray[number]
-        Two-dimensional digital elevation model.
+        2D digital elevation model.
     valids : NDArray[bool], optional
-        Boolean mask indicating valid cells. Non-finite DEM cells
-        are always invalid.
-        If `None`, all finite cells are valid.
+        Boolean mask indicating valid cells.
+        Non-finite DEM cells are always invalid.
+        If `None`, all finite cells are assumed valid.
         Default input is `None`.
     dx, dy : int | float, optional
         Positive, finite column and row spacing, respectively.
@@ -74,18 +77,24 @@ def calculate_isolation(
         Isolation distances in the units of `dx` and `dy`, with the
         same shape as `dem`.
     ilpis, ilpjs : NDArray[int32]
-        0-based row and column indices of the isolation limit points.
+        0-based row (*y*) and column (*x*) indices of the isolation
+        limit points.
+    censored : NDArray[bool]
+        Whether the isolation search reaches beyond the outer raster
+        footprint before it reaches the reported ILP. Valid cells with
+        no ILP are censored; invalid cells are not. Internal invalid
+        regions are not treated as observation-window boundaries.
 
     Raises
     ------
     ValueError
         If `dem` is empty or not two-dimensional, or if `valids`
         does not have the same shape as `dem`, or if either grid
-        spacing is non-finite, non-positive, or cannot be represented
-        by the native backend.
+        spacing is non-finite, non-positive, or cannot be
+        represented by the native backend.
     TypeError
-        If `dem` is not a real numeric array or either grid spacing is
-        not a real numeric scalar.
+        If `dem` is not a real numeric array or either grid spacing
+        is not a real numeric scalar.
     RuntimeError
         If the Fortran backend reports an execution error.
     """
@@ -114,9 +123,11 @@ def calculate_isolation(
 
         spacing_value = float(spacing_array)
         if not np.isfinite(spacing_value) or spacing_value <= 0.0:
-            raise ValueError(f"{name} must be finite and greater than zero.")
+            raise ValueError(
+                f"{name} must be finite and greater than 0, " + f"but got {spacing}."
+            )
         if spacing_value > np.finfo(np.float32).max:
-            raise ValueError(f"{name} is too large for the native backend.")
+            raise ValueError(f"{name} is too large for the native backend: {spacing}.")
         spacings[name] = np.float32(spacing_value)
 
     dx_f = spacings["dx"]
@@ -134,7 +145,7 @@ def calculate_isolation(
             )
         valids = valids & finite
 
-    isos, ilpis, ilpjs, err_code = terrain_f.calculate_isolation(
+    isos, ilpis, ilpjs, censored, err_code = terrain_f.calculate_isolation(
         dem.astype(np.float32, order="F"),
         valids.astype(bool, order="F"),
         dx_f,
@@ -149,4 +160,5 @@ def calculate_isolation(
     has_ilp = (ilpis > 0) & (ilpjs > 0)
     ilpis = np.where(has_ilp, ilpis - 1, -1).astype(NpCanonIndex, order="F", copy=False)
     ilpjs = np.where(has_ilp, ilpjs - 1, -1).astype(NpCanonIndex, order="F", copy=False)
-    return isos, ilpis, ilpjs
+    censored = np.asarray(censored, dtype=bool, order="F")
+    return isos, ilpis, ilpjs, censored
