@@ -142,7 +142,8 @@ contains
     !! The footprint extends half a cell beyond the centres of the
     !! outer cells. irange and jrange give its inclusive cell-index
     !! bounds.
-    pure real function min_dist2boundary(ci, cj, irange, jrange, dx, dy) result(dist)
+    pure real function min_dist2boundary( &
+        ci, cj, irange, jrange, dx, dy) result(dist)
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: ci, cj
@@ -262,7 +263,8 @@ contains
     !! the best candidate. At level 0, qualifying cells update the
     !! current squared-distance bound and ILP indices.
     pure recursive subroutine search_ilp2( &
-        p, lvl, bi, bj, ci, cj, cz, dx, dy, best_dist2, best_i, best_j)
+        p, lvl, bi, bj, ci, cj, cz, dx, dy, &
+        best_dist2, best_i, best_j)
         implicit none(type, external)
         ! Arguments
         type(elevation_pyramid), intent(in) :: p
@@ -312,7 +314,8 @@ contains
 
         do sbi = sbif, sbil
         do sbj = sbjf, sbjl
-            call search_ilp2(p, lvl - 1, sbi, sbj, ci, cj, cz, dx, dy, best_dist2, best_i, best_j)
+            call search_ilp2(p, lvl - 1, sbi, sbj, ci, cj, cz, &
+                             dx, dy, best_dist2, best_i, best_j)
         end do
         end do
     end subroutine search_ilp2
@@ -412,7 +415,8 @@ contains
         !$omp SCHEDULE(STATIC)
         do cj = 1, ncols
         do ci = 1, nrows
-            dist_bdry = min_dist2boundary(ci, cj, [1, nrows], [1, ncols], dx, dy)
+            dist_bdry = min_dist2boundary( &
+                        ci, cj, [1, nrows], [1, ncols], dx, dy)
             censored(ci, cj) = &
                 valids(ci, cj) .and. &
                 (isos(ci, cj) == 0 .or. (dist_bdry < isos(ci, cj)))
