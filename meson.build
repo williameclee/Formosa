@@ -37,6 +37,7 @@ custom_target(
     'src/formosa/geomorphology/drainage/_backends/ridges.f90',
     'src/formosa/geomorphology/meshing/_backends/triangulation.f90',
     'src/formosa/geomorphology/meshing/_backends/constrained_triangulation.f90',
+    'src/formosa/geomorphology/_backends/terrain.f90',
   ),
   output: ['_native' + ext_suffix],
   command: [

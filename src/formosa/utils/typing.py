@@ -19,6 +19,7 @@ NpCanonIndex: TypeAlias = np.int32
 NpIndex = TypeVar("NpIndex", np.int32, np.int64, np.intp)
 # Accpetable types for coordinates in NumPy arrays
 NpCoords = TypeVar("NpCoords", np.int32, np.int64, np.intp, np.floating)
+Coords = int | float
 # Real number in NumPyArrays
 NpReal = TypeVar("NpReal", np.integer, np.floating)
 Real = int | float
