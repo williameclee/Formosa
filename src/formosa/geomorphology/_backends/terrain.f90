@@ -110,8 +110,8 @@ contains
         end do
     end subroutine build_elevation_pyramid
 
-    pure integer function block_min_distance2( &
-        p, lvl, bi, bj, ci, cj) result(dist2)
+    pure real function block_min_distance2( &
+        p, lvl, bi, bj, ci, cj, dx, dy) result(dist2)
         implicit none(type, external)
         ! Arguments
         type(elevation_pyramid), intent(in) :: p
@@ -121,6 +121,7 @@ contains
             !! Index of the block within the pyramid level
         integer, intent(in) :: ci, cj
             !! Index of the cell to calculate distance against
+        real, intent(in) :: dx, dy
         ! Local variables
         integer :: bsize
             !! Size of the block
@@ -140,11 +141,57 @@ contains
         ! Calculate offset and distance
         di = max(0, ifirst - ci, ci - ilast)
         dj = max(0, jfirst - cj, cj - jlast)
-        dist2 = di**2 + dj**2
+        dist2 = dy**2*di**2 + dx**2*dj**2
     end function block_min_distance2
 
+    subroutine find_neighbour_ilp( &
+        z, valids, isos, offsets, ilp_is, ilp_js, dx, dy)
+        implicit none(type, external)
+        ! Arguments
+        real, intent(in) :: z(:, :)
+            !! Elevation grid
+        logical(kind=1), intent(in) :: valids(:, :)
+            !! Validity mask (false for no-data)
+        integer, intent(in) :: offsets(:, :)
+        real, intent(in) :: dx, dy
+        ! Outputs
+        real, intent(inout) :: isos(:, :)
+        integer, intent(inout) :: ilp_is(:, :), ilp_js(:, :)
+        ! Local variables
+        integer :: ci, cj, ni, nj
+        integer :: iofs
+        real :: dist
+
+        !$omp PARALLEL DO COLLAPSE(2)&
+        !$omp DEFAULT(SHARED) PRIVATE(cj, ci, ni, nj, iofs, dist) &
+        !$omp SCHEDULE(STATIC)
+        do cj = 1, size(z, dim=2)
+        do ci = 1, size(z, dim=1)
+            if (.not. valids(ci, cj)) cycle
+            if (isos(ci, cj) > 0) cycle
+            do iofs = 1, size(offsets, dim=2)
+                ni = ci + offsets(1, iofs)
+                nj = cj + offsets(2, iofs)
+                ! Check bounds
+                if (array2d_oob(ni, nj, size(z, dim=1), size(z, dim=2))) cycle
+                ! Check if neighbour is part of the same flat
+                if (.not. valids(ni, nj)) cycle
+                ! Record neighbour with higher elevation
+                if (z(ni, nj) <= z(ci, cj)) cycle
+                dist = l2dist_xy(dy*ci, dx*cj, dy*ni, dx*nj)
+                if ((isos(ci, cj) > 0) .and. &
+                    (dist >= isos(ci, cj))) cycle
+                isos(ci, cj) = dist
+                ilp_is(ci, cj) = ni
+                ilp_js(ci, cj) = nj
+            end do
+        end do
+        end do
+        !$omp END PARALLEL DO
+    end subroutine
+
     pure recursive subroutine search_ilp( &
-        p, lvl, bi, bj, ci, cj, cz, best_dist2, best_i, best_j)
+        p, lvl, bi, bj, ci, cj, cz, dx, dy, best_dist2, best_i, best_j)
         implicit none(type, external)
         ! Arguments
         type(elevation_pyramid), intent(in) :: p
@@ -156,22 +203,24 @@ contains
             !! Index of the cell to calculate distance against
         real, intent(in) :: cz
             !! Elevation of the cell
-        integer, intent(inout) :: best_dist2
+        real, intent(in) :: dx, dy
+        ! Output
+        real, intent(inout) :: best_dist2
         integer, intent(inout) :: best_i, best_j
         ! Local variables
         integer :: sbif, sbil, sbjf, sbjl
             !! Range of the block in at its children's level
         integer :: sbi, sbj
-        integer :: dist2
+        real :: dist2
 
         ! Return if no potential ILPs
         if (p%levels(lvl)%zmax(bi, bj) <= cz) return
         ! Return if too far
         if ((best_dist2 >= 0) .and. &
-            (block_min_distance2(p, lvl, bi, bj, ci, cj) > best_dist2)) return
+            (block_min_distance2(p, lvl, bi, bj, ci, cj, dx, dy) > best_dist2)) return
 
         if (lvl == 0) then
-            dist2 = l2dist2_xy(ci, cj, bi, bj)
+            dist2 = l2dist2_xy(dy*ci, dx*cj, dy*bi, dx*bj)
             if ((best_dist2 >= 0) .and. (dist2 >= best_dist2)) return
             ! A potential ILP found
             best_dist2 = dist2
@@ -188,13 +237,14 @@ contains
 
         do sbi = sbif, sbil
         do sbj = sbjf, sbjl
-            call search_ilp(p, lvl - 1, sbi, sbj, ci, cj, cz, best_dist2, best_i, best_j)
+            call search_ilp(p, lvl - 1, sbi, sbj, ci, cj, cz, dx, dy, best_dist2, best_i, best_j)
         end do
         end do
     end subroutine search_ilp
 
     subroutine calculate_isolation( &
-        z, valids, isos, ilp_is, ilp_js, nrows, ncols, err_code)
+        z, valids, isos, ilp_is, ilp_js, nrows, ncols, &
+        dx, dy, err_code)
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols
@@ -203,6 +253,8 @@ contains
             !! Elevation grid
         logical(kind=1), intent(in) :: valids(nrows, ncols)
             !! Validity mask (false for no-data)
+        real, intent(in) :: dx, dy
+            !! Grid spacing
         ! Outputs
         real, intent(out) :: isos(nrows, ncols)
         integer, intent(out) :: ilp_is(nrows, ncols), ilp_js(nrows, ncols)
@@ -216,11 +268,10 @@ contains
                               [0, 2, 2, 0, 0, -2, -2, 0, &
                                1, 2, 2, 1, 2, -1, 1, -2, -1, -2, -2, -1, -2, 1, -1, 2, &
                                2, 2, 2, -2, -2, -2, -2, 2], [2, 16])
-        integer :: ci, cj, ni, nj
-        integer :: iofs
-        real :: dist
-        integer :: dist2
+        integer :: ci, cj
+        real :: dist2
         type(elevation_pyramid) :: pyramid
+        integer, parameter :: pyramid_factor = 2
 
         err_code = ERR_NO_ERROR
         ilp_is = -1
@@ -228,60 +279,15 @@ contains
         isos = 0
 
         ! Scan immideate neighbours
-        !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(cj, ci, dist) &
-        !$omp COLLAPSE(2) &
-        !$omp SCHEDULE(STATIC)
-        do cj = 1, ncols
-        do ci = 1, nrows
-            if (.not. valids(ci, cj)) cycle
-            do iofs = 1, size(offsets1, dim=2)
-                ni = ci + offsets1(iofs, 1)
-                nj = cj + offsets1(iofs, 2)
-                ! Check bounds
-                if (array2d_oob(ni, nj, nrows, ncols)) cycle
-                ! Check if neighbour is part of the same flat
-                if (.not. valids(ni, nj)) cycle
-                ! Record neighbour with higher elevation
-                if (z(ni, nj) <= z(ci, cj)) cycle
-                dist = l2dist_xy(ci, cj, ni, nj)
-                if ((.not. isos(ci, cj) == 0) .and. (dist >= isos(ci, cj))) cycle
-                isos(ci, cj) = dist
-                ilp_is(ci, cj) = ni
-                ilp_js(ci, cj) = nj
-            end do
-        end do
-        end do
-        !$omp END PARALLEL DO
-
+        call find_neighbour_ilp( &
+            z, valids, isos, offsets1, ilp_is, ilp_js, dx, dy)
         ! Scan secondary neighbours
-        !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(cj, ci, dist) &
-        !$omp COLLAPSE(2) &
-        !$omp SCHEDULE(STATIC)
-        do cj = 1, ncols
-        do ci = 1, nrows
-            if (.not. valids(ci, cj)) cycle
-            if (isos(ci, cj) > 0) cycle
-            do iofs = 1, size(offsets2, dim=2)
-                ni = ci + offsets2(iofs, 1)
-                nj = cj + offsets2(iofs, 2)
-                ! Check bounds
-                if (array2d_oob(ni, nj, nrows, ncols)) cycle
-                ! Check if neighbour is part of the same flat
-                if (.not. valids(ni, nj)) cycle
-                ! Record neighbour with higher elevation
-                if (z(ni, nj) <= z(ci, cj)) cycle
-                dist = l2dist_xy(ci, cj, ni, nj)
-                if (dist >= isos(ci, cj)) cycle
-                isos(ci, cj) = dist
-                ilp_is(ci, cj) = ni
-                ilp_js(ci, cj) = nj
-            end do
-        end do
-        end do
-        !$omp END PARALLEL DO
+        call find_neighbour_ilp( &
+            z, valids, isos, offsets2, ilp_is, ilp_js, dx, dy)
 
-        ! Calculate ILPs using the pyramid
-        call build_elevation_pyramid(z, valids, pyramid, 2, err_code)
+        ! Find remaining isolation using the pyramid
+        call build_elevation_pyramid( &
+            z, valids, pyramid, pyramid_factor, err_code)
         if (err_code /= ERR_NO_ERROR) return
 
         !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(cj, ci, dist2) &
@@ -289,12 +295,16 @@ contains
         !$omp SCHEDULE(STATIC)
         do cj = 1, ncols
         do ci = 1, nrows
-            dist2 = -1
+            if (isos(ci, cj) > 0.0) then
+                dist2 = isos(ci, cj)**2
+            else
+                dist2 = -1.0
+            end if
+
             if (.not. valids(ci, cj)) cycle
-            if (isos(ci, cj) > 0) cycle
             call search_ilp( &
                 pyramid, ubound(pyramid%levels, dim=1), &
-                1, 1, ci, cj, z(ci, cj), dist2, &
+                1, 1, ci, cj, z(ci, cj), dx, dy, dist2, &
                 ilp_is(ci, cj), ilp_js(ci, cj))
             if (dist2 > 0) isos(ci, cj) = sqrt(real(dist2))
         end do
