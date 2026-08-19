@@ -203,7 +203,7 @@ contains
     !! the recursive pyramid search. Existing shorter candidates
     !! are kept, so the result is exact for the offsets that are
     !! examined.
-    subroutine find_neighbour_ilp( &
+    subroutine find_neighbour_ilp2( &
         z, valids, isos, offsets, ilp_is, ilp_js, dx, dy)
         implicit none(type, external)
         ! Arguments
@@ -217,16 +217,16 @@ contains
             !! Column and row spacing
         ! Outputs
         real, intent(inout) :: isos(:, :)
-            !! Best isolation distances
+            !! Best isolation distances squared
         integer, intent(inout) :: ilp_is(:, :), ilp_js(:, :)
             !! Best ILP row and column indices
         ! Local variables
         integer :: ci, cj, ni, nj
         integer :: iofs
-        real :: dist
+        real :: dist2
 
         !$omp PARALLEL DO COLLAPSE(2)&
-        !$omp DEFAULT(SHARED) PRIVATE(cj, ci, ni, nj, iofs, dist) &
+        !$omp DEFAULT(SHARED) PRIVATE(cj, ci, ni, nj, iofs, dist2) &
         !$omp SCHEDULE(STATIC)
         do cj = 1, size(z, dim=2)
         do ci = 1, size(z, dim=1)
@@ -241,25 +241,27 @@ contains
                 if (.not. valids(ni, nj)) cycle
                 ! Record neighbour with higher elevation
                 if (z(ni, nj) <= z(ci, cj)) cycle
-                dist = l2dist_xy(dy*ci, dx*cj, dy*ni, dx*nj)
+                dist2 = l2dist2_xy(dy*ci, dx*cj, dy*ni, dx*nj)
                 if ((isos(ci, cj) > 0) .and. &
-                    (dist >= isos(ci, cj))) cycle
-                isos(ci, cj) = dist
+                    (dist2 >= isos(ci, cj))) cycle
+                isos(ci, cj) = dist2
                 ilp_is(ci, cj) = ni
                 ilp_js(ci, cj) = nj
+                exit
             end do
         end do
         end do
         !$omp END PARALLEL DO
     end subroutine
 
-    !> Searches a pyramid block recursively for the nearest higher cell.
+    !> Searches a pyramid block recursively for the nearest higher
+    !! cell.
     !!
     !! A block is pruned when its maximum elevation is not strictly
     !! higher than cz, or when its minimum possible distance exceeds
     !! the best candidate. At level 0, qualifying cells update the
     !! current squared-distance bound and ILP indices.
-    pure recursive subroutine search_ilp( &
+    pure recursive subroutine search_ilp2( &
         p, lvl, bi, bj, ci, cj, cz, dx, dy, best_dist2, best_i, best_j)
         implicit none(type, external)
         ! Arguments
@@ -310,10 +312,10 @@ contains
 
         do sbi = sbif, sbil
         do sbj = sbjf, sbjl
-            call search_ilp(p, lvl - 1, sbi, sbj, ci, cj, cz, dx, dy, best_dist2, best_i, best_j)
+            call search_ilp2(p, lvl - 1, sbi, sbj, ci, cj, cz, dx, dy, best_dist2, best_i, best_j)
         end do
         end do
-    end subroutine search_ilp
+    end subroutine search_ilp2
 
     !> Calculates terrain isolation and footprint censoring for a DEM.
     !!
@@ -368,10 +370,10 @@ contains
         isos = 0
 
         ! Scan immediate neighbours
-        call find_neighbour_ilp( &
+        call find_neighbour_ilp2( &
             z, valids, isos, offsets1, ilp_is, ilp_js, dx, dy)
         ! Scan secondary neighbours
-        call find_neighbour_ilp( &
+        call find_neighbour_ilp2( &
             z, valids, isos, offsets2, ilp_is, ilp_js, dx, dy)
 
         ! Find remaining isolation using the pyramid
@@ -385,20 +387,23 @@ contains
         do cj = 1, ncols
         do ci = 1, nrows
             if (isos(ci, cj) > 0.0) then
-                dist2 = isos(ci, cj)**2
+                dist2 = isos(ci, cj)
             else
                 dist2 = -1.0
             end if
 
             if (.not. valids(ci, cj)) cycle
-            call search_ilp( &
+            call search_ilp2( &
                 pyramid, ubound(pyramid%levels, dim=1), &
                 1, 1, ci, cj, z(ci, cj), dx, dy, dist2, &
                 ilp_is(ci, cj), ilp_js(ci, cj))
-            if (dist2 > 0) isos(ci, cj) = sqrt(real(dist2))
+            if (dist2 > 0) isos(ci, cj) = dist2
         end do
         end do
         !$omp END PARALLEL DO
+
+        ! Convert from distance squared to distance
+        isos = sqrt(isos)
 
         ! Mark searches truncated by the outer raster footprint
         !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(cj, ci, dist_bdry) &
