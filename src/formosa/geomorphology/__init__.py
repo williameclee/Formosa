@@ -1,5 +1,5 @@
 from .drainage.directions import D8Directions
-from .terrain import compute_slope
+from .terrain import compute_slope, compute_isolation
 from .drainage import (
     detect_ocean_basins_from_boundary,
     fill_depressions,

@@ -1,5 +1,8 @@
-"""
-Computes terrain metrics from digital elevation model rasters.
+"""Computes slope and isolation from gridded elevation data.
+
+This module exposes public NumPy APIs for terrain metrics. Isolation
+uses the internal Fortran backend. Results include nearest-higher
+cells and outer-boundary censoring information.
 
 Last modified: 2026-08-19, En-Chi Lee (williameclee@gmail.com)
 """
@@ -20,6 +23,34 @@ def compute_slope(
     dx: Optional[Coords] = None,
     dy: Optional[Coords] = None,
 ) -> NDArray[NpCoords]:
+    """
+    Calculates *slope magnitude* from a gridded DEM.
+
+    Horizontal derivatives are scaled using coordinate arrays when
+    supplied, otherwise by constant grid spacing. Coordinate arrays
+    take precedence over the corresponding scalar spacing.
+
+    Parameters
+    ----------
+    dem : NDArray[number]
+        2D digital elevation model.
+    x, y : NDArray[float], optional
+        Horizontal coordinate arrays for DEM columns and rows,
+        respectively.
+        Their gradients define local grid spacing.
+        Default inputs are `None`.
+    dx, dy : int | float, optional
+        Constant column and row spacing, respectively.
+        Each defaults to `1` when neither it nor its coordinate
+        array is supplied.
+        Default spacings are `None`.
+
+    Returns
+    -------
+    slope : NDArray[float]
+        Magnitude of the elevation gradient in rise per horizontal
+        distance unit, with the same shape as `dem`.
+    """
     if x is not None:
         dxx = np.gradient(x, axis=1)
     elif dx is not None:
@@ -41,7 +72,7 @@ def compute_slope(
     return slope
 
 
-def calculate_isolation(
+def compute_isolation(
     dem: NDArray[np.number],
     valids: Optional[NDArray[np.bool_]] = None,
     dx: Coords = 1.0,
@@ -50,12 +81,12 @@ def calculate_isolation(
     NDArray[np.float32], NDArray[NpCanonIndex], NDArray[NpCanonIndex], NDArray[np.bool_]
 ]:
     """
-    Calculates terrain *isolation* of a DEM.
+    Calculates terrain *isolation* and boundary censoring for a DEM.
 
-    For each valid cell, the isolation is the grid distance to the
+    For each cell, isolation is the physical distance to the
     nearest strictly higher cell (the isolation limiting point,
-    ILP). For the highest cell(s) in the DEM, the isolation is
-    returned as 0.
+    ILP). Highest cells have no ILP and receive isolation 0 and ILP
+    indices of -1.
 
     Parameters
     ----------
@@ -76,14 +107,17 @@ def calculate_isolation(
     isos : NDArray[float32]
         Isolation distances in the units of `dx` and `dy`, with the
         same shape as `dem`.
+        Invalid cells and cells without an ILP contain `0`.
     ilpis, ilpjs : NDArray[int32]
         0-based row (*y*) and column (*x*) indices of the isolation
         limit points.
+        Cells without an ILP and invalid cells contain `-1`.
     censored : NDArray[bool]
         Whether the isolation search reaches beyond the outer raster
-        footprint before it reaches the reported ILP. Valid cells with
-        no ILP are censored; invalid cells are not. Internal invalid
-        regions are not treated as observation-window boundaries.
+        footprint before it reaches the reported ILP. 
+        Valid cells with no ILP are censored; invalid cells are 
+        not. Internal invalid regions are not treated as 
+        observation-window boundaries.
 
     Raises
     ------
@@ -97,6 +131,12 @@ def calculate_isolation(
         is not a real numeric scalar.
     RuntimeError
         If the Fortran backend reports an execution error.
+
+    Notes
+    -----
+    The DEM is assumed a regular, axis-aligned grid whose footprint
+    extends half a cell beyond each outer cell centre. Internal
+    invalid cells are excluded as ILPs.
     """
     dem = np.asarray(dem)
     if dem.ndim != 2 or 0 in dem.shape:
@@ -145,13 +185,13 @@ def calculate_isolation(
             )
         valids = valids & finite
 
-    isos, ilpis, ilpjs, censored, err_code = terrain_f.calculate_isolation(
+    isos, ilpis, ilpjs, censored, err_code = terrain_f.compute_isolation(
         dem.astype(np.float32, order="F"),
         valids.astype(bool, order="F"),
         dx_f,
         dy_f,
     )
-    raise_fortran_error("calculate_isolation", err_code)
+    raise_fortran_error("compute_isolation", err_code)
 
     isos = np.asarray(isos, dtype=np.float32, order="F")
 

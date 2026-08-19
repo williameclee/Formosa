@@ -1,5 +1,7 @@
-"""
-Tests terrain metrics using the FORTRAN backend.
+"""Tests terrain isolation using the FORTRAN backend.
+
+This module compares native results with exhaustive searches through
+the public API, including native results and input validation.
 
 Created: 2026-08-19, En-Chi Lee (williameclee@gmail.com)
 """
@@ -7,7 +9,7 @@ Created: 2026-08-19, En-Chi Lee (williameclee@gmail.com)
 import numpy as np
 import pytest
 
-from formosa.geomorphology.terrain import calculate_isolation
+from formosa.geomorphology.terrain import compute_isolation
 
 
 def _brute_force_isolation(
@@ -34,12 +36,8 @@ def _brute_force_isolation(
             isos[ci, cj] = np.sqrt(np.min(dist2))
             has_ilp[ci, cj] = True
 
-    row_margin = (
-        np.minimum(rows, nrows - 1 - rows).astype(np.float64) + 0.5
-    ) * dy
-    col_margin = (
-        np.minimum(cols, ncols - 1 - cols).astype(np.float64) + 0.5
-    ) * dx
+    row_margin = (np.minimum(rows, nrows - 1 - rows).astype(np.float64) + 0.5) * dy
+    col_margin = (np.minimum(cols, ncols - 1 - cols).astype(np.float64) + 0.5) * dx
     boundary_distance = np.minimum(row_margin, col_margin)
     censored = valids & (~has_ilp | (isos > boundary_distance))
 
@@ -69,9 +67,7 @@ def test_calculate_isolation_matches_brute_force(shape, dx, dy, include_invalids
     expected_isos, expected_has_ilp, expected_censored = _brute_force_isolation(
         dem, valids, dx, dy
     )
-    isos, ilpis, ilpjs, censored = calculate_isolation(
-        dem, valids, dx=dx, dy=dy
-    )
+    isos, ilpis, ilpjs, censored = compute_isolation(dem, valids, dx=dx, dy=dy)
 
     np.testing.assert_allclose(isos, expected_isos, rtol=1e-6, atol=1e-6)
     np.testing.assert_array_equal(censored, expected_censored)
@@ -95,7 +91,7 @@ def test_anisotropic_spacing_can_make_distant_row_cell_nearest():
     dem[2, 3] = 6.0  # One column away: distance 10.
     dem[4, 2] = 7.0  # Two rows away: distance 2.
 
-    isos, ilpis, ilpjs, censored = calculate_isolation(dem, dx=10.0, dy=1.0)
+    isos, ilpis, ilpjs, censored = compute_isolation(dem, dx=10.0, dy=1.0)
 
     assert isos[2, 2] == pytest.approx(2.0)
     assert (ilpis[2, 2], ilpjs[2, 2]) == (4, 2)
@@ -113,7 +109,7 @@ def test_equal_elevations_do_not_qualify_as_higher():
         dtype=np.float32,
     )
 
-    isos, ilpis, ilpjs, censored = calculate_isolation(dem)
+    isos, ilpis, ilpjs, censored = compute_isolation(dem)
 
     assert isos[1, 1] == pytest.approx(np.sqrt(5.0))
     assert (ilpis[1, 1], ilpjs[1, 1]) == (2, 3)
@@ -136,7 +132,7 @@ def test_nonfinite_and_masked_higher_cells_are_ignored():
     valids = np.ones(dem.shape, dtype=bool)
     valids[0, 0] = False
 
-    isos, ilpis, ilpjs, censored = calculate_isolation(dem, valids)
+    isos, ilpis, ilpjs, censored = compute_isolation(dem, valids)
 
     assert isos[1, 1] == pytest.approx(np.sqrt(2.0))
     assert (ilpis[1, 1], ilpjs[1, 1]) == (2, 2)
@@ -153,7 +149,7 @@ def test_all_invalid_cells_have_no_isolation_limit_point(shape):
     dem = np.ones(shape, dtype=np.float32)
     valids = np.zeros(shape, dtype=bool)
 
-    isos, ilpis, ilpjs, censored = calculate_isolation(dem, valids)
+    isos, ilpis, ilpjs, censored = compute_isolation(dem, valids)
 
     assert np.all(isos == 0.0)
     assert np.all(ilpis == -1)
@@ -166,7 +162,7 @@ def test_censoring_uses_outer_raster_footprint():
     dem[2, 2] = 5.0
     dem[0, 0] = 6.0
 
-    isos, _, _, censored = calculate_isolation(dem)
+    isos, _, _, censored = compute_isolation(dem)
 
     # The centre is 2.5 cells from the raster footprint, but its ILP
     # is sqrt(8) cells away at the corner.
@@ -184,7 +180,7 @@ def test_isolation_circle_inside_raster_footprint_is_not_censored():
     dem[3, 3] = 5.0
     dem[3, 5] = 6.0
 
-    isos, _, _, censored = calculate_isolation(dem)
+    isos, _, _, censored = compute_isolation(dem)
 
     assert isos[3, 3] == pytest.approx(2.0)
     assert not censored[3, 3]
@@ -207,4 +203,4 @@ def test_isolation_circle_inside_raster_footprint_is_not_censored():
 def test_calculate_isolation_rejects_invalid_spacing(name, value, exception):
     kwargs = {name: value}
     with pytest.raises(exception):
-        calculate_isolation(np.ones((2, 2), dtype=np.float32), **kwargs)
+        compute_isolation(np.ones((2, 2), dtype=np.float32), **kwargs)

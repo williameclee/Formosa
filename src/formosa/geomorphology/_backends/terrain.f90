@@ -1,3 +1,11 @@
+!> Computes terrain isolation for digital elevation model rasters.
+!!
+!! This module implements the native backend used by the public
+!! Python terrain API. A maximum-elevation pyramid accelerates exact
+!! nearest-higher searches and identifies searches censored by the
+!! outer raster footprint.
+!!
+!! Created: 2026-08-19, En-Chi Lee
 module terrain
     use iso_c_binding, only: c_int8_t
     use utils, only: ERR_NO_ERROR, ERR_INVALID_INPUT, &
@@ -8,33 +16,51 @@ module terrain
     implicit none(type, external)
 
     private
-    public :: calculate_isolation
+    public :: compute_isolation
 
+    !> Stores maximum elevations for a level of a spatial pyramid.
     type :: pyramid_level
         real, allocatable :: zmax(:, :)
+            !! Maximum valid elevation per block
         integer :: block_size = 1
+            !! Block width in original DEM cells
     end type pyramid_level
 
+    !> Describes the maximum-elevation pyramid for a DEM.
     type :: elevation_pyramid
         type(pyramid_level), allocatable :: levels(:)
+            !! Pyramid levels
         integer :: dem_nrows
+            !! Number of rows in the source DEM
         integer :: dem_ncols
+            !! Number of columns in the source DEM
         real :: invalid_value
-            !! Some really negative value to mark invalid cells
+            !! Sentinel used for invalid leaf cells
         integer :: factor
-            !! How much smaller each layer above should become
+            !! Reduction factor between adjacent levels
     end type elevation_pyramid
 contains
+    !> Builds a maximum-elevation pyramid from a DEM and validity
+    !! mask.
+    !!
+    !! Level 0 contains individual DEM cells. Each higher level
+    !! stores the maximum elevation in a 'fac' by 'fac' group of
+    !! child blocks. Invalid leaf cells receive a negative sentinel
+    !! so they cannot qualify as isolation limit points.
     pure subroutine build_elevation_pyramid( &
         z, valids, p, fac, err_code)
         implicit none(type, external)
         ! Arguments
         real, intent(in) :: z(:, :)
-            !! Elevation grid
+            !! Elevation grid.
         logical(kind=1), intent(in) :: valids(:, :)
+            !! Validity mask
         integer, intent(in) :: fac
+            !! Reduction factor between levels
         type(elevation_pyramid), intent(out) :: p
+            !! Constructed pyramid
         integer, intent(out) :: err_code
+            !! Backend status code
         ! Local variables
         integer :: nrows, ncols
         integer :: cif, cil, cjf, cjl, pi, pj
@@ -110,32 +136,48 @@ contains
         end do
     end subroutine build_elevation_pyramid
 
+    !> Returns the distance from a cell centre to a raster
+    !! footprint.
+    !!
+    !! The footprint extends half a cell beyond the centres of the
+    !! outer cells. irange and jrange give its inclusive cell-index
+    !! bounds.
     pure real function min_dist2boundary(ci, cj, irange, jrange, dx, dy) result(dist)
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: ci, cj
+            !! Query-cell row and column
         integer, intent(in) :: irange(2), jrange(2)
+            !! Footprint bounds
         real, intent(in) :: dx, dy
+            !! Column and row spacing
 
         dist = min(dy*(min(ci - irange(1), irange(2) - ci) + 0.5), &
                    dx*(min(cj - jrange(1), jrange(2) - cj) + 0.5))
     end function min_dist2boundary
 
+    !> Returns the squared minimum distance from a cell to a block.
+    !!
+    !! The query-to-block distance is 0 inside the block.
+    !! Otherwise, it is the physical distance to the closest cell
+    !! centre in the block, accounting for anisotropic grid spacing.
     pure real function min_dist2block( &
         p, lvl, bi, bj, ci, cj, dx, dy) result(dist2)
         implicit none(type, external)
         ! Arguments
         type(elevation_pyramid), intent(in) :: p
+            !! Elevation pyramid
         integer, intent(in) :: lvl
-            !! Level in the pyramid
+            !! Pyramid level
         integer, intent(in) :: bi, bj
-            !! Index of the block within the pyramid level
+            !! Block row and column
         integer, intent(in) :: ci, cj
-            !! Index of the cell to calculate distance against
+            !! Query-cell row and column
         real, intent(in) :: dx, dy
+            !! Column and row spacing
         ! Local variables
         integer :: bsize
-            !! Size of the block
+            !! Block width in original DEM cells
         integer :: di, dj
             !! Index offset between the cell to check and the
             !! closest cell in the block
@@ -155,6 +197,12 @@ contains
         dist2 = dy**2*di**2 + dx**2*dj**2
     end function min_dist2block
 
+    !> Finds nearby isolation limit points using fixed cell offsets.
+    !!
+    !! This preliminary scan supplies an upper distance bound for
+    !! the recursive pyramid search. Existing shorter candidates
+    !! are kept, so the result is exact for the offsets that are
+    !! examined.
     subroutine find_neighbour_ilp( &
         z, valids, isos, offsets, ilp_is, ilp_js, dx, dy)
         implicit none(type, external)
@@ -162,12 +210,16 @@ contains
         real, intent(in) :: z(:, :)
             !! Elevation grid
         logical(kind=1), intent(in) :: valids(:, :)
-            !! Validity mask (false for no-data)
+            !! Validity mask
         integer, intent(in) :: offsets(:, :)
+            !! Row-column offsets
         real, intent(in) :: dx, dy
+            !! Column and row spacing
         ! Outputs
         real, intent(inout) :: isos(:, :)
+            !! Best isolation distances
         integer, intent(inout) :: ilp_is(:, :), ilp_js(:, :)
+            !! Best ILP row and column indices
         ! Local variables
         integer :: ci, cj, ni, nj
         integer :: iofs
@@ -201,26 +253,36 @@ contains
         !$omp END PARALLEL DO
     end subroutine
 
+    !> Searches a pyramid block recursively for the nearest higher cell.
+    !!
+    !! A block is pruned when its maximum elevation is not strictly
+    !! higher than cz, or when its minimum possible distance exceeds
+    !! the best candidate. At level 0, qualifying cells update the
+    !! current squared-distance bound and ILP indices.
     pure recursive subroutine search_ilp( &
         p, lvl, bi, bj, ci, cj, cz, dx, dy, best_dist2, best_i, best_j)
         implicit none(type, external)
         ! Arguments
         type(elevation_pyramid), intent(in) :: p
+            !! Elevation pyramid
         integer, intent(in) :: lvl
-            !! Level in the pyramid
+            !! Pyramid level
         integer, intent(in) :: bi, bj
-            !! Index of the block within the pyramid level
+            !! Block row and column
         integer, intent(in) :: ci, cj
-            !! Index of the cell to calculate distance against
+            !! Query-cell row and column
         real, intent(in) :: cz
-            !! Elevation of the cell
+            !! Query-cell elevation
         real, intent(in) :: dx, dy
+            !! Column and row spacing
         ! Output
         real, intent(inout) :: best_dist2
+            !! Best squared distance
         integer, intent(inout) :: best_i, best_j
+            !! Best ILP indices
         ! Local variables
         integer :: sbif, sbil, sbjf, sbjl
-            !! Range of the block in at its children's level
+            !! Block range at the child level
         integer :: sbi, sbj
         real :: dist2
 
@@ -253,25 +315,39 @@ contains
         end do
     end subroutine search_ilp
 
-    subroutine calculate_isolation( &
+    !> Calculates terrain isolation and footprint censoring for a DEM.
+    !!
+    !! For every valid cell, isolation is the physical distance to the
+    !! nearest valid cell with a strictly higher elevation. The
+    !! ilp_is and ilp_js arrays identify that isolation limit point.
+    !! Cells without an ILP retain 0 and indices of -1.
+    !!
+    !! A valid result is censored when its search circle crosses the
+    !! outer half-cell raster footprint before reaching the ILP. A
+    !! valid cell without an ILP is always censored. Internal
+    !! invalid cells do not define observation-window boundaries.
+    subroutine compute_isolation( &
         z, valids, isos, ilp_is, ilp_js, censored, nrows, ncols, &
         dx, dy, err_code)
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols
-            !! Size of the grid
+            !! DEM dimensions
         real, intent(in) :: z(nrows, ncols)
             !! Elevation grid
         logical(kind=1), intent(in) :: valids(nrows, ncols)
-            !! Validity mask (false for no-data)
+            !! Validity mask; false denotes no-data
         real, intent(in) :: dx, dy
-            !! Grid spacing
+            !! Column and row spacing
         ! Outputs
         real, intent(out) :: isos(nrows, ncols)
+            !! Isolation distances
         integer, intent(out) :: ilp_is(nrows, ncols), ilp_js(nrows, ncols)
-            !! Cell indices for the isolation limit point (ILP)
+            !! 1-based ILP row and column indices
         logical(kind=1), intent(out) :: censored(nrows, ncols)
+            !! Outer-footprint censoring mask
         integer, intent(out) :: err_code
+            !! Backend status code
         ! Local variables
         integer, parameter :: offsets1(2, 8) = reshape( &
                               [0, 1, 1, 0, 0, -1, -1, 0, &
@@ -291,7 +367,7 @@ contains
         ilp_js = -1
         isos = 0
 
-        ! Scan immideate neighbours
+        ! Scan immediate neighbours
         call find_neighbour_ilp( &
             z, valids, isos, offsets1, ilp_is, ilp_js, dx, dy)
         ! Scan secondary neighbours
@@ -324,9 +400,7 @@ contains
         end do
         !$omp END PARALLEL DO
 
-        ! If the isolation in larger than the cell's distance to
-        ! the nearest boundary, it is just an upper bound because
-        ! the search area is truncated
+        ! Mark searches truncated by the outer raster footprint
         !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(cj, ci, dist_bdry) &
         !$omp COLLAPSE(2) &
         !$omp SCHEDULE(STATIC)
@@ -339,5 +413,5 @@ contains
         end do
         end do
         !$omp END PARALLEL DO
-    end subroutine calculate_isolation
+    end subroutine compute_isolation
 end module terrain
