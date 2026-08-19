@@ -114,9 +114,9 @@ def compute_isolation(
         Cells without an ILP and invalid cells contain `-1`.
     censored : NDArray[bool]
         Whether the isolation search reaches beyond the outer raster
-        footprint before it reaches the reported ILP. 
-        Valid cells with no ILP are censored; invalid cells are 
-        not. Internal invalid regions are not treated as 
+        footprint before it reaches the reported ILP.
+        Valid cells with no ILP are censored; invalid cells are
+        not. Internal invalid regions are not treated as
         observation-window boundaries.
 
     Raises
@@ -134,6 +134,9 @@ def compute_isolation(
 
     Notes
     -----
+    See [Kirmse & de Ferranti (2017)](https://doi.org/10.1177/0309133317738163)
+    for the definition of isolation and more details.
+
     The DEM is assumed a regular, axis-aligned grid whose footprint
     extends half a cell beyond each outer cell centre. Internal
     invalid cells are excluded as ILPs.

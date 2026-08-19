@@ -317,10 +317,11 @@ contains
         end do
     end subroutine search_ilp2
 
-    !> Calculates terrain isolation and footprint censoring for a DEM.
+    !> Calculates terrain isolation and footprint censoring for a
+    !! DEM.
     !!
-    !! For every valid cell, isolation is the physical distance to the
-    !! nearest valid cell with a strictly higher elevation. The
+    !! For every valid cell, isolation is the physical distance to
+    !! the nearest valid cell with a strictly higher elevation. The
     !! ilp_is and ilp_js arrays identify that isolation limit point.
     !! Cells without an ILP retain 0 and indices of -1.
     !!
