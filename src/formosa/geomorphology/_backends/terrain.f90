@@ -7,16 +7,14 @@
 !!
 !! Created: 2026-08-19, En-Chi Lee
 module terrain
-    use iso_c_binding, only: c_int8_t
+    use iso_c_binding, only: c_int8_t, c_int32_t
     use utils, only: ERR_NO_ERROR, ERR_INVALID_INPUT, &
                      ERR_ALLOCATION_FAILURE, ERR_OVERFLOW
-    use utils, only: fill_offset_lookup, find_noflow_code, &
-                     array2d_oob, mask2ij
+    use utils, only: array2d_oob, id2ij_checked, ij2id_checked
     use distances, only: l2dist_xy, l2dist2_xy
     implicit none(type, external)
 
     private
-    public :: compute_isolation
 
     !> Stores maximum elevations for a level of a spatial pyramid.
     type :: pyramid_level
@@ -39,6 +37,7 @@ module terrain
         integer :: factor
             !! Reduction factor between adjacent levels
     end type elevation_pyramid
+    public :: compute_isolation, compute_prominence
 contains
     !> Builds a maximum-elevation pyramid from a DEM and validity
     !! mask.
@@ -424,4 +423,354 @@ contains
         end do
         !$omp END PARALLEL DO
     end subroutine compute_isolation
+
+    subroutine find_connections( &
+        cids, labels, nlabels, offsets, nrows, ncols, &
+        samez_start, samez_end, order_pos, err_code)
+        implicit none(type, external)
+        ! Arguments
+        integer, contiguous, intent(in) :: cids(:)
+        integer, intent(in) :: offsets(:, :)
+            !! List of offsets for each flow direction
+        integer, intent(in) :: nrows, ncols
+        integer, intent(in) :: order_pos(:)
+        integer, intent(in) :: samez_start, samez_end
+        !! DEM dimensions
+        ! Outputs
+        integer, contiguous, intent(out) :: labels(:)
+        integer, intent(out) :: nlabels
+            !! Number of connected components
+        integer, intent(out) :: err_code
+            !! Backend status code
+        ! Local variables
+        integer :: icell, ncell
+        integer :: ci, cj, cid, ni, nj, nid
+        integer :: iofs
+        logical(kind=1) :: is_valid
+        integer :: queue(size(cids))
+        integer :: nqueued, iqueue, nprocessed
+
+        ! Initialise
+        err_code = ERR_NO_ERROR
+        labels = 0
+        nlabels = 0
+        nprocessed = 0
+        do icell = 1, size(cids)
+            ! Find the next unprocessed cell
+            if (labels(icell) /= 0) cycle
+            nlabels = nlabels + 1
+            labels(icell) = nlabels
+            ! Push the seed to the queue
+            nqueued = 1
+            queue(nqueued) = icell
+            ! Flood fill from the seed
+            iqueue = 1
+            do while (iqueue <= nqueued)
+                cid = cids(queue(iqueue))
+                ! Check if its neighbours are in the queue
+                call id2ij_checked(cid, nrows, ncols, ci, cj, is_valid)
+                if (.not. is_valid) then
+                    err_code = ERR_INVALID_INPUT
+                    return
+                end if
+                ! Check all the neighbours
+                do iofs = 1, size(offsets, dim=1)
+                    ni = ci + offsets(iofs, 1)
+                    nj = cj + offsets(iofs, 2)
+                    nid = ij2id_checked(ni, nj, nrows, ncols)
+                    if (nid == 0) cycle
+                    ncell = order_pos(nid)
+                    if (ncell < samez_start .or. ncell > samez_end) cycle
+                    ncell = ncell - samez_start + 1
+
+                    if (labels(ncell) /= 0) cycle
+                    labels(ncell) = nlabels
+                    nqueued = nqueued + 1
+                    queue(nqueued) = ncell
+                end do
+                iqueue = iqueue + 1
+            end do
+        end do
+    end subroutine find_connections
+
+    subroutine find_connection_higher_grounds( &
+        peaks, cids, labels, label, offsets, &
+        higher_peaks, n_higher_peaks, nrows, ncols, err_code)
+        implicit none(type, external)
+        ! Arguments
+        integer, intent(in) :: peaks(nrows, ncols)
+        integer, contiguous, intent(in) :: cids(:)
+        integer, contiguous, intent(in) :: labels(:)
+        integer, intent(in) :: label
+        integer, intent(in) :: offsets(:, :)
+            !! List of offsets for each flow direction
+        integer, intent(in) :: nrows, ncols
+            !! DEM dimensions
+        ! Outputs
+        integer :: higher_peaks(:)
+        integer :: n_higher_peaks
+        integer, intent(out) :: err_code
+            !! Backend status code
+        ! Local variables
+        integer :: ci, cj, cid, ni, nj
+        integer :: icell
+        integer :: iofs
+        logical(kind=1) :: is_valid
+
+        err_code = ERR_NO_ERROR
+        n_higher_peaks = 0
+
+        do icell = 1, size(cids)
+            if (labels(icell) /= label) cycle
+            cid = cids(icell)
+            call id2ij_checked(cid, nrows, ncols, ci, cj, is_valid)
+            if (.not. is_valid) then
+                err_code = ERR_INVALID_INPUT
+                return
+            end if
+            do iofs = 1, size(offsets, dim=1)
+                ni = ci + offsets(iofs, 1)
+                nj = cj + offsets(iofs, 2)
+                if (array2d_oob(ni, nj, nrows, ncols)) cycle
+                if (peaks(ni, nj) == 0) cycle
+                ! Skip already recorded areas
+                if (any(higher_peaks(1:n_higher_peaks) == peaks(ni, nj))) cycle
+                n_higher_peaks = n_higher_peaks + 1
+                higher_peaks(n_higher_peaks) = peaks(ni, nj)
+            end do
+        end do
+    end subroutine find_connection_higher_grounds
+
+    subroutine process_single_label_area( &
+        z, cells, proms, offsets, &
+        peaks, labels, ilabel, higher_peaks, copeaks, &
+        samez, samez_start, samez_end, err_code)
+        implicit none(type, external)
+        ! Arguments
+        real, intent(in) :: z(*)
+        integer, intent(in) :: cells(:)
+        integer, intent(in) :: offsets(:, :)
+        integer, intent(in) :: labels(:)
+        integer, intent(in) :: ilabel
+        real, intent(in) :: samez
+        integer, intent(in) :: samez_start, samez_end
+        ! Outputs
+        real, intent(inout) :: proms(*)
+        integer, intent(inout) :: peaks(:, :)
+        integer, intent(inout) :: higher_peaks(:)
+        integer, intent(inout) :: copeaks(:)
+        integer, intent(out) :: err_code
+        ! Local variables
+        integer :: nrows, ncols
+        integer :: ipeak, n_higher_peaks
+        integer :: peak, copeak, peak2keep
+        integer :: icell
+        integer :: ci, cj
+        integer :: label
+        real :: zpeak
+        logical(kind=1) :: is_valid
+
+        err_code = ERR_NO_ERROR
+
+        nrows = size(peaks, dim=1)
+        ncols = size(peaks, dim=2)
+
+        ! Find all higher cells (i.e. processed) connected to the
+        ! region, and which peak each correspond to
+        call find_connection_higher_grounds( &
+            peaks, &
+            cells(samez_start:samez_end), &
+            labels(samez_start:samez_end), &
+            ilabel, offsets, higher_peaks, n_higher_peaks, &
+            nrows, ncols, err_code)
+        if (err_code /= ERR_NO_ERROR) return
+        if (n_higher_peaks == 0) then
+            ! If no higher areas, this is a new peak
+            peak = 0
+            ! Record the new peak with the largest icell
+            do icell = samez_end, samez_start, -1
+                if (labels(icell) /= ilabel) cycle
+                if (peak == 0) peak = icell
+                call id2ij_checked( &
+                    cells(icell), nrows, ncols, ci, cj, is_valid)
+                peaks(ci, cj) = peak
+                ! Set the prominence as -1 so that we can identify surviving peaks with unknown prominence
+                proms(cells(icell)) = -1
+            end do
+            return
+        elseif (n_higher_peaks == 1) then
+            ! If only 1 higher area, merge with it
+            do icell = samez_start, samez_end
+                if (labels(icell) /= ilabel) cycle
+                call id2ij_checked( &
+                    cells(icell), nrows, ncols, ci, cj, is_valid)
+                peaks(ci, cj) = higher_peaks(1)
+            end do
+            return
+        end if
+        ! Borders more than 1 higher areas, they should be merged
+        ! Use the area with the highest peak
+        do ipeak = 1, n_higher_peaks
+            peak = higher_peaks(ipeak)
+            if (ipeak == 1) then
+                peak2keep = peak
+                zpeak = z(cells(peak))
+                cycle
+            end if
+            if (zpeak > z(cells(peak))) cycle
+            if (zpeak == z(cells(peak))) then
+                ! 2 peaks have the same height, they are copeaks
+                ! Record in the copeak workspace (as a linked list)
+                copeak = peak2keep
+                do while (copeaks(copeak) /= 0)
+                    copeak = copeaks(copeak)
+                end do
+                copeaks(copeak) = peak
+                cycle
+            end if
+            peak2keep = peak
+            zpeak = z(cells(peak))
+        end do
+        ! Actually update the area mask and prominence
+        outer: do ipeak = 1, n_higher_peaks
+            ! Skip if this it the highest peak (or its copeak)
+            peak = higher_peaks(ipeak)
+            if (peak == peak2keep) cycle outer
+
+            ! Merge the peaks (including the copeaks!)
+            where (peaks == peak) peaks = peak2keep
+
+            ! Skip if this it the highest peak's copeak(s)
+            if (z(cells(peak)) == z(cells(peak2keep))) cycle
+
+            ! Process the peak and all its copeaks
+            do while (peak /= 0)
+                ! Mark the whole peak region
+                icell = peak
+                label = labels(icell)
+                zpeak = z(cells(peak))
+                do while (icell >= 1)
+                    if (z(cells(icell)) /= zpeak) exit
+                    if (labels(icell) == label) then
+                        proms(cells(icell)) = zpeak - samez
+                    end if
+                    icell = icell - 1
+                end do
+                ! Go to the next copeak
+                peak = copeaks(peak)
+            end do
+        end do outer
+        ! Merge the current saddle too
+        do icell = samez_start, samez_end
+            if (labels(icell) /= ilabel) cycle
+            call id2ij_checked( &
+                cells(icell), nrows, ncols, ci, cj, is_valid)
+            peaks(ci, cj) = peak2keep
+        end do
+    end subroutine process_single_label_area
+
+    subroutine compute_prominence( &
+        z, orders, proms, nrows, ncols, nvalids, &
+        offsets, noffsets, err_code)
+        implicit none(type, external)
+        ! Arguments
+        integer, intent(in) :: nrows, ncols
+            !! DEM dimensions
+        integer, intent(in) :: nvalids
+        real, intent(in) :: z(nrows, ncols)
+            !! Elevation grid
+        integer(c_int32_t), intent(in) :: orders(nvalids)
+            !! Cell linear index sorted in increasing elevation
+            !! order (they will be processed in reversed order)
+        integer, intent(in) :: noffsets
+            !! Number of flow directions
+        integer, intent(in) :: offsets(noffsets, 2)
+            !! List of offsets for each flow direction
+        ! Outputs
+        real, intent(out) :: proms(nrows, ncols)
+            !! Topographic prominence height grid
+        integer, intent(out) :: err_code
+            !! Backend status code
+        ! Local variables
+        integer :: icell
+        integer :: ci, cj
+        logical(kind=1) :: is_valid
+        real :: samez
+        integer :: samez_start, samez_end
+            !! Where in the 'rev_orders' queue that cells of the
+            !! same elevation 'samez' is stored
+        integer(c_int32_t), allocatable :: labels(:)
+        integer :: ilabel, nlabels
+        integer(c_int32_t), allocatable :: peaks(:, :)
+        integer(c_int32_t), allocatable :: higher_peaks(:)
+        integer(c_int32_t), allocatable :: copeaks(:)
+        integer(c_int32_t), allocatable :: order_pos(:)
+        integer :: alloc_stat
+
+        err_code = ERR_NO_ERROR
+        allocate ( &
+            labels(nvalids), &
+            peaks(nrows, ncols), higher_peaks(nvalids), &
+            copeaks(nvalids), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = ERR_ALLOCATION_FAILURE
+            return
+        end if
+
+        proms = 0
+        peaks = 0
+        copeaks = 0
+
+        allocate (order_pos(nrows*ncols), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = ERR_ALLOCATION_FAILURE
+            return
+        end if
+
+        ! Build inverse lookup from linear ID in 'dem' to position in 'orders'
+        order_pos = 0
+        do icell = 1, nvalids
+            order_pos(orders(icell)) = icell
+        end do
+
+        icell = nvalids
+        do while (icell >= 1)
+            call id2ij_checked( &
+                orders(icell), nrows, ncols, ci, cj, is_valid)
+            if (.not. is_valid) then
+                err_code = ERR_INVALID_INPUT
+                return
+            end if
+            samez = z(ci, cj)
+            samez_end = icell
+            samez_start = icell
+            do while (icell >= 1)
+                call id2ij_checked( &
+                    orders(icell), nrows, ncols, ci, cj, is_valid)
+                if (.not. is_valid) then
+                    err_code = ERR_INVALID_INPUT
+                    return
+                end if
+                if (z(ci, cj) /= samez) exit
+                icell = icell - 1
+            end do
+            samez_start = icell + 1
+
+            ! group connected regions of the same elevation
+            call find_connections( &
+                orders(samez_start:samez_end), &
+                labels(samez_start:samez_end), &
+                nlabels, offsets, nrows, ncols, &
+                samez_start, samez_end, order_pos, err_code)
+            if (err_code /= ERR_NO_ERROR) return
+            ! Process each connected regions one at a time
+            do ilabel = 1, nlabels
+                call process_single_label_area( &
+                    z, orders, proms, offsets, &
+                    peaks, labels, ilabel, higher_peaks, copeaks, &
+                    samez, samez_start, samez_end, err_code)
+                if (err_code /= ERR_NO_ERROR) return
+            end do
+        end do
+    end subroutine compute_prominence
 end module terrain

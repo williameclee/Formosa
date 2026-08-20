@@ -9,11 +9,43 @@ Last modified: 2026-08-19, En-Chi Lee (williameclee@gmail.com)
 
 import numpy as np
 
+from formosa.geomorphology.drainage.directions import D8Directions
 from formosa.geomorphology._native import terrain as terrain_f
-from formosa.utils import Coords, NpCoords, NpCanonIndex, raise_fortran_error
+from formosa.utils import NpReal, Coords, NpCoords, NpCanonIndex, raise_fortran_error
 
 from typing import Optional
 from numpy.typing import NDArray
+
+
+def _validate_format_dem(dem: NDArray[NpReal]) -> NDArray[NpReal]:
+    dem = np.asarray(dem)
+    if dem.ndim != 2 or 0 in dem.shape:
+        raise ValueError(
+            "DEM must be a non-empty 2D array, " + f"but received shape {dem.shape}."
+        )
+    if not np.issubdtype(dem.dtype, np.number):
+        raise TypeError("DEM must have a numeric dtype, " + f"but got {dem.dtype}.")
+    if np.issubdtype(dem.dtype, np.complexfloating):
+        raise TypeError(
+            "DEM must contain real-valued elevations, " + f"but got type {dem.dtype}."
+        )
+    return dem
+
+
+def _validate_format_valids(
+    valids: Optional[NDArray[np.bool_]], dem: NDArray[NpReal]
+) -> NDArray[np.bool_]:
+    finite = np.isfinite(dem)
+    if valids is None:
+        return finite
+    valids = np.asarray(valids, dtype=bool)
+    if valids.shape != dem.shape:
+        raise ValueError(
+            "Shapes for DEM and validity mask must match, "
+            f"but got shapes {dem.shape} and {valids.shape}, respectively."
+        )
+    valids = valids & finite
+    return valids  # type: ignore
 
 
 def compute_slope(
@@ -205,3 +237,38 @@ def compute_isolation(
     ilpjs = np.where(has_ilp, ilpjs - 1, -1).astype(NpCanonIndex, order="F", copy=False)
     censored = np.asarray(censored, dtype=bool, order="F")
     return isos, ilpis, ilpjs, censored
+
+
+def compute_prominence(
+    dem: NDArray[NpReal],
+    valids: Optional[NDArray[np.bool_]] = None,
+    dir_scheme: D8Directions = D8Directions(),
+) -> NDArray[NpReal | np.int64]:
+    dem = _validate_format_dem(dem)
+    valids = _validate_format_valids(valids, dem)
+
+    dem_f = np.asfortranarray(dem, dtype=np.float32)
+    valids_f = np.asfortranarray(valids, dtype=bool)
+
+    valid_ids = np.flatnonzero(valids_f.ravel(order="F"))
+    orders = np.argsort(dem_f.ravel(order="F")[valid_ids])
+
+    # 1-based IDs in ascending elevation order.
+    orders_f = valid_ids[orders].astype(np.int32) + 1
+
+    proms, err_code = terrain_f.compute_prominence(
+        dem_f, orders_f, dir_scheme.offsets.astype(np.int32, order="F")
+    )
+    raise_fortran_error("compute_prominence", err_code)
+
+    # Try to make `proms` the same type as `dem`, unless `dem` is 
+    # unsigned because `proms` needs `-1` to mark invalid cells and
+    # the highest peaks with unknown prominence
+    if not np.issubdtype(dem.dtype, np.unsignedinteger):
+        proms = np.asarray(proms, dtype=dem.dtype)
+    else:
+        proms = np.asarray(proms, dtype=np.int64)
+
+    proms[~valids] = -1
+    
+    return proms

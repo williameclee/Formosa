@@ -4,7 +4,7 @@ Defines common type aliases and TypeVars for array and scalar types.
 This module provides reusable type definitions for NumPy indices,
 coordinates, and numeric types used across the package.
 
-Last modified: 2026-08-18, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-20, En-Chi Lee (williameclee@gmail.com)
 """
 
 from typing import TypeVar, TypeAlias
@@ -21,5 +21,5 @@ NpIndex = TypeVar("NpIndex", np.int32, np.int64, np.intp)
 NpCoords = TypeVar("NpCoords", np.int32, np.int64, np.intp, np.floating)
 Coords = int | float
 # Real number in NumPyArrays
-NpReal = TypeVar("NpReal", np.integer, np.floating)
+NpReal = TypeVar("NpReal", np.int8, np.int16, np.int32, np.int64, np.floating)
 Real = int | float
