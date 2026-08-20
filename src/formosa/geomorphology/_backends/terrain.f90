@@ -5,7 +5,8 @@
 !! nearest-higher searches and identifies searches censored by the
 !! outer raster footprint.
 !!
-!! Created: 2026-08-19, En-Chi Lee
+!! Created: 2026-08-19, En-Chi Lee (williameclee@gmail.com)
+!! Last modified: 2026-08-21, En-Chi Lee (williameclee@gmail.com)
 module terrain
     use iso_c_binding, only: c_int8_t, c_int32_t
     use utils, only: ERR_NO_ERROR, ERR_INVALID_INPUT, &
@@ -493,9 +494,22 @@ contains
         end do
     end subroutine find_connections
 
+    recursive function find_root_peak(parent_peaks, peak) &
+        result(root_peak)
+        integer, intent(inout) :: parent_peaks(:)
+        integer, intent(in) :: peak
+        integer :: root_peak
+
+        if (parent_peaks(peak) /= peak) then
+            parent_peaks(peak) = &
+                find_root_peak(parent_peaks, parent_peaks(peak))
+        end if
+        root_peak = parent_peaks(peak)
+    end function find_root_peak
+
     subroutine find_connection_higher_grounds( &
         peaks, cids, labels, label, offsets, &
-        higher_peaks, n_higher_peaks, nrows, ncols, err_code)
+        parent_peaks, higher_peaks, n_higher_peaks, nrows, ncols, err_code)
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: peaks(nrows, ncols)
@@ -507,14 +521,16 @@ contains
         integer, intent(in) :: nrows, ncols
             !! DEM dimensions
         ! Outputs
-        integer :: higher_peaks(:)
-        integer :: n_higher_peaks
+        integer, intent(inout) :: parent_peaks(:)
+        integer, intent(out) :: higher_peaks(:)
+        integer, intent(out) :: n_higher_peaks
         integer, intent(out) :: err_code
             !! Backend status code
         ! Local variables
         integer :: ci, cj, cid, ni, nj
         integer :: icell
         integer :: iofs
+        integer :: peak
         logical(kind=1) :: is_valid
 
         err_code = ERR_NO_ERROR
@@ -532,11 +548,13 @@ contains
                 ni = ci + offsets(iofs, 1)
                 nj = cj + offsets(iofs, 2)
                 if (array2d_oob(ni, nj, nrows, ncols)) cycle
-                if (peaks(ni, nj) == 0) cycle
+                peak = peaks(ni, nj)
+                if (peak == 0) cycle
+                peak = find_root_peak(parent_peaks, peak)
                 ! Skip already recorded areas
-                if (any(higher_peaks(1:n_higher_peaks) == peaks(ni, nj))) cycle
+                if (any(higher_peaks(1:n_higher_peaks) == peak)) cycle
                 n_higher_peaks = n_higher_peaks + 1
-                higher_peaks(n_higher_peaks) = peaks(ni, nj)
+                higher_peaks(n_higher_peaks) = peak
             end do
         end do
     end subroutine find_connection_higher_grounds
@@ -544,7 +562,7 @@ contains
     subroutine process_single_label_area( &
         z, cells, proms, offsets, &
         peaks, labels, ilabel, higher_peaks, copeaks, &
-        samez, samez_start, samez_end, err_code)
+        parent_peaks, samez, samez_start, samez_end, err_code)
         implicit none(type, external)
         ! Arguments
         real, intent(in) :: z(*)
@@ -559,6 +577,7 @@ contains
         integer, intent(inout) :: peaks(:, :)
         integer, intent(inout) :: higher_peaks(:)
         integer, intent(inout) :: copeaks(:)
+        integer, intent(inout) :: parent_peaks(:)
         integer, intent(out) :: err_code
         ! Local variables
         integer :: nrows, ncols
@@ -567,7 +586,7 @@ contains
         integer :: icell
         integer :: ci, cj
         integer :: label
-        real :: zpeak
+        real :: zpeak2keep, zpeak
         logical(kind=1) :: is_valid
 
         err_code = ERR_NO_ERROR
@@ -581,9 +600,12 @@ contains
             peaks, &
             cells(samez_start:samez_end), &
             labels(samez_start:samez_end), &
-            ilabel, offsets, higher_peaks, n_higher_peaks, &
+            ilabel, offsets, &
+            parent_peaks, higher_peaks, n_higher_peaks, &
             nrows, ncols, err_code)
         if (err_code /= ERR_NO_ERROR) return
+
+        ! Process new peaks or connecting pieces to existing peaks
         if (n_higher_peaks == 0) then
             ! If no higher areas, this is a new peak
             peak = 0
@@ -608,19 +630,24 @@ contains
             end do
             return
         end if
-        ! Borders more than 1 higher areas, they should be merged
-        ! Use the area with the highest peak
-        do ipeak = 1, n_higher_peaks
+
+        ! Merge peaks
+        ! Find the peak to retain
+        peak2keep = higher_peaks(1)
+        zpeak2keep = z(cells(peak2keep))
+        do ipeak = 2, n_higher_peaks
             peak = higher_peaks(ipeak)
-            if (ipeak == 1) then
-                peak2keep = peak
-                zpeak = z(cells(peak))
-                cycle
-            end if
-            if (zpeak > z(cells(peak))) cycle
-            if (zpeak == z(cells(peak))) then
-                ! 2 peaks have the same height, they are copeaks
-                ! Record in the copeak workspace (as a linked list)
+            if (z(cells(peak)) < zpeak2keep) cycle
+            peak2keep = peak
+            zpeak2keep = z(cells(peak))
+        end do
+
+        ! Update all other peaks
+        do ipeak = 1, n_higher_peaks
+            peak = find_root_peak(parent_peaks, higher_peaks(ipeak))
+            if (peak == peak2keep) cycle
+            ! Process co-winning peaks
+            if (zpeak2keep == z(cells(peak))) then
                 copeak = peak2keep
                 do while (copeaks(copeak) /= 0)
                     copeak = copeaks(copeak)
@@ -628,23 +655,10 @@ contains
                 copeaks(copeak) = peak
                 cycle
             end if
-            peak2keep = peak
-            zpeak = z(cells(peak))
-        end do
-        ! Actually update the area mask and prominence
-        outer: do ipeak = 1, n_higher_peaks
-            ! Skip if this it the highest peak (or its copeak)
-            peak = higher_peaks(ipeak)
-            if (peak == peak2keep) cycle outer
-
-            ! Merge the peaks (including the copeaks!)
-            where (peaks == peak) peaks = peak2keep
-
-            ! Skip if this it the highest peak's copeak(s)
-            if (z(cells(peak)) == z(cells(peak2keep))) cycle
-
-            ! Process the peak and all its copeaks
+            ! Process lost peaks to be merged
+            ! (including their co-peaks)
             do while (peak /= 0)
+                parent_peaks(peak) = peak2keep
                 ! Mark the whole peak region
                 icell = peak
                 label = labels(icell)
@@ -659,7 +673,7 @@ contains
                 ! Go to the next copeak
                 peak = copeaks(peak)
             end do
-        end do outer
+        end do
         ! Merge the current saddle too
         do icell = samez_start, samez_end
             if (labels(icell) /= ilabel) cycle
@@ -702,6 +716,7 @@ contains
         integer(c_int32_t), allocatable :: labels(:)
         integer :: ilabel, nlabels
         integer(c_int32_t), allocatable :: peaks(:, :)
+        integer(c_int32_t), allocatable :: parent_peaks(:)
         integer(c_int32_t), allocatable :: higher_peaks(:)
         integer(c_int32_t), allocatable :: copeaks(:)
         integer(c_int32_t), allocatable :: order_pos(:)
@@ -710,7 +725,8 @@ contains
         err_code = ERR_NO_ERROR
         allocate ( &
             labels(nvalids), &
-            peaks(nrows, ncols), higher_peaks(nvalids), &
+            peaks(nrows, ncols), parent_peaks(nvalids), &
+            higher_peaks(nvalids), &
             copeaks(nvalids), stat=alloc_stat)
         if (alloc_stat /= 0) then
             err_code = ERR_ALLOCATION_FAILURE
@@ -727,9 +743,14 @@ contains
             return
         end if
 
-        ! Build inverse lookup from linear ID in 'dem' to position in 'orders'
         order_pos = 0
         do icell = 1, nvalids
+            if (orders(icell) < 1 .or. orders(icell) > nrows*ncols) then
+                err_code = ERR_INVALID_INPUT
+                return
+            end if
+            parent_peaks(icell) = icell
+            ! Build inverse lookup from linear ID in 'dem' to position in 'orders'
             order_pos(orders(icell)) = icell
         end do
 
@@ -768,7 +789,8 @@ contains
                 call process_single_label_area( &
                     z, orders, proms, offsets, &
                     peaks, labels, ilabel, higher_peaks, copeaks, &
-                    samez, samez_start, samez_end, err_code)
+                    parent_peaks, samez, samez_start, samez_end, &
+                    err_code)
                 if (err_code /= ERR_NO_ERROR) return
             end do
         end do
