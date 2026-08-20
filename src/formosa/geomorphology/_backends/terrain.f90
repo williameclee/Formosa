@@ -652,6 +652,7 @@ contains
                 do while (copeaks(copeak) /= 0)
                     copeak = copeaks(copeak)
                 end do
+                parent_peaks(peak) = peak2keep
                 copeaks(copeak) = peak
                 cycle
             end if
