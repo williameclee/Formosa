@@ -1,15 +1,20 @@
-"""Tests terrain isolation using the FORTRAN backend.
+"""
+Tests terrain metrics using the Fortran backend.
 
-This module compares native results with exhaustive searches through
-the public API, including native results and input validation.
+This module compares public isolation and prominence results with
+exhaustive reference calculations and covers input validation.
 
 Created: 2026-08-19, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-21, En-Chi Lee (williameclee@gmail.com)
 """
 
-import numpy as np
 import pytest
 
-from formosa.geomorphology.terrain import compute_isolation
+import heapq
+import numpy as np
+
+from formosa.geomorphology.drainage.directions import D8Directions
+from formosa.geomorphology.terrain import compute_isolation, compute_prominence
 
 
 def _brute_force_isolation(
@@ -42,6 +47,92 @@ def _brute_force_isolation(
     censored = valids & (~has_ilp | (isos > boundary_distance))
 
     return isos, has_ilp, censored
+
+
+def _brute_force_prominence(
+    dem: np.ndarray,
+    valids: np.ndarray,
+    offsets: np.ndarray,
+) -> np.ndarray:
+    """Returns prominence from exhaustive maximum-bottleneck paths."""
+    nrows, ncols = dem.shape
+    proms = np.full(dem.shape, -1.0, dtype=np.float32)
+    proms[valids] = 0.0
+    visited: set[tuple[int, int]] = set()
+
+    for start_i in range(nrows):
+        for start_j in range(ncols):
+            if not valids[start_i, start_j] or (start_i, start_j) in visited:
+                continue
+
+            zpeak = dem[start_i, start_j]
+            plateau = {(start_i, start_j)}
+            queue = [(start_i, start_j)]
+            while queue:
+                ci, cj = queue.pop()
+                for di, dj in offsets:
+                    ni = ci + int(di)
+                    nj = cj + int(dj)
+                    neighbour = (ni, nj)
+                    if not (0 <= ni < nrows and 0 <= nj < ncols):
+                        continue
+                    if not valids[ni, nj] or dem[ni, nj] != zpeak:
+                        continue
+                    if neighbour in plateau:
+                        continue
+                    plateau.add(neighbour)
+                    queue.append(neighbour)
+            visited.update(plateau)
+
+            has_higher_neighbour = any(
+                0 <= ci + int(di) < nrows
+                and 0 <= cj + int(dj) < ncols
+                and valids[ci + int(di), cj + int(dj)]
+                and dem[ci + int(di), cj + int(dj)] > zpeak
+                for ci, cj in plateau
+                for di, dj in offsets
+            )
+            if has_higher_neighbour:
+                continue
+
+            for ci, cj in plateau:
+                proms[ci, cj] = -1.0
+
+            capacities = np.full(dem.shape, -np.inf, dtype=np.float64)
+            priority_queue: list[tuple[float, int, int]] = []
+            for ci, cj in plateau:
+                capacities[ci, cj] = zpeak
+                heapq.heappush(priority_queue, (-float(zpeak), ci, cj))
+
+            saddle = None
+            while priority_queue:
+                negative_capacity, ci, cj = heapq.heappop(priority_queue)
+                capacity = -negative_capacity
+                if capacity != capacities[ci, cj]:
+                    continue
+                if dem[ci, cj] > zpeak:
+                    saddle = capacity
+                    break
+
+                for di, dj in offsets:
+                    ni = ci + int(di)
+                    nj = cj + int(dj)
+                    if not (0 <= ni < nrows and 0 <= nj < ncols):
+                        continue
+                    if not valids[ni, nj]:
+                        continue
+
+                    candidate = min(capacity, float(dem[ni, nj]))
+                    if candidate <= capacities[ni, nj]:
+                        continue
+                    capacities[ni, nj] = candidate
+                    heapq.heappush(priority_queue, (-candidate, ni, nj))
+
+            if saddle is not None:
+                for ci, cj in plateau:
+                    proms[ci, cj] = zpeak - saddle
+
+    return proms
 
 
 @pytest.mark.parametrize(
@@ -204,3 +295,126 @@ def test_calculate_isolation_rejects_invalid_spacing(name, value, exception):
     kwargs = {name: value}
     with pytest.raises(exception):
         compute_isolation(np.ones((2, 2), dtype=np.float32), **kwargs)
+
+
+@pytest.mark.parametrize(
+    ("dem", "expected"),
+    [
+        pytest.param(
+            [[3, 1, 2]],
+            [[-1, 0, 1]],
+            id="unequal-peaks",
+        ),
+        pytest.param(
+            [[2, 1, 2]],
+            [[-1, 0, -1]],
+            id="global-copeaks",
+        ),
+        pytest.param(
+            [[4, 2, 4, 2, 5]],
+            [[2, 0, 2, 0, -1]],
+            id="equal-lower-peaks",
+        ),
+        pytest.param(
+            [
+                [0, 0, 0, 0, 0],
+                [0, 4, 4, 1, 5],
+                [0, 4, 4, 0, 0],
+            ],
+            [
+                [0, 0, 0, 0, 0],
+                [0, 3, 3, 0, -1],
+                [0, 3, 3, 0, 0],
+            ],
+            id="summit-plateau",
+        ),
+    ],
+)
+def test_compute_prominence_known_landforms(dem, expected):
+    proms = compute_prominence(np.asarray(dem, dtype=np.float32))
+
+    np.testing.assert_array_equal(proms, expected)
+
+
+@pytest.mark.parametrize(
+    ("shape", "include_invalids", "include_flats", "seed"),
+    [
+        pytest.param((5, 5), False, False, 11, id="square-distinct"),
+        pytest.param((5, 5), False, True, 12, id="square-flats"),
+        pytest.param((4, 7), True, False, 13, id="wide-masked"),
+        pytest.param((7, 4), True, True, 14, id="tall-masked-flats"),
+        pytest.param((1, 9), True, True, 15, id="single-row"),
+        pytest.param((9, 1), True, False, 16, id="single-column"),
+    ],
+)
+def test_compute_prominence_matches_brute_force(
+    shape, include_invalids, include_flats, seed
+):
+    rng = np.random.default_rng(seed)
+    if include_flats:
+        dem = rng.integers(-5, 8, size=shape).astype(np.float32)
+    else:
+        dem = rng.permutation(np.prod(shape)).reshape(shape).astype(np.float32)
+
+    valids = np.ones(shape, dtype=bool)
+    if include_invalids:
+        valids.flat[::4] = False
+        valids.flat[-1] = True
+
+    dir_scheme = D8Directions()
+    expected = _brute_force_prominence(dem, valids, dir_scheme.offsets)
+    proms = compute_prominence(dem, valids, dir_scheme)
+
+    np.testing.assert_array_equal(proms, expected)
+
+
+def test_compute_prominence_marks_disconnected_component_maxima():
+    dem = np.array([[5.0, 0.0, 4.0]], dtype=np.float32)
+    valids = np.array([[True, False, True]])
+
+    proms = compute_prominence(dem, valids)
+
+    np.testing.assert_array_equal(proms, [[-1.0, -1.0, -1.0]])
+
+
+def test_compute_prominence_treats_nonfinite_cells_as_invalid():
+    dem = np.array([[5.0, np.nan, 4.0, np.inf]], dtype=np.float32)
+
+    proms = compute_prominence(dem)
+
+    np.testing.assert_array_equal(proms, [[-1.0, -1.0, -1.0, -1.0]])
+
+
+@pytest.mark.parametrize("shape", [(1, 1), (2, 3), (5, 4)])
+def test_compute_prominence_marks_all_invalid_cells(shape):
+    dem = np.ones(shape, dtype=np.float32)
+    valids = np.zeros(shape, dtype=bool)
+
+    proms = compute_prominence(dem, valids)
+
+    assert np.all(proms == -1.0)
+
+
+def test_compute_prominence_respects_direction_connectivity():
+    dem = np.array([[5.0, 0.0], [0.0, 4.0]], dtype=np.float32)
+    cardinal_scheme = D8Directions()
+    cardinal_scheme.offsets = np.array(
+        [[-1, 0], [0, -1], [0, 0], [0, 1], [1, 0]],
+        dtype=np.int32,
+        order="F",
+    )
+
+    d8_proms = compute_prominence(dem)
+    cardinal_proms = compute_prominence(dem, dir_scheme=cardinal_scheme)
+
+    np.testing.assert_array_equal(d8_proms, [[-1.0, 0.0], [0.0, 0.0]])
+    np.testing.assert_array_equal(cardinal_proms, [[-1.0, 0.0], [0.0, 4.0]])
+
+
+def test_compute_prominence_supports_unsigned_dem():
+    dem = np.array([[3, 1, 2]], dtype=np.uint16)
+
+    proms = compute_prominence(dem)  # type: ignore
+
+    assert proms.dtype == np.int64
+    np.testing.assert_array_equal(proms, [[-1, 0, 1]])
