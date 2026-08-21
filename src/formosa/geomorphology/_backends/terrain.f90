@@ -622,6 +622,83 @@ contains
         end do
     end subroutine find_adjacent_higher_domains
 
+    !> Selects the centroid-nearest cell of a plateau feature.
+    !!
+    !! Ties are resolved using the smallest Fortran linear cell ID.
+    pure subroutine find_representative_cell( &
+        labels, label_head, cids, pi, pj, nrows, ncols)
+        implicit none(type, external)
+        ! Arguments
+        integer, contiguous, intent(in) :: labels(:)
+            !! Linked-list 'next' pointers chaining cells in the
+            !! component
+        integer, intent(in) :: label_head
+            !! Index of first cell in this plateau component's
+            !! linked list
+        integer, contiguous, intent(in) :: cids(:)
+            !! 1-based linear cell IDs of the plateau component
+        integer, intent(in) :: nrows, ncols
+            !! DEM raster dimensions
+        ! Outputs
+        integer, intent(out) :: pi, pj
+            !! 1-based row and column indices of the representative
+            !! cell
+        ! Local variables
+        integer :: icell
+            !! Loop index traversing the component linked list
+        integer :: ncells
+            !! Number of cells in the plateau component
+        integer :: best_cid
+            !! Smallest linear cell ID among centroid-distance ties
+        integer :: ci, cj
+            !! Row and column indices of current cell
+        real :: mi, mj
+            !! Mean row and column (centroid) coordinates of the
+            !! plateau
+        real :: dist2, min_dist2
+            !! Squared distance to centroid and current minimum
+            !! squared distance
+        logical(kind=1) :: is_valid
+            !! True if index conversion succeeded
+
+        mi = 0
+        mj = 0
+        ncells = 0
+        icell = label_head
+        do while (icell /= 0)
+            ncells = ncells + 1
+            call id2ij_checked( &
+                cids(icell), nrows, ncols, ci, cj, is_valid)
+            mi = mi + ci
+            mj = mj + cj
+            ! Go to the next cell with the same label
+            icell = labels(icell)
+        end do
+
+        mi = mi/ncells
+        mj = mj/ncells
+
+        ! Find the closest cell
+        min_dist2 = -1
+        best_cid = huge(0)
+        icell = label_head
+        do while (icell /= 0)
+            call id2ij_checked( &
+                cids(icell), nrows, ncols, ci, cj, is_valid)
+            dist2 = l2dist2_xy(real(ci), real(cj), mi, mj)
+            if (min_dist2 < 0 .or. &
+                dist2 < min_dist2 .or. &
+                (dist2 == min_dist2 .and. &
+                 cids(icell) < best_cid)) then
+                min_dist2 = dist2
+                best_cid = cids(icell)
+                pi = ci
+                pj = cj
+            end if
+            icell = labels(icell)
+        end do
+    end subroutine find_representative_cell
+
     !> Processes a single connected plateau component during
     !! prominence sweep.
     !!
@@ -636,10 +713,10 @@ contains
     !!    the winning domain.
     subroutine process_plateau( &
         z, sorted_cids, proms, &
-        ifeat, feats, feat_types, peak_lookup, saddle_lookup, &
-        dom_feat_lookup, feat_tree, offsets, &
-        doms, label_heads, labels, label, higher_doms, copeaks, &
-        prnt_doms, slice_z, err_code)
+        ifeat, feats, feat_types, feat_ijs, &
+        peak_lookup, saddle_lookup, dom_feat_lookup, feat_tree, &
+        offsets, doms, label_heads, labels, label, higher_doms, &
+        copeaks, prnt_doms, slice_z, err_code)
         implicit none(type, external)
         ! Arguments
         real, intent(in) :: z(*)
@@ -663,6 +740,8 @@ contains
             !! 1-based feature ID raster for peak and saddle cells
         integer(c_int8_t), intent(inout) :: feat_types(:)
             !! Feature type indexed by 1-based feature ID
+        integer, intent(inout) :: feat_ijs(:, :)
+            !! 1-based (row, column) coordinates of each feature representative
         integer, intent(inout) :: ifeat
             !! Combined running count of peaks and saddles
         integer, intent(inout) :: peak_lookup(:)
@@ -729,6 +808,10 @@ contains
         ! Process new peaks or connecting pieces to existing peaks
         if (n_higher_doms == 0) then
             ifeat = ifeat + 1
+            feat_types(ifeat) = PEAK
+            call find_representative_cell( &
+                labels, label_heads(label), sorted_cids, &
+                feat_ijs(1, ifeat), feat_ijs(2, ifeat), nrows, ncols)
             ! Record the new peak with the largest icell
             dom = label_heads(label)
             icell = label_heads(label)
@@ -740,7 +823,6 @@ contains
                 ! surviving peaks with unknown prominence
                 proms(sorted_cids(icell)) = -1
                 feats(sorted_cids(icell)) = ifeat
-                feat_types(ifeat) = PEAK
                 peak_lookup(dom) = ifeat
                 dom_feat_lookup(dom) = ifeat
                 ! Go to the next cell with the same label
@@ -762,6 +844,10 @@ contains
 
         ! This plateau joins several domains
         ifeat = ifeat + 1
+        feat_types(ifeat) = SADDLE
+        call find_representative_cell( &
+            labels, label_heads(label), sorted_cids, &
+            feat_ijs(1, ifeat), feat_ijs(2, ifeat), nrows, ncols)
         do idom = 1, n_higher_doms
             dom = find_root_domain(prnt_doms, higher_doms(idom))
             feat_tree(dom_feat_lookup(dom)) = ifeat
@@ -785,7 +871,6 @@ contains
                 sorted_cids(icell), nrows, ncols, ci, cj, is_valid)
             doms(ci, cj) = winner_dom
             feats(sorted_cids(icell)) = ifeat
-            feat_types(ifeat) = SADDLE
             ! Go to the next cell with the same label
             icell = labels(icell)
         end do
@@ -833,14 +918,15 @@ contains
     !! receive their finalised prominence values.
     !!
     !! Outputs include the prominence grid, a universal feature-ID
-    !! raster, feature types, peak-to-key-saddle mappings, and the
-    !! child-to-parent divide tree. Feature lookup arrays have
-    !! nvalids capacity; only their first nfeats entries are used.
+    !! raster, feature types, representative cells, peak-to-key-
+    !! saddle mappings, and the child-to-parent divide tree. Feature
+    !! lookup arrays have nvalids capacity; only their first nfeats
+    !! entries are used.
     !! Surviving global/regional maxima retain -1 to mark unknown/
     !! infinite prominence.
     subroutine compute_prominence( &
-        z, sorted_cids, proms, feats, feat_types, saddle_lookup, &
-        feat_tree, nfeats, &
+        z, sorted_cids, proms, feats, feat_types, feat_ijs, &
+        saddle_lookup, feat_tree, nfeats, &
         nrows, ncols, nvalids, offsets, noffsets, err_code)
         implicit none(type, external)
         ! Arguments
@@ -865,6 +951,8 @@ contains
             !! 1-based feature label grid
         integer(c_int8_t), intent(out) :: feat_types(nvalids)
             !! Feature type: 1 for a peak and 2 for a saddle
+        integer, intent(out) :: feat_ijs(2, nvalids)
+            !! Centroid-nearest representative cell of each feature
         integer, intent(out) :: saddle_lookup(nvalids)
             !! Key-saddle feature ID for each peak feature
         integer, intent(out) :: feat_tree(nvalids)
@@ -909,7 +997,7 @@ contains
         integer, allocatable :: peak_lookup(:)
             !! Domain ID -> peak feature ID
         integer, allocatable :: dom_feat_lookup(:)
-            !! Parent feature ID for each feature in the divide tree
+            !! Domain ID -> current active feature ID in the divide tree
             !! The current feature is either the same peak or the
             !! latest saddle that the peak has been merged into
         integer :: alloc_stat
@@ -930,6 +1018,7 @@ contains
         proms = 0
         feats = 0
         feat_types = 0
+        feat_ijs = 0
         peak_lookup = 0
         saddle_lookup = 0
         dom_feat_lookup = 0
@@ -1000,8 +1089,9 @@ contains
             do ilabel = 1, nlabels
                 call process_plateau( &
                     z, sorted_cids, proms, &
-                    nfeats, feats, feat_types, peak_lookup, &
-                    saddle_lookup, dom_feat_lookup, feat_tree, &
+                    nfeats, feats, feat_types, feat_ijs, &
+                    peak_lookup, saddle_lookup, dom_feat_lookup, &
+                    feat_tree, &
                     offsets, doms, label_heads, labels, ilabel, &
                     higher_doms, copeaks, prnt_doms, &
                     slice_z, err_code)

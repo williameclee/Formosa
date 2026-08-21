@@ -21,7 +21,7 @@ def _compute_prominence_labels(*args, **kwargs):
     """
     Returns prominence outputs with separate peak and saddle rasters.
     """
-    proms, feats, feat_types, key_saddles, feat_prnts = compute_prominence(
+    proms, feats, feat_types, _, key_saddles, feat_prnts = compute_prominence(
         *args, **kwargs
     )
     has_feat = feats >= 0
@@ -554,7 +554,7 @@ def test_compute_prominence_supports_unsigned_dem():
 def test_compute_prominence_returns_divide_tree_and_key_saddles():
     dem = np.array([[10.0, 6.0, 8.0, 4.0, 12.0]], dtype=np.float32)
 
-    _, feats, feat_types, key_saddles, feat_prnts = compute_prominence(dem)
+    _, feats, feat_types, feat_ijs, key_saddles, feat_prnts = compute_prominence(dem)
 
     peak_10 = feats[0, 0]
     saddle_6 = feats[0, 1]
@@ -563,6 +563,7 @@ def test_compute_prominence_returns_divide_tree_and_key_saddles():
     peak_12 = feats[0, 4]
 
     np.testing.assert_array_equal(feat_types, [1, 1, 1, 2, 2])
+    np.testing.assert_array_equal(feats[feat_ijs[:, 0], feat_ijs[:, 1]], np.arange(5))
     assert feat_prnts[peak_10] == saddle_6
     assert feat_prnts[peak_8] == saddle_6
     assert feat_prnts[saddle_6] == saddle_4
@@ -576,7 +577,7 @@ def test_compute_prominence_returns_divide_tree_and_key_saddles():
 def test_compute_prominence_tracks_copeaks_through_later_saddle():
     dem = np.array([[10.0, 6.0, 10.0, 4.0, 12.0]], dtype=np.float32)
 
-    _, feats, feat_types, key_saddles, feat_prnts = compute_prominence(dem)
+    _, feats, feat_types, _, key_saddles, feat_prnts = compute_prominence(dem)
 
     peak_10a = feats[0, 0]
     saddle_6 = feats[0, 1]
@@ -612,13 +613,16 @@ def test_compute_prominence_feature_tree_invariants(shape, include_invalids, see
         valids.flat[::4] = False
         valids.flat[-1] = True
 
-    proms, feats, feat_types, key_saddles, feat_prnts = compute_prominence(dem, valids)
+    proms, feats, feat_types, feat_ijs, key_saddles, feat_prnts = compute_prominence(
+        dem, valids
+    )
 
     nfeats = feat_types.size
     present = np.unique(feats[feats >= 0])
     np.testing.assert_array_equal(present, np.arange(nfeats, dtype=np.int32))
     assert np.all(feats[~valids] == -1)
     assert key_saddles.shape == feat_prnts.shape == (nfeats,)
+    assert feat_ijs.shape == (nfeats, 2)
     assert np.all(np.isin(feat_types, [1, 2]))
     assert np.all((-1 <= key_saddles) & (key_saddles < nfeats))
     assert np.all((-1 <= feat_prnts) & (feat_prnts < nfeats))
@@ -627,12 +631,25 @@ def test_compute_prominence_feature_tree_invariants(shape, include_invalids, see
     saddles = np.flatnonzero(feat_types == 2)
     assert np.all(key_saddles[saddles] == -1)
     assert np.all(feat_types[feat_prnts[feat_prnts >= 0]] == 2)
+    assert np.all((0 <= feat_ijs[:, 0]) & (feat_ijs[:, 0] < shape[0]))
+    assert np.all((0 <= feat_ijs[:, 1]) & (feat_ijs[:, 1] < shape[1]))
+    np.testing.assert_array_equal(
+        feats[feat_ijs[:, 0], feat_ijs[:, 1]], np.arange(nfeats)
+    )
 
     feat_zs = np.empty(nfeats, dtype=np.float32)
     for feat in range(nfeats):
+        feat_cells = np.argwhere(feats == feat)
         zs = np.unique(dem[feats == feat])
         assert zs.size == 1
         feat_zs[feat] = zs[0]
+
+        centroid = np.mean(feat_cells, axis=0)
+        dist2 = np.sum((feat_cells - centroid) ** 2, axis=1)
+        closest = feat_cells[dist2 == np.min(dist2)]
+        linear_ids = closest[:, 0] + closest[:, 1] * shape[0]
+        expected_ij = closest[np.argmin(linear_ids)]
+        np.testing.assert_array_equal(feat_ijs[feat], expected_ij)
 
     for feat in range(nfeats):
         visited = set()
@@ -658,3 +675,16 @@ def test_compute_prominence_feature_tree_invariants(shape, include_invalids, see
             ancestor = feat_prnts[ancestor]
         assert ancestor == key_saddle
         assert peak_proms[0] == feat_zs[peak] - feat_zs[key_saddle]
+
+
+def test_compute_prominence_representative_cell_tie_break():
+    dem = np.array([[5.0, 1.0, 1.0, 4.0]], dtype=np.float32)
+
+    _, feats, _, feat_ijs, _, _ = compute_prominence(dem)
+
+    peak_5 = feats[0, 0]
+    peak_4 = feats[0, 3]
+    saddle = feats[0, 1]
+    np.testing.assert_array_equal(feat_ijs[peak_5], [0, 0])
+    np.testing.assert_array_equal(feat_ijs[peak_4], [0, 3])
+    np.testing.assert_array_equal(feat_ijs[saddle], [0, 1])

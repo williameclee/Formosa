@@ -251,6 +251,7 @@ def compute_prominence(
     NDArray[np.int32],
     NDArray[np.int32],
     NDArray[np.int32],
+    NDArray[np.int32],
 ]: ...
 
 
@@ -265,6 +266,7 @@ def compute_prominence(
     NDArray[np.int32],
     NDArray[np.int32],
     NDArray[np.int32],
+    NDArray[np.int32],
 ]: ...
 
 
@@ -274,6 +276,7 @@ def compute_prominence(
     dir_scheme: D8Directions = D8Directions(),
 ) -> tuple[
     NDArray[NpReal | np.int64],
+    NDArray[np.int32],
     NDArray[np.int32],
     NDArray[np.int32],
     NDArray[np.int32],
@@ -311,15 +314,21 @@ def compute_prominence(
         highest regional summits with unknown prominence contain
         `-1`.
     feats : NDArray[int32]
-        0-based feature index at peak and saddle cells, with `-1` at
-        cells that do not represent a feature.
+        Feature index raster containing 0-based feature IDs at peak
+        and saddle cells, and `-1` elsewhere.
     feat_types : NDArray[int32]
-        Feature type indexed by feature: `1` for a peak and `2` for
-        a saddle.
+        Feature types indexed by 0-based feature ID: `1` for a peak
+        and `2` for a saddle.
+    feat_ijs : NDArray[int32]
+        Zero-based representative `(row, column)` coordinates for
+        each feature.
+        Representatives belong to their feature plateau and are
+        nearest its centroid; ties use the smallest linear cell
+        index.
     key_saddles : NDArray[int32]
-        Key-saddle feature index for each peak feature. Entries for
-        non-peak features and peaks without a known key saddle are
-        `-1`.
+        Key-saddle feature index for each peak feature.
+        Entries for non-peak features and peaks without a known key
+        saddle are `-1`.
     feat_prnts : NDArray[int32]
         Parent feature index for each feature in the divide tree.
         Root features contain `-1`.
@@ -351,7 +360,7 @@ def compute_prominence(
     # 1-based IDs in ascending elevation order.
     orders_f = valid_ids[orders].astype(np.int32) + 1
 
-    proms, feats, feat_types, key_saddles, feat_prnts, nfeats, err_code = (
+    proms, feats, feat_types, feat_ijs, key_saddles, feat_prnts, nfeats, err_code = (
         terrain_f.compute_prominence(
             dem_f, orders_f, dir_scheme.offsets.astype(np.int32, order="F")
         )
@@ -372,7 +381,8 @@ def compute_prominence(
     # Python indices with -1 sentinels.
     feats = np.asarray(feats, dtype=np.int32) - 1
     feat_types = np.array(feat_types[:nfeats], dtype=np.int32, copy=True)
+    feat_ijs = np.array(feat_ijs[:, :nfeats].T, dtype=np.int32, copy=True) - 1
     key_saddles = np.array(key_saddles[:nfeats], dtype=np.int32, copy=True) - 1
     feat_prnts = np.array(feat_prnts[:nfeats], dtype=np.int32, copy=True) - 1
 
-    return proms, feats, feat_types, key_saddles, feat_prnts  # type: ignore
+    return proms, feats, feat_types, feat_ijs, key_saddles, feat_prnts  # type: ignore

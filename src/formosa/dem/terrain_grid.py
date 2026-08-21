@@ -268,7 +268,7 @@ class DEMGrid:
 
     @property
     def prominence(self) -> npt.NDArray[np.floating | np.integer]:
-        proms, _, _, _, _ = compute_prominence(self.dem, self.valid, self.directions)
+        proms, _, _, _, _, _ = compute_prominence(self.dem, self.valid, self.directions)
         return proms
 
     @property
