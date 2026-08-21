@@ -5,7 +5,7 @@ This module provides :class:`DEMGrid`, which coordinates raster
 input and geomorphological operations on a digital elevation model
 (DEM).
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-21, En-Chi Lee (williameclee@gmail.com)
 """
 
 from pathlib import Path
@@ -16,7 +16,7 @@ import rasterio.transform as rt
 import scipy.ndimage as ndi
 
 from formosa.dem.demio import read_dem
-from formosa.geomorphology.terrain import compute_slope
+from formosa.geomorphology.terrain import compute_slope, compute_prominence
 from formosa.geomorphology.drainage import (
     D8Directions,
     compute_dist2conf_max,
@@ -265,6 +265,10 @@ class DEMGrid:
         self._slope = compute_slope(self.dem, x=self.x, y=self.y)
         self._slope[~self.valid] = np.nan
         return self._slope
+
+    @property
+    def prominence(self) -> npt.NDArray[np.floating | np.integer]:
+        return compute_prominence(self.dem, self.valid, self.directions)
 
     @property
     def ocean_mask(self) -> npt.NDArray[np.bool_]:
