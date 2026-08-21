@@ -1,9 +1,10 @@
-!> Computes terrain isolation for digital elevation model rasters.
+!> Computes terrain isolation and topographic prominence for DEM
+!! rasters.
 !!
 !! This module implements the native backend used by the public
-!! Python terrain API. A maximum-elevation pyramid accelerates exact
-!! nearest-higher searches and identifies searches censored by the
-!! outer raster footprint.
+!! Python terrain API. It provides accelerated isolation searches
+!! via maximum-elevation pyramids and topological sweep-plane
+!! prominence computations.
 !!
 !! Created: 2026-08-19, En-Chi Lee (williameclee@gmail.com)
 !! Last modified: 2026-08-21, En-Chi Lee (williameclee@gmail.com)
@@ -425,37 +426,61 @@ contains
         !$omp END PARALLEL DO
     end subroutine compute_isolation
 
-    pure subroutine find_connections( &
+    !> Labels connected components (plateaus) of equal elevation.
+    !!
+    !! Performs a breadth-first search (BFS) flood fill to identify
+    !! connected flat components among cells sharing the same
+    !! elevation within the current slice range
+    !! [slice_start, slice_end].
+    pure subroutine label_plateaus( &
         cids, labels, nlabels, offsets, nrows, ncols, &
-        samez_start, samez_end, order_pos, err_code)
+        slice_start, slice_end, order_lookup, err_code)
         implicit none(type, external)
         ! Arguments
         integer, contiguous, intent(in) :: cids(:)
+            !! Slice of cell linear IDs for the current elevation
         integer, intent(in) :: offsets(:, :)
-            !! List of offsets for each flow direction
+            !! Row and column offsets for neighbour connectivity
         integer, intent(in) :: nrows, ncols
-        integer, intent(in) :: order_pos(:)
-        integer, intent(in) :: samez_start, samez_end
-        !! DEM dimensions
+            !! DEM raster dimensions
+        integer, intent(in) :: order_lookup(:)
+            !! Inverse lookup mapping linear cell ID to position in
+            !! all of cids (bedyond this slice)
+        integer, intent(in) :: slice_start, slice_end
+            !! Index bounds of the current elevation slice in all of
+            !! cids
         ! Outputs
         integer, contiguous, intent(out) :: labels(:)
+            !! Output connected component label per cell in the
+            !! slice (1 to nlabels)
         integer, intent(out) :: nlabels
-            !! Number of connected components
+            !! Number of connected components found
         integer, intent(out) :: err_code
             !! Backend status code
         ! Local variables
-        integer :: icell, ncell
-        integer :: ci, cj, cid, ni, nj, nid
+        integer :: icell
+            !! Index in 'cids' slice
+        integer :: ncell
+            !! Index in 'cids' of neighbouring cell
+        integer :: ci, cj, ni, nj
+            !! Row and column indices of current and neighbour cell
+        integer :: cid, nid
+            !! Linear ID of current and neighbour cell
         integer :: iofs
+            !! neighbour direction offset index
         logical(kind=1) :: is_valid
+            !! True if index conversion succeeded
         integer :: queue(size(cids))
-        integer :: nqueued, iqueue, nprocessed
+            !! FIFO queue for BFS flood fill
+        integer :: nqueued
+            !! Total number of cells queued
+        integer :: iqueue
+            !! Current position in BFS queue being processed
 
         ! Initialise
         err_code = ERR_NO_ERROR
         labels = 0
         nlabels = 0
-        nprocessed = 0
         do icell = 1, size(cids)
             ! Find the next unprocessed cell
             if (labels(icell) /= 0) cycle
@@ -480,9 +505,9 @@ contains
                     nj = cj + offsets(iofs, 2)
                     nid = ij2id_checked(ni, nj, nrows, ncols)
                     if (nid == 0) cycle
-                    ncell = order_pos(nid)
-                    if (ncell < samez_start .or. ncell > samez_end) cycle
-                    ncell = ncell - samez_start + 1
+                    ncell = order_lookup(nid)
+                    if (ncell < slice_start .or. ncell > slice_end) cycle
+                    ncell = ncell - slice_start + 1
 
                     if (labels(ncell) /= 0) cycle
                     labels(ncell) = nlabels
@@ -492,13 +517,23 @@ contains
                 iqueue = iqueue + 1
             end do
         end do
-    end subroutine find_connections
+    end subroutine label_plateaus
 
+    !> Finds the canonical root peak for a peak domain in a
+    !! disjoint-set forest.
+    !!
+    !! Implements path compression so that future lookups are
+    !! faster.
     recursive function find_root_peak(parent_peaks, peak) &
         result(root_peak)
+        ! Arguments
         integer, intent(inout) :: parent_peaks(:)
+            !! Disjoint-set parent array tracking peak domain merges
         integer, intent(in) :: peak
+            !! Query peak ID (index in 'sorted_cids')
+        ! Result
         integer :: root_peak
+            !! Canonical root peak ID representing this peak domain
 
         if (parent_peaks(peak) /= peak) then
             parent_peaks(peak) = &
@@ -507,38 +542,65 @@ contains
         root_peak = parent_peaks(peak)
     end function find_root_peak
 
-    subroutine find_connection_higher_grounds( &
-        peaks, cids, label_head, labels, offsets, &
-        parent_peaks, higher_peaks, n_higher_peaks, nrows, ncols, err_code)
+    !> Identifies unique higher peak domains adjacent to a plateau
+    !! component.
+    !!
+    !! Traverses all cells belonging to a connected flat component,
+    !! inspects their spatial neighbours, and records each distinct
+    !! adjacent higher peak domain (resolved to its root
+    !! representative in the disjoint-set forest).
+    subroutine find_adjacent_higher_peaks( &
+        peaks, sorted_cids, label_head, labels, offsets, &
+        parent_peaks, higher_peaks, n_higher_peaks, nrows, ncols, &
+        err_code)
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: peaks(nrows, ncols)
-        integer, contiguous, intent(in) :: cids(:)
+            !! 2D peak domain grid recording owning (non-root) peak
+            !! for each cell
+        integer, contiguous, intent(in) :: sorted_cids(:)
+            !! Linear cell IDs sorted in ascending elevation order
         integer, intent(in) :: label_head
+            !! Index of the first cell in this plateau component's
+            !! linked list
         integer, contiguous, intent(in) :: labels(:)
+            !! Linked-list 'next' pointers chaining cells in the
+            !! same component
         integer, intent(in) :: offsets(:, :)
-            !! List of offsets for each flow direction
+            !! Row and column offsets for neighbour connectivity
         integer, intent(in) :: nrows, ncols
-            !! DEM dimensions
+            !! DEM raster dimensions
         ! Outputs
         integer, intent(inout) :: parent_peaks(:)
+            !! Disjoint-set parent array tracking peak domain merges
         integer, intent(out) :: higher_peaks(:)
+            !! Output buffer of unique adjacent higher root peak IDs
         integer, intent(out) :: n_higher_peaks
+            !! Number of unique adjacent higher root peaks found
         integer, intent(out) :: err_code
             !! Backend status code
         ! Local variables
-        integer :: ci, cj, cid, ni, nj
+        integer :: ci, cj, ni, nj
+            !! Row and column indices of current and neighbour cell
+        integer :: cid
+            !! Linear ID of current cell
         integer :: icell
+            !! Current cell index traversing the component linked
+            !! list
         integer :: iofs
+            !! Neighbour direction offset index
         integer :: peak
+            !! Peak ID of neighbour cell resolved to its root
+            !! representative
         logical(kind=1) :: is_valid
+            !! True if index conversion succeeded
 
         err_code = ERR_NO_ERROR
         n_higher_peaks = 0
 
         icell = label_head
         do while (icell /= 0)
-            cid = cids(icell)
+            cid = sorted_cids(icell)
             call id2ij_checked(cid, nrows, ncols, ci, cj, is_valid)
             if (.not. is_valid) then
                 err_code = ERR_INVALID_INPUT
@@ -558,35 +620,81 @@ contains
             end do
             icell = labels(icell)
         end do
-    end subroutine find_connection_higher_grounds
+    end subroutine find_adjacent_higher_peaks
 
-    subroutine process_single_label_area( &
-        z, cids, proms, offsets, &
+    !> Processes a single connected plateau component during
+    !! prominence sweep.
+    !!
+    !! Handles three morphological cases for the component:
+    !! 1. Isolated local maximum (0 higher neighbours): creates a
+    !!    new peak domain.
+    !! 2. Slope/ridge extension (1 higher neighbour): merges cells
+    !!    into that peak.
+    !! 3. Saddle/col (>= 2 higher neighbours): identifies the
+    !!    winning peak, finalises prominence for all subordinate
+    !!    peaks (and tied co-peaks), and unions their domains into
+    !!    the winning peak.
+    subroutine process_plateau( &
+        z, sorted_cids, proms, offsets, &
         peaks, label_heads, labels, label, higher_peaks, copeaks, &
-        parent_peaks, samez, err_code)
+        parent_peaks, slice_z, err_code)
         implicit none(type, external)
         ! Arguments
         real, intent(in) :: z(*)
-        integer, contiguous, intent(in) :: cids(:)
+            !! Flattened DEM elevation array
+        integer, contiguous, intent(in) :: sorted_cids(:)
+            !! 1-based linear cell IDs sorted in ascending elevation
+            !! order
         integer, intent(in) :: offsets(:, :)
+            !! Row and column offsets for neighbour connectivity
         integer, contiguous, intent(in) :: labels(:), label_heads(:)
+            !! Linked-list 'next' pointers and bucket head indices
+            !! per component
         integer, intent(in) :: label
-        real, intent(in) :: samez
+            !! Component index being processed
+        real, intent(in) :: slice_z
+            !! Elevation of the current horizontal slice/plateau
         ! Outputs
         real, intent(inout) :: proms(*)
+            !! Topographic prominence array
         integer, intent(inout) :: peaks(:, :)
+            !! 2D peak domain grid recording owning peak for each
+            !! cell
         integer, intent(inout) :: higher_peaks(:)
+            !! Buffer for adjacent higher peak IDs
         integer, intent(inout) :: copeaks(:)
+            !! Singly-linked list tracking tied summits of identical
+            !! elevation
         integer, intent(inout) :: parent_peaks(:)
+            !! Disjoint-set parent array tracking peak domain merges
         integer, intent(out) :: err_code
+            !! Backend status code
         ! Local variables
-        integer :: nrows, ncols
-        integer :: ipeak, n_higher_peaks
-        integer :: peak, copeak, peak2keep
+        integer :: ipeak
+            !! Index for iterating over adjacent higher peaks
+        integer :: n_higher_peaks
+            !! Number of adjacent higher peaks touching this
+            !! component
+        integer :: peak
+            !! Current peak ID being examined or merged
+        integer :: copeak
+            !! Traversal pointer for the co-peak linked list
+        integer :: winner_peak
+            !! Dominant peak ID retaining its summit domain at this
+            !! saddle
+        real :: winner_z
+            !! Elevation of the dominant peak
+        real :: zpeak
+            !! Elevation of a subordinate peak being closed at this
+            !! saddle
         integer :: icell
+            !! Cell index traversing the component linked list
+        integer :: nrows, ncols
+            !! DEM raster dimensions
         integer :: ci, cj
-        real :: zpeak2keep, zpeak
+            !! Row and column indices of current cell
         logical(kind=1) :: is_valid
+            !! True if index conversion succeeded
 
         err_code = ERR_NO_ERROR
 
@@ -595,25 +703,24 @@ contains
 
         ! Find all higher cells (i.e. processed) connected to the
         ! region, and which peak each correspond to
-        call find_connection_higher_grounds( &
-            peaks, cids, label_heads(label), labels, offsets, &
-            parent_peaks, higher_peaks, n_higher_peaks, &
+        call find_adjacent_higher_peaks( &
+            peaks, sorted_cids, label_heads(label), labels, &
+            offsets, parent_peaks, higher_peaks, n_higher_peaks, &
             nrows, ncols, err_code)
         if (err_code /= ERR_NO_ERROR) return
 
         ! Process new peaks or connecting pieces to existing peaks
         if (n_higher_peaks == 0) then
-            ! If no higher areas, this is a new peak
-            peak = 0
             ! Record the new peak with the largest icell
             peak = label_heads(label)
             icell = label_heads(label)
             do while (icell /= 0)
                 call id2ij_checked( &
-                    cids(icell), nrows, ncols, ci, cj, is_valid)
+                    sorted_cids(icell), nrows, ncols, ci, cj, is_valid)
                 peaks(ci, cj) = peak
-                ! Set the prominence as -1 so that we can identify surviving peaks with unknown prominence
-                proms(cids(icell)) = -1
+                ! Set the prominence as -1 so that we can identify
+                ! surviving peaks with unknown prominence
+                proms(sorted_cids(icell)) = -1
                 ! Go to the next cell with the same label
                 icell = labels(icell)
             end do
@@ -623,7 +730,7 @@ contains
             icell = label_heads(label)
             do while (icell /= 0)
                 call id2ij_checked( &
-                    cids(icell), nrows, ncols, ci, cj, is_valid)
+                    sorted_cids(icell), nrows, ncols, ci, cj, is_valid)
                 peaks(ci, cj) = higher_peaks(1)
                 ! Go to the next cell with the same label
                 icell = labels(icell)
@@ -633,39 +740,39 @@ contains
 
         ! Merge peaks
         ! Find the peak to retain
-        peak2keep = higher_peaks(1)
-        zpeak2keep = z(cids(peak2keep))
+        winner_peak = higher_peaks(1)
+        winner_z = z(sorted_cids(winner_peak))
         do ipeak = 2, n_higher_peaks
             peak = higher_peaks(ipeak)
-            if (z(cids(peak)) < zpeak2keep) cycle
-            peak2keep = peak
-            zpeak2keep = z(cids(peak))
+            if (z(sorted_cids(peak)) < winner_z) cycle
+            winner_peak = peak
+            winner_z = z(sorted_cids(peak))
         end do
 
         ! Update all other peaks
         do ipeak = 1, n_higher_peaks
             peak = find_root_peak(parent_peaks, higher_peaks(ipeak))
-            if (peak == peak2keep) cycle
+            if (peak == winner_peak) cycle
             ! Process co-winning peaks
-            if (zpeak2keep == z(cids(peak))) then
-                copeak = peak2keep
+            if (winner_z == z(sorted_cids(peak))) then
+                copeak = winner_peak
                 do while (copeaks(copeak) /= 0)
                     copeak = copeaks(copeak)
                 end do
-                parent_peaks(peak) = peak2keep
+                parent_peaks(peak) = winner_peak
                 copeaks(copeak) = peak
                 cycle
             end if
             ! Process lost peaks to be merged
             ! (including their co-peaks)
             do while (peak /= 0)
-                parent_peaks(peak) = peak2keep
+                parent_peaks(peak) = winner_peak
                 ! Mark the whole peak region
-                zpeak = z(cids(peak))
+                zpeak = z(sorted_cids(peak))
                 icell = peak
                 do while (icell /= 0)
-                    if (z(cids(icell)) /= zpeak) exit
-                    proms(cids(icell)) = zpeak - samez
+                    if (z(sorted_cids(icell)) /= zpeak) exit
+                    proms(sorted_cids(icell)) = zpeak - slice_z
                     ! Go to the next cell with the same label
                     icell = labels(icell)
                 end do
@@ -677,52 +784,82 @@ contains
         icell = label_heads(label)
         do while (icell /= 0)
             call id2ij_checked( &
-                cids(icell), nrows, ncols, ci, cj, is_valid)
-            peaks(ci, cj) = peak2keep
+                sorted_cids(icell), nrows, ncols, ci, cj, is_valid)
+            peaks(ci, cj) = winner_peak
             ! Go to the next cell with the same label
             icell = labels(icell)
         end do
-    end subroutine process_single_label_area
+    end subroutine process_plateau
 
+    !> Computes topographic prominence for all valid cells in a DEM.
+    !!
+    !! Processes cells in descending elevation order using a
+    !! topological sweep-plane algorithm. Local maxima initialise
+    !! new peak domains, slopes extend existing peak domains, and
+    !! saddles trigger peak domain merges where subordinate peaks
+    !! receive their finalized prominence values.
+    !!
+    !! Surviving global/regional maxima retain -1 to mark unknown/
+    !! infinite prominence.
     subroutine compute_prominence( &
-        z, orders, proms, nrows, ncols, nvalids, &
+        z, sorted_cids, proms, nrows, ncols, nvalids, &
         offsets, noffsets, err_code)
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols
-            !! DEM dimensions
+            !! DEM raster dimensions
         integer, intent(in) :: nvalids
+            !! Number of valid DEM cells in sorted_cids
         real, intent(in) :: z(nrows, ncols)
-            !! Elevation grid
-        integer(c_int32_t), intent(in) :: orders(nvalids)
-            !! Cell linear index sorted in increasing elevation
-            !! order (they will be processed in reversed order)
+            !! Input 2D DEM elevation grid
+        integer(c_int32_t), intent(in) :: sorted_cids(nvalids)
+            !! Valid cell linear indices sorted in ascending
+            !! elevation order
         integer, intent(in) :: noffsets
-            !! Number of flow directions
+            !! Number of neighbour connectivity directions
         integer, intent(in) :: offsets(noffsets, 2)
-            !! List of offsets for each flow direction
+            !! List of row and column offsets for neighbour
+            !! connectivity
         ! Outputs
         real, intent(out) :: proms(nrows, ncols)
-            !! Topographic prominence height grid
+            !! Output topographic prominence height grid
         integer, intent(out) :: err_code
             !! Backend status code
         ! Local variables
         integer :: icell, jcell
+            !! Loop indices traversing sorted cells
         integer :: ci, cj
+            !! Row and column coordinates of current cell
         logical(kind=1) :: is_valid
-        real :: samez
-        integer :: samez_start, samez_end
-            !! Where in the 'rev_orders' queue that cells of the
-            !! same elevation 'samez' is stored
+            !! True if index conversion succeeded
+        real :: slice_z
+            !! Elevation of the current horizontal slice/plateau
+        integer :: slice_start, slice_end
+            !! Index bounds in 'sorted_cids' of cells with elevation
+            !! equal to slice_z
         integer(c_int32_t) :: label
+            !! Connected component label
         integer(c_int32_t), allocatable :: labels(:), label_heads(:)
+            !! Linked-list 'next' pointers and bucket head indices
+            !! per component
         integer :: ilabel, nlabels
+            !! Component loop index and count of components at
+            !! slice_z
         integer(c_int32_t), allocatable :: peaks(:, :)
+            !! 2D peak domain grid recording owning peak for each
+            !! cell
         integer(c_int32_t), allocatable :: parent_peaks(:)
+            !! Disjoint-set parent array tracking peak domain merges
         integer(c_int32_t), allocatable :: higher_peaks(:)
+            !! Buffer for adjacent higher peak IDs at a saddle
         integer(c_int32_t), allocatable :: copeaks(:)
-        integer(c_int32_t), allocatable :: order_pos(:)
+            !! Singly-linked list tracking tied summits of identical
+            !! elevation
+        integer(c_int32_t), allocatable :: order_lookup(:)
+            !! Inverse lookup mapping linear cell ID to position in
+            !! 'sorted_cids'
         integer :: alloc_stat
+            !! Allocation status indicator
 
         err_code = ERR_NO_ERROR
         allocate ( &
@@ -739,69 +876,71 @@ contains
         peaks = 0
         copeaks = 0
 
-        allocate (order_pos(nrows*ncols), stat=alloc_stat)
+        allocate (order_lookup(nrows*ncols), stat=alloc_stat)
         if (alloc_stat /= 0) then
             err_code = ERR_ALLOCATION_FAILURE
             return
         end if
 
-        order_pos = 0
+        order_lookup = 0
         do icell = 1, nvalids
-            if (orders(icell) < 1 .or. orders(icell) > nrows*ncols) then
+            if (sorted_cids(icell) < 1 .or. &
+                sorted_cids(icell) > nrows*ncols) then
                 err_code = ERR_INVALID_INPUT
                 return
             end if
             parent_peaks(icell) = icell
-            ! Build inverse lookup from linear ID in 'dem' to position in 'orders'
-            order_pos(orders(icell)) = icell
+            ! Build inverse lookup from linear ID in 'z' to position
+            ! in 'sorted_cids'
+            order_lookup(sorted_cids(icell)) = icell
         end do
 
         icell = nvalids
         do while (icell >= 1)
             call id2ij_checked( &
-                orders(icell), nrows, ncols, ci, cj, is_valid)
+                sorted_cids(icell), nrows, ncols, ci, cj, is_valid)
             if (.not. is_valid) then
                 err_code = ERR_INVALID_INPUT
                 return
             end if
-            samez = z(ci, cj)
-            samez_end = icell
-            samez_start = icell
+            slice_z = z(ci, cj)
+            slice_end = icell
+            slice_start = icell
             do while (icell >= 1)
                 call id2ij_checked( &
-                    orders(icell), nrows, ncols, ci, cj, is_valid)
+                    sorted_cids(icell), nrows, ncols, ci, cj, is_valid)
                 if (.not. is_valid) then
                     err_code = ERR_INVALID_INPUT
                     return
                 end if
-                if (z(ci, cj) /= samez) exit
+                if (z(ci, cj) /= slice_z) exit
                 icell = icell - 1
             end do
-            samez_start = icell + 1
+            slice_start = icell + 1
 
-            ! group connected regions of the same elevation
-            call find_connections( &
-                orders(samez_start:samez_end), &
-                labels(samez_start:samez_end), &
+            ! Group connected regions of the same elevation
+            call label_plateaus( &
+                sorted_cids(slice_start:slice_end), &
+                labels(slice_start:slice_end), &
                 nlabels, offsets, nrows, ncols, &
-                samez_start, samez_end, order_pos, err_code)
+                slice_start, slice_end, order_lookup, err_code)
             if (err_code /= ERR_NO_ERROR) return
 
             label_heads(1:nlabels) = 0
-            do jcell = samez_start, samez_end
+            do jcell = slice_start, slice_end
                 label = labels(jcell)
                 ! Insert jcell at the front of this component's list
                 labels(jcell) = label_heads(label)
                 label_heads(label) = jcell
             end do
 
-            ! Process each connected regions one at a time
+            ! Process each connected region one at a time
             do ilabel = 1, nlabels
-                call process_single_label_area( &
-                    z, orders, proms, offsets, &
+                call process_plateau( &
+                    z, sorted_cids, proms, offsets, &
                     peaks, label_heads, labels, ilabel, &
                     higher_peaks, copeaks, parent_peaks, &
-                    samez, err_code)
+                    slice_z, err_code)
                 if (err_code /= ERR_NO_ERROR) return
             end do
         end do
