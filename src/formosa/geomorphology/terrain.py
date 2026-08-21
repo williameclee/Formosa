@@ -14,7 +14,7 @@ from formosa.geomorphology.drainage.directions import D8Directions
 from formosa.geomorphology._native import terrain as terrain_f
 from formosa.utils import NpReal, Coords, NpCoords, NpCanonIndex, raise_fortran_error
 
-from typing import Optional
+from typing import Optional, overload
 from numpy.typing import NDArray
 
 
@@ -240,8 +240,36 @@ def compute_isolation(
     return isos, ilpis, ilpjs, censored
 
 
+@overload
+def compute_prominence(
+    dem: NDArray[np.unsignedinteger],
+    valids: Optional[NDArray[np.bool_]] = None,
+    dir_scheme: D8Directions = D8Directions(),
+) -> tuple[
+    NDArray[np.int64],
+    NDArray[np.int32],
+    NDArray[np.int32],
+    NDArray[np.int32],
+    NDArray[np.int32],
+]: ...
+
+
+@overload
 def compute_prominence(
     dem: NDArray[NpReal],
+    valids: Optional[NDArray[np.bool_]] = None,
+    dir_scheme: D8Directions = D8Directions(),
+) -> tuple[
+    NDArray[NpReal],
+    NDArray[np.int32],
+    NDArray[np.int32],
+    NDArray[np.int32],
+    NDArray[np.int32],
+]: ...
+
+
+def compute_prominence(
+    dem: NDArray[NpReal | np.unsignedinteger],
     valids: Optional[NDArray[np.bool_]] = None,
     dir_scheme: D8Directions = D8Directions(),
 ) -> tuple[
@@ -252,7 +280,7 @@ def compute_prominence(
     NDArray[np.int32],
 ]:
     """
-    Calculates *topographic prominence* and its divide-tree 
+    Calculates *topographic prominence* and its divide-tree
     features.
 
     Prominence measures the vertical height of a summit relative to
@@ -311,8 +339,8 @@ def compute_prominence(
     See [Kirmse & de Ferranti (2017)](https://doi.org/10.1177/0309133317738163)
     for the definition of prominence and more details.
     """
-    dem = _validate_format_dem(dem)
-    valids = _validate_format_valids(valids, dem)
+    dem = _validate_format_dem(dem)  # type: ignore
+    valids = _validate_format_valids(valids, dem)  # type: ignore
 
     dem_f = np.asfortranarray(dem, dtype=np.float32)
     valids_f = np.asfortranarray(valids, dtype=bool)
@@ -347,4 +375,4 @@ def compute_prominence(
     key_saddles = np.array(key_saddles[:nfeats], dtype=np.int32, copy=True) - 1
     feat_prnts = np.array(feat_prnts[:nfeats], dtype=np.int32, copy=True) - 1
 
-    return proms, feats, feat_types, key_saddles, feat_prnts
+    return proms, feats, feat_types, key_saddles, feat_prnts  # type: ignore
