@@ -1,10 +1,11 @@
-"""Computes slope and isolation from gridded elevation data.
+"""
+Computes slope, isolation, and prominence from gridded elevation
+data.
 
 This module exposes public NumPy APIs for terrain metrics. Isolation
-uses the internal Fortran backend. Results include nearest-higher
-cells and outer-boundary censoring information.
+and prominence use the internal Fortran backend.
 
-Last modified: 2026-08-19, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-21, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
@@ -244,6 +245,53 @@ def compute_prominence(
     valids: Optional[NDArray[np.bool_]] = None,
     dir_scheme: D8Directions = D8Directions(),
 ) -> NDArray[NpReal | np.int64]:
+    """
+    Calculates *topographic prominence* for all valid cells in a
+    DEM.
+
+    Prominence measures the vertical height of a summit relative to
+    the highest key saddle connecting it to higher terrain. It is
+    computed using a descending topological sweep-plane algorithm.
+
+    Parameters
+    ----------
+    dem : NDArray[number]
+        2D digital elevation model.
+    valids : NDArray[bool], optional
+        Boolean mask indicating valid cells.
+        Non-finite DEM cells are always invalid.
+        If `None`, all finite cells are assumed valid.
+        Default input is `None`.
+    dir_scheme : D8Directions, optional
+        Direction scheme defining neighbor connectivity offsets.
+        Default scheme is `D8Directions()`.
+
+    Returns
+    -------
+    proms : NDArray[number | int64]
+        Topographic prominence heights with the same shape and
+        numeric type as `dem` (or `int64` if `dem` is unsigned
+        integer).
+        Subordinate summits contain their prominence above the key
+        saddle. Non-summit cells contain `0`. Invalid cells and the
+        highest regional summits with unknown prominence contain
+        `-1`.
+
+    Raises
+    ------
+    ValueError
+        If `dem` is empty or not 2D, or if `valids` does not have
+        the same shape as `dem`.
+    TypeError
+        If `dem` is not a real numeric array.
+    RuntimeError
+        If the Fortran backend reports an execution error.
+
+    Notes
+        -----
+        See [Kirmse & de Ferranti (2017)](https://doi.org/10.1177/0309133317738163)
+        for the definition of prominence and more details.
+    """
     dem = _validate_format_dem(dem)
     valids = _validate_format_valids(valids, dem)
 
@@ -261,7 +309,7 @@ def compute_prominence(
     )
     raise_fortran_error("compute_prominence", err_code)
 
-    # Try to make `proms` the same type as `dem`, unless `dem` is 
+    # Try to make `proms` the same type as `dem`, unless `dem` is
     # unsigned because `proms` needs `-1` to mark invalid cells and
     # the highest peaks with unknown prominence
     if not np.issubdtype(dem.dtype, np.unsignedinteger):
@@ -270,5 +318,5 @@ def compute_prominence(
         proms = np.asarray(proms, dtype=np.int64)
 
     proms[~valids] = -1
-    
+
     return proms
