@@ -425,7 +425,7 @@ contains
         !$omp END PARALLEL DO
     end subroutine compute_isolation
 
-    subroutine find_connections( &
+    pure subroutine find_connections( &
         cids, labels, nlabels, offsets, nrows, ncols, &
         samez_start, samez_end, order_pos, err_code)
         implicit none(type, external)
@@ -508,14 +508,14 @@ contains
     end function find_root_peak
 
     subroutine find_connection_higher_grounds( &
-        peaks, cids, labels, label, offsets, &
+        peaks, cids, label_head, labels, offsets, &
         parent_peaks, higher_peaks, n_higher_peaks, nrows, ncols, err_code)
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: peaks(nrows, ncols)
         integer, contiguous, intent(in) :: cids(:)
+        integer, intent(in) :: label_head
         integer, contiguous, intent(in) :: labels(:)
-        integer, intent(in) :: label
         integer, intent(in) :: offsets(:, :)
             !! List of offsets for each flow direction
         integer, intent(in) :: nrows, ncols
@@ -536,8 +536,8 @@ contains
         err_code = ERR_NO_ERROR
         n_higher_peaks = 0
 
-        do icell = 1, size(cids)
-            if (labels(icell) /= label) cycle
+        icell = label_head
+        do while (icell /= 0)
             cid = cids(icell)
             call id2ij_checked(cid, nrows, ncols, ci, cj, is_valid)
             if (.not. is_valid) then
@@ -556,22 +556,22 @@ contains
                 n_higher_peaks = n_higher_peaks + 1
                 higher_peaks(n_higher_peaks) = peak
             end do
+            icell = labels(icell)
         end do
     end subroutine find_connection_higher_grounds
 
     subroutine process_single_label_area( &
-        z, cells, proms, offsets, &
-        peaks, labels, ilabel, higher_peaks, copeaks, &
-        parent_peaks, samez, samez_start, samez_end, err_code)
+        z, cids, proms, offsets, &
+        peaks, label_heads, labels, label, higher_peaks, copeaks, &
+        parent_peaks, samez, err_code)
         implicit none(type, external)
         ! Arguments
         real, intent(in) :: z(*)
-        integer, intent(in) :: cells(:)
+        integer, contiguous, intent(in) :: cids(:)
         integer, intent(in) :: offsets(:, :)
-        integer, intent(in) :: labels(:)
-        integer, intent(in) :: ilabel
+        integer, contiguous, intent(in) :: labels(:), label_heads(:)
+        integer, intent(in) :: label
         real, intent(in) :: samez
-        integer, intent(in) :: samez_start, samez_end
         ! Outputs
         real, intent(inout) :: proms(*)
         integer, intent(inout) :: peaks(:, :)
@@ -585,7 +585,6 @@ contains
         integer :: peak, copeak, peak2keep
         integer :: icell
         integer :: ci, cj
-        integer :: label
         real :: zpeak2keep, zpeak
         logical(kind=1) :: is_valid
 
@@ -597,10 +596,7 @@ contains
         ! Find all higher cells (i.e. processed) connected to the
         ! region, and which peak each correspond to
         call find_connection_higher_grounds( &
-            peaks, &
-            cells(samez_start:samez_end), &
-            labels(samez_start:samez_end), &
-            ilabel, offsets, &
+            peaks, cids, label_heads(label), labels, offsets, &
             parent_peaks, higher_peaks, n_higher_peaks, &
             nrows, ncols, err_code)
         if (err_code /= ERR_NO_ERROR) return
@@ -610,23 +606,27 @@ contains
             ! If no higher areas, this is a new peak
             peak = 0
             ! Record the new peak with the largest icell
-            do icell = samez_end, samez_start, -1
-                if (labels(icell) /= ilabel) cycle
-                if (peak == 0) peak = icell
+            peak = label_heads(label)
+            icell = label_heads(label)
+            do while (icell /= 0)
                 call id2ij_checked( &
-                    cells(icell), nrows, ncols, ci, cj, is_valid)
+                    cids(icell), nrows, ncols, ci, cj, is_valid)
                 peaks(ci, cj) = peak
                 ! Set the prominence as -1 so that we can identify surviving peaks with unknown prominence
-                proms(cells(icell)) = -1
+                proms(cids(icell)) = -1
+                ! Go to the next cell with the same label
+                icell = labels(icell)
             end do
             return
         elseif (n_higher_peaks == 1) then
             ! If only 1 higher area, merge with it
-            do icell = samez_start, samez_end
-                if (labels(icell) /= ilabel) cycle
+            icell = label_heads(label)
+            do while (icell /= 0)
                 call id2ij_checked( &
-                    cells(icell), nrows, ncols, ci, cj, is_valid)
+                    cids(icell), nrows, ncols, ci, cj, is_valid)
                 peaks(ci, cj) = higher_peaks(1)
+                ! Go to the next cell with the same label
+                icell = labels(icell)
             end do
             return
         end if
@@ -634,12 +634,12 @@ contains
         ! Merge peaks
         ! Find the peak to retain
         peak2keep = higher_peaks(1)
-        zpeak2keep = z(cells(peak2keep))
+        zpeak2keep = z(cids(peak2keep))
         do ipeak = 2, n_higher_peaks
             peak = higher_peaks(ipeak)
-            if (z(cells(peak)) < zpeak2keep) cycle
+            if (z(cids(peak)) < zpeak2keep) cycle
             peak2keep = peak
-            zpeak2keep = z(cells(peak))
+            zpeak2keep = z(cids(peak))
         end do
 
         ! Update all other peaks
@@ -647,7 +647,7 @@ contains
             peak = find_root_peak(parent_peaks, higher_peaks(ipeak))
             if (peak == peak2keep) cycle
             ! Process co-winning peaks
-            if (zpeak2keep == z(cells(peak))) then
+            if (zpeak2keep == z(cids(peak))) then
                 copeak = peak2keep
                 do while (copeaks(copeak) /= 0)
                     copeak = copeaks(copeak)
@@ -661,26 +661,26 @@ contains
             do while (peak /= 0)
                 parent_peaks(peak) = peak2keep
                 ! Mark the whole peak region
+                zpeak = z(cids(peak))
                 icell = peak
-                label = labels(icell)
-                zpeak = z(cells(peak))
-                do while (icell >= 1)
-                    if (z(cells(icell)) /= zpeak) exit
-                    if (labels(icell) == label) then
-                        proms(cells(icell)) = zpeak - samez
-                    end if
-                    icell = icell - 1
+                do while (icell /= 0)
+                    if (z(cids(icell)) /= zpeak) exit
+                    proms(cids(icell)) = zpeak - samez
+                    ! Go to the next cell with the same label
+                    icell = labels(icell)
                 end do
-                ! Go to the next copeak
+                ! Go to the next co-peak
                 peak = copeaks(peak)
             end do
         end do
         ! Merge the current saddle too
-        do icell = samez_start, samez_end
-            if (labels(icell) /= ilabel) cycle
+        icell = label_heads(label)
+        do while (icell /= 0)
             call id2ij_checked( &
-                cells(icell), nrows, ncols, ci, cj, is_valid)
+                cids(icell), nrows, ncols, ci, cj, is_valid)
             peaks(ci, cj) = peak2keep
+            ! Go to the next cell with the same label
+            icell = labels(icell)
         end do
     end subroutine process_single_label_area
 
@@ -707,14 +707,15 @@ contains
         integer, intent(out) :: err_code
             !! Backend status code
         ! Local variables
-        integer :: icell
+        integer :: icell, jcell
         integer :: ci, cj
         logical(kind=1) :: is_valid
         real :: samez
         integer :: samez_start, samez_end
             !! Where in the 'rev_orders' queue that cells of the
             !! same elevation 'samez' is stored
-        integer(c_int32_t), allocatable :: labels(:)
+        integer(c_int32_t) :: label
+        integer(c_int32_t), allocatable :: labels(:), label_heads(:)
         integer :: ilabel, nlabels
         integer(c_int32_t), allocatable :: peaks(:, :)
         integer(c_int32_t), allocatable :: parent_peaks(:)
@@ -725,7 +726,7 @@ contains
 
         err_code = ERR_NO_ERROR
         allocate ( &
-            labels(nvalids), &
+            labels(nvalids), label_heads(nvalids), &
             peaks(nrows, ncols), parent_peaks(nvalids), &
             higher_peaks(nvalids), &
             copeaks(nvalids), stat=alloc_stat)
@@ -785,13 +786,22 @@ contains
                 nlabels, offsets, nrows, ncols, &
                 samez_start, samez_end, order_pos, err_code)
             if (err_code /= ERR_NO_ERROR) return
+
+            label_heads(1:nlabels) = 0
+            do jcell = samez_start, samez_end
+                label = labels(jcell)
+                ! Insert jcell at the front of this component's list
+                labels(jcell) = label_heads(label)
+                label_heads(label) = jcell
+            end do
+
             ! Process each connected regions one at a time
             do ilabel = 1, nlabels
                 call process_single_label_area( &
                     z, orders, proms, offsets, &
-                    peaks, labels, ilabel, higher_peaks, copeaks, &
-                    parent_peaks, samez, samez_start, samez_end, &
-                    err_code)
+                    peaks, label_heads, labels, ilabel, &
+                    higher_peaks, copeaks, parent_peaks, &
+                    samez, err_code)
                 if (err_code /= ERR_NO_ERROR) return
             end do
         end do
