@@ -635,7 +635,8 @@ contains
     !!    domains (and tied co-peaks), and unions their domains into
     !!    the winning domain.
     subroutine process_plateau( &
-        z, sorted_cids, proms, offsets, &
+        z, sorted_cids, proms, &
+        peaks, saddles, npeaks, nsaddles, offsets, &
         doms, label_heads, labels, label, higher_doms, copeaks, &
         prnt_doms, slice_z, err_code)
         implicit none(type, external)
@@ -657,6 +658,12 @@ contains
         ! Outputs
         real, intent(inout) :: proms(*)
             !! Topographic prominence array
+        integer, intent(inout) :: peaks(*)
+            !! 1-based peak label array for summit cells
+        integer, intent(inout) :: saddles(*)
+            !! 1-based saddle label array for key saddle cells
+        integer, intent(inout) :: npeaks, nsaddles
+            !! Running counts of identified peaks and saddles
         integer, intent(inout) :: doms(:, :)
             !! 2D peak domain grid recording owning peak for each
             !! cell
@@ -711,6 +718,7 @@ contains
 
         ! Process new peaks or connecting pieces to existing peaks
         if (n_higher_doms == 0) then
+            npeaks = npeaks + 1
             ! Record the new peak with the largest icell
             dom = label_heads(label)
             icell = label_heads(label)
@@ -721,6 +729,7 @@ contains
                 ! Set the prominence as -1 so that we can identify
                 ! surviving peaks with unknown prominence
                 proms(sorted_cids(icell)) = -1
+                peaks(sorted_cids(icell)) = npeaks
                 ! Go to the next cell with the same label
                 icell = labels(icell)
             end do
@@ -781,28 +790,34 @@ contains
             end do
         end do
         ! Merge the current saddle too
+        nsaddles = nsaddles + 1
         icell = label_heads(label)
         do while (icell /= 0)
             call id2ij_checked( &
                 sorted_cids(icell), nrows, ncols, ci, cj, is_valid)
             doms(ci, cj) = winner_dom
+            saddles(sorted_cids(icell)) = nsaddles
             ! Go to the next cell with the same label
             icell = labels(icell)
         end do
     end subroutine process_plateau
 
-    !> Computes topographic prominence for all valid cells in a DEM.
+    !> Computes topographic prominence, peak labels, and saddle 
+    !! labels.
     !!
     !! Processes cells in descending elevation order using a
     !! topological sweep-plane algorithm. Local maxima initialise
     !! new peak domains, slopes extend existing peak domains, and
     !! saddles trigger peak domain merges where subordinate peaks
-    !! receive their finalized prominence values.
+    !! receive their finalised prominence values.
     !!
+    !! Outputs include the prominence height grid, 1-based peak 
+    !! labels for summit cells, and 1-based saddle labels for key 
+    !! saddle cells.
     !! Surviving global/regional maxima retain -1 to mark unknown/
     !! infinite prominence.
     subroutine compute_prominence( &
-        z, sorted_cids, proms, nrows, ncols, nvalids, &
+        z, sorted_cids, proms, peaks, saddles, nrows, ncols, nvalids, &
         offsets, noffsets, err_code)
         implicit none(type, external)
         ! Arguments
@@ -823,6 +838,10 @@ contains
         ! Outputs
         real, intent(out) :: proms(nrows, ncols)
             !! Output topographic prominence height grid
+        integer, intent(out) :: peaks(nrows, ncols)
+            !! Output 1-based peak label grid
+        integer, intent(out) :: saddles(nrows, ncols)
+            !! Output 1-based saddle label grid
         integer, intent(out) :: err_code
             !! Backend status code
         ! Local variables
@@ -845,6 +864,8 @@ contains
         integer :: ilabel, nlabels
             !! Component loop index and count of components at
             !! slice_z
+        integer :: npeaks, nsaddles
+            !! Total number of identified peaks and key saddles
         integer(c_int32_t), allocatable :: doms(:, :)
             !! 2D peak domain grid recording owning peak for each
             !! cell
@@ -873,6 +894,10 @@ contains
         end if
 
         proms = 0
+        peaks = 0
+        saddles = 0
+        npeaks = 0
+        nsaddles = 0
         doms = 0
         copeaks = 0
 
@@ -937,7 +962,8 @@ contains
             ! Process each connected region one at a time
             do ilabel = 1, nlabels
                 call process_plateau( &
-                    z, sorted_cids, proms, offsets, &
+                    z, sorted_cids, proms, &
+                    peaks, saddles, npeaks, nsaddles, offsets, &
                     doms, label_heads, labels, ilabel, &
                     higher_doms, copeaks, prnt_doms, &
                     slice_z, err_code)

@@ -244,10 +244,9 @@ def compute_prominence(
     dem: NDArray[NpReal],
     valids: Optional[NDArray[np.bool_]] = None,
     dir_scheme: D8Directions = D8Directions(),
-) -> NDArray[NpReal | np.int64]:
+) -> tuple[NDArray[NpReal | np.int64], NDArray[np.int32], NDArray[np.int32]]:
     """
-    Calculates *topographic prominence* for all valid cells in a
-    DEM.
+    Calculates topographic prominence and labels peaks and saddles.
 
     Prominence measures the vertical height of a summit relative to
     the highest key saddle connecting it to higher terrain. It is
@@ -263,7 +262,7 @@ def compute_prominence(
         If `None`, all finite cells are assumed valid.
         Default input is `None`.
     dir_scheme : D8Directions, optional
-        Direction scheme defining neighbor connectivity offsets.
+        Direction scheme defining neighbour connectivity offsets.
         Default scheme is `D8Directions()`.
 
     Returns
@@ -276,6 +275,16 @@ def compute_prominence(
         saddle. Non-summit cells contain `0`. Invalid cells and the
         highest regional summits with unknown prominence contain
         `-1`.
+    peaks : NDArray[int32]
+        1-based integer labels for identified summits/peaks.
+        Summit cells are labelled with their positive integer peak
+        ID ($1 ... Npeaks}$); non-peak and invalid cells contain
+        `0`.
+    saddles : NDArray[int32]
+        1-based integer labels for identified key saddles.
+        Key saddle cells where two or more higher domains merge are
+        labelled with their positive integer saddle ID ($1 ...
+        Nsaddles$); non-saddle and invalid cells contain `0`.
 
     Raises
     ------
@@ -288,9 +297,9 @@ def compute_prominence(
         If the Fortran backend reports an execution error.
 
     Notes
-        -----
-        See [Kirmse & de Ferranti (2017)](https://doi.org/10.1177/0309133317738163)
-        for the definition of prominence and more details.
+    -----
+    See [Kirmse & de Ferranti (2017)](https://doi.org/10.1177/0309133317738163)
+    for the definition of prominence and more details.
     """
     dem = _validate_format_dem(dem)
     valids = _validate_format_valids(valids, dem)
@@ -304,7 +313,7 @@ def compute_prominence(
     # 1-based IDs in ascending elevation order.
     orders_f = valid_ids[orders].astype(np.int32) + 1
 
-    proms, err_code = terrain_f.compute_prominence(
+    proms, peaks, saddles, err_code = terrain_f.compute_prominence(
         dem_f, orders_f, dir_scheme.offsets.astype(np.int32, order="F")
     )
     raise_fortran_error("compute_prominence", err_code)
@@ -319,4 +328,7 @@ def compute_prominence(
 
     proms[~valids] = -1
 
-    return proms
+    peaks = np.asarray(peaks, dtype=np.int32)
+    saddles = np.asarray(saddles, dtype=np.int32)
+
+    return proms, peaks, saddles

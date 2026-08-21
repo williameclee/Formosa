@@ -135,6 +135,34 @@ def _brute_force_prominence(
     return proms
 
 
+def _assert_label_raster(labels: np.ndarray, offsets: np.ndarray) -> None:
+    """Checks that positive IDs are consecutive connected regions."""
+    positive_ids = np.unique(labels[labels > 0])
+    np.testing.assert_array_equal(
+        positive_ids,
+        np.arange(1, len(positive_ids) + 1, dtype=positive_ids.dtype),
+    )
+
+    nrows, ncols = labels.shape
+    for feature_id in positive_ids:
+        feature_cells = {tuple(cell) for cell in np.argwhere(labels == feature_id)}
+        reached = {next(iter(feature_cells))}
+        queue = list(reached)
+        while queue:
+            ci, cj = queue.pop()
+            for di, dj in offsets:
+                neighbour = (ci + int(di), cj + int(dj))
+                ni, nj = neighbour
+                if not (0 <= ni < nrows and 0 <= nj < ncols):
+                    continue
+                if neighbour not in feature_cells or neighbour in reached:
+                    continue
+                reached.add(neighbour)
+                queue.append(neighbour)
+
+        assert reached == feature_cells
+
+
 @pytest.mark.parametrize(
     ("shape", "dx", "dy", "include_invalids", "seed"),
     [
@@ -331,9 +359,61 @@ def test_calculate_isolation_rejects_invalid_spacing(name, value, exception):
     ],
 )
 def test_compute_prominence_known_landforms(dem, expected):
-    proms = compute_prominence(np.asarray(dem, dtype=np.float32))
+    proms, peaks, saddles = compute_prominence(np.asarray(dem, dtype=np.float32))
 
     np.testing.assert_array_equal(proms, expected)
+    assert np.all(peaks[np.asarray(expected) != 0] > 0)
+    assert np.all(peaks[np.asarray(expected) == 0] == 0)
+    assert not np.any((peaks > 0) & (saddles > 0))
+    _assert_label_raster(peaks, D8Directions().offsets)
+    _assert_label_raster(saddles, D8Directions().offsets)
+
+
+def test_compute_prominence_labels_peak_and_key_saddle_plateaus():
+    dem = np.array([[5.0, 1.0, 1.0, 4.0]], dtype=np.float32)
+
+    proms, peaks, saddles = compute_prominence(dem)
+
+    np.testing.assert_array_equal(proms, [[-1.0, 0.0, 0.0, 3.0]])
+    assert peaks[0, 0] > 0
+    assert peaks[0, 3] > 0
+    assert peaks[0, 0] != peaks[0, 3]
+    assert np.all(peaks[0, 1:3] == 0)
+    assert saddles[0, 1] > 0
+    assert saddles[0, 1] == saddles[0, 2]
+    assert saddles[0, 0] == saddles[0, 3] == 0
+
+
+def test_compute_prominence_labels_multiway_key_saddle_once():
+    dem = np.array(
+        [
+            [0.0, 5.0, 0.0],
+            [4.0, 1.0, 3.0],
+            [0.0, 0.0, 0.0],
+        ],
+        dtype=np.float32,
+    )
+    cardinal_scheme = D8Directions()
+    cardinal_scheme.offsets = np.array(
+        [[-1, 0], [0, -1], [0, 0], [0, 1], [1, 0]],
+        dtype=np.int32,
+        order="F",
+    )
+
+    _, peaks, saddles = compute_prominence(dem, dir_scheme=cardinal_scheme)
+
+    assert len(np.unique(peaks[peaks > 0])) == 3
+    assert saddles[1, 1] > 0
+    assert np.count_nonzero(saddles) == 1
+
+
+def test_peak_and_saddle_ids_use_separate_namespaces():
+    dem = np.array([[3.0, 1.0, 2.0]], dtype=np.float32)
+
+    _, peaks, saddles = compute_prominence(dem)
+
+    assert 1 in peaks
+    assert 1 in saddles
 
 
 @pytest.mark.parametrize(
@@ -363,26 +443,45 @@ def test_compute_prominence_matches_brute_force(
 
     dir_scheme = D8Directions()
     expected = _brute_force_prominence(dem, valids, dir_scheme.offsets)
-    proms = compute_prominence(dem, valids, dir_scheme)
+    proms, peaks, saddles = compute_prominence(dem, valids, dir_scheme)
 
     np.testing.assert_array_equal(proms, expected)
+    assert np.all(peaks[~valids] == 0)
+    assert np.all(saddles[~valids] == 0)
+    assert not np.any((peaks > 0) & (saddles > 0))
+    for feature_id in np.unique(peaks[peaks > 0]):
+        assert np.unique(dem[peaks == feature_id]).size == 1
+    for feature_id in np.unique(saddles[saddles > 0]):
+        assert np.unique(dem[saddles == feature_id]).size == 1
+    _assert_label_raster(peaks, dir_scheme.offsets)
+    _assert_label_raster(saddles, dir_scheme.offsets)
 
 
 def test_compute_prominence_marks_disconnected_component_maxima():
     dem = np.array([[5.0, 0.0, 4.0]], dtype=np.float32)
     valids = np.array([[True, False, True]])
 
-    proms = compute_prominence(dem, valids)
+    proms, peaks, saddles = compute_prominence(dem, valids)
 
     np.testing.assert_array_equal(proms, [[-1.0, -1.0, -1.0]])
+    assert peaks[0, 0] > 0
+    assert peaks[0, 2] > 0
+    assert peaks[0, 0] != peaks[0, 2]
+    assert peaks[0, 1] == 0
+    assert not np.any(saddles)
 
 
 def test_compute_prominence_treats_nonfinite_cells_as_invalid():
     dem = np.array([[5.0, np.nan, 4.0, np.inf]], dtype=np.float32)
 
-    proms = compute_prominence(dem)
+    proms, peaks, saddles = compute_prominence(dem)
 
     np.testing.assert_array_equal(proms, [[-1.0, -1.0, -1.0, -1.0]])
+    assert peaks[0, 0] > 0
+    assert peaks[0, 2] > 0
+    assert peaks[0, 0] != peaks[0, 2]
+    assert np.all(peaks[0, [1, 3]] == 0)
+    assert not np.any(saddles)
 
 
 @pytest.mark.parametrize("shape", [(1, 1), (2, 3), (5, 4)])
@@ -390,9 +489,11 @@ def test_compute_prominence_marks_all_invalid_cells(shape):
     dem = np.ones(shape, dtype=np.float32)
     valids = np.zeros(shape, dtype=bool)
 
-    proms = compute_prominence(dem, valids)
+    proms, peaks, saddles = compute_prominence(dem, valids)
 
     assert np.all(proms == -1.0)
+    assert not np.any(peaks)
+    assert not np.any(saddles)
 
 
 def test_compute_prominence_respects_direction_connectivity():
@@ -404,17 +505,27 @@ def test_compute_prominence_respects_direction_connectivity():
         order="F",
     )
 
-    d8_proms = compute_prominence(dem)
-    cardinal_proms = compute_prominence(dem, dir_scheme=cardinal_scheme)
+    d8_proms, d8_peaks, d8_saddles = compute_prominence(dem)
+    cardinal_proms, cardinal_peaks, cardinal_saddles = compute_prominence(
+        dem, dir_scheme=cardinal_scheme
+    )
 
     np.testing.assert_array_equal(d8_proms, [[-1.0, 0.0], [0.0, 0.0]])
     np.testing.assert_array_equal(cardinal_proms, [[-1.0, 0.0], [0.0, 4.0]])
+    assert np.count_nonzero(d8_peaks) == 1
+    assert not np.any(d8_saddles)
+    assert len(np.unique(cardinal_peaks[cardinal_peaks > 0])) == 2
+    # Both zero cells are possible passes, but only the first merge
+    # plateau is the key saddle in the prominence tree.
+    assert np.count_nonzero(cardinal_saddles) == 1
 
 
 def test_compute_prominence_supports_unsigned_dem():
     dem = np.array([[3, 1, 2]], dtype=np.uint16)
 
-    proms = compute_prominence(dem)  # type: ignore
+    proms, peaks, saddles = compute_prominence(dem)  # type: ignore
 
     assert proms.dtype == np.int64
     np.testing.assert_array_equal(proms, [[-1, 0, 1]])
+    assert peaks.dtype == np.int32
+    assert saddles.dtype == np.int32
