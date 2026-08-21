@@ -524,23 +524,23 @@ contains
     !!
     !! Implements path compression so that future lookups are
     !! faster.
-    recursive function find_root_peak(parent_peaks, peak) &
-        result(root_peak)
+    recursive function find_root_domain(prnt_doms, dom) &
+        result(root_dom)
         ! Arguments
-        integer, intent(inout) :: parent_peaks(:)
+        integer, intent(inout) :: prnt_doms(:)
             !! Disjoint-set parent array tracking peak domain merges
-        integer, intent(in) :: peak
+        integer, intent(in) :: dom
             !! Query peak ID (index in 'sorted_cids')
         ! Result
-        integer :: root_peak
+        integer :: root_dom
             !! Canonical root peak ID representing this peak domain
 
-        if (parent_peaks(peak) /= peak) then
-            parent_peaks(peak) = &
-                find_root_peak(parent_peaks, parent_peaks(peak))
+        if (prnt_doms(dom) /= dom) then
+            prnt_doms(dom) = &
+                find_root_domain(prnt_doms, prnt_doms(dom))
         end if
-        root_peak = parent_peaks(peak)
-    end function find_root_peak
+        root_dom = prnt_doms(dom)
+    end function find_root_domain
 
     !> Identifies unique higher peak domains adjacent to a plateau
     !! component.
@@ -549,13 +549,13 @@ contains
     !! inspects their spatial neighbours, and records each distinct
     !! adjacent higher peak domain (resolved to its root
     !! representative in the disjoint-set forest).
-    subroutine find_adjacent_higher_peaks( &
-        peaks, sorted_cids, label_head, labels, offsets, &
-        parent_peaks, higher_peaks, n_higher_peaks, nrows, ncols, &
+    subroutine find_adjacent_higher_domains( &
+        doms, sorted_cids, label_head, labels, offsets, &
+        prnt_doms, higher_doms, n_higher_doms, nrows, ncols, &
         err_code)
         implicit none(type, external)
         ! Arguments
-        integer, intent(in) :: peaks(nrows, ncols)
+        integer, intent(in) :: doms(nrows, ncols)
             !! 2D peak domain grid recording owning (non-root) peak
             !! for each cell
         integer, contiguous, intent(in) :: sorted_cids(:)
@@ -571,11 +571,11 @@ contains
         integer, intent(in) :: nrows, ncols
             !! DEM raster dimensions
         ! Outputs
-        integer, intent(inout) :: parent_peaks(:)
+        integer, intent(inout) :: prnt_doms(:)
             !! Disjoint-set parent array tracking peak domain merges
-        integer, intent(out) :: higher_peaks(:)
+        integer, intent(out) :: higher_doms(:)
             !! Output buffer of unique adjacent higher root peak IDs
-        integer, intent(out) :: n_higher_peaks
+        integer, intent(out) :: n_higher_doms
             !! Number of unique adjacent higher root peaks found
         integer, intent(out) :: err_code
             !! Backend status code
@@ -589,14 +589,14 @@ contains
             !! list
         integer :: iofs
             !! Neighbour direction offset index
-        integer :: peak
-            !! Peak ID of neighbour cell resolved to its root
+        integer :: dom
+            !! Domain ID of neighbour cell resolved to its root
             !! representative
         logical(kind=1) :: is_valid
             !! True if index conversion succeeded
 
         err_code = ERR_NO_ERROR
-        n_higher_peaks = 0
+        n_higher_doms = 0
 
         icell = label_head
         do while (icell /= 0)
@@ -610,17 +610,17 @@ contains
                 ni = ci + offsets(iofs, 1)
                 nj = cj + offsets(iofs, 2)
                 if (array2d_oob(ni, nj, nrows, ncols)) cycle
-                peak = peaks(ni, nj)
-                if (peak == 0) cycle
-                peak = find_root_peak(parent_peaks, peak)
+                dom = doms(ni, nj)
+                if (dom == 0) cycle
+                dom = find_root_domain(prnt_doms, dom)
                 ! Skip already recorded areas
-                if (any(higher_peaks(1:n_higher_peaks) == peak)) cycle
-                n_higher_peaks = n_higher_peaks + 1
-                higher_peaks(n_higher_peaks) = peak
+                if (any(higher_doms(1:n_higher_doms) == dom)) cycle
+                n_higher_doms = n_higher_doms + 1
+                higher_doms(n_higher_doms) = dom
             end do
             icell = labels(icell)
         end do
-    end subroutine find_adjacent_higher_peaks
+    end subroutine find_adjacent_higher_domains
 
     !> Processes a single connected plateau component during
     !! prominence sweep.
@@ -629,15 +629,15 @@ contains
     !! 1. Isolated local maximum (0 higher neighbours): creates a
     !!    new peak domain.
     !! 2. Slope/ridge extension (1 higher neighbour): merges cells
-    !!    into that peak.
+    !!    into that domain.
     !! 3. Saddle/col (>= 2 higher neighbours): identifies the
-    !!    winning peak, finalises prominence for all subordinate
-    !!    peaks (and tied co-peaks), and unions their domains into
-    !!    the winning peak.
+    !!    winning domain, finalises prominence for all subordinate
+    !!    domains (and tied co-peaks), and unions their domains into
+    !!    the winning domain.
     subroutine process_plateau( &
         z, sorted_cids, proms, offsets, &
-        peaks, label_heads, labels, label, higher_peaks, copeaks, &
-        parent_peaks, slice_z, err_code)
+        doms, label_heads, labels, label, higher_doms, copeaks, &
+        prnt_doms, slice_z, err_code)
         implicit none(type, external)
         ! Arguments
         real, intent(in) :: z(*)
@@ -657,29 +657,29 @@ contains
         ! Outputs
         real, intent(inout) :: proms(*)
             !! Topographic prominence array
-        integer, intent(inout) :: peaks(:, :)
+        integer, intent(inout) :: doms(:, :)
             !! 2D peak domain grid recording owning peak for each
             !! cell
-        integer, intent(inout) :: higher_peaks(:)
+        integer, intent(inout) :: higher_doms(:)
             !! Buffer for adjacent higher peak IDs
         integer, intent(inout) :: copeaks(:)
             !! Singly-linked list tracking tied summits of identical
             !! elevation
-        integer, intent(inout) :: parent_peaks(:)
+        integer, intent(inout) :: prnt_doms(:)
             !! Disjoint-set parent array tracking peak domain merges
         integer, intent(out) :: err_code
             !! Backend status code
         ! Local variables
-        integer :: ipeak
+        integer :: idom
             !! Index for iterating over adjacent higher peaks
-        integer :: n_higher_peaks
+        integer :: n_higher_doms
             !! Number of adjacent higher peaks touching this
             !! component
-        integer :: peak
+        integer :: dom
             !! Current peak ID being examined or merged
-        integer :: copeak
+        integer :: codom
             !! Traversal pointer for the co-peak linked list
-        integer :: winner_peak
+        integer :: winner_dom
             !! Dominant peak ID retaining its summit domain at this
             !! saddle
         real :: winner_z
@@ -698,26 +698,26 @@ contains
 
         err_code = ERR_NO_ERROR
 
-        nrows = size(peaks, dim=1)
-        ncols = size(peaks, dim=2)
+        nrows = size(doms, dim=1)
+        ncols = size(doms, dim=2)
 
         ! Find all higher cells (i.e. processed) connected to the
         ! region, and which peak each correspond to
-        call find_adjacent_higher_peaks( &
-            peaks, sorted_cids, label_heads(label), labels, &
-            offsets, parent_peaks, higher_peaks, n_higher_peaks, &
+        call find_adjacent_higher_domains( &
+            doms, sorted_cids, label_heads(label), labels, &
+            offsets, prnt_doms, higher_doms, n_higher_doms, &
             nrows, ncols, err_code)
         if (err_code /= ERR_NO_ERROR) return
 
         ! Process new peaks or connecting pieces to existing peaks
-        if (n_higher_peaks == 0) then
+        if (n_higher_doms == 0) then
             ! Record the new peak with the largest icell
-            peak = label_heads(label)
+            dom = label_heads(label)
             icell = label_heads(label)
             do while (icell /= 0)
                 call id2ij_checked( &
                     sorted_cids(icell), nrows, ncols, ci, cj, is_valid)
-                peaks(ci, cj) = peak
+                doms(ci, cj) = dom
                 ! Set the prominence as -1 so that we can identify
                 ! surviving peaks with unknown prominence
                 proms(sorted_cids(icell)) = -1
@@ -725,51 +725,51 @@ contains
                 icell = labels(icell)
             end do
             return
-        elseif (n_higher_peaks == 1) then
+        elseif (n_higher_doms == 1) then
             ! If only 1 higher area, merge with it
             icell = label_heads(label)
             do while (icell /= 0)
                 call id2ij_checked( &
                     sorted_cids(icell), nrows, ncols, ci, cj, is_valid)
-                peaks(ci, cj) = higher_peaks(1)
+                doms(ci, cj) = higher_doms(1)
                 ! Go to the next cell with the same label
                 icell = labels(icell)
             end do
             return
         end if
 
-        ! Merge peaks
-        ! Find the peak to retain
-        winner_peak = higher_peaks(1)
-        winner_z = z(sorted_cids(winner_peak))
-        do ipeak = 2, n_higher_peaks
-            peak = higher_peaks(ipeak)
-            if (z(sorted_cids(peak)) < winner_z) cycle
-            winner_peak = peak
-            winner_z = z(sorted_cids(peak))
+        ! Merge domains
+        ! Find the domain to retain
+        winner_dom = higher_doms(1)
+        winner_z = z(sorted_cids(winner_dom))
+        do idom = 2, n_higher_doms
+            dom = higher_doms(idom)
+            if (z(sorted_cids(dom)) < winner_z) cycle
+            winner_dom = dom
+            winner_z = z(sorted_cids(dom))
         end do
 
         ! Update all other peaks
-        do ipeak = 1, n_higher_peaks
-            peak = find_root_peak(parent_peaks, higher_peaks(ipeak))
-            if (peak == winner_peak) cycle
+        do idom = 1, n_higher_doms
+            dom = find_root_domain(prnt_doms, higher_doms(idom))
+            if (dom == winner_dom) cycle
             ! Process co-winning peaks
-            if (winner_z == z(sorted_cids(peak))) then
-                copeak = winner_peak
-                do while (copeaks(copeak) /= 0)
-                    copeak = copeaks(copeak)
+            if (winner_z == z(sorted_cids(dom))) then
+                codom = winner_dom
+                do while (copeaks(codom) /= 0)
+                    codom = copeaks(codom)
                 end do
-                parent_peaks(peak) = winner_peak
-                copeaks(copeak) = peak
+                prnt_doms(dom) = winner_dom
+                copeaks(codom) = dom
                 cycle
             end if
             ! Process lost peaks to be merged
             ! (including their co-peaks)
-            do while (peak /= 0)
-                parent_peaks(peak) = winner_peak
+            do while (dom /= 0)
+                prnt_doms(dom) = winner_dom
                 ! Mark the whole peak region
-                zpeak = z(sorted_cids(peak))
-                icell = peak
+                zpeak = z(sorted_cids(dom))
+                icell = dom
                 do while (icell /= 0)
                     if (z(sorted_cids(icell)) /= zpeak) exit
                     proms(sorted_cids(icell)) = zpeak - slice_z
@@ -777,7 +777,7 @@ contains
                     icell = labels(icell)
                 end do
                 ! Go to the next co-peak
-                peak = copeaks(peak)
+                dom = copeaks(dom)
             end do
         end do
         ! Merge the current saddle too
@@ -785,7 +785,7 @@ contains
         do while (icell /= 0)
             call id2ij_checked( &
                 sorted_cids(icell), nrows, ncols, ci, cj, is_valid)
-            peaks(ci, cj) = winner_peak
+            doms(ci, cj) = winner_dom
             ! Go to the next cell with the same label
             icell = labels(icell)
         end do
@@ -845,13 +845,13 @@ contains
         integer :: ilabel, nlabels
             !! Component loop index and count of components at
             !! slice_z
-        integer(c_int32_t), allocatable :: peaks(:, :)
+        integer(c_int32_t), allocatable :: doms(:, :)
             !! 2D peak domain grid recording owning peak for each
             !! cell
-        integer(c_int32_t), allocatable :: parent_peaks(:)
+        integer(c_int32_t), allocatable :: prnt_doms(:)
             !! Disjoint-set parent array tracking peak domain merges
-        integer(c_int32_t), allocatable :: higher_peaks(:)
-            !! Buffer for adjacent higher peak IDs at a saddle
+        integer(c_int32_t), allocatable :: higher_doms(:)
+            !! Buffer for adjacent higher domain IDs at a saddle
         integer(c_int32_t), allocatable :: copeaks(:)
             !! Singly-linked list tracking tied summits of identical
             !! elevation
@@ -864,8 +864,8 @@ contains
         err_code = ERR_NO_ERROR
         allocate ( &
             labels(nvalids), label_heads(nvalids), &
-            peaks(nrows, ncols), parent_peaks(nvalids), &
-            higher_peaks(nvalids), &
+            doms(nrows, ncols), prnt_doms(nvalids), &
+            higher_doms(nvalids), &
             copeaks(nvalids), stat=alloc_stat)
         if (alloc_stat /= 0) then
             err_code = ERR_ALLOCATION_FAILURE
@@ -873,7 +873,7 @@ contains
         end if
 
         proms = 0
-        peaks = 0
+        doms = 0
         copeaks = 0
 
         allocate (order_lookup(nrows*ncols), stat=alloc_stat)
@@ -889,7 +889,7 @@ contains
                 err_code = ERR_INVALID_INPUT
                 return
             end if
-            parent_peaks(icell) = icell
+            prnt_doms(icell) = icell
             ! Build inverse lookup from linear ID in 'z' to position
             ! in 'sorted_cids'
             order_lookup(sorted_cids(icell)) = icell
@@ -938,8 +938,8 @@ contains
             do ilabel = 1, nlabels
                 call process_plateau( &
                     z, sorted_cids, proms, offsets, &
-                    peaks, label_heads, labels, ilabel, &
-                    higher_peaks, copeaks, parent_peaks, &
+                    doms, label_heads, labels, ilabel, &
+                    higher_doms, copeaks, prnt_doms, &
                     slice_z, err_code)
                 if (err_code /= ERR_NO_ERROR) return
             end do
