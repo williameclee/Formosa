@@ -636,7 +636,8 @@ contains
     !!    the winning domain.
     subroutine process_plateau( &
         z, sorted_cids, proms, &
-        peaks, saddles, npeaks, nsaddles, offsets, &
+        ifeat, feats, feat_types, peak_lookup, saddle_lookup, &
+        dom_feat_lookup, feat_tree, offsets, &
         doms, label_heads, labels, label, higher_doms, copeaks, &
         prnt_doms, slice_z, err_code)
         implicit none(type, external)
@@ -658,12 +659,20 @@ contains
         ! Outputs
         real, intent(inout) :: proms(*)
             !! Topographic prominence array
-        integer, intent(inout) :: peaks(*)
-            !! 1-based peak label array for summit cells
-        integer, intent(inout) :: saddles(*)
-            !! 1-based saddle label array for key saddle cells
-        integer, intent(inout) :: npeaks, nsaddles
-            !! Running counts of identified peaks and saddles
+        integer, intent(inout) :: feats(*)
+            !! 1-based feature ID raster for peak and saddle cells
+        integer(c_int8_t), intent(inout) :: feat_types(:)
+            !! Feature type indexed by 1-based feature ID
+        integer, intent(inout) :: ifeat
+            !! Combined running count of peaks and saddles
+        integer, intent(inout) :: peak_lookup(:)
+            !! Mapping from domain ID to peak feature ID
+        integer, intent(inout) :: saddle_lookup(:)
+            !! Key-saddle feature ID for each peak feature
+        integer, intent(inout) :: dom_feat_lookup(:)
+            !! Mapping from domain ID to current active feature ID
+        integer, intent(inout) :: feat_tree(:)
+            !! Parent feature ID for each feature in the divide tree
         integer, intent(inout) :: doms(:, :)
             !! 2D peak domain grid recording owning peak for each
             !! cell
@@ -702,6 +711,7 @@ contains
             !! Row and column indices of current cell
         logical(kind=1) :: is_valid
             !! True if index conversion succeeded
+        integer(c_int8_t), parameter :: PEAK = 1, SADDLE = 2
 
         err_code = ERR_NO_ERROR
 
@@ -718,7 +728,7 @@ contains
 
         ! Process new peaks or connecting pieces to existing peaks
         if (n_higher_doms == 0) then
-            npeaks = npeaks + 1
+            ifeat = ifeat + 1
             ! Record the new peak with the largest icell
             dom = label_heads(label)
             icell = label_heads(label)
@@ -729,7 +739,10 @@ contains
                 ! Set the prominence as -1 so that we can identify
                 ! surviving peaks with unknown prominence
                 proms(sorted_cids(icell)) = -1
-                peaks(sorted_cids(icell)) = npeaks
+                feats(sorted_cids(icell)) = ifeat
+                feat_types(ifeat) = PEAK
+                peak_lookup(dom) = ifeat
+                dom_feat_lookup(dom) = ifeat
                 ! Go to the next cell with the same label
                 icell = labels(icell)
             end do
@@ -747,7 +760,14 @@ contains
             return
         end if
 
-        ! Merge domains
+        ! This plateau joins several domains
+        ifeat = ifeat + 1
+        do idom = 1, n_higher_doms
+            dom = find_root_domain(prnt_doms, higher_doms(idom))
+            feat_tree(dom_feat_lookup(dom)) = ifeat
+            dom_feat_lookup(dom) = ifeat
+        end do
+
         ! Find the domain to retain
         winner_dom = higher_doms(1)
         winner_z = z(sorted_cids(winner_dom))
@@ -758,7 +778,19 @@ contains
             winner_z = z(sorted_cids(dom))
         end do
 
-        ! Update all other peaks
+        ! First merge the current saddle into the winning domain
+        icell = label_heads(label)
+        do while (icell /= 0)
+            call id2ij_checked( &
+                sorted_cids(icell), nrows, ncols, ci, cj, is_valid)
+            doms(ci, cj) = winner_dom
+            feats(sorted_cids(icell)) = ifeat
+            feat_types(ifeat) = SADDLE
+            ! Go to the next cell with the same label
+            icell = labels(icell)
+        end do
+
+        ! Update all other domain
         do idom = 1, n_higher_doms
             dom = find_root_domain(prnt_doms, higher_doms(idom))
             if (dom == winner_dom) cycle
@@ -769,14 +801,15 @@ contains
                     codom = copeaks(codom)
                 end do
                 prnt_doms(dom) = winner_dom
-                copeaks(codom) = dom
+                copeaks(codom) = dom ! Register the co-peak
                 cycle
             end if
             ! Process lost peaks to be merged
             ! (including their co-peaks)
             do while (dom /= 0)
                 prnt_doms(dom) = winner_dom
-                ! Mark the whole peak region
+                saddle_lookup(peak_lookup(dom)) = ifeat
+                ! Calculate the prominence for the peak domain
                 zpeak = z(sorted_cids(dom))
                 icell = dom
                 do while (icell /= 0)
@@ -789,21 +822,9 @@ contains
                 dom = copeaks(dom)
             end do
         end do
-        ! Merge the current saddle too
-        nsaddles = nsaddles + 1
-        icell = label_heads(label)
-        do while (icell /= 0)
-            call id2ij_checked( &
-                sorted_cids(icell), nrows, ncols, ci, cj, is_valid)
-            doms(ci, cj) = winner_dom
-            saddles(sorted_cids(icell)) = nsaddles
-            ! Go to the next cell with the same label
-            icell = labels(icell)
-        end do
     end subroutine process_plateau
 
-    !> Computes topographic prominence, peak labels, and saddle 
-    !! labels.
+    !> Computes topographic prominence and its divide-tree features.
     !!
     !! Processes cells in descending elevation order using a
     !! topological sweep-plane algorithm. Local maxima initialise
@@ -811,14 +832,16 @@ contains
     !! saddles trigger peak domain merges where subordinate peaks
     !! receive their finalised prominence values.
     !!
-    !! Outputs include the prominence height grid, 1-based peak 
-    !! labels for summit cells, and 1-based saddle labels for key 
-    !! saddle cells.
+    !! Outputs include the prominence grid, a universal feature-ID
+    !! raster, feature types, peak-to-key-saddle mappings, and the
+    !! child-to-parent divide tree. Feature lookup arrays have
+    !! nvalids capacity; only their first nfeats entries are used.
     !! Surviving global/regional maxima retain -1 to mark unknown/
     !! infinite prominence.
     subroutine compute_prominence( &
-        z, sorted_cids, proms, peaks, saddles, nrows, ncols, nvalids, &
-        offsets, noffsets, err_code)
+        z, sorted_cids, proms, feats, feat_types, saddle_lookup, &
+        feat_tree, nfeats, &
+        nrows, ncols, nvalids, offsets, noffsets, err_code)
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols
@@ -837,11 +860,17 @@ contains
             !! connectivity
         ! Outputs
         real, intent(out) :: proms(nrows, ncols)
-            !! Output topographic prominence height grid
-        integer, intent(out) :: peaks(nrows, ncols)
-            !! Output 1-based peak label grid
-        integer, intent(out) :: saddles(nrows, ncols)
-            !! Output 1-based saddle label grid
+            !! Topographic prominence height grid
+        integer, intent(out) :: feats(nrows, ncols)
+            !! 1-based feature label grid
+        integer(c_int8_t), intent(out) :: feat_types(nvalids)
+            !! Feature type: 1 for a peak and 2 for a saddle
+        integer, intent(out) :: saddle_lookup(nvalids)
+            !! Key-saddle feature ID for each peak feature
+        integer, intent(out) :: feat_tree(nvalids)
+            !! Parent feature ID for each feature, or 0 for a root
+        integer, intent(out) :: nfeats
+            !! Number of used entries in each feature-indexed output
         integer, intent(out) :: err_code
             !! Backend status code
         ! Local variables
@@ -864,8 +893,6 @@ contains
         integer :: ilabel, nlabels
             !! Component loop index and count of components at
             !! slice_z
-        integer :: npeaks, nsaddles
-            !! Total number of identified peaks and key saddles
         integer(c_int32_t), allocatable :: doms(:, :)
             !! 2D peak domain grid recording owning peak for each
             !! cell
@@ -879,6 +906,12 @@ contains
         integer(c_int32_t), allocatable :: order_lookup(:)
             !! Inverse lookup mapping linear cell ID to position in
             !! 'sorted_cids'
+        integer, allocatable :: peak_lookup(:)
+            !! Domain ID -> peak feature ID
+        integer, allocatable :: dom_feat_lookup(:)
+            !! Parent feature ID for each feature in the divide tree
+            !! The current feature is either the same peak or the
+            !! latest saddle that the peak has been merged into
         integer :: alloc_stat
             !! Allocation status indicator
 
@@ -886,7 +919,8 @@ contains
         allocate ( &
             labels(nvalids), label_heads(nvalids), &
             doms(nrows, ncols), prnt_doms(nvalids), &
-            higher_doms(nvalids), &
+            higher_doms(nvalids), peak_lookup(nvalids), &
+            dom_feat_lookup(nvalids), &
             copeaks(nvalids), stat=alloc_stat)
         if (alloc_stat /= 0) then
             err_code = ERR_ALLOCATION_FAILURE
@@ -894,10 +928,13 @@ contains
         end if
 
         proms = 0
-        peaks = 0
-        saddles = 0
-        npeaks = 0
-        nsaddles = 0
+        feats = 0
+        feat_types = 0
+        peak_lookup = 0
+        saddle_lookup = 0
+        dom_feat_lookup = 0
+        feat_tree = 0
+        nfeats = 0
         doms = 0
         copeaks = 0
 
@@ -963,8 +1000,9 @@ contains
             do ilabel = 1, nlabels
                 call process_plateau( &
                     z, sorted_cids, proms, &
-                    peaks, saddles, npeaks, nsaddles, offsets, &
-                    doms, label_heads, labels, ilabel, &
+                    nfeats, feats, feat_types, peak_lookup, &
+                    saddle_lookup, dom_feat_lookup, feat_tree, &
+                    offsets, doms, label_heads, labels, ilabel, &
                     higher_doms, copeaks, prnt_doms, &
                     slice_z, err_code)
                 if (err_code /= ERR_NO_ERROR) return

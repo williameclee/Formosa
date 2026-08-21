@@ -244,9 +244,16 @@ def compute_prominence(
     dem: NDArray[NpReal],
     valids: Optional[NDArray[np.bool_]] = None,
     dir_scheme: D8Directions = D8Directions(),
-) -> tuple[NDArray[NpReal | np.int64], NDArray[np.int32], NDArray[np.int32]]:
+) -> tuple[
+    NDArray[NpReal | np.int64],
+    NDArray[np.int32],
+    NDArray[np.int32],
+    NDArray[np.int32],
+    NDArray[np.int32],
+]:
     """
-    Calculates topographic prominence and labels peaks and saddles.
+    Calculates *topographic prominence* and its divide-tree 
+    features.
 
     Prominence measures the vertical height of a summit relative to
     the highest key saddle connecting it to higher terrain. It is
@@ -275,16 +282,19 @@ def compute_prominence(
         saddle. Non-summit cells contain `0`. Invalid cells and the
         highest regional summits with unknown prominence contain
         `-1`.
-    peaks : NDArray[int32]
-        1-based integer labels for identified summits/peaks.
-        Summit cells are labelled with their positive integer peak
-        ID ($1 ... Npeaks}$); non-peak and invalid cells contain
-        `0`.
-    saddles : NDArray[int32]
-        1-based integer labels for identified key saddles.
-        Key saddle cells where two or more higher domains merge are
-        labelled with their positive integer saddle ID ($1 ...
-        Nsaddles$); non-saddle and invalid cells contain `0`.
+    feats : NDArray[int32]
+        0-based feature index at peak and saddle cells, with `-1` at
+        cells that do not represent a feature.
+    feat_types : NDArray[int32]
+        Feature type indexed by feature: `1` for a peak and `2` for
+        a saddle.
+    key_saddles : NDArray[int32]
+        Key-saddle feature index for each peak feature. Entries for
+        non-peak features and peaks without a known key saddle are
+        `-1`.
+    feat_prnts : NDArray[int32]
+        Parent feature index for each feature in the divide tree.
+        Root features contain `-1`.
 
     Raises
     ------
@@ -313,8 +323,10 @@ def compute_prominence(
     # 1-based IDs in ascending elevation order.
     orders_f = valid_ids[orders].astype(np.int32) + 1
 
-    proms, peaks, saddles, err_code = terrain_f.compute_prominence(
-        dem_f, orders_f, dir_scheme.offsets.astype(np.int32, order="F")
+    proms, feats, feat_types, key_saddles, feat_prnts, nfeats, err_code = (
+        terrain_f.compute_prominence(
+            dem_f, orders_f, dir_scheme.offsets.astype(np.int32, order="F")
+        )
     )
     raise_fortran_error("compute_prominence", err_code)
 
@@ -328,7 +340,11 @@ def compute_prominence(
 
     proms[~valids] = -1
 
-    peaks = np.asarray(peaks, dtype=np.int32)
-    saddles = np.asarray(saddles, dtype=np.int32)
+    # Convert 1-based Fortran IDs with zero sentinels into zero-based
+    # Python indices with -1 sentinels.
+    feats = np.asarray(feats, dtype=np.int32) - 1
+    feat_types = np.array(feat_types[:nfeats], dtype=np.int32, copy=True)
+    key_saddles = np.array(key_saddles[:nfeats], dtype=np.int32, copy=True) - 1
+    feat_prnts = np.array(feat_prnts[:nfeats], dtype=np.int32, copy=True) - 1
 
-    return proms, peaks, saddles
+    return proms, feats, feat_types, key_saddles, feat_prnts
