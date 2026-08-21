@@ -268,7 +268,8 @@ class DEMGrid:
 
     @property
     def prominence(self) -> npt.NDArray[np.floating | np.integer]:
-        return compute_prominence(self.dem, self.valid, self.directions)
+        proms, _, _ = compute_prominence(self.dem, self.valid, self.directions)
+        return proms
 
     @property
     def ocean_mask(self) -> npt.NDArray[np.bool_]:
