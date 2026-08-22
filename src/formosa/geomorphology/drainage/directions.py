@@ -4,7 +4,7 @@ Defines and validates raster flow-direction encoding schemes.
 This module provides :class:`D8Directions`, which associates D8
 direction codes with their corresponding row and column offsets.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-22, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
@@ -183,3 +183,28 @@ def construct_d8_directions(
 
     codes = codes.astype(np.int32, order="F")
     return offsets, codes, dirs
+
+
+def validate_direction_offsets(
+    ofsts: npt.ArrayLike,
+) -> npt.NDArray[np.int32]:
+    """
+    Validates and formats row-column connectivity offsets.
+    """
+    ofsts = np.asarray(ofsts)
+    if ofsts.ndim != 2 or ofsts.shape[1] != 2:
+        raise ValueError(
+            "Direction offsets must have shape (n, 2), "
+            f"but received shape {ofsts.shape}."
+        )
+    if ofsts.shape[0] == 0:
+        raise ValueError("Direction offsets must contain at least one offset.")
+    if not np.issubdtype(ofsts.dtype, np.integer):
+        raise TypeError(
+            "Direction offsets must have an integer dtype, " f"but got {ofsts.dtype}."
+        )
+
+    int32_limits = np.iinfo(np.int32)
+    if np.any((ofsts < int32_limits.min) | (ofsts > int32_limits.max)):
+        raise ValueError("Direction offsets must be representable as int32 values.")
+    return np.asfortranarray(ofsts, dtype=np.int32)

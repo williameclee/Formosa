@@ -1,13 +1,14 @@
 """
 Tests the public properties and methods of :class:`DEMGrid`.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-22, En-Chi Lee (williameclee@gmail.com)
 """
 
 import pytest
 import numpy as np
 
 from formosa.dem import DEMGrid, read_dem
+from formosa.dem import terrain_grid as grid_m
 
 
 def test_demgrid_fill_depressions_preserves_boundary_outlets():
@@ -144,3 +145,15 @@ def test_demgrid_ocean_invalidation_is_idempotent_and_clears_caches():
     assert grid._flowdir is None
     grid.invalidate_ocean_basins(min_size=2)
     np.testing.assert_array_equal(grid.valid, first_valid)
+
+
+def test_demgrid_prominence_matches_public_computation():
+    dem = np.array([[5.0, 1.0, 4.0]], dtype=np.float32)
+    x, y = np.meshgrid(np.arange(dem.shape[1]), np.arange(dem.shape[0]))
+    grid = DEMGrid(dem, x=x, y=y)
+
+    expected, *_ = grid_m.compute_prominence(
+        grid.dem, grid.valid, grid.directions
+    )
+
+    np.testing.assert_array_equal(grid.prominence, expected)

@@ -1,5 +1,5 @@
 from .drainage.directions import D8Directions
-from .terrain import compute_slope, compute_isolation
+from .terrain import compute_slope, compute_isolation, compute_prominence
 from .drainage import (
     detect_ocean_basins_from_boundary,
     fill_depressions,
@@ -35,7 +35,6 @@ __all__ = [
     "compute_flowdir",
     "compute_ridgedir",
     "compute_ridge_strahler_order",
-    "compute_slope",
     "count_indegree",
     "detect_ocean_basins_from_boundary",
     "fill_depressions",
@@ -46,4 +45,7 @@ __all__ = [
     "concat_flowgraph",
     "construct_flowgraph",
     "simplify_flowgraph",
+    "compute_slope",
+    "compute_isolation",
+    "compute_prominence",
 ]

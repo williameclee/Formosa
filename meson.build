@@ -46,8 +46,9 @@ custom_target(
     '--f2cmap', f2py_f2cmap,
     '-m', '_native',
     # OpenMP flags
-    '--f90flags="-march=native -fopenmp -O3"', # -pg for profiling
+    '--f90flags="-march=native -fopenmp -O3"',
     '-lgomp',
+    'skip:', 'pyramid_level', 'elevation_pyramid', ':',
     '-c', '@INPUT@',
   ],
   install: true,

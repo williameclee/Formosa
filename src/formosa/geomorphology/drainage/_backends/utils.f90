@@ -4,7 +4,7 @@
 !! direction code decoding, raster masking, and priority queues used
 !! by other FORTRAN modules.
 !!
-!! Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
+!! Last modified: 2026-08-21, En-Chi Lee (williameclee@gmail.com)
 module utils
     use iso_c_binding, only: c_int8_t
     implicit none(type, external)
@@ -15,7 +15,6 @@ module utils
     integer, parameter :: ERR_OVERFLOW = 3
     integer, parameter :: ERR_COMPUTATION_FAILURE = 4
 contains
-
     logical pure function array2d_oob(i, j, nrows, ncols) result(is_oob)
         !! Checks whether a pair of array index (i, j) is
         !! out-of-bounds
@@ -32,7 +31,19 @@ contains
         end if
     end function array2d_oob
 
-    pure function ij2id_checked(i, j, nrows, ncols) result(cell_id)
+    pure function ij2id(i, j, nrows, ncols) result(id)
+        implicit none(type, external)
+        integer, intent(in) :: i, j
+            !! Row and column indices
+        integer, intent(in) :: nrows, ncols
+            !! Size of the array
+            !! ncols is not used but kept for simmplicity & clarity
+        integer :: id
+
+        id = i + (j - 1)*nrows
+    end function ij2id
+
+    pure function ij2id_checked(i, j, nrows, ncols) result(id)
         !! Encodes a valid one-based grid coordinate as a linear
         !! cell ID.
         !!
@@ -43,16 +54,16 @@ contains
             !! Row and column indices
         integer, intent(in) :: nrows, ncols
             !! Size of the array
-        integer :: cell_id
+        integer :: id
 
         if (nrows < 1 .or. ncols < 1) then
-            cell_id = 0
-        else if (ncols > huge(cell_id)/nrows) then
-            cell_id = 0
+            id = 0
+        else if (ncols > huge(id)/nrows) then
+            id = 0
         else if (array2d_oob(i, j, nrows, ncols)) then
-            cell_id = 0
+            id = 0
         else
-            cell_id = i + (j - 1)*nrows
+            id = ij2id(i, j, nrows, ncols)
         end if
     end function ij2id_checked
 

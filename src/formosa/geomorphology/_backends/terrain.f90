@@ -1,22 +1,22 @@
-!> Computes terrain isolation for digital elevation model rasters.
+!> Computes terrain isolation and topographic prominence for DEM
+!! rasters.
 !!
 !! This module implements the native backend used by the public
-!! Python terrain API. A maximum-elevation pyramid accelerates exact
-!! nearest-higher searches and identifies searches censored by the
-!! outer raster footprint.
+!! Python terrain API. It provides accelerated isolation searches
+!! via maximum-elevation pyramids and topological sweep-plane
+!! prominence computations.
 !!
-!! Created: 2026-08-19, En-Chi Lee
+!! Created: 2026-08-19, En-Chi Lee (williameclee@gmail.com)
+!! Last modified: 2026-08-22, En-Chi Lee (williameclee@gmail.com)
 module terrain
-    use iso_c_binding, only: c_int8_t
+    use iso_c_binding, only: c_int8_t, c_int32_t
     use utils, only: ERR_NO_ERROR, ERR_INVALID_INPUT, &
                      ERR_ALLOCATION_FAILURE, ERR_OVERFLOW
-    use utils, only: fill_offset_lookup, find_noflow_code, &
-                     array2d_oob, mask2ij
+    use utils, only: array2d_oob, id2ij_checked, ij2id_checked
     use distances, only: l2dist_xy, l2dist2_xy
     implicit none(type, external)
 
     private
-    public :: compute_isolation
 
     !> Stores maximum elevations for a level of a spatial pyramid.
     type :: pyramid_level
@@ -39,6 +39,7 @@ module terrain
         integer :: factor
             !! Reduction factor between adjacent levels
     end type elevation_pyramid
+    public :: compute_isolation, compute_prominence
 contains
     !> Builds a maximum-elevation pyramid from a DEM and validity
     !! mask.
@@ -424,4 +425,681 @@ contains
         end do
         !$omp END PARALLEL DO
     end subroutine compute_isolation
+
+    !> Labels connected components (flats) of equal elevation.
+    !!
+    !! Performs a breadth-first search (BFS) flood fill to identify
+    !! connected flat components among cells sharing the same
+    !! elevation within the current slice range
+    !! [slice_start, slice_end].
+    pure subroutine label_flats( &
+        cids, labels, nlabels, offsets, nrows, ncols, &
+        slice_start, slice_end, order_lookup, err_code)
+        implicit none(type, external)
+        ! Arguments
+        integer, contiguous, intent(in) :: cids(:)
+            !! Slice of cell linear IDs for the current elevation
+        integer, intent(in) :: offsets(:, :)
+            !! Row and column offsets for neighbour connectivity
+        integer, intent(in) :: nrows, ncols
+            !! DEM raster dimensions
+        integer, intent(in) :: order_lookup(:)
+            !! Inverse lookup mapping linear cell ID to position in
+            !! all of cids (beyond this slice)
+        integer, intent(in) :: slice_start, slice_end
+            !! Index bounds of the current elevation slice in all of
+            !! cids
+        ! Outputs
+        integer, contiguous, intent(out) :: labels(:)
+            !! Output connected component label per cell in the
+            !! slice (1 to nlabels)
+        integer, intent(out) :: nlabels
+            !! Number of connected components found
+        integer, intent(out) :: err_code
+            !! Backend status code
+        ! Local variables
+        integer :: icell
+            !! Index in 'cids' slice
+        integer :: ncell
+            !! Index in 'cids' of neighbouring cell
+        integer :: ci, cj, ni, nj
+            !! Row and column indices of current and neighbour cell
+        integer :: cid, nid
+            !! Linear ID of current and neighbour cell
+        integer :: iofs
+            !! Neighbour direction offset index
+        logical(kind=1) :: is_valid
+            !! True if index conversion succeeded
+        integer :: queue(size(cids))
+            !! FIFO queue for BFS flood fill
+        integer :: nqueued
+            !! Total number of cells queued
+        integer :: iqueue
+            !! Current position in BFS queue being processed
+
+        ! Initialise
+        err_code = ERR_NO_ERROR
+        labels = 0
+        nlabels = 0
+        do icell = 1, size(cids)
+            ! Find the next unprocessed cell
+            if (labels(icell) /= 0) cycle
+            nlabels = nlabels + 1
+            labels(icell) = nlabels
+            ! Push the seed to the queue
+            nqueued = 1
+            queue(nqueued) = icell
+            ! Flood fill from the seed
+            iqueue = 1
+            do while (iqueue <= nqueued)
+                cid = cids(queue(iqueue))
+                ! Check if its neighbours are in the queue
+                call id2ij_checked(cid, nrows, ncols, ci, cj, is_valid)
+                if (.not. is_valid) then
+                    err_code = ERR_INVALID_INPUT
+                    return
+                end if
+                ! Check all the neighbours
+                do iofs = 1, size(offsets, dim=1)
+                    ni = ci + offsets(iofs, 1)
+                    nj = cj + offsets(iofs, 2)
+                    nid = ij2id_checked(ni, nj, nrows, ncols)
+                    if (nid == 0) cycle
+                    ncell = order_lookup(nid)
+                    if (ncell < slice_start .or. ncell > slice_end) cycle
+                    ncell = ncell - slice_start + 1
+
+                    if (labels(ncell) /= 0) cycle
+                    labels(ncell) = nlabels
+                    nqueued = nqueued + 1
+                    queue(nqueued) = ncell
+                end do
+                iqueue = iqueue + 1
+            end do
+        end do
+    end subroutine label_flats
+
+    !> Finds the canonical root peak for a peak domain in a
+    !! disjoint-set forest.
+    !!
+    !! Implements path compression so that future lookups are
+    !! faster.
+    recursive function find_root_domain(prnt_doms, dom) &
+        result(root_dom)
+        ! Arguments
+        integer, intent(inout) :: prnt_doms(:)
+            !! Disjoint-set parent array tracking peak domain merges
+        integer, intent(in) :: dom
+            !! Query peak ID (index in 'sorted_cids')
+        ! Result
+        integer :: root_dom
+            !! Canonical root peak ID representing this peak domain
+
+        if (prnt_doms(dom) /= dom) then
+            prnt_doms(dom) = &
+                find_root_domain(prnt_doms, prnt_doms(dom))
+        end if
+        root_dom = prnt_doms(dom)
+    end function find_root_domain
+
+    !> Identifies unique higher peak domains adjacent to a flat
+    !! component.
+    !!
+    !! Traverses all cells belonging to a connected flat component,
+    !! inspects their spatial neighbours, and records each distinct
+    !! adjacent higher peak domain (resolved to its root
+    !! representative in the disjoint-set forest).
+    subroutine find_adjacent_higher_domains( &
+        doms, sorted_cids, label_head, labels, offsets, &
+        prnt_doms, higher_doms, n_higher_doms, nrows, ncols, &
+        err_code)
+        implicit none(type, external)
+        ! Arguments
+        integer, intent(in) :: doms(nrows, ncols)
+            !! 2D peak domain grid recording owning (non-root) peak
+            !! for each cell
+        integer, contiguous, intent(in) :: sorted_cids(:)
+            !! Linear cell IDs sorted in ascending elevation order
+        integer, intent(in) :: label_head
+            !! Index of the first cell in this flat's linked list
+        integer, contiguous, intent(in) :: labels(:)
+            !! Linked-list 'next' pointers chaining cells in the
+            !! same component
+        integer, intent(in) :: offsets(:, :)
+            !! Row and column offsets for neighbour connectivity
+        integer, intent(in) :: nrows, ncols
+            !! DEM raster dimensions
+        ! Outputs
+        integer, intent(inout) :: prnt_doms(:)
+            !! Disjoint-set parent array tracking peak domain merges
+        integer, intent(out) :: higher_doms(:)
+            !! Output buffer of unique adjacent higher root peak IDs
+        integer, intent(out) :: n_higher_doms
+            !! Number of unique adjacent higher root peaks found
+        integer, intent(out) :: err_code
+            !! Backend status code
+        ! Local variables
+        integer :: ci, cj, ni, nj
+            !! Row and column indices of current and neighbour cell
+        integer :: cid
+            !! Linear ID of current cell
+        integer :: icell
+            !! Current cell index traversing the component linked
+            !! list
+        integer :: iofs
+            !! Neighbour direction offset index
+        integer :: dom
+            !! Domain ID of neighbour cell resolved to its root
+            !! representative
+        logical(kind=1) :: is_valid
+            !! True if index conversion succeeded
+
+        err_code = ERR_NO_ERROR
+        n_higher_doms = 0
+
+        icell = label_head
+        do while (icell /= 0)
+            cid = sorted_cids(icell)
+            call id2ij_checked(cid, nrows, ncols, ci, cj, is_valid)
+            if (.not. is_valid) then
+                err_code = ERR_INVALID_INPUT
+                return
+            end if
+            do iofs = 1, size(offsets, dim=1)
+                ni = ci + offsets(iofs, 1)
+                nj = cj + offsets(iofs, 2)
+                if (array2d_oob(ni, nj, nrows, ncols)) cycle
+                dom = doms(ni, nj)
+                if (dom == 0) cycle
+                dom = find_root_domain(prnt_doms, dom)
+                ! Skip already recorded areas
+                if (any(higher_doms(1:n_higher_doms) == dom)) cycle
+                n_higher_doms = n_higher_doms + 1
+                higher_doms(n_higher_doms) = dom
+            end do
+            icell = labels(icell)
+        end do
+    end subroutine find_adjacent_higher_domains
+
+    !> Selects the centroid-nearest cell of a flat.
+    !!
+    !! Ties are resolved using the smallest Fortran linear cell ID.
+    pure subroutine find_representative_cell( &
+        labels, label_head, cids, pi, pj, nrows, ncols)
+        implicit none(type, external)
+        ! Arguments
+        integer, contiguous, intent(in) :: labels(:)
+            !! Linked-list 'next' pointers chaining cells in the
+            !! component
+        integer, intent(in) :: label_head
+            !! Index of first cell in this flat's linked list
+        integer, contiguous, intent(in) :: cids(:)
+            !! 1-based linear cell IDs
+        integer, intent(in) :: nrows, ncols
+            !! DEM raster dimensions
+        ! Outputs
+        integer, intent(out) :: pi, pj
+            !! 1-based row and column indices of the representative
+            !! cell
+        ! Local variables
+        integer :: icell
+            !! Loop index traversing the component linked list
+        integer :: ncells
+            !! Number of cells in the flat
+        integer :: best_cid
+            !! Smallest linear cell ID among centroid-distance ties
+        integer :: ci, cj
+            !! Row and column indices of current cell
+        real :: mi, mj
+            !! Mean row and column (centroid) coordinates of the
+            !! flat
+        real :: dist2, min_dist2
+            !! Squared distance to centroid and current minimum
+            !! squared distance
+        logical(kind=1) :: is_valid
+            !! True if index conversion succeeded
+
+        mi = 0
+        mj = 0
+        ncells = 0
+        icell = label_head
+        do while (icell /= 0)
+            ncells = ncells + 1
+            call id2ij_checked( &
+                cids(icell), nrows, ncols, ci, cj, is_valid)
+            mi = mi + ci
+            mj = mj + cj
+            ! Go to the next cell with the same label
+            icell = labels(icell)
+        end do
+
+        if (ncells == 1) then
+            pi = int(mi)
+            pj = int(mj)
+            return
+        end if
+
+        mi = mi/ncells
+        mj = mj/ncells
+
+        ! Find the closest cell
+        min_dist2 = -1
+        best_cid = huge(0)
+        icell = label_head
+        do while (icell /= 0)
+            call id2ij_checked( &
+                cids(icell), nrows, ncols, ci, cj, is_valid)
+            dist2 = l2dist2_xy(real(ci), real(cj), mi, mj)
+            if (min_dist2 < 0 .or. &
+                dist2 < min_dist2 .or. &
+                (dist2 == min_dist2 .and. &
+                 cids(icell) < best_cid)) then
+                min_dist2 = dist2
+                best_cid = cids(icell)
+                pi = ci
+                pj = cj
+            end if
+            icell = labels(icell)
+        end do
+    end subroutine find_representative_cell
+
+    !> Processes a single connected flat during prominence sweep.
+    !!
+    !! Handles three morphological cases for the component:
+    !! 1. Isolated local maximum (0 higher neighbours): creates a
+    !!    new peak domain.
+    !! 2. Slope/ridge extension (1 higher neighbour): merges cells
+    !!    into that domain.
+    !! 3. Saddle/col (>= 2 higher neighbours): identifies the
+    !!    winning domain, finalises prominence for all subordinate
+    !!    domains (and tied co-peaks), and unions their domains into
+    !!    the winning domain.
+    subroutine process_flat( &
+        z, sorted_cids, proms, &
+        ifeat, feats, feat_types, feat_ijs, &
+        peak_lookup, saddle_lookup, dom_feat_lookup, feat_tree, &
+        offsets, doms, label_heads, labels, label, higher_doms, &
+        copeaks, prnt_doms, slice_z, err_code)
+        implicit none(type, external)
+        ! Arguments
+        real, intent(in) :: z(*)
+            !! Flattened DEM elevation array
+        integer, contiguous, intent(in) :: sorted_cids(:)
+            !! 1-based linear cell IDs sorted in ascending elevation
+            !! order
+        integer, intent(in) :: offsets(:, :)
+            !! Row and column offsets for neighbour connectivity
+        integer, contiguous, intent(in) :: labels(:), label_heads(:)
+            !! Linked-list 'next' pointers and bucket head indices
+            !! per component
+        integer, intent(in) :: label
+            !! Component index being processed
+        real, intent(in) :: slice_z
+            !! Elevation of the current horizontal slice/flat
+        ! Outputs
+        real, intent(inout) :: proms(*)
+            !! Topographic prominence array
+        integer, intent(inout) :: feats(*)
+            !! 1-based feature ID raster for peak and saddle cells
+        integer(c_int8_t), intent(inout) :: feat_types(:)
+            !! Feature type indexed by 1-based feature ID
+        integer, intent(inout) :: feat_ijs(:, :)
+            !! 1-based (row, column) coordinates of each feature representative
+        integer, intent(inout) :: ifeat
+            !! Combined running count of peaks and saddles
+        integer, intent(inout) :: peak_lookup(:)
+            !! Mapping from domain ID to peak feature ID
+        integer, intent(inout) :: saddle_lookup(:)
+            !! Key-saddle feature ID for each peak feature
+        integer, intent(inout) :: dom_feat_lookup(:)
+            !! Mapping from domain ID to current active feature ID
+        integer, intent(inout) :: feat_tree(:)
+            !! Parent feature ID for each feature in the divide tree
+        integer, intent(inout) :: doms(:, :)
+            !! 2D peak domain grid recording owning peak for each
+            !! cell
+        integer, intent(inout) :: higher_doms(:)
+            !! Buffer for adjacent higher peak IDs
+        integer, intent(inout) :: copeaks(:)
+            !! Singly-linked list tracking tied summits of identical
+            !! elevation
+        integer, intent(inout) :: prnt_doms(:)
+            !! Disjoint-set parent array tracking peak domain merges
+        integer, intent(out) :: err_code
+            !! Backend status code
+        ! Local variables
+        integer :: idom
+            !! Index for iterating over adjacent higher peaks
+        integer :: n_higher_doms
+            !! Number of adjacent higher peaks touching this
+            !! component
+        integer :: dom
+            !! Current peak ID being examined or merged
+        integer :: codom
+            !! Traversal pointer for the co-peak linked list
+        integer :: winner_dom
+            !! Dominant peak ID retaining its summit domain at this
+            !! saddle
+        real :: winner_z
+            !! Elevation of the dominant peak
+        real :: zpeak
+            !! Elevation of a subordinate peak being closed at this
+            !! saddle
+        integer :: icell
+            !! Cell index traversing the component linked list
+        integer :: nrows, ncols
+            !! DEM raster dimensions
+        integer :: ci, cj
+            !! Row and column indices of current cell
+        logical(kind=1) :: is_valid
+            !! True if index conversion succeeded
+        integer(c_int8_t), parameter :: PEAK = 1, SADDLE = 2
+
+        err_code = ERR_NO_ERROR
+
+        nrows = size(doms, dim=1)
+        ncols = size(doms, dim=2)
+
+        ! Find all higher cells (i.e. processed) connected to the
+        ! region, and which peak each correspond to
+        call find_adjacent_higher_domains( &
+            doms, sorted_cids, label_heads(label), labels, &
+            offsets, prnt_doms, higher_doms, n_higher_doms, &
+            nrows, ncols, err_code)
+        if (err_code /= ERR_NO_ERROR) return
+
+        ! Process new peaks or connecting pieces to existing peaks
+        if (n_higher_doms == 0) then
+            ifeat = ifeat + 1
+            feat_types(ifeat) = PEAK
+            call find_representative_cell( &
+                labels, label_heads(label), sorted_cids, &
+                feat_ijs(1, ifeat), feat_ijs(2, ifeat), nrows, ncols)
+            ! Record the new peak with the largest icell
+            dom = label_heads(label)
+            icell = label_heads(label)
+            do while (icell /= 0)
+                call id2ij_checked( &
+                    sorted_cids(icell), nrows, ncols, ci, cj, is_valid)
+                doms(ci, cj) = dom
+                ! Set the prominence as -1 so that we can identify
+                ! surviving peaks with unknown prominence
+                proms(sorted_cids(icell)) = -1
+                feats(sorted_cids(icell)) = ifeat
+                peak_lookup(dom) = ifeat
+                dom_feat_lookup(dom) = ifeat
+                ! Go to the next cell with the same label
+                icell = labels(icell)
+            end do
+            return
+        elseif (n_higher_doms == 1) then
+            ! If only 1 higher area, merge with it
+            icell = label_heads(label)
+            do while (icell /= 0)
+                call id2ij_checked( &
+                    sorted_cids(icell), nrows, ncols, ci, cj, is_valid)
+                doms(ci, cj) = higher_doms(1)
+                ! Go to the next cell with the same label
+                icell = labels(icell)
+            end do
+            return
+        end if
+
+        ! This flat is a saddle that joins several domains
+        ifeat = ifeat + 1
+        feat_types(ifeat) = SADDLE
+        call find_representative_cell( &
+            labels, label_heads(label), sorted_cids, &
+            feat_ijs(1, ifeat), feat_ijs(2, ifeat), nrows, ncols)
+        do idom = 1, n_higher_doms
+            dom = find_root_domain(prnt_doms, higher_doms(idom))
+            feat_tree(dom_feat_lookup(dom)) = ifeat
+            dom_feat_lookup(dom) = ifeat
+        end do
+
+        ! Find the domain to retain
+        winner_dom = higher_doms(1)
+        winner_z = z(sorted_cids(winner_dom))
+        do idom = 2, n_higher_doms
+            dom = higher_doms(idom)
+            if (z(sorted_cids(dom)) < winner_z) cycle
+            winner_dom = dom
+            winner_z = z(sorted_cids(dom))
+        end do
+
+        ! First merge the current saddle into the winning domain
+        icell = label_heads(label)
+        do while (icell /= 0)
+            call id2ij_checked( &
+                sorted_cids(icell), nrows, ncols, ci, cj, is_valid)
+            doms(ci, cj) = winner_dom
+            feats(sorted_cids(icell)) = ifeat
+            ! Go to the next cell with the same label
+            icell = labels(icell)
+        end do
+
+        ! Update all other domains
+        do idom = 1, n_higher_doms
+            dom = find_root_domain(prnt_doms, higher_doms(idom))
+            if (dom == winner_dom) cycle
+            ! Process co-winning peaks
+            if (winner_z == z(sorted_cids(dom))) then
+                codom = winner_dom
+                do while (copeaks(codom) /= 0)
+                    codom = copeaks(codom)
+                end do
+                prnt_doms(dom) = winner_dom
+                copeaks(codom) = dom ! Register the co-peak
+                cycle
+            end if
+            ! Process lost peaks to be merged
+            ! (including their co-peaks)
+            do while (dom /= 0)
+                prnt_doms(dom) = winner_dom
+                saddle_lookup(peak_lookup(dom)) = ifeat
+                ! Calculate the prominence for the peak domain
+                zpeak = z(sorted_cids(dom))
+                icell = dom
+                do while (icell /= 0)
+                    if (z(sorted_cids(icell)) /= zpeak) exit
+                    proms(sorted_cids(icell)) = zpeak - slice_z
+                    ! Go to the next cell with the same label
+                    icell = labels(icell)
+                end do
+                ! Go to the next co-peak
+                dom = copeaks(dom)
+            end do
+        end do
+    end subroutine process_flat
+
+    !> Computes topographic prominence and its divide-tree features.
+    !!
+    !! Processes cells in descending elevation order using a
+    !! topological sweep-plane algorithm. Local maxima initialise
+    !! new peak domains, slopes extend existing peak domains, and
+    !! saddles trigger peak domain merges where subordinate peaks
+    !! receive their finalised prominence values.
+    !!
+    !! Outputs include the prominence grid, a universal feature-ID
+    !! raster, feature types, representative cells, peak-to-key-
+    !! saddle mappings, and the child-to-parent divide tree. Feature
+    !! lookup arrays have nvalids capacity; only their first nfeats
+    !! entries are used.
+    !! Surviving global/regional maxima retain -1 to mark unknown/
+    !! infinite prominence.
+    subroutine compute_prominence( &
+        z, sorted_cids, proms, feats, feat_types, feat_ijs, &
+        saddle_lookup, feat_tree, nfeats, &
+        nrows, ncols, nvalids, offsets, noffsets, err_code)
+        implicit none(type, external)
+        ! Arguments
+        integer, intent(in) :: nrows, ncols
+            !! DEM raster dimensions
+        integer, intent(in) :: nvalids
+            !! Number of valid DEM cells in sorted_cids
+        real, intent(in) :: z(nrows, ncols)
+            !! Input 2D DEM elevation grid
+        integer(c_int32_t), intent(in) :: sorted_cids(nvalids)
+            !! Valid cell linear indices sorted in ascending
+            !! elevation order
+        integer, intent(in) :: noffsets
+            !! Number of neighbour connectivity directions
+        integer, intent(in) :: offsets(noffsets, 2)
+            !! List of row and column offsets for neighbour
+            !! connectivity
+        ! Outputs
+        real, intent(out) :: proms(nrows, ncols)
+            !! Topographic prominence height grid
+        integer, intent(out) :: feats(nrows, ncols)
+            !! 1-based feature label grid
+        integer(c_int8_t), intent(out) :: feat_types(nvalids)
+            !! Feature type: 1 for a peak and 2 for a saddle
+        integer, intent(out) :: feat_ijs(2, nvalids)
+            !! Centroid-nearest representative cell of each feature
+        integer, intent(out) :: saddle_lookup(nvalids)
+            !! Key-saddle feature ID for each peak feature
+        integer, intent(out) :: feat_tree(nvalids)
+            !! Parent feature ID for each feature, or 0 for a root
+        integer, intent(out) :: nfeats
+            !! Number of used entries in each feature-indexed output
+        integer, intent(out) :: err_code
+            !! Backend status code
+        ! Local variables
+        integer :: icell, jcell
+            !! Loop indices traversing sorted cells
+        integer :: ci, cj
+            !! Row and column coordinates of current cell
+        logical(kind=1) :: is_valid
+            !! True if index conversion succeeded
+        real :: slice_z
+            !! Elevation of the current horizontal slice/flat
+        integer :: slice_start, slice_end
+            !! Index bounds in 'sorted_cids' of cells with elevation
+            !! equal to slice_z
+        integer(c_int32_t) :: label
+            !! Connected component label
+        integer(c_int32_t), allocatable :: labels(:), label_heads(:)
+            !! Linked-list 'next' pointers and bucket head indices
+            !! per component
+        integer :: ilabel, nlabels
+            !! Component loop index and count of components at
+            !! slice_z
+        integer(c_int32_t), allocatable :: doms(:, :)
+            !! 2D peak domain grid recording owning peak for each
+            !! cell
+        integer(c_int32_t), allocatable :: prnt_doms(:)
+            !! Disjoint-set parent array tracking peak domain merges
+        integer(c_int32_t), allocatable :: higher_doms(:)
+            !! Buffer for adjacent higher domain IDs at a saddle
+        integer(c_int32_t), allocatable :: copeaks(:)
+            !! Singly-linked list tracking tied summits of identical
+            !! elevation
+        integer(c_int32_t), allocatable :: order_lookup(:)
+            !! Inverse lookup mapping linear cell ID to position in
+            !! 'sorted_cids'
+        integer, allocatable :: peak_lookup(:)
+            !! Domain ID -> peak feature ID
+        integer, allocatable :: dom_feat_lookup(:)
+            !! Domain ID -> current active feature ID in the divide tree
+            !! The current feature is either the same peak or the
+            !! latest saddle that the peak has been merged into
+        integer :: alloc_stat
+            !! Allocation status indicator
+
+        err_code = ERR_NO_ERROR
+        allocate ( &
+            labels(nvalids), label_heads(nvalids), &
+            doms(nrows, ncols), prnt_doms(nvalids), &
+            higher_doms(nvalids), peak_lookup(nvalids), &
+            dom_feat_lookup(nvalids), &
+            copeaks(nvalids), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = ERR_ALLOCATION_FAILURE
+            return
+        end if
+
+        proms = 0
+        feats = 0
+        feat_types = 0
+        feat_ijs = 0
+        peak_lookup = 0
+        saddle_lookup = 0
+        dom_feat_lookup = 0
+        feat_tree = 0
+        nfeats = 0
+        doms = 0
+        copeaks = 0
+
+        allocate (order_lookup(nrows*ncols), stat=alloc_stat)
+        if (alloc_stat /= 0) then
+            err_code = ERR_ALLOCATION_FAILURE
+            return
+        end if
+
+        order_lookup = 0
+        do icell = 1, nvalids
+            if (sorted_cids(icell) < 1 .or. &
+                sorted_cids(icell) > nrows*ncols) then
+                err_code = ERR_INVALID_INPUT
+                return
+            end if
+            prnt_doms(icell) = icell
+            ! Build inverse lookup from linear ID in 'z' to position
+            ! in 'sorted_cids'
+            order_lookup(sorted_cids(icell)) = icell
+        end do
+
+        icell = nvalids
+        do while (icell >= 1)
+            call id2ij_checked( &
+                sorted_cids(icell), nrows, ncols, ci, cj, is_valid)
+            if (.not. is_valid) then
+                err_code = ERR_INVALID_INPUT
+                return
+            end if
+            slice_z = z(ci, cj)
+            slice_end = icell
+            slice_start = icell
+            do while (icell >= 1)
+                call id2ij_checked( &
+                    sorted_cids(icell), nrows, ncols, ci, cj, is_valid)
+                if (.not. is_valid) then
+                    err_code = ERR_INVALID_INPUT
+                    return
+                end if
+                if (z(ci, cj) /= slice_z) exit
+                icell = icell - 1
+            end do
+            slice_start = icell + 1
+
+            ! Group connected regions of the same elevation
+            call label_flats( &
+                sorted_cids(slice_start:slice_end), &
+                labels(slice_start:slice_end), &
+                nlabels, offsets, nrows, ncols, &
+                slice_start, slice_end, order_lookup, err_code)
+            if (err_code /= ERR_NO_ERROR) return
+
+            label_heads(1:nlabels) = 0
+            do jcell = slice_start, slice_end
+                label = labels(jcell)
+                ! Insert jcell at the front of this component's list
+                labels(jcell) = label_heads(label)
+                label_heads(label) = jcell
+            end do
+
+            ! Process each connected region one at a time
+            do ilabel = 1, nlabels
+                call process_flat( &
+                    z, sorted_cids, proms, &
+                    nfeats, feats, feat_types, feat_ijs, &
+                    peak_lookup, saddle_lookup, dom_feat_lookup, &
+                    feat_tree, &
+                    offsets, doms, label_heads, labels, ilabel, &
+                    higher_doms, copeaks, prnt_doms, &
+                    slice_z, err_code)
+                if (err_code /= ERR_NO_ERROR) return
+            end do
+        end do
+    end subroutine compute_prominence
 end module terrain
