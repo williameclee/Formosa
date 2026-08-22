@@ -6,12 +6,11 @@ cell and its neighbours as a proxy for ridge likelihood, then
 applies conventional drainage network operations to the reciprocal
 field.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
 
-from formosa.utils import Backend, raise_fortran_error
 from formosa.geomorphology.drainage.directions import D8Directions
 import formosa.geomorphology.drainage.flowdir as flowdir_m
 from formosa.geomorphology.drainage.metrics import (
@@ -19,18 +18,25 @@ from formosa.geomorphology.drainage.metrics import (
     compute_flow_strahler_order,
 )
 from formosa.geomorphology._native import drainage_ridges as ridges_f
+from formosa.utils import NpFlowDir
+from formosa.utils import Backend, raise_fortran_error
+from formosa.geomorphology._validation import (
+    validate_same_shape,
+    validate_format_valids,
+    validate_format_flowdirs,
+)
 
 from typing import Optional
-import numpy.typing as npt
+from numpy.typing import NDArray
 
 
 def compute_dist2conf_max(
-    dirs: npt.NDArray[np.integer],
-    valids: Optional[npt.NDArray[np.bool_]] = None,
-    x: Optional[npt.NDArray[np.number]] = None,
-    y: Optional[npt.NDArray[np.number]] = None,
+    dirs: NDArray[NpFlowDir],
+    valids: Optional[NDArray[np.bool_]] = None,
+    x: Optional[NDArray[np.number]] = None,
+    y: Optional[NDArray[np.number]] = None,
     dir_scheme: D8Directions = D8Directions(),
-) -> npt.NDArray[np.float32]:
+) -> NDArray[np.float32]:
     """
     Computes the maximum distance to confluence for each cell with
     its neighbours in the flow direction grid.
@@ -83,18 +89,11 @@ def compute_dist2conf_max(
     dtype and layout already match, avoiding unnecessary full-grid
     copies.
     """
-    if valids is None:
-        valids = np.ones(dirs.shape, dtype=bool)
-    elif isinstance(valids, np.ndarray):
-        assert (
-            valids.shape == dirs.shape
-        ), f"Shape for flow direction ({dirs.shape}) and valid mask ({valids.shape}) do not match."
-    else:
-        raise TypeError(f"Valid mask must be a NumPy array (got {type(valids)}).")
+    dirs = validate_format_flowdirs(dirs)
+    valids = validate_format_valids(valids, dirs, "flow direction raster")
     if x is not None and y is not None:
-        assert (
-            x.shape == dirs.shape and y.shape == dirs.shape
-        ), f"Shapes for flow direction ({dirs.shape}) and x ({x.shape}) and y ({y.shape}) must match."
+        validate_same_shape(x, dirs, "X coordinates", "flow direction raster")
+        validate_same_shape(y, dirs, "Y coordinates", "flow direction raster")
     else:
         x = np.arange(dirs.shape[1], dtype=np.float32)
         y = np.arange(dirs.shape[0], dtype=np.float32)
@@ -118,33 +117,27 @@ def compute_dist2conf_max(
 
 
 def compute_ridgedir(
-    dirs: npt.NDArray[np.integer],
+    dirs: NDArray[NpFlowDir],
     dir_scheme: D8Directions = D8Directions(),
-    valids: Optional[npt.NDArray[np.bool_]] = None,
-    x: Optional[npt.NDArray[np.number]] = None,
-    y: Optional[npt.NDArray[np.number]] = None,
-) -> npt.NDArray[np.uint8]:
-    bmax = compute_dist2conf_max(
-        dirs,
-        valids=valids,
-        x=x,
-        y=y,
-        dir_scheme=dir_scheme,
-    )
+    valids: Optional[NDArray[np.bool_]] = None,
+    x: Optional[NDArray[np.number]] = None,
+    y: Optional[NDArray[np.number]] = None,
+) -> NDArray[NpFlowDir]:
+    bmax = compute_dist2conf_max(dirs, valids=valids, x=x, y=y, dir_scheme=dir_scheme)
     bmaxdirs, _, _ = flowdir_m.compute_flowdir(
         -bmax, dir_scheme=dir_scheme, valids=valids, fill_depression=True
     )
-    return bmaxdirs.astype(np.uint8, order="F")
+    return bmaxdirs.astype(NpFlowDir, order="F")
 
 
 def compute_dist2ridge(
-    dirs: npt.NDArray[np.integer],
+    dirs: NDArray[NpFlowDir],
     dir_scheme: D8Directions = D8Directions(),
-    valids: Optional[npt.NDArray[np.bool_]] = None,
-    x: Optional[npt.NDArray[np.number]] = None,
-    y: Optional[npt.NDArray[np.number]] = None,
+    valids: Optional[NDArray[np.bool_]] = None,
+    x: Optional[NDArray[np.number]] = None,
+    y: Optional[NDArray[np.number]] = None,
     dir_is_ridge: bool = False,
-) -> npt.NDArray[np.float32]:
+) -> NDArray[np.float32]:
     """
     Computes the 'distance to ridge' for each cell in the flow direction grid.
 
@@ -152,7 +145,7 @@ def compute_dist2ridge(
 
     Parameters
     ----------
-    dirs : NDArray[int]
+    dirs : NDArray[uint8]
         2D array representing the flow directions for each cell.
     dir_scheme : D8Directions, optional
         Instance of `D8Directions` defining the flow direction scheme.
@@ -179,11 +172,7 @@ def compute_dist2ridge(
         bmaxdirs = dirs
     else:
         bmaxdirs = compute_ridgedir(
-            dirs,
-            dir_scheme=dir_scheme,
-            valids=valids,
-            x=x,
-            y=y,
+            dirs, dir_scheme=dir_scheme, valids=valids, x=x, y=y
         )
     bmaxdists = compute_dist2source(
         bmaxdirs, dir_scheme=dir_scheme, x=x, y=y, valids=valids
@@ -192,13 +181,13 @@ def compute_dist2ridge(
 
 
 def compute_ridge_strahler_order(
-    dirs: npt.NDArray[np.integer],
+    dirs: NDArray[NpFlowDir],
     dir_scheme: D8Directions = D8Directions(),
-    valids: Optional[npt.NDArray[np.bool_]] = None,
-    indegs: Optional[npt.NDArray[np.integer]] = None,
+    valids: Optional[NDArray[np.bool_]] = None,
+    indegs: Optional[NDArray[np.integer]] = None,
     backend: Backend = "fortran",
     dir_is_ridge: bool = False,
-) -> npt.NDArray[np.uint8]:
+) -> NDArray[np.uint8]:
     """
     Parameters
     ----------
@@ -212,16 +201,8 @@ def compute_ridge_strahler_order(
     if dir_is_ridge:
         bmaxdirs = dirs
     else:
-        bmaxdirs = compute_ridgedir(
-            dirs,
-            dir_scheme=dir_scheme,
-            valids=valids,
-        )
+        bmaxdirs = compute_ridgedir(dirs, dir_scheme=dir_scheme, valids=valids)
     orders = compute_flow_strahler_order(
-        bmaxdirs,
-        dir_scheme=dir_scheme,
-        valids=valids,
-        indegs=indegs,
-        backend=backend,
+        bmaxdirs, dir_scheme=dir_scheme, valids=valids, indegs=indegs, backend=backend
     )
     return orders.astype(np.uint8, order="F")

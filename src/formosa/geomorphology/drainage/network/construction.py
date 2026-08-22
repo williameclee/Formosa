@@ -1,7 +1,7 @@
 """
 Constructs flow graphs from raster flow directions.
 
-Last modified: 2026-08-18, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
@@ -18,26 +18,31 @@ from formosa.geomorphology.drainage.network.validation import (
 )
 from formosa.geomorphology._native import network_construction as constr_f
 import formosa.geomorphology.drainage.network._backends.construction_py as constr_py
-from formosa.utils import Backend, NpCanonIndex, NpCoords, raise_fortran_error
+from formosa.utils import NpFlowDir, NpCanonIndex, NpCoords
+from formosa.utils import Backend, raise_fortran_error
+from formosa.geomorphology._validation import (
+    validate_format_valids,
+    validate_format_flowdirs,
+)
 
 from typing import Optional
 from numpy.typing import NDArray
 
 
 def create_flowline_plot_data(
-    dirs: NDArray[np.integer],
+    dirs: NDArray[NpFlowDir],
     valids: Optional[NDArray[np.bool_]] = None,
     dir_scheme: D8Directions = D8Directions(),
     x: Optional[NDArray[NpCoords]] = None,
     y: Optional[NDArray[NpCoords]] = None,
-) -> tuple[NDArray[np.integer], NDArray[np.integer]]:
+) -> tuple[NDArray[NpCanonIndex], NDArray[NpCanonIndex]]:
     """
     Computes a graph representation of the flow directions in a flow
     direction grid.
 
     Parameters
     ----------
-    dirs : NDArray[int]
+    dirs : NDArray[uint8]
         2D array representing the flow directions for each cell.
     valids : NDArray[bool], optional
         Boolean mask array indicating valid cells in the flow
@@ -61,18 +66,13 @@ def create_flowline_plot_data(
 
     Returns
     -------
-    graphi : NDArray[int]
+    graphi : NDArray[int32]
         1D array representing the row indices of the graph edges.
-    graphj : NDArray[int]
+    graphj : NDArray[int32]
         1D array representing the column indices of the graph edges.
     """
-    if valids is not None:
-        assert valids.shape == dirs.shape, (
-            "Shape for dlowdirs and valids mask must match, "
-            + f"but got valid shape {dirs.shape} and flowdirs shape {valids.shape} instead."
-        )
-    else:
-        valids = np.full(dirs.shape, True, dtype=bool)
+    dirs = validate_format_flowdirs(dirs)
+    valids = validate_format_valids(valids, dirs, "flow direction raster")
 
     i, j = np.meshgrid(
         np.arange(dirs.shape[0], dtype=np.int32),
@@ -113,7 +113,7 @@ def create_flowline_plot_data(
 
 
 def construct_flowgraph(
-    dirs: NDArray[np.integer],
+    dirs: NDArray[NpFlowDir],
     dir_scheme: D8Directions = D8Directions(),
     valids: Optional[NDArray[np.bool_]] = None,
     min_order: int = 2,
@@ -128,7 +128,7 @@ def construct_flowgraph(
 
     Parameters
     ----------
-    dirs : NDArray[int], optional
+    dirs : NDArray[uint8]
         2D array representing the flow directions for each cell.
     dir_scheme : D8Directions, optional
         Instance of `D8Directions` defining the flow direction
@@ -190,31 +190,21 @@ def construct_flowgraph(
     Notes
     -----
     Selected cells with no selected incoming or outgoing edge are
-    intentionally
-    omitted from the arc representation.
+    intentionally omitted from the arc representation.
     """
-    if valids is None:
-        valids = np.ones(dirs.shape, dtype=bool)
+    dirs = validate_format_flowdirs(dirs)
+    valids = validate_format_valids(valids, dirs, "flow direction raster")
     if orders is None:
         orders = metrics_m.compute_flow_strahler_order(
-            dirs,
-            dir_scheme=dir_scheme,
-            valids=valids,
-            backend=backend,
+            dirs, dir_scheme, valids=valids, backend=backend
         )
 
     # Find seed cells to start with
     valids = valids & (orders >= min_order)
     ncells = int(np.sum(valids))
-    indegs = flowdir_m.count_indegree(
-        dirs, dir_scheme=dir_scheme, valids=valids, backend=backend
-    )
+    indegs = flowdir_m.count_indegree(dirs, dir_scheme, valids=valids, backend=backend)
     cyclics = flowdir_m.find_cyclic_flowdirs(
-        dirs,
-        dir_scheme=dir_scheme,
-        valids=valids,
-        indegs=indegs,
-        backend=backend,
+        dirs, dir_scheme, valids=valids, indegs=indegs, backend=backend
     )
     cycle_ijs = np.argwhere(cyclics).astype(np.int32, order="C")
     if cycle_ijs.size > 0:
@@ -225,8 +215,8 @@ def construct_flowgraph(
     match backend:
         case "python":
             narcs, nvtxs, arc_orders, vtxs, endpts = constr_py.construct_flowgraph(
-                dirs=dirs,
-                dir_scheme=dir_scheme,
+                dirs,
+                dir_scheme,
                 valids=valids,
                 orders=orders,
                 indegs=indegs,

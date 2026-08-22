@@ -1,17 +1,22 @@
 """
 Locates neighbouring raster cells and retrieve their values.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
 
 from formosa.geomorphology.drainage.directions import D8Directions
-
-import warnings
+from formosa.utils import NpFlowDir, NpCanonIndex
+from formosa.geomorphology._validation import (
+    validate_format_valids,
+    validate_format_flowdirs,
+)
 
 from typing import Optional
-import numpy.typing as npt
+from numpy.typing import NDArray
+
+import warnings
 
 
 def get_neighbour_values(
@@ -20,7 +25,7 @@ def get_neighbour_values(
     pad_value: np.number | float | int = np.nan,
     include_self: bool = False,
     self_at_last: bool = False,
-) -> tuple[np.ndarray, npt.NDArray[np.integer], npt.NDArray[np.integer]]:
+) -> tuple[np.ndarray, NDArray[np.integer], NDArray[np.integer]]:
     """
     Gets the values of neighbouring cells in an array based on specified directions.
 
@@ -85,24 +90,24 @@ def get_neighbour_values(
 
 
 def compute_downstream_indices(
-    dirs: npt.NDArray[np.integer],
+    dirs: NDArray[NpFlowDir],
     dir_scheme: D8Directions = D8Directions(),
-    valids: Optional[npt.NDArray[np.bool_]] = None,
+    valids: Optional[NDArray[np.bool_]] = None,
     check: bool = True,
     return_flat_index: bool = True,
     oob_is_okay: bool = False,
 ) -> tuple[
-    npt.NDArray[np.int32],
-    npt.NDArray[np.int32],
-    Optional[npt.NDArray[np.int32]],
-    npt.NDArray[np.bool_],
+    NDArray[NpCanonIndex],
+    NDArray[NpCanonIndex],
+    Optional[NDArray[NpCanonIndex]],
+    NDArray[np.bool_],
 ]:
     """
     Computes the downstream indices for each cell in a flow direction grid.
 
     Parameters
     ----------
-    dirs : NDArray[int]
+    dirs : NDArray[uint8]
         A 2D array representing the flow directions for each cell.
     dir_scheme : D8Directions, optional
         An instance of D8Directions defining the flow direction scheme.
@@ -124,10 +129,10 @@ def compute_downstream_indices(
 
     Returns
     -------
-    dsi : NDArray[int]
+    dsi : NDArray[int32]
         2D array of downstream row indices for each cell.
         When the cell is invalid, it is set to -1.
-    dsj : NDArray[int]
+    dsj : NDArray[int32]
         2D array of downstream column indices for each cell.
         When the cell is invalid, it is set to -1.
     dsij : NDArray[int32] | None
@@ -144,16 +149,8 @@ def compute_downstream_indices(
     UserWarning
         If `check` is `False` and `oob_is_okay` is `False`, but some downstream indices are out of bounds.
     """
-    if valids is None:
-        valids = ~np.isnan(dirs)
-    elif isinstance(valids, np.ndarray):
-        assert (
-            valids.shape == dirs.shape
-        ), f"Shapes for flow direction ({dirs.shape}) and valid mask ({valids.shape}) do not match."
-    else:
-        raise TypeError(
-            f"Expected valids to be None or np.ndarray, got {type(valids)} instead."
-        )
+    dirs = validate_format_flowdirs(dirs)
+    valids = validate_format_valids(valids, dirs, "flow direction raster")
 
     I, J = dirs.shape
     ii, jj = np.meshgrid(
@@ -169,6 +166,7 @@ def compute_downstream_indices(
     if return_flat_index:
         dsij = dsj.astype(np.int32) * I + dsi.astype(np.int32)
         dsij[~valids] = -1
+        dsij = dsij.astype(NpCanonIndex)
     else:
         dsij = None
 
@@ -182,4 +180,4 @@ def compute_downstream_indices(
 
     if not oob_is_okay:
         warnings.warn("Some downstream indices out of bounds", UserWarning)
-    return dsi, dsj, dsij, ~ds_oobs
+    return dsi.astype(NpCanonIndex), dsj.astype(NpCanonIndex), dsij, ~ds_oobs
