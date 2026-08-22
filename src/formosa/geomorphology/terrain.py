@@ -8,6 +8,7 @@ and prominence use the internal Fortran backend.
 Last modified: 2026-08-22, En-Chi Lee (williameclee@gmail.com)
 """
 
+from enum import IntFlag
 import numpy as np
 
 from formosa.geomorphology.drainage.directions import D8Directions
@@ -240,6 +241,11 @@ def compute_isolation(
     return isos, ilpis, ilpjs, censored
 
 
+class ProminenceFeatureKind(IntFlag):
+    PEAK = 1
+    SADDLE = 2
+
+
 @overload
 def compute_prominence(
     dem: NDArray[np.unsignedinteger],
@@ -319,32 +325,32 @@ def compute_prominence(
     feats : NDArray[int32]
         Feature index raster containing 0-based feature IDs at peak
         and saddle cells, and `-1` elsewhere.
-        - Size: `(nfeats,)`
+        - Size: `(nrows, ncols)` (same as `dem`)
     feat_types : NDArray[int32]
         Feature types indexed by 0-based feature ID: `1` for a peak
-        and `2` for a saddle.
+        and `2` for a saddle (see :class:`ProminenceFeatureKind`).
         - Size: `(nfeats,)`
     feat_ijs : NDArray[int32]
         Zero-based representative `(row, column)` coordinates for
         each feature.
-        Representatives belong to their feature plateau and are
+        Representatives belong to their feature flat and are
         nearest its centroid; ties use the smallest linear cell
         index.
-        - Size: `(nfeats,2)`
+        - Size: `(nfeats, 2)`
     key_saddles : NDArray[int32]
         Key-saddle feature index for each peak feature.
-        Entries for non-peak features and peaks without a known key
-        saddle are `-1`.
+        For peak features, contains the 0-based index of its key 
+        saddle. Entries for saddle features and unresolved regional 
+        summits contain `-1`.
         - Size: `(nfeats,)`
     feat_prnts : NDArray[int32]
         Parent feature index for each feature in the divide tree.
-        Root features contain `-1`.
-        The 'parent' is defined similar to the *island parentage*
-        model, with the important distinction that here, the saddle
-        is the parent of the two pieces of island that it joins.
-        That is, the 'parent' of a peak is always a saddle (and not
-        necessarily its key saddle), which then becomes the child of
-        another saddle.
+        - For a subordinate peak, its parent is its key saddle.
+        - For a surviving dominant peak, its parent is the first
+        saddle that merged into its domain.
+        - For a saddle, its parent is the next enclosing saddle that
+        joins its surrounding ridge system.
+        - Root features contain `-1`.
         - Size: `(nfeats,)`
 
     Raises
