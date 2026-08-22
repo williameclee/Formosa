@@ -9,25 +9,32 @@ Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 
 import numpy as np
 
-import formosa.geomorphology.drainage._backends.flat_resolution_py
 from formosa.utils import Backend, raise_fortran_error
+from formosa.geomorphology._validation import (
+    validate_same_shape,
+    validate_format_dem,
+    validate_format_valids,
+    validate_format_flowdirs,
+)
+import formosa.geomorphology.drainage._backends.flat_resolution_py
 from formosa.geomorphology.drainage.directions import D8Directions
 from formosa.geomorphology.drainage.neighbours import (
     get_neighbour_values,
 )
 from formosa.geomorphology._native import drainage_flat_resolution as flat_f
+from formosa.utils import NpFlowDir, NpReal
 
 from typing import Optional
-import numpy.typing as npt
+from numpy.typing import NDArray
 
 
 def find_flat_edges(
-    dem: npt.NDArray[np.number],
-    dirs: npt.NDArray[np.integer],
+    dem: NDArray[NpReal],
+    dirs: NDArray[NpFlowDir],
     dir_scheme: D8Directions = D8Directions(),
-    valids: Optional[npt.NDArray[np.bool_]] = None,
+    valids: Optional[NDArray[np.bool_]] = None,
     backend: Backend = "fortran",
-) -> tuple[npt.NDArray[np.bool_], npt.NDArray[np.bool_]]:
+) -> tuple[NDArray[np.bool_], NDArray[np.bool_]]:
     """
     Finds the cells on the edges of flat areas that drain to lower terrain (low edges) and those that are adjacent to higher terrain (high edges).
     From [R. Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009), Algorithm 3 (p. 133).
@@ -58,6 +65,9 @@ def find_flat_edges(
     high_edges : NDArray[bool]
         A boolean mask array where True indicates cells that are high edges of flat areas.
     """
+    dem = validate_format_dem(dem)
+    valids = validate_format_valids(valids, dem)
+    dirs = validate_format_flowdirs(dirs, dem)
     match backend:
         case "python":
             low_edges, high_edges = (
@@ -66,9 +76,6 @@ def find_flat_edges(
                 )
             )
         case "fortran":
-            if valids is None:
-                valids = np.ones(dem.shape, dtype=bool, order="F")
-
             low_edges, high_edges = flat_f.find_flat_edges(
                 dem.astype(np.float32, order="F"),
                 dirs.astype(np.int32, order="F"),
@@ -84,11 +91,11 @@ def find_flat_edges(
 
 
 def label_flats(
-    dem: npt.NDArray[np.number],
-    seeds: npt.NDArray[np.bool_],
-    valids: Optional[npt.NDArray[np.bool_]] = None,
+    dem: NDArray[NpReal],
+    seeds: NDArray[np.bool_],
+    valids: Optional[NDArray[np.bool_]] = None,
     dir_scheme: D8Directions = D8Directions(),
-) -> npt.NDArray[np.int32]:
+) -> NDArray[np.int32]:
     """
     Separates and labels inidividual flat areas in a DEM.
     From [R. Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009), Algorithm 4 (p. 133).
@@ -98,7 +105,7 @@ def label_flats(
     dem : NDArray[number]
         A 2D array representing the digital elevation model (DEM).
     seeds : NDArray[bool]
-        Either a boolean mask array indicating flat area locations, or a 2D integer array of coordinates, or an iterable of coordinate pairs.
+        Boolean mask array indicating flat area locations.
     valids : NDArray[bool], optional
         A boolean mask array indicating valid cells in the DEM.
         If `None`, all cells are considered valid.
@@ -119,15 +126,9 @@ def label_flats(
     ValueError
         If the shapes of the input arrays do not match the expected dimensions.
     """
-    assert (
-        dem.shape == seeds.shape
-    ), f"Shapes for dem ({dem.shape}) and seeds ({seeds.shape}) do not match."
-    if valids is not None:
-        assert (
-            dem.shape == valids.shape
-        ), f"Shapes for dem ({dem.shape}) and valids ({valids.shape}) do not match."
-    else:
-        valids = np.ones(dem.shape, dtype=bool, order="F")
+    dem = validate_format_dem(dem)
+    valids = validate_format_valids(valids, dem, "DEM")
+    validate_same_shape(seeds, dem, "seed mask", "DEM")
 
     labels, err_code = flat_f.label_flats(
         dem.astype(np.float32, order="F"),
@@ -141,11 +142,11 @@ def label_flats(
 
 
 def find_flat(
-    dem: npt.NDArray[np.number],
-    valids: Optional[npt.NDArray[np.bool_]] = None,
+    dem: NDArray[NpReal],
+    valids: Optional[NDArray[np.bool_]] = None,
     only_min: bool = True,
     dir_scheme: D8Directions = D8Directions(window=3),
-) -> npt.NDArray[np.bool_]:
+) -> NDArray[np.bool_]:
     """
     Identifies flat areas in a DEM where cells have no lower neighbouring cells.
 
@@ -170,7 +171,9 @@ def find_flat(
     flats : NDArray[bool]
         A boolean mask array where True indicates cells that are part of flat areas.
     """
-    if valids is not None and np.any(~valids):
+    dem = validate_format_dem(dem)
+    valids = validate_format_valids(valids, dem, "DEM")
+    if np.any(~valids):
         dem[~valids] = np.max(dem[~valids]) + 1
 
     neighbours, _, _ = get_neighbour_values(
@@ -181,15 +184,14 @@ def find_flat(
     else:
         flats = np.any(dem == neighbours, axis=0)
 
-    if valids is not None:
-        flats = flats & valids
+    flats = flats & valids
     return flats
 
 
 def find_ambiguous(
-    dem: npt.NDArray[np.number],
+    dem: NDArray[NpReal],
     dir_scheme: D8Directions = D8Directions(),
-) -> npt.NDArray[np.bool_]:
+) -> NDArray[np.bool_]:
     """
     Detects ambiguous flow directions in a DEM, where multiple neighbouring cells have the same minimum elevation.
 
@@ -206,6 +208,7 @@ def find_ambiguous(
     ambiguities : NDArray[bool]
         A boolean mask array where True indicates cells with ambiguous flow directions.
     """
+    dem = validate_format_dem(dem)
     neighbours, _, _ = get_neighbour_values(dem, dir_scheme=dir_scheme)
     min_neighbours = np.min(neighbours, axis=0)
     ambiguities = np.sum(neighbours == min_neighbours, axis=0) > 1
@@ -214,10 +217,10 @@ def find_ambiguous(
 
 
 def create_pushing_syn_grad(
-    labels: npt.NDArray[np.number],
-    high_edges: npt.NDArray[np.bool_],
+    labels: NDArray[np.number],
+    high_edges: NDArray[np.bool_],
     dir_scheme: D8Directions = D8Directions(),
-) -> npt.NDArray[np.int32]:
+) -> NDArray[np.int32]:
     """
     Produces a synthetic elevation that decreases away from 'high edges' of flats.
     Modified from [R. Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009), Algorithm 5 (p. 133–134).
@@ -245,9 +248,7 @@ def create_pushing_syn_grad(
     ValueError
         If the shapes of the input arrays do not match the expected dimensions.
     """
-    assert (
-        labels.shape == high_edges.shape
-    ), f"Shapes for labels ({labels.shape}) and high_edges ({high_edges.shape}) do not match."
+    validate_same_shape(labels, high_edges, "label raster", "high edge mask")
 
     z_syn, err_code = flat_f.create_pushing_syn_grad(
         labels.astype(np.int32, order="F"),
@@ -259,10 +260,10 @@ def create_pushing_syn_grad(
 
 
 def create_pulling_syn_grad(
-    labels: npt.NDArray[np.number],
-    low_edges: npt.NDArray[np.bool_],
+    labels: NDArray[np.number],
+    low_edges: NDArray[np.bool_],
     dir_scheme: D8Directions = D8Directions(),
-) -> npt.NDArray[np.integer]:
+) -> NDArray[np.integer]:
     """
     Produces a synthetic elevation that drains towards 'low edges' of flats.
     Modified from [R. Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009), Algorithm 6 (p. 134).
@@ -300,11 +301,11 @@ def create_pulling_syn_grad(
 
 
 def compute_syn_flowdir(
-    z: npt.NDArray[np.integer | np.floating],
-    labels: npt.NDArray[np.integer],
+    z: NDArray[NpReal],
+    labels: NDArray[np.integer],
     dir_scheme: D8Directions = D8Directions(),
     backend: Backend = "fortran",
-) -> npt.NDArray[np.uint8]:
+) -> NDArray[np.uint8]:
     """
     Computes flow directions within flat areas using synthetic elevation.
     Very similar to the naive flow direction computation, but only search within the same flat area.

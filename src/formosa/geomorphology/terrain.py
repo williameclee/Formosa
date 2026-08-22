@@ -12,8 +12,9 @@ from enum import IntFlag
 import numpy as np
 
 from formosa.geomorphology._validation import (
-    _validate_format_dem,
-    _validate_format_valids,
+    validate_same_shape,
+    validate_format_dem,
+    validate_format_valids,
 )
 from formosa.geomorphology.drainage.directions import (
     D8Directions,
@@ -64,12 +65,14 @@ def compute_slope(
         distance unit, with the same shape as `dem`.
     """
     if x is not None:
+        validate_same_shape(x, dem, "X coordinates", "DEM")
         dxx = np.gradient(x, axis=1)
     elif dx is not None:
         dxx = dx
     else:
         dxx = 1
     if y is not None:
+        validate_same_shape(y, dem, "Y coordinates", "DEM")
         dyy = np.gradient(y, axis=0)
     elif dy is not None:
         dyy = dy
@@ -152,7 +155,7 @@ def compute_isolation(
     extends half a cell beyond each outer cell centre. Internal
     invalid cells are excluded as ILPs.
     """
-    dem = _validate_format_dem(dem)
+    dem = validate_format_dem(dem)
 
     spacings: dict[str, np.float32] = {}
     for name, spacing in (("dx", dx), ("dy", dy)):
@@ -177,7 +180,7 @@ def compute_isolation(
     dx_f = spacings["dx"]
     dy_f = spacings["dy"]
 
-    valids = _validate_format_valids(valids, dem)
+    valids = validate_format_valids(valids, dem, "DEM")
 
     isos, ilpis, ilpjs, censored, err_code = terrain_f.compute_isolation(
         dem.astype(np.float32, order="F"),
@@ -329,8 +332,8 @@ def compute_prominence(
     See [Kirmse & de Ferranti (2017)](https://doi.org/10.1177/0309133317738163)
     for the definition of prominence and more details.
     """
-    dem = _validate_format_dem(dem)  # type: ignore
-    valids = _validate_format_valids(valids, dem)  # type: ignore
+    dem = validate_format_dem(dem)  # type: ignore
+    valids = validate_format_valids(valids, dem, "DEM")
     ofsts_f = validate_direction_offsets(dir_scheme.offsets)
 
     with np.errstate(over="ignore", invalid="ignore"):

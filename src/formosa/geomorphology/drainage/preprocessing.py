@@ -5,21 +5,26 @@ This module identifies ocean basins, fills depressions, and performs
 other operations required before flow routing and metric
 calculation.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-22, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
 
+from formosa.geomorphology._validation import (
+    validate_format_dem,
+    validate_format_valids,
+)
 from formosa.utils import raise_fortran_error
 from formosa.geomorphology.drainage.directions import D8Directions
 from formosa.geomorphology._native import drainage_preprocessing as preproc_f
+from formosa.utils import NpReal
 
 from typing import Optional
 import numpy.typing as npt
 
 
 def detect_ocean_basins_from_boundary(
-    dem: npt.NDArray[np.number],
+    dem: npt.NDArray[NpReal],
     valids: Optional[npt.NDArray[np.bool_]] = None,
     ocean_level: int | float = 0,
     flood_below: bool = True,
@@ -63,21 +68,15 @@ def detect_ocean_basins_from_boundary(
     TypeError
         If `dem` does not have a numeric dtype.
     RuntimeError
-        If the FORTRAN routine encounters an execution error.
+        If the Fortran routine encounters an execution error.
 
     Notes
     -----
     See also: :func:`invalidate_ocean_basins`
     """
-    dem_array = np.asarray(dem)
-    if dem_array.ndim != 2 or 0 in dem_array.shape:
-        raise ValueError(
-            f"dem must be a non-empty 2D array, got shape {dem_array.shape}."
-        )
-    if not np.issubdtype(dem_array.dtype, np.number):
-        raise TypeError(f"dem must have a numeric dtype, got {dem_array.dtype}.")
-    if np.issubdtype(dem_array.dtype, np.complexfloating):
-        raise TypeError("dem must contain real-valued elevations.")
+    dem = validate_format_dem(dem)
+    valids = validate_format_valids(valids, dem, "DEM")
+
     if isinstance(ocean_level, (bool, np.bool_)) or not np.isscalar(ocean_level):
         raise TypeError("ocean_level must be a real numeric scalar.")
     try:
@@ -89,24 +88,12 @@ def detect_ocean_basins_from_boundary(
     if not isinstance(flood_below, (bool, np.bool_)):
         raise TypeError("flood_below must be a boolean.")
 
-    finite = np.isfinite(dem_array)
-    if valids is None:
-        valids_array = finite
-    else:
-        valids_array = np.asarray(valids, dtype=bool)
-        if valids_array.shape != dem_array.shape:
-            raise ValueError(
-                f"Shapes for dem ({dem_array.shape}) and valids "
-                f"({valids_array.shape}) do not match."
-            )
-        valids_array = valids_array & finite
-
-    if not np.any(valids_array):
-        return np.zeros(dem_array.shape, dtype=np.int32, order="F")
+    if not np.any(valids):
+        return np.zeros(dem.shape, dtype=np.int32, order="F")
 
     basins, err_code = preproc_f.detect_ocean_basins_from_boundary(
-        dem_array.astype(np.float32, order="F"),
-        valids_array.astype(bool, order="F"),
+        dem.astype(np.float32, order="F"),
+        valids.astype(bool, order="F"),
         dir_scheme.offsets.astype(np.int32, order="F"),
         np.float32(ocean_lvl_float),
         bool(flood_below),
@@ -116,7 +103,7 @@ def detect_ocean_basins_from_boundary(
 
 
 def invalidate_ocean_basins(
-    dem: npt.NDArray[np.number],
+    dem: npt.NDArray[NpReal],
     valids: Optional[npt.NDArray[np.bool_]] = None,
     ocean_level: int | float = 0,
     flood_below: bool = True,
@@ -163,7 +150,7 @@ def invalidate_ocean_basins(
     TypeError
         If `dem` does not have a numeric dtype.
     RuntimeError
-        If the FORTRAN routine encounters an execution error.
+        If the Fortran routine encounters an execution error.
 
     Notes
     -----
@@ -178,19 +165,19 @@ def invalidate_ocean_basins(
     if min_size < 1:
         raise ValueError("min_size must be at least 1.")
 
-    dem_array = np.asarray(dem)
+    dem = np.asarray(dem)
     basins = detect_ocean_basins_from_boundary(
-        dem_array,
+        dem,
         valids=valids,
         ocean_level=ocean_level,
         flood_below=flood_below,
         dir_scheme=dir_scheme,
     )
     if valids is None:
-        out_valids = np.isfinite(dem_array)
+        out_valids = np.isfinite(dem)
     else:
         out_valids = np.asarray(valids, dtype=bool).copy()
-        out_valids &= np.isfinite(dem_array)
+        out_valids &= np.isfinite(dem)
 
     counts = np.bincount(basins.ravel())
     sufficiently_large = counts >= min_size
@@ -200,11 +187,11 @@ def invalidate_ocean_basins(
 
 
 def fill_depressions(
-    dem: npt.NDArray[np.number],
+    dem: npt.NDArray[NpReal],
     dir_scheme: D8Directions = D8Directions(),
     valids: Optional[npt.NDArray[np.bool_]] = None,
     max_fill_size: Optional[int] = None,
-) -> npt.NDArray[np.number]:
+) -> npt.NDArray[NpReal]:
     """
     Fills depressions in a digital elevation model (DEM).
 
@@ -247,28 +234,13 @@ def fill_depressions(
     Notes
     -----
     Elevations should be finite. `NaN` ordering is not defined by
-    the FORTRAN priority queue. Equal-elevation cells may be
+    the Fortran priority queue. Equal-elevation cells may be
     processed in any order without changing the filled result.
     """
-    # Validate DEM
-    dem = np.asarray(dem)
-    if dem.ndim != 2 or 0 in dem.shape:
-        raise ValueError(
-            "DEM must be a non-empty 2D array, " + f"but got shape {dem.shape}."
-        )
-    if not np.issubdtype(dem.dtype, np.number):
-        raise TypeError("DEM must have a numeric dtype, " + f"but got {dem.dtype}.")
-    # Validate valids
-    if valids is None:
-        valids = np.ones(dem.shape, dtype=bool, order="F")
-    else:
-        if valids.shape != dem.shape:
-            raise ValueError(
-                "DEM array and validity mask must have the same shape, "
-                + f"but got {dem.shape} and {valids.shape}, respectively."
-            )
-        if not np.any(valids):
-            return dem.copy()
+    dem = validate_format_dem(dem)
+    valids = validate_format_valids(valids, dem, "DEM")
+    if not np.any(valids):
+        return dem.copy()
     # Validate max_fill_size
     if max_fill_size and (max_fill_size < 0):
         raise ValueError(
