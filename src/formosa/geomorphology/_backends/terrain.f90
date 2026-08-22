@@ -7,7 +7,7 @@
 !! prominence computations.
 !!
 !! Created: 2026-08-19, En-Chi Lee (williameclee@gmail.com)
-!! Last modified: 2026-08-21, En-Chi Lee (williameclee@gmail.com)
+!! Last modified: 2026-08-22, En-Chi Lee (williameclee@gmail.com)
 module terrain
     use iso_c_binding, only: c_int8_t, c_int32_t
     use utils, only: ERR_NO_ERROR, ERR_INVALID_INPUT, &
@@ -426,13 +426,13 @@ contains
         !$omp END PARALLEL DO
     end subroutine compute_isolation
 
-    !> Labels connected components (plateaus) of equal elevation.
+    !> Labels connected components (flats) of equal elevation.
     !!
     !! Performs a breadth-first search (BFS) flood fill to identify
     !! connected flat components among cells sharing the same
     !! elevation within the current slice range
     !! [slice_start, slice_end].
-    pure subroutine label_plateaus( &
+    pure subroutine label_flats( &
         cids, labels, nlabels, offsets, nrows, ncols, &
         slice_start, slice_end, order_lookup, err_code)
         implicit none(type, external)
@@ -445,7 +445,7 @@ contains
             !! DEM raster dimensions
         integer, intent(in) :: order_lookup(:)
             !! Inverse lookup mapping linear cell ID to position in
-            !! all of cids (bedyond this slice)
+            !! all of cids (beyond this slice)
         integer, intent(in) :: slice_start, slice_end
             !! Index bounds of the current elevation slice in all of
             !! cids
@@ -467,7 +467,7 @@ contains
         integer :: cid, nid
             !! Linear ID of current and neighbour cell
         integer :: iofs
-            !! neighbour direction offset index
+            !! Neighbour direction offset index
         logical(kind=1) :: is_valid
             !! True if index conversion succeeded
         integer :: queue(size(cids))
@@ -517,7 +517,7 @@ contains
                 iqueue = iqueue + 1
             end do
         end do
-    end subroutine label_plateaus
+    end subroutine label_flats
 
     !> Finds the canonical root peak for a peak domain in a
     !! disjoint-set forest.
@@ -542,7 +542,7 @@ contains
         root_dom = prnt_doms(dom)
     end function find_root_domain
 
-    !> Identifies unique higher peak domains adjacent to a plateau
+    !> Identifies unique higher peak domains adjacent to a flat
     !! component.
     !!
     !! Traverses all cells belonging to a connected flat component,
@@ -561,8 +561,7 @@ contains
         integer, contiguous, intent(in) :: sorted_cids(:)
             !! Linear cell IDs sorted in ascending elevation order
         integer, intent(in) :: label_head
-            !! Index of the first cell in this plateau component's
-            !! linked list
+            !! Index of the first cell in this flat's linked list
         integer, contiguous, intent(in) :: labels(:)
             !! Linked-list 'next' pointers chaining cells in the
             !! same component
@@ -622,7 +621,7 @@ contains
         end do
     end subroutine find_adjacent_higher_domains
 
-    !> Selects the centroid-nearest cell of a plateau feature.
+    !> Selects the centroid-nearest cell of a flat.
     !!
     !! Ties are resolved using the smallest Fortran linear cell ID.
     pure subroutine find_representative_cell( &
@@ -633,10 +632,9 @@ contains
             !! Linked-list 'next' pointers chaining cells in the
             !! component
         integer, intent(in) :: label_head
-            !! Index of first cell in this plateau component's
-            !! linked list
+            !! Index of first cell in this flat's linked list
         integer, contiguous, intent(in) :: cids(:)
-            !! 1-based linear cell IDs of the plateau component
+            !! 1-based linear cell IDs
         integer, intent(in) :: nrows, ncols
             !! DEM raster dimensions
         ! Outputs
@@ -647,14 +645,14 @@ contains
         integer :: icell
             !! Loop index traversing the component linked list
         integer :: ncells
-            !! Number of cells in the plateau component
+            !! Number of cells in the flat
         integer :: best_cid
             !! Smallest linear cell ID among centroid-distance ties
         integer :: ci, cj
             !! Row and column indices of current cell
         real :: mi, mj
             !! Mean row and column (centroid) coordinates of the
-            !! plateau
+            !! flat
         real :: dist2, min_dist2
             !! Squared distance to centroid and current minimum
             !! squared distance
@@ -674,6 +672,12 @@ contains
             ! Go to the next cell with the same label
             icell = labels(icell)
         end do
+
+        if (ncells == 1) then
+            pi = int(mi)
+            pj = int(mj)
+            return
+        end if
 
         mi = mi/ncells
         mj = mj/ncells
@@ -699,8 +703,7 @@ contains
         end do
     end subroutine find_representative_cell
 
-    !> Processes a single connected plateau component during
-    !! prominence sweep.
+    !> Processes a single connected flat during prominence sweep.
     !!
     !! Handles three morphological cases for the component:
     !! 1. Isolated local maximum (0 higher neighbours): creates a
@@ -711,7 +714,7 @@ contains
     !!    winning domain, finalises prominence for all subordinate
     !!    domains (and tied co-peaks), and unions their domains into
     !!    the winning domain.
-    subroutine process_plateau( &
+    subroutine process_flat( &
         z, sorted_cids, proms, &
         ifeat, feats, feat_types, feat_ijs, &
         peak_lookup, saddle_lookup, dom_feat_lookup, feat_tree, &
@@ -732,7 +735,7 @@ contains
         integer, intent(in) :: label
             !! Component index being processed
         real, intent(in) :: slice_z
-            !! Elevation of the current horizontal slice/plateau
+            !! Elevation of the current horizontal slice/flat
         ! Outputs
         real, intent(inout) :: proms(*)
             !! Topographic prominence array
@@ -842,7 +845,7 @@ contains
             return
         end if
 
-        ! This plateau joins several domains
+        ! This flat is a saddle that joins several domains
         ifeat = ifeat + 1
         feat_types(ifeat) = SADDLE
         call find_representative_cell( &
@@ -875,7 +878,7 @@ contains
             icell = labels(icell)
         end do
 
-        ! Update all other domain
+        ! Update all other domains
         do idom = 1, n_higher_doms
             dom = find_root_domain(prnt_doms, higher_doms(idom))
             if (dom == winner_dom) cycle
@@ -907,7 +910,7 @@ contains
                 dom = copeaks(dom)
             end do
         end do
-    end subroutine process_plateau
+    end subroutine process_flat
 
     !> Computes topographic prominence and its divide-tree features.
     !!
@@ -969,7 +972,7 @@ contains
         logical(kind=1) :: is_valid
             !! True if index conversion succeeded
         real :: slice_z
-            !! Elevation of the current horizontal slice/plateau
+            !! Elevation of the current horizontal slice/flat
         integer :: slice_start, slice_end
             !! Index bounds in 'sorted_cids' of cells with elevation
             !! equal to slice_z
@@ -1070,7 +1073,7 @@ contains
             slice_start = icell + 1
 
             ! Group connected regions of the same elevation
-            call label_plateaus( &
+            call label_flats( &
                 sorted_cids(slice_start:slice_end), &
                 labels(slice_start:slice_end), &
                 nlabels, offsets, nrows, ncols, &
@@ -1087,7 +1090,7 @@ contains
 
             ! Process each connected region one at a time
             do ilabel = 1, nlabels
-                call process_plateau( &
+                call process_flat( &
                     z, sorted_cids, proms, &
                     nfeats, feats, feat_types, feat_ijs, &
                     peak_lookup, saddle_lookup, dom_feat_lookup, &

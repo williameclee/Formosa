@@ -5,7 +5,7 @@ data.
 This module exposes public NumPy APIs for terrain metrics. Isolation
 and prominence use the internal Fortran backend.
 
-Last modified: 2026-08-21, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-22, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
@@ -294,11 +294,13 @@ def compute_prominence(
     ----------
     dem : NDArray[number]
         2D digital elevation model.
+        - Expected size: `(nrows, ncols)`
     valids : NDArray[bool], optional
         Boolean mask indicating valid cells.
         Non-finite DEM cells are always invalid.
         If `None`, all finite cells are assumed valid.
-        Default input is `None`.
+        - Expected size: `(nrows, ncols)`
+        - Default input is `None`.
     dir_scheme : D8Directions, optional
         Direction scheme defining neighbour connectivity offsets.
         Default scheme is `D8Directions()`.
@@ -313,25 +315,37 @@ def compute_prominence(
         saddle. Non-summit cells contain `0`. Invalid cells and the
         highest regional summits with unknown prominence contain
         `-1`.
+        - Size: `(nrows, ncols)` (same as `dem`)
     feats : NDArray[int32]
         Feature index raster containing 0-based feature IDs at peak
         and saddle cells, and `-1` elsewhere.
+        - Size: `(nfeats,)`
     feat_types : NDArray[int32]
         Feature types indexed by 0-based feature ID: `1` for a peak
         and `2` for a saddle.
+        - Size: `(nfeats,)`
     feat_ijs : NDArray[int32]
         Zero-based representative `(row, column)` coordinates for
         each feature.
         Representatives belong to their feature plateau and are
         nearest its centroid; ties use the smallest linear cell
         index.
+        - Size: `(nfeats,2)`
     key_saddles : NDArray[int32]
         Key-saddle feature index for each peak feature.
         Entries for non-peak features and peaks without a known key
         saddle are `-1`.
+        - Size: `(nfeats,)`
     feat_prnts : NDArray[int32]
         Parent feature index for each feature in the divide tree.
         Root features contain `-1`.
+        The 'parent' is defined similar to the *island parentage*
+        model, with the important distinction that here, the saddle
+        is the parent of the two pieces of island that it joins.
+        That is, the 'parent' of a peak is always a saddle (and not
+        necessarily its key saddle), which then becomes the child of
+        another saddle.
+        - Size: `(nfeats,)`
 
     Raises
     ------
