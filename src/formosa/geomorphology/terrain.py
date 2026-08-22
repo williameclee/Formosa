@@ -11,6 +11,10 @@ Last modified: 2026-08-22, En-Chi Lee (williameclee@gmail.com)
 from enum import IntFlag
 import numpy as np
 
+from formosa.geomorphology._validation import (
+    _validate_format_dem,
+    _validate_format_valids,
+)
 from formosa.geomorphology.drainage.directions import (
     D8Directions,
     validate_direction_offsets,
@@ -22,37 +26,6 @@ import warnings
 
 from typing import Optional, overload
 from numpy.typing import NDArray
-
-
-def _validate_format_dem(dem: NDArray[NpReal]) -> NDArray[NpReal]:
-    dem = np.asarray(dem)
-    if dem.ndim != 2 or 0 in dem.shape:
-        raise ValueError(
-            "DEM must be a non-empty 2D array, " + f"but received shape {dem.shape}."
-        )
-    if not np.issubdtype(dem.dtype, np.number):
-        raise TypeError("DEM must have a numeric dtype, " + f"but got {dem.dtype}.")
-    if np.issubdtype(dem.dtype, np.complexfloating):
-        raise TypeError(
-            "DEM must contain real-valued elevations, " + f"but got type {dem.dtype}."
-        )
-    return dem
-
-
-def _validate_format_valids(
-    valids: Optional[NDArray[np.bool_]], dem: NDArray[NpReal]
-) -> NDArray[np.bool_]:
-    finite = np.isfinite(dem)
-    if valids is None:
-        return finite
-    valids = np.asarray(valids, dtype=bool)
-    if valids.shape != dem.shape:
-        raise ValueError(
-            "Shapes for DEM and validity mask must match, "
-            f"but got shapes {dem.shape} and {valids.shape}, respectively."
-        )
-    valids = valids & finite
-    return valids  # type: ignore
 
 
 def compute_slope(
@@ -112,7 +85,7 @@ def compute_slope(
 
 
 def compute_isolation(
-    dem: NDArray[np.number],
+    dem: NDArray[NpReal],
     valids: Optional[NDArray[np.bool_]] = None,
     dx: Coords = 1.0,
     dy: Coords = 1.0,
@@ -161,16 +134,15 @@ def compute_isolation(
     Raises
     ------
     ValueError
-        If `dem` is empty or not two-dimensional, or if `valids`
-        does not have the same shape as `dem`, or if either grid
-        spacing is non-finite, non-positive, or cannot be
-        represented by the native backend.
+        If `dem` is empty or not 2D, or if `valids` does not have
+        the same shape as `dem`, or if either grid spacing is non-
+        finite, non-positive, or cannot be represented by the native
+        backend.
     TypeError
         If `dem` is not a real numeric array or either grid spacing
         is not a real numeric scalar.
     RuntimeError
         If the Fortran backend reports an execution error.
-
     Notes
     -----
     See [Kirmse & de Ferranti (2017)](https://doi.org/10.1177/0309133317738163)
@@ -180,17 +152,7 @@ def compute_isolation(
     extends half a cell beyond each outer cell centre. Internal
     invalid cells are excluded as ILPs.
     """
-    dem = np.asarray(dem)
-    if dem.ndim != 2 or 0 in dem.shape:
-        raise ValueError(
-            "DEM must be a non-empty 2D array, " + f"but received shape {dem.shape}."
-        )
-    if not np.issubdtype(dem.dtype, np.number):
-        raise TypeError("DEM must have a numeric dtype, " + f"but got {dem.dtype}.")
-    if np.issubdtype(dem.dtype, np.complexfloating):
-        raise TypeError(
-            "DEM must contain real-valued elevations, " + f"but got type {dem.dtype}."
-        )
+    dem = _validate_format_dem(dem)
 
     spacings: dict[str, np.float32] = {}
     for name, spacing in (("dx", dx), ("dy", dy)):
@@ -215,17 +177,7 @@ def compute_isolation(
     dx_f = spacings["dx"]
     dy_f = spacings["dy"]
 
-    finite = np.isfinite(dem)
-    if valids is None:
-        valids = finite
-    else:
-        valids = np.asarray(valids, dtype=bool)
-        if valids.shape != dem.shape:
-            raise ValueError(
-                "Shapes for DEM and validity mask must match, "
-                f"but got shapes {dem.shape} and {valids.shape}, respectively."
-            )
-        valids = valids & finite
+    valids = _validate_format_valids(valids, dem)
 
     isos, ilpis, ilpjs, censored, err_code = terrain_f.compute_isolation(
         dem.astype(np.float32, order="F"),
