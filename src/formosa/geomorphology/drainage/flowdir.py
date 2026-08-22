@@ -4,12 +4,18 @@ Computes and analyse raster flow directions.
 The analyses in this module operate on raster flow fields; explicit
 flow-graph representations are implemented in :mod:`formosa.geomorphology.drainage.network`.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-22, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
 
 from formosa.utils import Backend, raise_fortran_error
+from formosa.geomorphology._validation import (
+    validate_same_shape,
+    validate_format_dem,
+    validate_format_valids,
+    validate_format_flowdirs,
+)
 from formosa.geomorphology.drainage.directions import D8Directions
 from formosa.geomorphology.drainage.preprocessing import fill_depressions
 from formosa.geomorphology.drainage.flat_resolution import (
@@ -21,17 +27,18 @@ from formosa.geomorphology.drainage.flat_resolution import (
 )
 from formosa.geomorphology._native import drainage_flowdir as flowdir_f
 import formosa.geomorphology.drainage._backends.flowdir_py as flowdir_py
+from formosa.utils import NpFlowDir, NpReal
 
 from typing import Optional
-import numpy.typing as npt
+from numpy.typing import NDArray
 
 
 def _compute_flowdir_simple(
-    dem: npt.NDArray[np.number],
+    dem: NDArray[NpReal],
     dir_scheme: D8Directions = D8Directions(),
-    valids: Optional[npt.NDArray[np.bool_]] = None,
+    valids: Optional[NDArray[np.bool_]] = None,
     backend: Backend = "fortran",
-) -> tuple[npt.NDArray[np.uint8], npt.NDArray[np.bool_]]:
+) -> tuple[NDArray[NpFlowDir], NDArray[np.bool_]]:
     """
     Computes flow directions for a DEM using a simple D8 algorithm.
 
@@ -48,13 +55,13 @@ def _compute_flowdir_simple(
         Default is `None`.
     backend : {'fortran', 'python'}, optional
         Backend to use for computation.
-        `'fortran'` uses the FORTRAN extension for performance,
+        `'fortran'` uses the Fortran extension for performance,
         while `'python'` uses a pure Python implementation.
         Default backend is `'fortran'`.
 
     Returns
     -------
-    dirs : NDArray[int]
+    dirs : NDArray[uint8]
         A 2D integer array representing the flow directions for each cell in the DEM.
     flats : NDArray[bool]
         A boolean mask array where True indicates cells that are part of flat areas.
@@ -75,11 +82,11 @@ def _compute_flowdir_simple(
 
 
 def _compute_flowdir_complete(
-    dem: npt.NDArray[np.number],
+    dem: NDArray[NpReal],
     dir_scheme: D8Directions = D8Directions(),
-    valids: Optional[npt.NDArray[np.bool_]] = None,
+    valids: Optional[NDArray[np.bool_]] = None,
     step_size: int = 4,
-) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.bool_], npt.NDArray[np.integer]]:
+) -> tuple[NDArray[NpFlowDir], NDArray[np.bool_], NDArray[np.integer]]:
     """
     Computes flow directions for a DEM, resolving flat areas using synthetic elevations.
     Combines simple flow direction computation with flat area resolution from [R. Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009).
@@ -101,7 +108,7 @@ def _compute_flowdir_complete(
 
     Returns
     -------
-    dirs : NDArray[int]
+    dirs : NDArray[uint8]
         A 2D integer array representing the flow directions for each cell in the DEM.
     flats : NDArray[bool]
         A boolean mask array where True indicates cells that are part of flat areas.
@@ -133,15 +140,13 @@ def _compute_flowdir_complete(
 
 
 def compute_flowdir(
-    dem: npt.NDArray[np.number],
+    dem: NDArray[NpReal],
     dir_scheme: D8Directions = D8Directions(),
-    valids: Optional[npt.NDArray[np.bool_]] = None,
+    valids: Optional[NDArray[np.bool_]] = None,
     fill_depression: bool = False,
     resolve_flat: bool = True,
     step_size: int = 4,
-) -> tuple[
-    npt.NDArray[np.uint8], npt.NDArray[np.bool_], Optional[npt.NDArray[np.integer]]
-]:
+) -> tuple[NDArray[NpFlowDir], NDArray[np.bool_], Optional[NDArray[np.integer]]]:
     """
     Computes flow directions for a DEM, optionally resolving flat areas.
 
@@ -175,6 +180,9 @@ def compute_flowdir(
     syn_grads : NDArray[int] | None
         2D integer array representing the synthetic elevation that resolves flat areas, or None if `resolve_flat` is `False`.
     """
+    dem = validate_format_dem(dem)
+    valids = validate_format_valids(valids, dem, "DEM")
+
     if fill_depression:
         dem = fill_depressions(dem, valids=valids)
     if resolve_flat:
@@ -192,17 +200,17 @@ def compute_flowdir(
 
 
 def count_indegree(
-    dirs: npt.NDArray[np.integer],
+    dirs: NDArray[NpFlowDir],
     dir_scheme: D8Directions = D8Directions(),
-    valids: Optional[npt.NDArray[np.bool_]] = None,
+    valids: Optional[NDArray[np.bool_]] = None,
     backend: Backend = "fortran",
-) -> npt.NDArray[np.int8]:
+) -> NDArray[np.int8]:
     """
-    Computes the number of upstream cells (indegree) for each cell in a flow direction grid.
+    Computes the number of upstream cells (in-degree) for each cell in a flow direction grid.
 
     Parameters
     ----------
-    dirs : NDArray[int]
+    dirs : NDArray[uint8]
         2D array representing the flow directions for each cell
     dir_scheme : D8Directions, optional
         An instance of `D8Directions` defining the flow direction scheme
@@ -213,17 +221,17 @@ def count_indegree(
         Default is `None`.
     backend : {'fortran', 'python'}, optional
         Backend to use for computation.
-        `'fortran'` uses the FORTRAN extension for performance,
+        `'fortran'` uses the Fortran extension for performance,
         while `'python'` uses a pure Python implementation.
         Default backend is `'fortran'`.
 
     Returns
     -------
     indegs : NDArray[int8]
-        A 2D integer array representing the indegree (number of upstream cells) for each cell.
+        A 2D integer array representing the in-degree (number of upstream cells) for each cell.
     """
-    if valids is None:
-        valids = np.ones(dirs.shape, dtype=bool, order="F")
+    dirs = validate_format_flowdirs(dirs)
+    valids = validate_format_valids(valids, dirs, "flow direction raster")
 
     match backend:
         case "python":
@@ -242,13 +250,13 @@ def count_indegree(
 
 
 def _find_acyclic_flowdirs_fortran(
-    dirs: npt.NDArray[np.integer],
-    indegs: npt.NDArray[np.integer],
-    valids: npt.NDArray[np.bool_],
+    dirs: NDArray[NpFlowDir],
+    indegs: NDArray[np.integer],
+    valids: NDArray[np.bool_],
     dir_scheme: D8Directions,
-) -> npt.NDArray[np.bool_]:
+) -> NDArray[np.bool_]:
     """
-    Finds acyclic flow cells using the FORTRAN backend.
+    Finds acyclic flow cells using the Fortran backend.
 
     Raises
     ------
@@ -273,21 +281,21 @@ def _find_acyclic_flowdirs_fortran(
 
 
 def find_acyclic_flowdirs(
-    dirs: npt.NDArray[np.integer],
+    dirs: NDArray[NpFlowDir],
     dir_scheme: D8Directions = D8Directions(),
-    valids: Optional[npt.NDArray[np.bool_]] = None,
-    indegs: Optional[npt.NDArray[np.integer]] = None,
+    valids: Optional[NDArray[np.bool_]] = None,
+    indegs: Optional[NDArray[np.integer]] = None,
     backend: Backend = "fortran",
-) -> npt.NDArray[np.bool_]:
+) -> NDArray[np.bool_]:
     """
     Finds valid cells that do not belong to a directed flow cycle.
 
-    Uses Kahn's algorithm to remove cells reachable from zero-indegree cells.
+    Uses Kahn's algorithm to remove cells reachable from 0-in-degree cells.
     Valid cells remaining after the traversal belong to directed cycles.
 
     Parameters
     ----------
-    dirs : NDArray[int]
+    dirs : NDArray[uint8]
         Flow directions for each cell.
     dir_scheme : D8Directions, optional
         Flow direction scheme defining the direction codes and offsets.
@@ -302,7 +310,7 @@ def find_acyclic_flowdirs(
         The default input is `None`.
     backend : {'fortran', 'python'}, optional
         Backend to use for computation.
-        `'fortran'` uses the FORTRAN extension for performance,
+        `'fortran'` uses the Fortran extension for performance,
         while `'python'` uses a pure Python implementation.
         Default backend is `'fortran'`.
 
@@ -317,23 +325,16 @@ def find_acyclic_flowdirs(
     ValueError
         If an input shape or backend is invalid.
     MemoryError
-        If the FORTRAN backend cannot allocate its workspace.
+        If the Fortran backend cannot allocate its workspace.
     RuntimeError
-        If the FORTRAN backend reports queue overflow or an unexpected status.
+        If the Fortran backend reports queue overflow or an unexpected status.
     """
-    if dirs.ndim != 2:
-        raise ValueError("'dirs' must be a two-dimensional array.")
-    if valids is None:
-        valids = np.ones(dirs.shape, dtype=bool, order="F")
-    elif valids.shape != dirs.shape:
-        raise ValueError("Shapes of 'dirs' and 'valids' must match.")
+    dirs = validate_format_flowdirs(dirs)
+    valids = validate_format_valids(valids, dirs, "flow direction raster")
 
     if indegs is None:
-        indegs = count_indegree(
-            dirs, dir_scheme=dir_scheme, valids=valids, backend=backend
-        )
-    elif indegs.shape != dirs.shape:
-        raise ValueError("Shapes of 'dirs' and 'indegs' must match.")
+        indegs = count_indegree(dirs, dir_scheme, valids=valids, backend=backend)
+    validate_same_shape(dirs, indegs, "the flow direction", "the in-degree rasters")
 
     match backend:
         case "python":
@@ -347,18 +348,18 @@ def find_acyclic_flowdirs(
 
 
 def find_cyclic_flowdirs(
-    dirs: npt.NDArray[np.integer],
+    dirs: NDArray[NpFlowDir],
     dir_scheme: D8Directions = D8Directions(),
-    valids: Optional[npt.NDArray[np.bool_]] = None,
-    indegs: Optional[npt.NDArray[np.integer]] = None,
+    valids: Optional[NDArray[np.bool_]] = None,
+    indegs: Optional[NDArray[np.integer]] = None,
     backend: Backend = "fortran",
-) -> npt.NDArray[np.bool_]:
+) -> NDArray[np.bool_]:
     """
     Finds valid cells belonging to directed flow cycles.
 
     Parameters
     ----------
-    dirs : NDArray[int]
+    dirs : NDArray[uint8]
         Flow directions for each cell.
     dir_scheme : D8Directions, optional
         Flow direction scheme defining the direction codes and offsets.
@@ -373,7 +374,7 @@ def find_cyclic_flowdirs(
         The default input is `None`.
     backend : {'fortran', 'python'}, optional
         Backend to use for computation.
-        `'fortran'` uses the FORTRAN extension for performance,
+        `'fortran'` uses the Fortran extension for performance,
         while `'python'` uses a pure Python implementation.
         Default backend is `'fortran'`.
 
@@ -388,12 +389,11 @@ def find_cyclic_flowdirs(
     ValueError
         If an input shape or backend is invalid.
     MemoryError
-        If the FORTRAN backend cannot allocate its workspace.
+        If the Fortran backend cannot allocate its workspace.
     RuntimeError
-        If the FORTRAN backend reports queue overflow or an unexpected status.
+        If the Fortran backend reports queue overflow or an unexpected status.
     """
-    if valids is None:
-        valids = np.ones(dirs.shape, dtype=bool, order="F")
+    valids = validate_format_valids(valids, dirs, "flow direction raster")
 
     acyclics = find_acyclic_flowdirs(
         dirs,

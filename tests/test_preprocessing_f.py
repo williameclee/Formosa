@@ -2,7 +2,7 @@
 Tests digital elevation model preprocessing using the FORTRAN
 backend.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-22, En-Chi Lee (williameclee@gmail.com)
 """
 
 from tests.core import *
@@ -161,7 +161,7 @@ def test_detect_ocean_basins_rejects_nonboolean_flood_below_and_complex_dem():
     with pytest.raises(TypeError, match="boolean"):
         preproc_m.detect_ocean_basins_from_boundary(dem, flood_below="false")  # type: ignore
     with pytest.raises(TypeError, match="real-valued"):
-        preproc_m.detect_ocean_basins_from_boundary(dem.astype(np.complex64))
+        preproc_m.detect_ocean_basins_from_boundary(dem.astype(np.complex64))  # type: ignore
 
 
 def test_fill_depressions():
@@ -257,7 +257,7 @@ def test_fill_depressions_is_monotonic_and_idempotent_randomly():
 
 
 def test_fill_depressions_validates_mask_shape():
-    with pytest.raises(ValueError, match="must have the same shape"):
+    with pytest.raises(ValueError, match="Shapes .* must match"):
         preproc_m.fill_depressions(
             np.ones((3, 3), dtype=np.float32),
             valids=np.ones((2, 2), dtype=bool),

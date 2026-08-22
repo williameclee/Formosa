@@ -1,32 +1,37 @@
 """
 Identifies and labels watersheds from raster flow directions.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
 
-from formosa.utils import Backend, raise_fortran_error
 from formosa.geomorphology.drainage.directions import D8Directions
 from formosa.geomorphology._native import drainage_watersheds as basins_f
 import formosa.geomorphology.drainage._backends.watersheds_py as watersheds_py
+from formosa.utils import Backend, raise_fortran_error
+from formosa.utils import NpFlowDir
+from formosa.geomorphology._validation import (
+    validate_format_valids,
+    validate_format_flowdirs,
+)
 
 from typing import Optional
-import numpy.typing as npt
+from numpy.typing import NDArray
 
 
 def label_watersheds(
-    dirs: npt.NDArray[np.integer],
+    dirs: NDArray[NpFlowDir],
     dir_scheme: D8Directions = D8Directions(),
-    valids: Optional[npt.NDArray[np.bool_]] = None,
+    valids: Optional[NDArray[np.bool_]] = None,
     backend: Backend = "fortran",
-) -> npt.NDArray[np.int32]:
+) -> NDArray[np.int32]:
     """
     Finds and labels watersheds in a DEM based on flow direction.
 
     Parameters
     ----------
-    dirs : NDArray[int]
+    dirs : NDArray[uint8]
         A 2D array representing the flow direction for each cell.
     dir_scheme : D8Directions, optional
         An instance of `D8Directions` defining the flow direction scheme.
@@ -37,14 +42,14 @@ def label_watersheds(
         Default is `None`.
     backend : {'fortran', 'python'}, optional
         Backend to use for computation.
-        `'fortran'` uses the FORTRAN extension for performance,
+        `'fortran'` uses the Fortran extension for performance,
         while `'python'` uses a pure Python implementation.
         Default backend is `'fortran'`.
 
     Returns
     -------
     watersheds : NDArray[int32]
-        A 2D array where each watershed is labeled with a unique integer.
+        A 2D array where each watershed is labelled with a unique integer.
     """
     match backend:
         case "python":
@@ -54,19 +59,8 @@ def label_watersheds(
                 valids=valids,
             )
         case "fortran":
-            if valids is None:
-                valids = np.ones(dirs.shape, dtype=bool)
-            elif isinstance(valids, np.ndarray):
-                assert (
-                    valids.shape == dirs.shape
-                ), f"Shape for flow direction ({dirs.shape}) and valid mask ({valids.shape}) do not match."
-                valids = valids.astype(bool, copy=False) & (~np.isnan(dirs))
-                dirs = np.where(valids, dirs, np.nan)
-            else:
-                raise TypeError(
-                    f"Valid mask must be a NumPy array (got {type(valids)})."
-                )
-
+            dirs = validate_format_flowdirs(dirs)
+            valids = validate_format_valids(valids, dirs, "flow direction raster")
             watersheds, err_code = basins_f.label_watersheds(
                 dirs.astype(np.uint8, order="F"),
                 valids.astype(bool, order="F"),
