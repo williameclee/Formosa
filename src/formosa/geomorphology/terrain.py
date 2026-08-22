@@ -11,9 +11,14 @@ Last modified: 2026-08-22, En-Chi Lee (williameclee@gmail.com)
 from enum import IntFlag
 import numpy as np
 
-from formosa.geomorphology.drainage.directions import D8Directions
+from formosa.geomorphology.drainage.directions import (
+    D8Directions,
+    validate_direction_offsets,
+)
 from formosa.geomorphology._native import terrain as terrain_f
 from formosa.utils import NpReal, Coords, NpCoords, NpCanonIndex, raise_fortran_error
+
+import warnings
 
 from typing import Optional, overload
 from numpy.typing import NDArray
@@ -339,8 +344,8 @@ def compute_prominence(
         - Size: `(nfeats, 2)`
     key_saddles : NDArray[int32]
         Key-saddle feature index for each peak feature.
-        For peak features, contains the 0-based index of its key 
-        saddle. Entries for saddle features and unresolved regional 
+        For peak features, contains the 0-based index of its key
+        saddle. Entries for saddle features and unresolved regional
         summits contain `-1`.
         - Size: `(nfeats,)`
     feat_prnts : NDArray[int32]
@@ -362,6 +367,10 @@ def compute_prominence(
         If `dem` is not a real numeric array.
     RuntimeError
         If the Fortran backend reports an execution error.
+    RuntimeWarning
+        If conversion to the float32 backend merges distinct valid
+        elevations, or if prominence values exceed the range of the
+        returned dtype.
 
     Notes
     -----
@@ -370,9 +379,24 @@ def compute_prominence(
     """
     dem = _validate_format_dem(dem)  # type: ignore
     valids = _validate_format_valids(valids, dem)  # type: ignore
+    ofsts_f = validate_direction_offsets(dir_scheme.offsets)
 
-    dem_f = np.asfortranarray(dem, dtype=np.float32)
+    with np.errstate(over="ignore", invalid="ignore"):
+        dem_f = np.asfortranarray(dem, dtype=np.float32)
     valids_f = np.asfortranarray(valids, dtype=bool)
+
+    valid_dem = dem[valids]
+    valid_dem_f = dem_f[valids_f]
+    if valid_dem.size and (
+        np.any(~np.isfinite(valid_dem_f))
+        or np.unique(valid_dem_f).size < np.unique(valid_dem).size
+    ):
+        warnings.warn(
+            "Converting the DEM to float32 merges distinct elevation values; "
+            "peak, saddle, and prominence results may change.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
 
     valid_ids = np.flatnonzero(valids_f.ravel(order="F"))
     orders = np.argsort(dem_f.ravel(order="F")[valid_ids])
@@ -381,19 +405,30 @@ def compute_prominence(
     orders_f = valid_ids[orders].astype(np.int32) + 1
 
     proms, feats, feat_types, feat_ijs, key_saddles, feat_prnts, nfeats, err_code = (
-        terrain_f.compute_prominence(
-            dem_f, orders_f, dir_scheme.offsets.astype(np.int32, order="F")
-        )
+        terrain_f.compute_prominence(dem_f, orders_f, ofsts_f)
     )
     raise_fortran_error("compute_prominence", err_code)
 
     # Try to make `proms` the same type as `dem`, unless `dem` is
     # unsigned because `proms` needs `-1` to mark invalid cells and
     # the highest peaks with unknown prominence
-    if not np.issubdtype(dem.dtype, np.unsignedinteger):
-        proms = np.asarray(proms, dtype=dem.dtype)
+    prom_dtype = (
+        np.dtype(np.int64)
+        if np.issubdtype(dem.dtype, np.unsignedinteger)
+        else dem.dtype
+    )
+    if np.issubdtype(prom_dtype, np.integer):
+        dtype_limits = np.iinfo(prom_dtype)  # type: ignore
     else:
-        proms = np.asarray(proms, dtype=np.int64)
+        dtype_limits = np.finfo(prom_dtype)  # type: ignore
+    if np.any((proms < dtype_limits.min) | (proms > dtype_limits.max)):
+        warnings.warn(
+            f"Prominence values exceed the range of output dtype "
+            f"{prom_dtype} and will overflow during conversion.",
+            RuntimeWarning,
+            stacklevel=2,
+        )
+    proms = np.asarray(proms, dtype=prom_dtype)
 
     proms[~valids] = -1
 

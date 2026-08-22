@@ -5,7 +5,7 @@ This module compares public isolation and prominence results with
 exhaustive reference calculations and covers input validation.
 
 Created: 2026-08-19, En-Chi Lee (williameclee@gmail.com)
-Last modified: 2026-08-21, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-22, En-Chi Lee (williameclee@gmail.com)
 """
 
 import pytest
@@ -549,6 +549,145 @@ def test_compute_prominence_supports_unsigned_dem():
     np.testing.assert_array_equal(proms, [[-1, 0, 1]])
     assert peaks.dtype == np.int32
     assert saddles.dtype == np.int32
+
+
+@pytest.mark.parametrize(
+    ("dtype", "high", "low", "subordinate"),
+    [
+        pytest.param(np.int8, 127, -128, 126, id="int8-extrema"),
+        pytest.param(np.int16, 32767, -32768, 32766, id="int16-extrema"),
+    ],
+)
+def test_compute_prominence_warns_for_signed_integer_result_overflow(
+    dtype, high, low, subordinate
+):
+    dem = np.array([[high, low, subordinate]], dtype=dtype)
+
+    with pytest.warns(RuntimeWarning, match="will overflow during conversion"):
+        proms, *_ = compute_prominence(dem)
+
+    assert proms.dtype == dtype
+
+
+@pytest.mark.parametrize(
+    "dem",
+    [
+        pytest.param(
+            np.array([[2**24 + 1, 2**24, 2**24 + 2]], dtype=np.int64),
+            id="int64-beyond-float32-exact-range",
+        ),
+        pytest.param(
+            np.array(
+                [[np.iinfo(np.uint32).max, 0, np.iinfo(np.uint32).max - 1]],
+                dtype=np.uint32,
+            ),
+            id="large-uint32",
+        ),
+    ],
+)
+def test_compute_prominence_warns_when_large_integer_elevations_merge(dem):
+    with pytest.warns(RuntimeWarning, match="merges distinct elevation values"):
+        compute_prominence(dem)
+
+
+def test_compute_prominence_warns_when_float64_elevations_merge():
+    small_difference = 2.0**-25
+    dem = np.array([[1.0 + small_difference, 1.0, 1.0 + 2.0**-23]], dtype=np.float64)
+
+    with pytest.warns(RuntimeWarning, match="merges distinct elevation values"):
+        compute_prominence(dem)
+
+
+@pytest.mark.parametrize(
+    ("dem", "exception"),
+    [
+        pytest.param(np.ones(3, dtype=np.float32), ValueError, id="one-dimensional"),
+        pytest.param(np.empty((0, 3), dtype=np.float32), ValueError, id="empty"),
+        pytest.param(np.ones((2, 2), dtype=np.complex64), TypeError, id="complex"),
+        pytest.param(np.array([["high", "low"]]), TypeError, id="non-numeric"),
+    ],
+)
+def test_compute_prominence_rejects_malformed_dems(dem, exception):
+    with pytest.raises(exception):
+        compute_prominence(dem)
+
+
+def test_compute_prominence_rejects_mismatched_validity_mask():
+    dem = np.ones((2, 3), dtype=np.float32)
+    valids = np.ones((3, 2), dtype=bool)
+
+    with pytest.raises(ValueError, match="Shapes for DEM and validity mask must match"):
+        compute_prominence(dem, valids)
+
+
+@pytest.mark.parametrize(
+    ("offsets", "exception", "message"),
+    [
+        pytest.param(
+            np.array([0, 1], dtype=np.int32),
+            ValueError,
+            "shape",
+            id="one-dimensional",
+        ),
+        pytest.param(
+            np.ones((2, 3), dtype=np.int32),
+            ValueError,
+            "shape",
+            id="three-columns",
+        ),
+        pytest.param(
+            np.array([[0.0, 0.0], [0.5, 1.0]]),
+            TypeError,
+            "integer dtype",
+            id="fractional-offset",
+        ),
+        pytest.param(
+            np.empty((0, 2), dtype=np.int32),
+            ValueError,
+            "at least one offset",
+            id="no-offsets",
+        ),
+        pytest.param(
+            np.array([[0, np.iinfo(np.int32).max + 1]], dtype=np.int64),
+            ValueError,
+            "representable as int32",
+            id="outside-int32-range",
+        ),
+    ],
+)
+def test_compute_prominence_rejects_invalid_connectivity_offsets(
+    offsets, exception, message
+):
+    dir_scheme = D8Directions()
+    dir_scheme.offsets = offsets
+
+    with pytest.raises(exception, match=message):
+        compute_prominence(
+            np.array([[3.0, 1.0, 2.0]], dtype=np.float32),
+            dir_scheme=dir_scheme,
+        )
+
+
+def test_compute_prominence_feature_ids_are_deterministic_for_equal_plateaus():
+    dem = np.array(
+        [
+            [5.0, 0.0, 5.0, 0.0, 6.0],
+            [0.0, 0.0, 0.0, 0.0, 0.0],
+            [5.0, 0.0, 5.0, 0.0, 6.0],
+        ],
+        dtype=np.float32,
+    )
+    variants = [
+        np.array(dem, order="C"),
+        np.array(dem, order="F"),
+        dem[:, ::-1][:, ::-1],
+    ]
+
+    expected = compute_prominence(variants[0])
+    for variant in variants[1:]:
+        actual = compute_prominence(variant)
+        for actual_array, expected_array in zip(actual, expected):
+            np.testing.assert_array_equal(actual_array, expected_array)
 
 
 def test_compute_prominence_returns_divide_tree_and_key_saddles():
