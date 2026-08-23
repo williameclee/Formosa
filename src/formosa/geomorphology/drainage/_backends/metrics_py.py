@@ -8,21 +8,19 @@ Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
+from numpy.typing import NDArray
 
 from formosa.geomorphology.drainage.directions import D8Directions
 from formosa.geomorphology.drainage.neighbours import compute_downstream_indices
-import formosa.geomorphology.drainage._backends.flowdir_py as flowdir_py
-
-from typing import Optional
-import numpy.typing as npt
+from formosa.utils import NpFlowDir
 
 
 def compute_flow_accumulation(
-    dirs: npt.NDArray[np.integer],
-    valids: Optional[npt.NDArray[np.bool_]] = None,
-    weights: Optional[npt.NDArray[np.floating]] = None,
-    indegs: Optional[npt.NDArray[np.integer]] = None,
-    dsij: Optional[npt.NDArray[np.integer]] = None,
+    dirs: NDArray[NpFlowDir],
+    valids: NDArray[np.bool_],
+    weights: NDArray[np.floating],
+    indegs: NDArray[np.integer],
+    dsij: NDArray[np.integer],
     dir_scheme: D8Directions = D8Directions(),
 ) -> np.ndarray:
     from collections import deque
@@ -59,11 +57,11 @@ def compute_flow_accumulation(
 
 
 def compute_flow_strahler_order(
-    dirs: npt.NDArray[np.integer],
-    dir_scheme: D8Directions = D8Directions(),
-    valids: Optional[npt.NDArray[np.bool_]] = None,
-    indegs: Optional[npt.NDArray[np.integer]] = None,
-) -> npt.NDArray[np.int16]:
+    dirs: NDArray[np.integer],
+    dir_scheme: D8Directions,
+    valids: NDArray[np.bool_],
+    indegs: NDArray[np.integer],
+) -> NDArray[np.int16]:
     from collections import deque
 
     indegs = indegs.copy()

@@ -5,18 +5,18 @@ This module provides data structures and helpers to assemble,
 deduplicate, and normalise boundary and network constraints
 prior to constrained triangulation.
 
-Last modified: 2026-08-18, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 """
 
+from collections.abc import Iterable
 from dataclasses import dataclass
+
 import numpy as np
+from numpy.typing import NDArray
 
 from formosa.geomorphology.drainage.network import FlowGraph, GraphTopologyError
 from formosa.geomorphology.meshing.core import ConstraintKind
 from formosa.geomorphology.meshing.validation import validate_constraints
-
-from typing import Iterable, Optional
-from numpy.typing import NDArray
 from formosa.utils import Backend, NpCanonIndex
 
 
@@ -52,7 +52,7 @@ def _make_boundary_constraints(shape: tuple[int, int]) -> ConstraintInput:
 
 
 def _split_boundary_aligned_edges(
-    indices: NDArray[NpCanonIndex],
+    idxs: NDArray[NpCanonIndex],
     edges: NDArray[NpCanonIndex],
     edge_kinds: NDArray[np.uint8],
     shape: tuple[int, int],
@@ -61,8 +61,8 @@ def _split_boundary_aligned_edges(
     Splits perimeter edges at every existing perimeter vertex.
     """
     nrows, ncols = shape
-    rows = indices[:, 0]
-    cols = indices[:, 1]
+    rows = idxs[:, 0]
+    cols = idxs[:, 1]
     sides = {
         "top": np.flatnonzero((rows == 0) & (cols >= 0) & (cols < ncols)),
         "bottom": np.flatnonzero((rows == nrows - 1) & (cols >= 0) & (cols < ncols)),
@@ -72,13 +72,13 @@ def _split_boundary_aligned_edges(
     side_axes = {"top": 1, "bottom": 1, "left": 0, "right": 0}
     for name, vertex_ids in sides.items():
         axis = side_axes[name]
-        sides[name] = vertex_ids[np.argsort(indices[vertex_ids, axis])]
+        sides[name] = vertex_ids[np.argsort(idxs[vertex_ids, axis])]
 
     split_edges: list[NDArray[NpCanonIndex]] = []
     split_kinds: list[NDArray[np.uint8]] = []
     for edge, kind in zip(edges, edge_kinds):
-        a, b = indices[edge]
-        side_name: Optional[str] = None
+        a, b = idxs[edge]
+        side_name: str | None = None
         axis = 0
         if (
             a[0] == b[0]
@@ -101,9 +101,9 @@ def _split_boundary_aligned_edges(
             continue
 
         side_ids = sides[side_name]
-        side_values = indices[side_ids, axis]
+        side_vals = idxs[side_ids, axis]
         low, high = sorted((int(a[axis]), int(b[axis])))
-        chain = side_ids[(side_values >= low) & (side_values <= high)]
+        chain = side_ids[(side_vals >= low) & (side_vals <= high)]
         split_edges.append(
             np.column_stack((chain[:-1], chain[1:])).astype(NpCanonIndex)
         )
@@ -120,40 +120,37 @@ class ConstraintGraph:
 
     def __init__(
         self,
-        constraints: ConstraintInput | Iterable[ConstraintInput],
-        shape: Optional[tuple[int, int]] = None,
+        cstrs: ConstraintInput | Iterable[ConstraintInput],
+        shape: tuple[int, int] | None = None,
     ):
-        if isinstance(constraints, ConstraintInput):
-            constraints = [constraints]
+        if isinstance(cstrs, ConstraintInput):
+            cstrs = [cstrs]
         else:
-            constraints = list(constraints)
-            if len(constraints) == 0 and shape is None:
+            cstrs = list(cstrs)
+            if len(cstrs) == 0 and shape is None:
                 raise ValueError("No graphs provided.")
 
         if shape is not None:
-            constraints.append(_make_boundary_constraints(shape))
+            cstrs.append(_make_boundary_constraints(shape))
 
-        constraints = [
+        cstrs = [
             ConstraintInput(
                 FlowGraph(
                     cstr.graph.indices, cstr.graph.endpts, cstr.graph.orders
                 ).cleanup(),
                 kind=cstr.kind,
             )
-            for cstr in constraints
+            for cstr in cstrs
         ]  # Don't change the input graphs
-        all_indices = np.concat([cstr.graph.indices for cstr in constraints], axis=0)
+        all_indices = np.concat([cstr.graph.indices for cstr in cstrs], axis=0)
         indices_offsets = np.concat(
             (
                 np.array([0], dtype=np.int32),
-                np.cumsum(np.array([cstr.graph.n_vtxs for cstr in constraints])),
+                np.cumsum(np.array([cstr.graph.n_vtxs for cstr in cstrs])),
             )
         )
         all_endpts = np.concat(
-            [
-                cstr.graph.endpts + indices_offsets[i]
-                for i, cstr in enumerate(constraints)
-            ],
+            [cstr.graph.endpts + indices_offsets[i] for i, cstr in enumerate(cstrs)],
             axis=0,
         )
         all_edge_list = []
@@ -161,7 +158,7 @@ class ConstraintGraph:
         arc_kinds = np.concat(
             [
                 np.full(cstr.graph.n_arcs, int(cstr.kind), dtype=np.uint8)
-                for cstr in constraints
+                for cstr in cstrs
             ]
         )
         for iarc in range(all_endpts.shape[0]):
@@ -178,7 +175,7 @@ class ConstraintGraph:
             ):
                 raise GraphTopologyError(
                     "Attempting to reference an out-of-bound vertex: "
-                    + f"vertex array capacity is [{0, np.size(all_indices,0)}], "
+                    + f"vertex array capacity is [{0, np.size(all_indices, 0)}], "
                     + f"but try to get vertices [{all_endpts[iarc, 0]}, {all_endpts[iarc, 1]}]"
                 )
             first = np.arange(
@@ -221,6 +218,6 @@ class ConstraintGraph:
         self.validate(shape)
 
     def validate(
-        self, shape: Optional[tuple[int, int]] = None, backend: Backend = "fortran"
+        self, shape: tuple[int, int] | None = None, backend: Backend = "fortran"
     ) -> None:
         validate_constraints(self.indices, self.edges, self.edge_kinds, shape, backend)

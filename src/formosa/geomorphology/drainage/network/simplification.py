@@ -4,9 +4,13 @@ Simplifies flow-graph arcs while preserving valid topology.
 Last modified: 2026-08-18, En-Chi Lee (williameclee@gmail.com)
 """
 
-import numpy as np
+from typing import overload
 
-from formosa.utils import Backend
+import numpy as np
+from numpy.typing import NDArray
+
+from formosa.geomorphology._native import network_simplification as simp_f
+from formosa.geomorphology.drainage.network.editing import remove_unused_vertices
 from formosa.geomorphology.drainage.network.overlaps import (
     _resolve_topology_intersections,
     solve_graph_overlaps,
@@ -16,31 +20,26 @@ from formosa.geomorphology.drainage.network.validation import (
     UnresolvedSimplificationTopology,
     _locate_disallowed_graph_topology,
 )
-from formosa.geomorphology.drainage.network.editing import remove_unused_vertices
-from formosa.geomorphology._native import network_simplification as simp_f
-
-from numpy.typing import NDArray
-from typing import Optional, overload
-from formosa.utils import NpInt, NpIndex, NpCoords
+from formosa.utils import Backend, NpCoords, NpIndex, NpInt
 
 
-def _convert_index_array_to_F_fmt(vertices: NDArray) -> NDArray:
-    if vertices.shape[1] == 2 and vertices.shape[0] != 2:
-        vertices = vertices
-    elif vertices.shape[0] == 2 and vertices.shape[1] != 2:
-        vertices = vertices.T
-    elif vertices.shape == (2, 2):
-        vertices = vertices
+def _convert_index_array_to_F_fmt(vtxs: NDArray) -> NDArray:
+    if vtxs.shape[1] == 2 and vtxs.shape[0] != 2:
+        vtxs = vtxs
+    elif vtxs.shape[0] == 2 and vtxs.shape[1] != 2:
+        vtxs = vtxs.T
+    elif vtxs.shape == (2, 2):
+        vtxs = vtxs
     else:
         raise ValueError("Array cannot be parsed as indices.")
-    return vertices
+    return vtxs
 
 
 def _simplify_multiple_flowgraphs(
     orders_list: list[NDArray[NpInt]] | tuple[NDArray[NpInt], ...],
     vtxs_list: list[NDArray[NpCoords]] | tuple[NDArray[NpCoords], ...],
     endpts_list: list[NDArray[NpIndex]] | tuple[NDArray[NpIndex], ...],
-    tol: int | float,
+    tol: float,
     check_topology: bool,
     backend: Backend,
 ) -> tuple[
@@ -128,8 +127,8 @@ def _simplify_multiple_flowgraphs(
             )
         if orders.shape[0] != endpts.shape[0]:
             raise ValueError(
-                f"Order array at index {i} has length {orders.shape[0]}, but the "
-                f"endpoint array contains {endpts.shape[0]} arcs."
+                f"Order array at index {i} has length {orders.shape[0]}, "
+                + f"but the endpoint array contains {endpts.shape[0]} arcs."
             )
 
         all_vtxs_list.append(vtxs.copy())
@@ -181,7 +180,7 @@ def _simplify_multiple_flowgraphs(
 
     offset = 0
     for i in range(len(all_vtxs_list)):
-        vertex_shp = vtx_shps[i]
+        vtx_shp = vtx_shps[i]
         endpts_shp = endpts_shps[i]
 
         nvtxs_i = all_vtxs_list[i].shape[0]
@@ -195,7 +194,7 @@ def _simplify_multiple_flowgraphs(
         simp_e_i = vtx_cumsum_i[local_e_std]
 
         # Restore original orientation
-        if vertex_shp[0] == 2 and vertex_shp[1] != 2:
+        if vtx_shp[0] == 2 and vtx_shp[1] != 2:
             simp_v_i = simp_v_i.T
         if endpts_shp[0] == 2 and endpts_shp[1] != 2:
             simp_e_i = simp_e_i.T
@@ -225,13 +224,8 @@ def _simplify_single_flowgraph(
     tol: float,
     check_topology: bool,
     backend: Backend,
-    graph_ids: Optional[NDArray[np.integer]] = None,
-) -> tuple[
-    NDArray[np.integer],
-    NDArray[NpCoords],
-    NDArray[NpIndex],
-    NDArray[np.bool_],
-]:
+    graph_ids: NDArray[np.integer] | None = None,
+) -> tuple[NDArray[np.integer], NDArray[NpCoords], NDArray[NpIndex], NDArray[np.bool_]]:
     """
     Core function to simplify a single flow graph using RDP algorithm.
     """
@@ -251,8 +245,8 @@ def _simplify_single_flowgraph(
         )
     if orders.shape[0] != endpts.shape[1]:
         raise ValueError(
-            f"Order array has length {orders.shape[0]}, but the endpoint array "
-            f"contains {endpts.shape[1]} arcs."
+            f"Order array has length {orders.shape[0]}, "
+            + f"but the endpoint array contains {endpts.shape[1]} arcs."
         )
 
     # Make a copy of arc_endpts to avoid modifying the input array in-place
@@ -308,7 +302,7 @@ def simplify_flowgraph(
     arc_orders: NDArray[NpInt],
     vtx_xys: NDArray[NpCoords],
     arc_endpts: NDArray[NpIndex],
-    tol: int | float = 1,
+    tol: float = 1,
     check_topology: bool = True,
     remove_unused: bool = False,
     backend: Backend = "fortran",
@@ -325,7 +319,7 @@ def simplify_flowgraph(
     arc_orders: list[NDArray[NpInt]],
     vtx_xys: list[NDArray[NpCoords]],
     arc_endpts: list[NDArray[NpIndex]],
-    tol: int | float = 1,
+    tol: float = 1,
     check_topology: bool = True,
     remove_unused: bool = False,
     backend: Backend = "fortran",
@@ -342,7 +336,7 @@ def simplify_flowgraph(
     arc_orders: tuple[NDArray[NpInt], ...],
     vtx_xys: tuple[NDArray[NpCoords], ...],
     arc_endpts: tuple[NDArray[NpIndex], ...],
-    tol: int | float = 1,
+    tol: float = 1,
     check_topology: bool = True,
     remove_unused: bool = False,
     backend: Backend = "fortran",
@@ -362,7 +356,7 @@ def simplify_flowgraph(
     arc_endpts: (
         NDArray[NpIndex] | list[NDArray[NpIndex]] | tuple[NDArray[NpIndex], ...]
     ),
-    tol: int | float = 1,
+    tol: float = 1,
     check_topology: bool = True,
     remove_unused: bool = False,
     backend: Backend = "fortran",
@@ -465,9 +459,8 @@ def simplify_flowgraph(
             )
         if not (len(vtx_xys) == len(arc_endpts) == len(arc_orders)):
             raise ValueError(
-                "Arguments 'vtx_xys', 'arc_endpts', and 'arc_orders' must have "
-                f"the same length, but got {len(vtx_xys)}, {len(arc_endpts)}, "
-                f"and {len(arc_orders)}, respectively."
+                "Arguments 'vtx_xys', 'arc_endpts', and 'arc_orders' must have the same length, "
+                + f"but got {len(vtx_xys)}, {len(arc_endpts)}, and {len(arc_orders)}, respectively."
             )
         result = _simplify_multiple_flowgraphs(
             *(arc_orders, vtx_xys, arc_endpts),
@@ -493,7 +486,7 @@ def simplify_flowgraph(
     ):
         raise TypeError(
             "Arguments 'vtx_xys', 'arc_endpts', and 'arc_orders' must be NumPy arrays, "
-            f"but got {type(vtx_xys)}, {type(arc_endpts)}, and {type(arc_orders)}, respectively."
+            + f"but got {type(vtx_xys)}, {type(arc_endpts)}, and {type(arc_orders)}, respectively."
         )
     result = _simplify_single_flowgraph(
         *(arc_orders, vtx_xys, arc_endpts),

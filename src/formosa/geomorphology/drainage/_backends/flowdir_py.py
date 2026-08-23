@@ -6,45 +6,45 @@ flow field; flow-graph operations are implemented in the network
 package. These internal routines are called by the public-facing
 drainage API.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 """
 
-import numpy as np
 from collections import deque
+
+import numpy as np
+from numpy.typing import NDArray
 
 from formosa.geomorphology.drainage.directions import D8Directions
 from formosa.geomorphology.drainage.neighbours import (
-    get_neighbour_values,
     compute_downstream_indices,
+    get_neighbour_values,
 )
-
-from typing import Optional
-import numpy.typing as npt
+from formosa.utils import NpFlowDir, NpReal
 
 
 def compute_flowdir_simple(
-    dem: npt.NDArray[np.number],
+    dem: NDArray[NpReal],
     dir_scheme: D8Directions = D8Directions(),
-) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.bool_]]:
-    neighbours, codes, _ = get_neighbour_values(
-        dem, dir_scheme=dir_scheme, include_self=True, pad_value=np.max(dem) + 1
+) -> tuple[NDArray[np.integer], NDArray[np.bool_]]:
+    nabrs, codes, _ = get_neighbour_values(
+        dem, dir_scheme=dir_scheme, include_self=True, pad_val=np.max(dem) + 1
     )
     flow2self_code = np.where(np.all(dir_scheme.offsets == [0, 0], axis=1))[0][0]
-    flowdirs = np.full(dem.shape, flow2self_code, dtype=np.int32)
+    dirs = np.full(dem.shape, flow2self_code, dtype=np.int32)
     # find where not all neighbours are nan
-    valid_mask = ~np.all(np.isnan(neighbours), axis=0)
-    flowdirs[valid_mask] = np.nanargmin(neighbours[:, valid_mask], axis=0)
+    valid_mask = ~np.all(np.isnan(nabrs), axis=0)
+    dirs[valid_mask] = np.nanargmin(nabrs[:, valid_mask], axis=0)
 
-    flowdirs = codes[flowdirs].astype(np.int32)
-    is_flat = flowdirs == 0
-    return flowdirs, is_flat
+    dirs = codes[dirs].astype(np.int32)
+    is_flat = dirs == 0
+    return dirs, is_flat
 
 
 def count_indegree(
-    dirs: npt.NDArray[np.integer],
+    dirs: NDArray[NpFlowDir],
     dir_scheme: D8Directions = D8Directions(),
-    valids: Optional[npt.NDArray[np.bool_]] = None,
-) -> npt.NDArray[np.int8]:
+    valids: NDArray[np.bool_] | None = None,
+) -> NDArray[np.int8]:
     if valids is None:
         valids = np.ones(dirs.shape, dtype=bool)
     indegs = np.zeros(dirs.shape, dtype=np.int8)
@@ -66,11 +66,11 @@ def count_indegree(
 
 
 def find_acyclic_flowdirs(
-    dirs: npt.NDArray[np.integer],
-    indegs: npt.NDArray[np.integer],
-    valids: npt.NDArray[np.bool_],
+    dirs: NDArray[NpFlowDir],
+    indegs: NDArray[np.integer],
+    valids: NDArray[np.bool_],
     dir_scheme: D8Directions = D8Directions(),
-) -> npt.NDArray[np.bool_]:
+) -> NDArray[np.bool_]:
     """Finds valid cells that do not belong to a directed flow cycle."""
     remaining_indegs = np.asarray(indegs, dtype=np.int8).copy()
     acyclics = np.zeros(valids.shape, dtype=bool)

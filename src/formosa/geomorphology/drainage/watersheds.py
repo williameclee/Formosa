@@ -21,7 +21,7 @@ from formosa.utils import Backend, NpFlowDir, raise_fortran_error
 def label_watersheds(
     dirs: NDArray[NpFlowDir],
     dir_scheme: D8Directions = D8Directions(),
-    valids: Optional[NDArray[np.bool_]] = None,
+    valids: NDArray[np.bool_] | None = None,
     backend: Backend = "fortran",
 ) -> NDArray[np.int32]:
     """

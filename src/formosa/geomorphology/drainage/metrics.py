@@ -25,21 +25,26 @@ from formosa.utils.validation import validate_same_shape
 
 def compute_flow_accumulation(
     dirs: NDArray[NpFlowDir],
-    valids: Optional[NDArray[np.bool_]] = None,
-    weights: Optional[NDArray[np.floating]] = None,
-    indegs: Optional[NDArray[np.integer]] = None,
-    dsij: Optional[NDArray[np.integer]] = None,
     dir_scheme: D8Directions = D8Directions(),
+    valids: NDArray[np.bool_] | None = None,
+    weights: NDArray[np.floating] | None = None,
+    indegs: NDArray[np.integer] | None = None,
+    dsij: NDArray[np.integer] | None = None,
     backend: Backend = "fortran",
-) -> NDArray[np.float32]:
+) -> NDArray[np.float64]:
     """
-    Computes flow accumulation for each cell in a flow direction grid.
+    Computes flow accumulation for each cell in a flow direction
+    grid.
 
     Parameters
     ----------
     dirs : NDArray[uint8]
         Flow direction raster.
         - Expected shape: `(nrows, ncols)`.
+    dir_scheme : D8Directions, optional
+        Instance of `D8Directions` defining the flow direction
+        scheme.
+        - Default scheme is `D8Directions()`.
     valids : NDArray[bool], optional
         Boolean mask indicating valid cells in the flow direction
         grid.
@@ -59,17 +64,16 @@ def compute_flow_accumulation(
         - Expected shape: `(nrows, ncols)`, same as `dirs`.
         - Default input is `None`.
     dsij : NDArray[int], optional
-        A 2D array of downstream cell indices for each cell.
-        If `None`, downstream indices are computed from the flow direction grid.
-        Default is `None`.
-    dir_scheme : D8Directions, optional
-        An instance of `D8Directions` defining the flow direction scheme.
-        Default is `D8Directions()`.
+        Flattened downstream cell indices for each cell.
+        If `None`, downstream indices are computed from the flow
+        direction grid.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+        - Default input is `None`.
     backend : {'fortran', 'python'}, optional
         Backend to use for computation.
         `'fortran'` uses the Fortran extension for performance,
         while `'python'` uses a pure Python implementation.
-        Default backend is `'fortran'`.
+        - Default backend is `'fortran'`.
 
     Returns
     -------
@@ -102,12 +106,12 @@ def compute_flow_accumulation(
     match backend:
         case "python":
             accums = metrics_py.compute_flow_accumulation(
-                dirs,
-                valids=valids,
+                dirs=dirs,
                 weights=weights,
                 indegs=indegs,
                 dsij=dsij,
                 dir_scheme=dir_scheme,
+                valids=valids,
             )
         case "fortran":
             accums, err_code = metrics_f.compute_flow_accumulation(
@@ -127,12 +131,13 @@ def compute_flow_accumulation(
 def compute_flow_strahler_order(
     dirs: NDArray[NpFlowDir],
     dir_scheme: D8Directions = D8Directions(),
-    valids: Optional[NDArray[np.bool_]] = None,
-    indegs: Optional[NDArray[np.integer]] = None,
+    valids: NDArray[np.bool_] | None = None,
+    indegs: NDArray[np.integer] | None = None,
     backend: Backend = "fortran",
 ) -> NDArray[np.uint8]:
     """
-    Computes the Strahler order for each cell in a flow direction grid.
+    Computes Strahler stream order for each cell based on flow
+    direction.
 
     Parameters
     ----------
@@ -158,7 +163,7 @@ def compute_flow_strahler_order(
         Backend to use for computation.
         `'fortran'` uses the Fortran extension for performance,
         while `'python'` uses a pure Python implementation.
-        Default backend is `'fortran'`.
+        - Default backend is `'fortran'`.
 
     Returns
     -------
@@ -197,10 +202,10 @@ def compute_flow_strahler_order(
 def compute_dist2source(
     dirs: NDArray[NpFlowDir],
     dir_scheme: D8Directions = D8Directions(),
-    x: Optional[NDArray[np.number]] = None,
-    y: Optional[NDArray[np.number]] = None,
-    valids: Optional[NDArray[np.bool_]] = None,
-    indegs: Optional[NDArray[np.integer]] = None,
+    x: NDArray[NpCoords] | None = None,
+    y: NDArray[NpCoords] | None = None,
+    valids: NDArray[np.bool_] | None = None,
+    indegs: NDArray[np.integer] | None = None,
 ) -> NDArray[np.float32]:
     """
     Computes the distance downstream along flow directions for each cell in the flow direction grid.
@@ -239,7 +244,6 @@ def compute_dist2source(
     Returns
     -------
     dists : NDArray[float32]
-        A 2D array representing the downstream distance for each cell.
 
     Raises
     ------
@@ -247,6 +251,8 @@ def compute_dist2source(
         If the input arrays are not of the expected type or format.
     ValueError
         If the shapes of the input arrays do not match the expected dimensions.
+        Downstream distance for each cell.
+        - Shape: `(nrows, ncols)`, same as `dirs`.
     """
     dirs = validate_format_flowdirs(dirs)
     valids = validate_format_valids(valids, dirs, "flow direction raster")
@@ -272,9 +278,9 @@ def compute_dist2source(
 def compute_dist2sink(
     dirs: NDArray[NpFlowDir],
     dir_scheme: D8Directions = D8Directions(),
-    x: Optional[NDArray[np.number]] = None,
-    y: Optional[NDArray[np.number]] = None,
-    valids: Optional[NDArray[np.bool_]] = None,
+    x: NDArray[NpCoords] | None = None,
+    y: NDArray[NpCoords] | None = None,
+    valids: NDArray[np.bool_] | None = None,
 ) -> NDArray[np.float32]:
     """
     Computes the distance upstream along flow directions for each cell in the flow direction grid.
@@ -282,7 +288,8 @@ def compute_dist2sink(
     Parameters
     ----------
     dirs : NDArray[uint8]
-        A 2D array representing the flow direction for each cell.
+        Flow direction raster.
+        - Expected shape: `(nrows, ncols)`.
     dir_scheme : D8Directions, optional
         Instance of `D8Directions` defining the flow direction
         scheme.

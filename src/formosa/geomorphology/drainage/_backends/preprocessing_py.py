@@ -4,19 +4,19 @@ Prepares digital elevation models for drainage analysis in Python.
 This module implements the internal Python backend called by the
 public-facing drainage API and is not intended to be used directly.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 """
 
-import numpy as np
-
-import numpy.typing as npt
 from typing import Optional
+
+import numpy as np
+from numpy.typing import NDArray
 
 
 def fill_depressions(
-    dem: npt.NDArray[np.floating],
-    valids: Optional[npt.NDArray[np.bool_]] = None,
-) -> npt.NDArray[np.floating]:
+    dem: NDArray[np.floating],
+    valids: NDArray[np.bool_],
+) -> NDArray[np.floating]:
     """
     Fill D8 depressions using iterative reconstruction by erosion.
 
@@ -24,11 +24,8 @@ def fill_depressions(
     -----
     Deprecated and no longer called by the public functions.
     """
-    if valids is None:
-        valids = np.ones(dem.shape, dtype=bool)
-
-    reconstructed = dem.copy()
-    reconstructed[valids] = np.inf
+    recon = dem.copy()
+    recon[valids] = np.inf
 
     for i in range(dem.shape[0]):
         for j in range(dem.shape[1]):
@@ -36,23 +33,23 @@ def fill_depressions(
                 continue
             i0, i1 = max(0, i - 1), min(dem.shape[0], i + 2)
             j0, j1 = max(0, j - 1), min(dem.shape[1], j + 2)
-            is_outer_boundary = (
+            is_outer_bdry = (
                 i == 0 or i == dem.shape[0] - 1 or j == 0 or j == dem.shape[1] - 1
             )
-            is_mask_boundary = np.any(~valids[i0:i1, j0:j1])
-            if is_outer_boundary or is_mask_boundary:
-                reconstructed[i, j] = dem[i, j]
+            is_mask_bdry = np.any(~valids[i0:i1, j0:j1])
+            if is_outer_bdry or is_mask_bdry:
+                recon[i, j] = dem[i, j]
 
     while True:
-        previous = reconstructed.copy()
+        prev = recon.copy()
         for i in range(dem.shape[0]):
             for j in range(dem.shape[1]):
                 if not valids[i, j]:
                     continue
                 i0, i1 = max(0, i - 1), min(dem.shape[0], i + 2)
                 j0, j1 = max(0, j - 1), min(dem.shape[1], j + 2)
-                neighbour_valids = valids[i0:i1, j0:j1]
-                neighbour_values = previous[i0:i1, j0:j1][neighbour_valids]
-                reconstructed[i, j] = max(dem[i, j], np.min(neighbour_values))
-        if np.array_equal(reconstructed, previous):
-            return reconstructed
+                nabr_valids = valids[i0:i1, j0:j1]
+                nabr_vals = prev[i0:i1, j0:j1][nabr_valids]
+                recon[i, j] = max(dem[i, j], np.min(nabr_vals))
+        if np.array_equal(recon, prev):
+            return recon

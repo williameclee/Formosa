@@ -5,24 +5,21 @@ data.
 This module provides internal helpers shared by the DEM download
 APIs and is not intended to be used directly.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 """
-
-from rasterio.transform import Affine
 
 import warnings
 
 import numpy as np
-import numpy.typing as npt
+from numpy.typing import NDArray
+from rasterio.transform import Affine
 
-from typing import TypeVar
-
-number = TypeVar("number", int, float)
+from formosa.utils import Real
 
 
 def _validate_latlon_limits(
-    latlim: tuple[number, number], lonlim: tuple[number, number], format: bool = True
-) -> tuple[tuple[number, number], tuple[number, number]]:
+    latlim: tuple[Real, Real], lonlim: tuple[Real, Real], format: bool = True
+) -> tuple[tuple[Real, Real], tuple[Real, Real]]:
     """
     Validate latitude and longitude limits.
     """
@@ -54,11 +51,11 @@ def _validate_latlon_limits(
 
 
 def _dem_post_processing(
-    Z: npt.NDArray[np.floating | np.integer], profile: dict
+    Z: NDArray[np.floating | np.integer], profile: dict
 ) -> tuple[
-    npt.NDArray[np.floating | np.integer],
-    npt.NDArray[np.floating],
-    npt.NDArray[np.floating],
+    NDArray[np.floating | np.integer],
+    NDArray[np.floating],
+    NDArray[np.floating],
     Affine,
 ]:
     """

@@ -5,17 +5,17 @@ Last modified: 2026-08-18, En-Chi Lee (williameclee@gmail.com)
 """
 
 from dataclasses import dataclass
-import numpy as np
+from typing import Generic
 
+import numpy as np
+from numpy.typing import NDArray
+
+from formosa.geomorphology._native import network_simplification as simp_f
+from formosa.geomorphology.drainage.network.editing import remove_unused_vertices
 from formosa.geomorphology.drainage.network.validation import (
     _locate_disallowed_graph_topology,
 )
-from formosa.geomorphology.drainage.network.editing import remove_unused_vertices
-from formosa.geomorphology._native import network_simplification as simp_f
-
-from typing import Optional, Generic
-from numpy.typing import NDArray
-from formosa.utils.typing import NpInt, NpIndex, NpCoords
+from formosa.utils.typing import NpCoords, NpIndex, NpInt
 
 
 @dataclass
@@ -368,8 +368,8 @@ def _split_arcs_at_vertex_ids(
     lengths: list[int] = []
     for order, (start, end) in zip(orders, endpts):
         # Existing arc endpoints are boundaries already; split only interiors
-        interior = np.flatnonzero(split_vtxs[start + 1 : end]) + start + 1
-        boundaries = np.concatenate(([start], interior, [end]))
+        intr = np.flatnonzero(split_vtxs[start + 1 : end]) + start + 1
+        boundaries = np.concatenate(([start], intr, [end]))
         for left, right in zip(boundaries[:-1], boundaries[1:]):
             chunk = vtxs[left : right + 1]
             chunks.append(chunk)
@@ -513,7 +513,7 @@ def _resolve_topology_intersections(
     endpts: NDArray[NpIndex],
     vtx_keeps: NDArray[np.bool_],
     tol: float,
-    graph_ids: Optional[NDArray[np.integer]] = None,
+    graph_ids: NDArray[np.integer] | None = None,
     max_iters: int = 4,
 ) -> NDArray[np.bool_]:
     """
@@ -546,10 +546,10 @@ def _resolve_topology_intersections(
         for iarc in np.unique(intxs[:, :2]):
             start = endpts[0, iarc]
             end = endpts[1, iarc]
-            arc_length = end - start + 1
+            arc_len = end - start + 1
             vtx_keeps[start : end + 1] = simp_f.simplify_flowgraph(
                 vtxs[:, start : end + 1].astype(np.float32, order="F"),
-                np.array([[1], [arc_length]], dtype=np.int32, order="F"),
+                np.array([[1], [arc_len]], dtype=np.int32, order="F"),
                 tol,
             ).astype(bool)
         # Squeeze the vertices and map the arc endpoints to the new indices

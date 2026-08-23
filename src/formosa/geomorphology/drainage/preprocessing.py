@@ -9,6 +9,8 @@ Created: 2026-08-01, En-Chi Lee (williameclee@gmail.com)
 Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 """
 
+from typing import Any
+
 import numpy as np
 from numpy.typing import NDArray
 

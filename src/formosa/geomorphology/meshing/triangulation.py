@@ -6,21 +6,19 @@ This module dispatches to the Python or Fortran backend and
 normalises native inputs, outputs, and errors.
 
 Created: 2026-08-12, En-Chi Lee (williameclee@gmail.com)
-Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
-
-from formosa.geomorphology._native import meshing_triangulation as tri_f
 from formosa.geomorphology._native import meshing_cstr_triangulation as cstrtri_f
-import formosa.geomorphology.meshing._backends.triangulation_py as tri_py
-import formosa.geomorphology.meshing._backends.constrained_triangulation_py as cstrtri_py
-from formosa.geomorphology.drainage.network import GraphTopologyError
-
-from typing import Optional
+from formosa.geomorphology._native import meshing_triangulation as tri_f
 from numpy.typing import NDArray
+
+import formosa.geomorphology.meshing._backends.constrained_triangulation_py as cstrtri_py
+import formosa.geomorphology.meshing._backends.triangulation_py as tri_py
+from formosa.geomorphology.drainage.network import GraphTopologyError
 from formosa.utils import Backend, raise_fortran_error
-from formosa.utils.typing import NpCoords, NpCanonIndex
+from formosa.utils.typing import NpCanonIndex, NpCoords
 
 _TRIANGULATION_ERRORS = {
     1: (ValueError, "invalid triangulation input"),
@@ -94,13 +92,11 @@ def _validate_triangulate_points(vtxs: NDArray[NpCoords]) -> None:
     if n_unq_pts != vtxs.shape[0]:
         raise ValueError(
             "Vertices must be unique, "
-            + f"but found {vtxs.shape[0]-n_unq_pts} duplicates."
+            + f"but found {vtxs.shape[0] - n_unq_pts} duplicates."
         )
 
 
-def _canonicalise_facets(
-    faces: NDArray[NpCanonIndex],
-) -> NDArray[NpCanonIndex]:
+def _canonicalise_facets(faces: NDArray[NpCanonIndex]) -> NDArray[NpCanonIndex]:
     """
     Returns CCW triangles in a deterministic vertex and row order.
     """
@@ -117,8 +113,7 @@ def _canonicalise_facets(
 
 
 def _canonicalise_facet_topology(
-    faces: NDArray[NpCanonIndex],
-    nabrs: NDArray[NpCanonIndex],
+    faces: NDArray[NpCanonIndex], nabrs: NDArray[NpCanonIndex]
 ) -> tuple[NDArray[NpCanonIndex], NDArray[NpCanonIndex]]:
     """
     Returns facets and their neighbours in a canonical order.
@@ -288,7 +283,7 @@ def flip_quadrilateral_edge(
     faces: NDArray[NpCanonIndex],
     iface: int,
     iside: int,
-    nabrs: Optional[NDArray[NpCanonIndex]] = None,
+    nabrs: NDArray[NpCanonIndex] | None = None,
     backend: Backend = "fortran",
 ) -> tuple[NDArray[NpCanonIndex], NDArray[NpCanonIndex]]:
     """
@@ -474,7 +469,7 @@ def recover_constraint_edge(
     faces: NDArray[NpCanonIndex],
     edge: tuple[int, int],
     locked_edges: set[tuple[int, int]] | None = None,
-    nabrs: Optional[NDArray[NpCanonIndex]] = None,
+    nabrs: NDArray[NpCanonIndex] | None = None,
     backend: Backend = "fortran",
 ) -> tuple[NDArray[NpCanonIndex], NDArray[NpCanonIndex]]:
     """
@@ -544,7 +539,7 @@ def recover_constraint_edge(
         raise ValueError("Constraint edge cannot be a self-edge.")
 
     j, k = map(int, edge_array)
-    target = tri_py._canonical_edge(j, k)
+    target = tri_py.canonical_edge(j, k)
     locked: set[tuple[int, int]] = set()
     for locked_edge in locked_edges or set():
         locked_array = np.asarray(locked_edge)
@@ -557,7 +552,7 @@ def recover_constraint_edge(
             raise IndexError("Locked edge vertex IDs are out of bounds.")
         if l == m:
             raise ValueError("Locked edges cannot be self-edges.")
-        locked.add(tri_py._canonical_edge(l, m))
+        locked.add(tri_py.canonical_edge(l, m))
 
     if nabrs is None:
         nabrs = find_facet_neighbours(faces, backend=backend)
@@ -690,7 +685,7 @@ def recover_constraint_edges(
             if err_code != 0 and failed_edge > 0:
                 failed_index = int(failed_edge) - 1
                 u, v = map(int, edges[failed_index])
-                target = tri_py._canonical_edge(u, v)
+                target = tri_py.canonical_edge(u, v)
                 try:
                     raise_fortran_error(
                         "recover_constraint_edges",

@@ -4,18 +4,16 @@ Validates planar constraint graphs used for mesh generation.
 This module checks normalisation, raster bounds, boundary coverage,
 and edge intersections before triangulation.
 
-Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
+from numpy.typing import NDArray
 
 import formosa.geomorphology.drainage.network as network_m
 from formosa.geomorphology.drainage.network import GraphTopologyError
 from formosa.geomorphology.geometry.intersections import IntersectionKind
 from formosa.geomorphology.meshing.core import ConstraintKind
-
-from typing import Optional
-from numpy.typing import NDArray
 from formosa.utils import Backend
 from formosa.utils.typing import NpCanonIndex
 
@@ -46,7 +44,7 @@ def _validate_constraints_type_shape(
 def _validate_constraints_oob(
     indices: NDArray[NpCanonIndex],
     edges: NDArray[NpCanonIndex],
-    shape: Optional[tuple[int, int]] = None,
+    shape: tuple[int, int] | None = None,
 ):
     n_vtxs = indices.shape[0]
 
@@ -174,11 +172,11 @@ def _validate_constraints_intersections(
         f"Constraint edges must form a planar straight-line graph, "
         + f"but found {len(details)} violations:\n"
         + "\n".join(
-            f"Edge IDs: {detail["edge_ids"][0]} (kind: {edge_kinds[detail["edge_ids"][0]]}) "
-            + f"({indices[edges[detail["edge_ids"][0],0],0]}, {indices[edges[detail["edge_ids"][0],0],1]})--({indices[edges[detail["edge_ids"][0],1],0]}, {indices[edges[detail["edge_ids"][0],1],1]}), "
-            + f"{detail["edge_ids"][1]} (kind: {edge_kinds[detail["edge_ids"][1]]}) "
-            + f"({indices[edges[detail["edge_ids"][1],0],0]}, {indices[edges[detail["edge_ids"][1],0],1]})--({indices[edges[detail["edge_ids"][1],1],0]}, {indices[edges[detail["edge_ids"][1],1],1]}), "
-            + f"violation: {detail["type"]}"
+            f"Edge IDs: {detail['edge_ids'][0]} (kind: {edge_kinds[detail['edge_ids'][0]]}) "
+            + f"({indices[edges[detail['edge_ids'][0], 0], 0]}, {indices[edges[detail['edge_ids'][0], 0], 1]})--({indices[edges[detail['edge_ids'][0], 1], 0]}, {indices[edges[detail['edge_ids'][0], 1], 1]}), "
+            + f"{detail['edge_ids'][1]} (kind: {edge_kinds[detail['edge_ids'][1]]}) "
+            + f"({indices[edges[detail['edge_ids'][1], 0], 0]}, {indices[edges[detail['edge_ids'][1], 0], 1]})--({indices[edges[detail['edge_ids'][1], 1], 0]}, {indices[edges[detail['edge_ids'][1], 1], 1]}), "
+            + f"violation: {detail['type']}"
             for detail in details
         )
     )
@@ -188,7 +186,7 @@ def validate_constraints(
     indices: NDArray[NpCanonIndex],
     edges: NDArray[NpCanonIndex],
     edge_kinds: NDArray[np.uint8],
-    shape: Optional[tuple[int, int]] = None,
+    shape: tuple[int, int] | None = None,
     backend: Backend = "fortran",
 ) -> None:
     """
@@ -244,14 +242,14 @@ def validate_constraints(
     if np.any(edges[:, 0] == edges[:, 1]):
         invalid = np.flatnonzero(edges[:, 0] == edges[:, 1])
         raise GraphTopologyError(
-            f"Constraint edges cannot be self-edges, "
+            "Constraint edges cannot be self-edges, "
             + f"but got invalid edges at indices {invalid.tolist()}."
         )
     if np.any(edges[:, 0] > edges[:, 1]):
         invalid = np.flatnonzero(edges[:, 0] > edges[:, 1])
         raise GraphTopologyError(
             "Constraint edge vertex IDs must use canonical increasing order, "
-            f"but got invalid edges at indices {invalid.tolist()}."
+            + f"but got invalid edges at indices {invalid.tolist()}."
         )
     if np.unique(edges, axis=0).shape[0] != n_edges:
         raise GraphTopologyError("The constraint graph contains duplicate edges.")
@@ -263,11 +261,13 @@ def validate_constraints(
     if np.any(invalid_kinds):
         invalid = np.flatnonzero(invalid_kinds)
         raise GraphTopologyError(
-            "Edges contain unsupported GraphKind bits at indices "
-            f"{invalid.tolist()}."
+            f"Edges contain unsupported GraphKind bits at indices {invalid.tolist()}."
         )
 
     if shape is not None:
         _validate_constraints_boundary(indices, edges, edge_kinds, shape)
 
     _validate_constraints_intersections(indices, edges, edge_kinds, backend)
+
+
+__all__ = ["IntersectionKind", "validate_constraints"]

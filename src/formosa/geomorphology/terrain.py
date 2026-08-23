@@ -64,7 +64,8 @@ def compute_slope(
     -------
     slope : NDArray[float]
         Magnitude of the elevation gradient in rise per horizontal
-        distance unit, with the same shape as `dem`.
+        distance unit.
+        - Shape: `(nrows, ncols)`, same as `dem`.
     """
     dem = validate_format_dem(dem)
     if x is not None:
@@ -86,13 +87,13 @@ def compute_slope(
     slope_x /= dxx
     slope_y /= dyy
 
-    slope = np.sqrt(slope_x**2 + slope_y**2)
+    slope = np.sqrt(slope_x**2 + slope_y**2).astype(dem.dtype)
     return slope
 
 
 def compute_isolation(
     dem: NDArray[NpReal],
-    valids: Optional[NDArray[np.bool_]] = None,
+    valids: NDArray[np.bool_] | None = None,
     dx: Coords = 1.0,
     dy: Coords = 1.0,
 ) -> tuple[
@@ -120,7 +121,7 @@ def compute_isolation(
     dx, dy : int | float, optional
         Positive, finite column and row spacing, respectively.
         The isolation distances use the same units as these values.
-        Both default to `1.0`.
+        - Default spacings are `1.0`.
 
     Returns
     -------
@@ -216,7 +217,7 @@ class ProminenceFeatureKind(IntFlag):
 @overload
 def compute_prominence(
     dem: NDArray[np.unsignedinteger],
-    valids: Optional[NDArray[np.bool_]] = None,
+    valids: NDArray[np.bool_] | None = None,
     dir_scheme: D8Directions = D8Directions(),
 ) -> tuple[
     NDArray[np.int64],
@@ -231,7 +232,7 @@ def compute_prominence(
 @overload
 def compute_prominence(
     dem: NDArray[NpReal],
-    valids: Optional[NDArray[np.bool_]] = None,
+    valids: NDArray[np.bool_] | None = None,
     dir_scheme: D8Directions = D8Directions(),
 ) -> tuple[
     NDArray[NpReal],
@@ -245,7 +246,7 @@ def compute_prominence(
 
 def compute_prominence(
     dem: NDArray[NpReal | np.unsignedinteger],
-    valids: Optional[NDArray[np.bool_]] = None,
+    valids: NDArray[np.bool_] | None = None,
     dir_scheme: D8Directions = D8Directions(),
 ) -> tuple[
     NDArray[NpReal | np.int64],

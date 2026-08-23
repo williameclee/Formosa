@@ -27,7 +27,7 @@ def find_flat_edges(
     dem: NDArray[NpReal],
     dirs: NDArray[NpFlowDir],
     dir_scheme: D8Directions = D8Directions(),
-    valids: Optional[NDArray[np.bool_]] = None,
+    valids: NDArray[np.bool_] | None = None,
     backend: Backend = "fortran",
 ) -> tuple[NDArray[np.bool_], NDArray[np.bool_]]:
     """
@@ -53,9 +53,9 @@ def find_flat_edges(
         - Default mask is `None`.
     backend : {'fortran', 'python'}, optional
         Backend to use for computation.
-        `'fortran'` uses the FORTRAN extension for performance,
+        `'fortran'` uses the Fortran extension for performance,
         while `'python'` uses a pure Python implementation.
-        Default backend is `'fortran'`.
+        - Default backend is `'fortran'`.
 
     Returns
     -------
@@ -92,7 +92,7 @@ def find_flat_edges(
 def label_flats(
     dem: NDArray[NpReal],
     seeds: NDArray[np.bool_],
-    valids: Optional[NDArray[np.bool_]] = None,
+    valids: NDArray[np.bool_] | None = None,
     dir_scheme: D8Directions = D8Directions(),
 ) -> NDArray[np.int32]:
     """
@@ -113,8 +113,9 @@ def label_flats(
         - Expected shape: `(nrows, ncols)`, same as `dem`.
         - Default mask is `None`.
     dir_scheme : D8Directions, optional
-        An instance of `D8Directions` defining the flow direction scheme.
-        Default is `D8Directions()`.
+        Instance of `D8Directions` defining the flow direction
+        scheme.
+        - Default scheme is `D8Directions()`.
 
     Returns
     -------
@@ -146,12 +147,13 @@ def label_flats(
 
 def find_flat(
     dem: NDArray[NpReal],
-    valids: Optional[NDArray[np.bool_]] = None,
+    valids: NDArray[np.bool_] | None = None,
     only_min: bool = True,
     dir_scheme: D8Directions = D8Directions(window=3),
 ) -> NDArray[np.bool_]:
     """
-    Identifies flat areas in a DEM where cells have no lower neighbouring cells.
+    Identifies flat areas in a DEM where cells have no lower
+    neighbouring cells.
 
     Parameters
     ----------
@@ -167,10 +169,11 @@ def find_flat(
         Whether only cells strictly equal to the minimum of their
         neighbours qualify as flat.
         If False, cells equal to any neighbour are considered flat.
-    dir_scheme : D8Directions, optional
-        An instance of D8Directions defining the neighbour offsets.
-        Default is D8Directions(window=3).
         - Default option is `True`.
+    dir_scheme_neighbourhood : D8Directions, optional
+        Instance of `D8Directions` defining the neighbourhood for
+        the synthetic elevation gradient.
+        - Default scheme is `D8Directions(window=3)`.
 
     Returns
     -------
@@ -184,7 +187,7 @@ def find_flat(
         dem[~valids] = np.max(dem[~valids]) + 1
 
     neighbours, _, _ = get_neighbour_values(
-        dem, dir_scheme=dir_scheme, pad_value=np.nan, include_self=False
+        dem, dir_scheme=dir_scheme, pad_val=np.nan, include_self=False
     )
     if only_min:
         flats = dem == np.nanmin(neighbours, axis=0)
@@ -208,8 +211,9 @@ def find_ambiguous(
         Digital elevation model raster.
         - Expected shape: `(nrows, ncols)`.
     dir_scheme : D8Directions, optional
-        An instance of `D8Directions` defining the flow direction scheme.
-        Default is `D8Directions()`.
+        Instance of `D8Directions` defining the flow direction
+        scheme.
+        - Default scheme is `D8Directions()`.
 
     Returns
     -------
@@ -219,15 +223,15 @@ def find_ambiguous(
         - Shape: `(nrows, ncols)`, same as `dem`.
     """
     dem = validate_format_dem(dem)
-    neighbours, _, _ = get_neighbour_values(dem, dir_scheme=dir_scheme)
-    min_neighbours = np.min(neighbours, axis=0)
-    ambiguities = np.sum(neighbours == min_neighbours, axis=0) > 1
+    nabrs, _, _ = get_neighbour_values(dem, dir_scheme=dir_scheme)
+    min_nabrs = np.min(nabrs, axis=0)
+    ambiguities = np.sum(nabrs == min_nabrs, axis=0) > 1
     ambiguities = ambiguities & ~(find_flat(dem))
     return ambiguities
 
 
 def create_pushing_syn_grad(
-    labels: NDArray[np.number],
+    labels: NDArray[np.integer],
     high_edges: NDArray[np.bool_],
     dir_scheme: D8Directions = D8Directions(),
 ) -> NDArray[np.int32]:
@@ -246,8 +250,8 @@ def create_pushing_syn_grad(
         Boolean mask indicating high-edge locations.
         - Expected shape: `(nrows, ncols)`, same as `labels`.
     dir_scheme : D8Directions, optional
-        An instance of D8Directions defining the flow direction scheme, here it is used to determine the offsets for neighbor cells.
-        Default is `D8Directions()`.
+        Instance of `D8Directions` defining neighbour offsets.
+        - Default scheme is `D8Directions()`.
 
     Returns
     -------
@@ -334,13 +338,13 @@ def compute_syn_flowdir(
         Integer label raster for flat regions.
         - Expected shape: `(nrows, ncols)`, same as `z`.
     dir_scheme : D8Directions, optional
-        An instance of `D8Directions` defining the flow direction scheme.
-        Default is `D8Directions()`.
+        Instance of `D8Directions` defining the flow direction scheme.
+        - Default scheme is `D8Directions()`.
     backend : {'fortran', 'python'}, optional
         Backend to use for computation.
-        `'fortran'` uses the FORTRAN extension for performance,
+        `'fortran'` uses the Fortran extension for performance,
         while `'python'` uses a pure Python implementation.
-        Default backend is `'fortran'`.
+        - Default backend is `'fortran'`.
 
     Returns
     -------

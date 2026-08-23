@@ -30,9 +30,9 @@ from formosa.utils import Backend, NpCoords, NpFlowDir, raise_fortran_error
 
 def compute_dist2conf_max(
     dirs: NDArray[NpFlowDir],
-    valids: Optional[NDArray[np.bool_]] = None,
-    x: Optional[NDArray[np.number]] = None,
-    y: Optional[NDArray[np.number]] = None,
+    valids: NDArray[np.bool_] | None = None,
+    x: NDArray[NpCoords] | None = None,
+    y: NDArray[NpCoords] | None = None,
     dir_scheme: D8Directions = D8Directions(),
 ) -> NDArray[np.float32]:
     """
@@ -119,9 +119,9 @@ def compute_dist2conf_max(
 def compute_ridgedir(
     dirs: NDArray[NpFlowDir],
     dir_scheme: D8Directions = D8Directions(),
-    valids: Optional[NDArray[np.bool_]] = None,
-    x: Optional[NDArray[np.number]] = None,
-    y: Optional[NDArray[np.number]] = None,
+    valids: NDArray[np.bool_] | None = None,
+    x: NDArray[NpCoords] | None = None,
+    y: NDArray[NpCoords] | None = None,
 ) -> NDArray[NpFlowDir]:
     """
     Computes flow directions over the inverted maximum-confluence field.
@@ -167,9 +167,9 @@ def compute_ridgedir(
 def compute_dist2ridge(
     dirs: NDArray[NpFlowDir],
     dir_scheme: D8Directions = D8Directions(),
-    valids: Optional[NDArray[np.bool_]] = None,
-    x: Optional[NDArray[np.number]] = None,
-    y: Optional[NDArray[np.number]] = None,
+    valids: NDArray[np.bool_] | None = None,
+    x: NDArray[NpCoords] | None = None,
+    y: NDArray[NpCoords] | None = None,
     dir_is_ridge: bool = False,
 ) -> NDArray[np.float32]:
     """
@@ -183,8 +183,9 @@ def compute_dist2ridge(
         Flow direction raster.
         - Expected shape: `(nrows, ncols)`.
     dir_scheme : D8Directions, optional
-        Instance of `D8Directions` defining the flow direction scheme.
-        Default scheme is `D8Directions()`.
+        Instance of `D8Directions` defining the flow direction
+        scheme.
+        - Default scheme is `D8Directions()`.
     valids : NDArray[bool], optional
         Boolean mask indicating valid cells.
         If `None`, all cells are considered valid.
@@ -229,8 +230,8 @@ def compute_dist2ridge(
 def compute_ridge_strahler_order(
     dirs: NDArray[NpFlowDir],
     dir_scheme: D8Directions = D8Directions(),
-    valids: Optional[NDArray[np.bool_]] = None,
-    indegs: Optional[NDArray[np.integer]] = None,
+    valids: NDArray[np.bool_] | None = None,
+    indegs: NDArray[np.integer] | None = None,
     backend: Backend = "fortran",
     dir_is_ridge: bool = False,
 ) -> NDArray[np.uint8]:
@@ -258,9 +259,12 @@ def compute_ridge_strahler_order(
         - Default input is `None`.
     backend : {'fortran', 'python'}, optional
         Backend to use for computation.
-        `'fortran'` uses the FORTRAN extension for performance,
+        `'fortran'` uses the Fortran extension for performance,
         while `'python'` uses a pure Python implementation.
-        Default backend is `'fortran'`.
+        - Default backend is `'fortran'`.
+    dir_is_ridge : bool, optional
+        Whether `dirs` is already a ridge flow direction grid.
+        - Default option is `False`.
 
     Returns
     -------

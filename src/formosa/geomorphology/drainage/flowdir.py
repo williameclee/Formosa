@@ -34,7 +34,7 @@ from formosa.utils.validation import validate_same_shape
 def _compute_flowdir_simple(
     dem: NDArray[NpReal],
     dir_scheme: D8Directions = D8Directions(),
-    valids: Optional[NDArray[np.bool_]] = None,
+    valids: NDArray[np.bool_] | None = None,
     backend: Backend = "fortran",
 ) -> tuple[NDArray[NpFlowDir], NDArray[np.bool_]]:
     """
@@ -86,7 +86,7 @@ def _compute_flowdir_simple(
 def _compute_flowdir_complete(
     dem: NDArray[NpReal],
     dir_scheme: D8Directions = D8Directions(),
-    valids: Optional[NDArray[np.bool_]] = None,
+    valids: NDArray[np.bool_] | None = None,
     step_size: int = 4,
 ) -> tuple[NDArray[NpFlowDir], NDArray[np.bool_], NDArray[np.integer]]:
     """
@@ -108,8 +108,10 @@ def _compute_flowdir_complete(
         - Expected shape: `(nrows, ncols)`, same as `dem`.
         - Default mask is `None`.
     step_size : int, optional
-        The increment in synthetic elevation per step away from low edges to avoid ties when combined with the result of `compute_away_from_high`.
-        Default is 4.
+        Increment in synthetic elevation per step away from low
+        edges to avoid ties when combined with the result of
+        :func:`compute_away_from_high`.
+        - Default step size is 4.
 
     Returns
     -------
@@ -150,11 +152,11 @@ def _compute_flowdir_complete(
 def compute_flowdir(
     dem: NDArray[NpReal],
     dir_scheme: D8Directions = D8Directions(),
-    valids: Optional[NDArray[np.bool_]] = None,
+    valids: NDArray[np.bool_] | None = None,
     fill_depression: bool = False,
     resolve_flat: bool = True,
     step_size: int = 4,
-) -> tuple[NDArray[NpFlowDir], NDArray[np.bool_], Optional[NDArray[np.integer]]]:
+) -> tuple[NDArray[NpFlowDir], NDArray[np.bool_], NDArray[np.integer] | None]:
     """
     Computes flow directions for a DEM, optionally resolving flat areas.
 
@@ -176,7 +178,7 @@ def compute_flowdir(
         Default is False.
     resolve_flat : bool, optional
         Whether to resolve flat areas using synthetic elevations.
-        Default is True.
+        - Default option is `True`.
     step_size : int, optional
         Increment in synthetic elevation per step away from low edges to avoid ties when combining synthetic elevations.
         Default is 4.
@@ -216,7 +218,7 @@ def compute_flowdir(
 def count_indegree(
     dirs: NDArray[NpFlowDir],
     dir_scheme: D8Directions = D8Directions(),
-    valids: Optional[NDArray[np.bool_]] = None,
+    valids: NDArray[np.bool_] | None = None,
     backend: Backend = "fortran",
 ) -> NDArray[np.int8]:
     """
@@ -241,7 +243,7 @@ def count_indegree(
         Backend to use for computation.
         `'fortran'` uses the Fortran extension for performance,
         while `'python'` uses a pure Python implementation.
-        Default backend is `'fortran'`.
+        - Default backend is `'fortran'`.
 
     Returns
     -------
@@ -302,8 +304,8 @@ def _find_acyclic_flowdirs_fortran(
 def find_acyclic_flowdirs(
     dirs: NDArray[NpFlowDir],
     dir_scheme: D8Directions = D8Directions(),
-    valids: Optional[NDArray[np.bool_]] = None,
-    indegs: Optional[NDArray[np.integer]] = None,
+    valids: NDArray[np.bool_] | None = None,
+    indegs: NDArray[np.integer] | None = None,
     backend: Backend = "fortran",
 ) -> NDArray[np.bool_]:
     """
@@ -318,8 +320,8 @@ def find_acyclic_flowdirs(
         Flow direction raster.
         - Expected shape: `(nrows, ncols)`.
     dir_scheme : D8Directions, optional
-        Flow direction scheme defining the direction codes and offsets.
-        The default scheme is `D8Directions()`.
+        Flow direction scheme defining direction codes and offsets.
+        - Default scheme is `D8Directions()`.
     valids : NDArray[bool], optional
         Boolean mask indicating valid cells in the flow field.
         If `None`, all cells are considered valid.
@@ -334,7 +336,7 @@ def find_acyclic_flowdirs(
         Backend to use for computation.
         `'fortran'` uses the Fortran extension for performance,
         while `'python'` uses a pure Python implementation.
-        Default backend is `'fortran'`.
+        - Default backend is `'fortran'`.
 
     Returns
     -------
@@ -372,8 +374,8 @@ def find_acyclic_flowdirs(
 def find_cyclic_flowdirs(
     dirs: NDArray[NpFlowDir],
     dir_scheme: D8Directions = D8Directions(),
-    valids: Optional[NDArray[np.bool_]] = None,
-    indegs: Optional[NDArray[np.integer]] = None,
+    valids: NDArray[np.bool_] | None = None,
+    indegs: NDArray[np.integer] | None = None,
     backend: Backend = "fortran",
 ) -> NDArray[np.bool_]:
     """
@@ -401,7 +403,7 @@ def find_cyclic_flowdirs(
         Backend to use for computation.
         `'fortran'` uses the Fortran extension for performance,
         while `'python'` uses a pure Python implementation.
-        Default backend is `'fortran'`.
+        - Default backend is `'fortran'`.
 
     Returns
     -------

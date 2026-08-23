@@ -2,22 +2,21 @@
 Edits flow graphs by concatenating, splitting, and removing graph
 elements.
 
-Last modified: 2026-08-18, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 """
 
-import numpy as np
-
 import warnings
+from collections.abc import Iterable
+from typing import overload
 
+import numpy as np
 from numpy.typing import NDArray
-from typing import Iterable, Optional, overload
-from formosa.utils.typing import NpInt, NpIndex, NpCoords
+
+from formosa.utils.typing import NpCoords, NpIndex, NpInt
 
 
 def concat_flowgraph(
-    orders: NDArray[NpInt],
-    vtxs: NDArray[NpCoords],
-    endpts: NDArray[NpIndex],
+    orders: NDArray[NpInt], vtxs: NDArray[NpCoords], endpts: NDArray[NpIndex]
 ) -> tuple[NDArray[NpInt], NDArray[NpCoords], NDArray[NpIndex]]:
     """
     Concatenates arcs of the same order in a flow graph, separated
@@ -152,7 +151,7 @@ def remove_unused_vertices(
 
 
 def _find_vertex_id(
-    vtxs: NDArray[NpCoords], vtx: NDArray[NpCoords], n: Optional[int] = None
+    vtxs: NDArray[NpCoords], vtx: NDArray[NpCoords], n: int | None = None
 ) -> int | list[int]:
     """
     Finds the index (or indices) of a vertex in a list of vertices.
@@ -203,18 +202,18 @@ def _find_vertex_id(
 @overload
 def _find_arc_id_of_vertex(
     endpts: NDArray[NpIndex], ivtx: int, is_inclusive: bool = True
-) -> Optional[int]: ...
+) -> int | None: ...
 
 
 @overload
 def _find_arc_id_of_vertex(
     endpts: NDArray[NpIndex], ivtx: Iterable[int], is_inclusive: bool = True
-) -> Optional[list[int]]: ...
+) -> list[int] | None: ...
 
 
 def _find_arc_id_of_vertex(
     endpts: NDArray[NpIndex], ivtx: int | Iterable[int], is_inclusive: bool = True
-) -> Optional[int | list[int]]:
+) -> int | list[int] | None:
     """
     Finds the indices of the arcs that contain the vertices of a
     list of given indices.
@@ -244,7 +243,7 @@ def _find_arc_id_of_vertex(
 
     def _find_arc_of_vertex(
         endpts: NDArray[np.integer], ivtx: int, is_inclusive: bool = True
-    ) -> Optional[int]:
+    ) -> int | None:
         iarc = np.flatnonzero(
             (ivtx >= endpts[:, 0]) & (ivtx <= (endpts[:, 1] - (not is_inclusive)))
         )
@@ -318,9 +317,7 @@ def insert_endpt(
     )
 
     def _return_graph(
-        orders: NDArray[np.integer],
-        vtxs: NDArray[NpCoords],
-        endpts: NDArray[NpIndex],
+        orders: NDArray[np.integer], vtxs: NDArray[NpCoords], endpts: NDArray[NpIndex]
     ) -> tuple[NDArray[np.integer], NDArray[NpCoords], NDArray[NpIndex]]:
         if remove_unused:
             vtxs, endpts = remove_unused_vertices(vtxs, endpts)
@@ -380,7 +377,11 @@ def insert_endpt(
 
     if isinstance(ivtx, int):
         orders, vtxs, endpts = _insert_endpt(
-            orders, vtxs, endpts=endpts, iarc=iarc, ivtx=ivtx  # type: ignore
+            orders,
+            vtxs,
+            endpts=endpts,
+            iarc=iarc,
+            ivtx=ivtx,  # type: ignore
         )
         return _return_graph(orders, vtxs, endpts)
 

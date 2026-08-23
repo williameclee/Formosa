@@ -5,19 +5,19 @@ Last modified: 2026-08-18, En-Chi Lee (williameclee@gmail.com)
 """
 
 from dataclasses import dataclass
+
 import numpy as np
+from numpy.typing import NDArray
 
 from formosa.geomorphology.drainage.network.editing import (
-    remove_unused_vertices,
     concat_flowgraph,
+    remove_unused_vertices,
 )
 from formosa.geomorphology.drainage.network.simplification import (
     simplify_flowgraph,
 )
 from formosa.utils import Backend
-
 from formosa.utils.typing import NpCanonIndex
-from numpy.typing import NDArray
 
 
 @dataclass
@@ -28,9 +28,9 @@ class FlowGraph:
 
     def __init__(
         self,
-        indices: NDArray[np.number],
-        endpts: NDArray[np.integer],
-        orders: NDArray[np.integer],
+        indices: NDArray[NpCanonIndex],
+        endpts: NDArray[NpCanonIndex],
+        orders: NDArray[np.int8],
     ):
         self.indices = indices.astype(NpCanonIndex)
         self.arc_endpts = endpts.astype(NpCanonIndex)
@@ -70,7 +70,7 @@ class FlowGraph:
 
     def simplify(
         self,
-        tol: int | float = 1,
+        tol: float = 1,
         check_topology: bool = True,
         remove_unused: bool = False,
         backend: Backend = "fortran",

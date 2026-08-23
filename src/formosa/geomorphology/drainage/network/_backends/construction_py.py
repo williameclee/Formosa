@@ -5,30 +5,26 @@ backend.
 This module implements internal routines called by the public-facing
 network API and is not intended to be used directly.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
+from numpy.typing import NDArray
 
 from formosa.geomorphology.drainage.directions import D8Directions
-
-
-import numpy.typing as npt
-from typing import Optional
+from formosa.utils import NpFlowDir
 
 
 def construct_flowgraph(
-    dirs: npt.NDArray[np.integer],
+    dirs: NDArray[NpFlowDir],
     dir_scheme: D8Directions,
-    valids: npt.NDArray[np.bool_],
-    orders: npt.NDArray[np.integer],
-    indegs: npt.NDArray[np.integer],
-    seeds: npt.NDArray[np.bool_],
+    valids: NDArray[np.bool_],
+    orders: NDArray[np.integer],
+    indegs: NDArray[np.integer],
+    seeds: NDArray[np.bool_],
     preserve_junctions: bool = True,
-    ncells: Optional[int] = None,
-) -> tuple[
-    int, int, npt.NDArray[np.int8], npt.NDArray[np.int32], npt.NDArray[np.int32]
-]:
+    ncells: int | None = None,
+) -> tuple[int, int, NDArray[np.int8], NDArray[np.int32], NDArray[np.int32]]:
     seens = np.zeros_like(dirs, dtype=np.bool_)
 
     # Hold the cell ijs of the start and end node

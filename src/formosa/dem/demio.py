@@ -1,26 +1,24 @@
 """
 Reads digital elevation model data from raster files on disk.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 """
 
 from pathlib import Path
-import rasterio
+
 import numpy as np
+import rasterio
+from numpy.typing import NDArray
 
 from formosa.dem.utils import transform2xy
 
-import numpy.typing as npt
-
 
 def read_dem(
-    raster_path: Path | str,
-    band: int = 1,
-    nan_value: float = np.nan,
+    raster_path: Path | str, band: int = 1, nan_value: float = np.nan
 ) -> tuple[
-    npt.NDArray[np.floating | np.integer],
-    npt.NDArray[np.floating],
-    npt.NDArray[np.floating],
+    NDArray[np.floating | np.integer],
+    NDArray[np.floating],
+    NDArray[np.floating],
     rasterio.Affine,
 ]:
     """

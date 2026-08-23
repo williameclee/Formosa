@@ -1,51 +1,51 @@
 """
 Renders shaded relief from two-dimensional elevation arrays.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 """
 
-import numpy as np
+from typing import Literal
 
-import numpy.typing as npt
+import numpy as np
+from numpy.typing import NDArray
 
 
 def hillshade(
-    array: npt.NDArray[np.integer | np.floating],
-    azimuth: int | float,
-    altitude: int | float,
-    method: str = "hard",
-    zfactor: int | float = 1,
-) -> npt.NDArray[np.floating]:
+    dem: NDArray[np.integer | np.floating],
+    az: float,
+    al: float,
+    method: Literal["clamped", "hard", "half", "soft", "lambert"] = "hard",
+    zfactor: float = 1,
+) -> NDArray[np.floating]:
     """
-    Compute hillshade from a 2D array.
+    Computes hillshade from a 2D array.
     """
-    array = array * zfactor
-    azimuth = 180 - azimuth
-    light_vector: npt.NDArray[np.floating] = np.array(
+    dem = dem * zfactor
+    az = 180 - az
+    lightvec: NDArray[np.floating] = np.array(
         [
-            np.cos(np.deg2rad(altitude)) * np.cos(np.deg2rad(azimuth)),
-            np.cos(np.deg2rad(altitude)) * np.sin(np.deg2rad(azimuth)),
-            np.sin(np.deg2rad(altitude)),
+            np.cos(np.deg2rad(al)) * np.cos(np.deg2rad(az)),
+            np.cos(np.deg2rad(al)) * np.sin(np.deg2rad(az)),
+            np.sin(np.deg2rad(al)),
         ]
     )
 
-    dx, dy = np.gradient(array)
-    normal_vector: npt.NDArray[np.integer | np.floating] = np.dstack(
-        (-dx, -dy, np.ones_like(array))
-    )
-    normal_vector /= np.linalg.norm(normal_vector, axis=2, keepdims=True)
-    intensity: npt.NDArray[np.floating] = np.sum(normal_vector * light_vector, axis=2)
+    dx, dy = np.gradient(dem)
+    nvec: NDArray[np.integer | np.floating] = np.dstack((-dx, -dy, np.ones_like(dem)))
+    nvec /= np.linalg.norm(nvec, axis=2, keepdims=True)
+    intst: NDArray[np.floating] = np.sum(nvec * lightvec, axis=2)
 
     match method.lower():
         case "clamped" | "hard":
-            intensity = np.clip(intensity, 0, 1)
+            intst = np.clip(intst, 0, 1)
         case "half":
-            intensity = (intensity + 1) / 2
+            intst = (intst + 1) / 2
         case "soft" | "lambert":
-            intensity = (intensity + 1) / 2
-            intensity = intensity**2
+            intst = (intst + 1) / 2
+            intst = intst**2
         case _:
             raise ValueError(
-                f"Hillshade method must be 'hard' ('clamped'), 'half', or 'soft' ('Lambert'), got '{method}' instead."
+                "Hillshade method must be 'hard' ('clamped'), 'half', or 'soft' ('Lambert'), "
+                + f"but got '{method}' instead."
             )
-    return intensity
+    return intst

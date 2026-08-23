@@ -21,7 +21,7 @@ from formosa.utils import NpCanonIndex, NpFlowDir
 def get_neighbour_values(
     array: np.ndarray,
     dir_scheme: D8Directions = D8Directions(),
-    pad_value: np.number | float | int = np.nan,
+    pad_val: np.number | float = np.nan,
     include_self: bool = False,
     self_at_last: bool = False,
 ) -> tuple[np.ndarray, NDArray[np.integer], NDArray[np.integer]]:
@@ -31,30 +31,42 @@ def get_neighbour_values(
     Parameters
     ----------
     array : NDArray
-        A 2D array from which to extract neighbour values.
+        Raster array from which to extract neighbour values.
+        - Expected shape: `(nrows, ncols)`.
     dir_scheme : D8Directions, optional
-        An instance of D8Directions defining the neighbour offsets.
-        Default is D8Directions().
-    pad_value : number | float | int, optional
-        Value to use for padding the array edges (default is np.nan).
+        Instance of `D8Directions` defining the neighbour offsets.
+        - Default scheme is `D8Directions()`.
+    pad_val : int | float, optional
+        Value to use for padding the array edges.
+        - Default value is `np.nan`.
     include_self : bool, optional
-        Whether to include the value of the cell itself as a neighbour (default is False).
+        Whether to include the value of the cell itself as a
+        neighbour.
+        - Default option is `False`.
     self_at_last : bool, optional
-        If include_self is True, whether to place the self value at the end of the neighbour list (default is False).
+        If `include_self` is True, whether to place the self value
+        at the end of the neighbour list.
+        - Default option is `False`.
 
     Returns
     -------
-    neighbours : NDArray
-        A 3D array where the first dimension corresponds to neighbour indices and the other two dimensions match the input array.
+    nabrs : NDArray
+        Extracted neighbour values.
+        - Shape: `(N, nrows, ncols)`.
     codes : NDArray[int]
-        A 1D array of direction codes corresponding to the neighbours.
+        Direction codes corresponding to the neighbours.
+        - Shape: `(N,)`.
     offsets : NDArray[int]
-        A 2D array of offsets (di, dj) corresponding to the neighbours.
+        Row and column offsets (di, dj) corresponding to the
+        neighbours.
+        - Shape: `(N, 2)`.
     """
     # Input validation and initialisation
-    if np.issubdtype(array.dtype, np.integer) and pad_value is np.nan:
-        Warning("Integer array does not support NaN padding, using max int instead")
-        pad_value = np.iinfo(array.dtype).max
+    if np.issubdtype(array.dtype, np.integer) and pad_val is np.nan:
+        warnings.warn(
+            "Integer array does not support NaN padding, using max int instead"
+        )
+        pad_val = np.iinfo(array.dtype).max
 
     # Main
     # get padding width from offset
@@ -63,13 +75,13 @@ def get_neighbour_values(
         array,
         pad_width=pad_width,
         mode="constant",
-        constant_values=pad_value,
+        constant_values=pad_val,
     )
-    neighbours = np.zeros((len(dir_scheme.codes), *array.shape), dtype=array.dtype)
+    nabrs = np.zeros((len(dir_scheme.codes), *array.shape), dtype=array.dtype)
     offsets = np.zeros((len(dir_scheme.codes), 2), dtype=np.int16)
     for i_offset, [di, dj] in enumerate(dir_scheme.offsets.astype(np.int16)):
         offsets[i_offset, :] = [di, dj]
-        neighbours[i_offset, :, :] = array_padded[
+        nabrs[i_offset, :, :] = array_padded[
             pad_width + di : pad_width + di + array.shape[0],
             pad_width + dj : pad_width + dj + array.shape[1],
         ]
@@ -78,14 +90,14 @@ def get_neighbour_values(
     if not include_self:
         # exclude self (first offset)
         self_id = np.where(np.all(dir_scheme.offsets == [0, 0], axis=1))[0][0]
-        neighbours = np.delete(neighbours, self_id, axis=0)
+        nabrs = np.delete(nabrs, self_id, axis=0)
         codes = np.delete(codes, self_id, axis=0)
         offsets = np.delete(offsets, self_id, axis=0)
     elif self_at_last:
-        neighbours = np.roll(neighbours, -1, axis=0)
+        nabrs = np.roll(nabrs, -1, axis=0)
         codes = np.roll(codes, -1, axis=0)
         offsets = np.roll(offsets, -1, axis=0)
-    return neighbours, codes, offsets
+    return nabrs, codes, offsets
 
 
 def compute_downstream_indices(
@@ -133,24 +145,28 @@ def compute_downstream_indices(
     Returns
     -------
     dsi : NDArray[int32]
-        2D array of downstream row indices for each cell.
-        When the cell is invalid, it is set to -1.
+        Downstream row indices for each cell.
+        When the cell is invalid, it is set to `-1`.
+        - Shape: `(nrows, ncols)`, same as `dirs`.
     dsj : NDArray[int32]
-        2D array of downstream column indices for each cell.
-        When the cell is invalid, it is set to -1.
+        Downstream column indices for each cell.
+        When the cell is invalid, it is set to `-1`.
+        - Shape: `(nrows, ncols)`, same as `dirs`.
     dsij : NDArray[int32] | None
-         1. 2D array of flattened downstream indices for each cell, when `return_flat_index` is true.
-            When the cell is invalid, it is set to -1.
-         2. `None` if `return_flat_index` is false.
+        Flattened downstream indices for each cell when
+        `return_flat_index` is `True`, or `None` otherwise.
+        When the cell is invalid, it is set to `-1`.
+        - Shape: `(nrows, ncols)`, same as `dirs` (when present).
     ds_inbounds : NDArray[bool]
-        Boolean mask array indicating out-of-bound downstream cells for each cell.
+        Boolean mask indicating in-bounds downstream cells for each
+        cell.
+        - Shape: `(nrows, ncols)`, same as `dirs`.
 
-    Raises
-    ------
-    ValueError
-        If `check` is `True` and some downstream indices are out of bounds.
+    Warns
+    -----
     UserWarning
-        If `check` is `False` and `oob_is_okay` is `False`, but some downstream indices are out of bounds.
+        If `check` is `False` and `oob_is_okay` is `False`, but some
+        downstream indices are out of bounds.
     """
     dirs = validate_format_flowdirs(dirs)
     valids = validate_format_valids(valids, dirs, "flow direction raster")

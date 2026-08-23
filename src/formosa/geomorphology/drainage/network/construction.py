@@ -36,10 +36,10 @@ from formosa.utils.validation import validate_same_shape
 
 def create_flowline_plot_data(
     dirs: NDArray[NpFlowDir],
-    valids: Optional[NDArray[np.bool_]] = None,
+    valids: NDArray[np.bool_] | None = None,
     dir_scheme: D8Directions = D8Directions(),
-    x: Optional[NDArray[NpCoords]] = None,
-    y: Optional[NDArray[NpCoords]] = None,
+    x: NDArray[NpCoords] | None = None,
+    y: NDArray[NpCoords] | None = None,
 ) -> tuple[NDArray[NpCanonIndex], NDArray[NpCanonIndex]]:
     """
     Computes a graph representation of the flow directions in a flow
@@ -74,9 +74,11 @@ def create_flowline_plot_data(
     Returns
     -------
     graphi : NDArray[int32]
-        1D array representing the row indices of the graph edges.
+        Row coordinates or indices of the graph edges.
+        - Shape: `(3 * E,)`.
     graphj : NDArray[int32]
-        1D array representing the column indices of the graph edges.
+        Column coordinates or indices of the graph edges.
+        - Shape: `(3 * E,)`.
     """
     dirs = validate_format_flowdirs(dirs)
     valids = validate_format_valids(valids, dirs, "flow direction raster")
@@ -124,9 +126,9 @@ def create_flowline_plot_data(
 def construct_flowgraph(
     dirs: NDArray[NpFlowDir],
     dir_scheme: D8Directions = D8Directions(),
-    valids: Optional[NDArray[np.bool_]] = None,
+    valids: NDArray[np.bool_] | None = None,
     min_order: int = 2,
-    orders: Optional[NDArray[np.integer]] = None,
+    orders: NDArray[np.integer] | None = None,
     preserve_junctions: bool = True,
     sort: bool = True,
     remove_unused: bool = False,
@@ -153,7 +155,7 @@ def construct_flowgraph(
     min_order : int, optional
         Minimum Strahler order to include in the flow graph (see
         `orders`).
-        Default order is 2.
+        - Default order is 2.
     orders : NDArray[uint8], optional
         Strahler order for each cell.
         If `None`, computed from the flow direction grid.
@@ -161,34 +163,33 @@ def construct_flowgraph(
         - Default input is `None`.
     preserve_junctions : bool, optional
         Whether to preserve junctions in the flow graph.
-        Default option is `True`.
-    sort : bool, option
+        - Default option is `True`.
+    sort : bool, optional
         Whether to sort the flow graph by arc order and then by
         length.
-        Default option is `True`.
+        - Default option is `True`.
     remove_unused : bool, optional
         Whether to compact the vertex array after construction so
         the arc ranges are adjacent in arc order.
-        Default option is `False`.
+        - Default option is `False`.
     backend : {'fortran', 'python'}, optional
         Backend to use for computation.
         `'fortran'` uses the Fortran extension for performance,
         while `'python'` uses a pure Python implementation.
-        Default backend is `'fortran'`.
+        - Default backend is `'fortran'`.
 
     Returns
     -------
     arc_orders : NDArray[int8]
-        1D array representing the Strahler order for each arc in the
-        flow graph.
+        Strahler order for each arc in the flow graph.
+        - Shape: `(A,)`.
     vtxs : NDArray[int32]
-        (V,2) array containing the ordered (i, j) incices of all
-        arcs, concactinated together.
+        Ordered (i, j) indices of all arcs, concatenated together.
+        - Shape: `(V, 2)`.
     endpts : NDArray[int32]
-        (A,2) array containing the indices of where each arc starts
-        and ends in `vtxs`.
-        The returned endpoints are inclusive, meaning slicing must
-        be done as `vtxs[start : end + 1]`.
+        Inclusive start and end indices of each arc in `vtxs`.
+        Slicing must be done as `vtxs[start : end + 1]`.
+        - Shape: `(A, 2)`.
 
     Raises
     ------

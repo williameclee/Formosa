@@ -8,18 +8,15 @@ Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
+from numpy.typing import NDArray
 
 from formosa.geomorphology.drainage.directions import D8Directions
-
-from typing import Optional
-import numpy.typing as npt
+from formosa.utils import NpFlowDir
 
 
 def label_watersheds(
-    dirs: npt.NDArray[np.integer],
-    dir_scheme: D8Directions = D8Directions(),
-    valids: Optional[npt.NDArray[np.bool_]] = None,
-) -> npt.NDArray[np.int32]:
+    dirs: NDArray[NpFlowDir], dir_scheme: D8Directions, valids: NDArray[np.bool_]
+) -> NDArray[np.int32]:
     I, J = dirs.shape
     ii, jj = np.meshgrid(
         np.arange(I, dtype=np.int32), np.arange(J, dtype=np.int32), indexing="ij"

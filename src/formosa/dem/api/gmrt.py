@@ -5,18 +5,20 @@ Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
 
 import os
+from collections.abc import Iterable
 from pathlib import Path
-import requests
+from typing import Literal, TypeAlias
+
+import numpy as np
 import rasterio
+import requests
+from numpy.typing import NDArray
 from rasterio import Affine
 from rasterio.io import MemoryFile
-import numpy as np
 
 from formosa.core import DATA_DIR
-from formosa.dem.api.utils import number, _validate_latlon_limits, _dem_post_processing
-
-from typing import Literal, TypeAlias, TypeVar, Iterable
-import numpy.typing as npt
+from formosa.dem.api.utils import _dem_post_processing, _validate_latlon_limits
+from formosa.utils import Real
 
 GmrtRes: TypeAlias = Literal["default", "med", "high", "max"]
 GMRT_FMTS = ("netcdf", "coards", "esriascii", "geotiff")
@@ -29,17 +31,17 @@ GMRT_RESS = ("default", "med", "high", "max")
 
 
 def gmrt(
-    latlim: tuple[number, number],
-    lonlim: tuple[number, number],
-    resolution: number | GmrtRes = "default",
-    format: GmrtFmt = "geotiff",
+    latlim: tuple[Real, Real],
+    lonlim: tuple[Real, Real],
+    res: Real | GmrtRes = "default",
+    fmt: GmrtFmt = "geotiff",
     saveas: str | Path | None = "default path",
     forcenew: bool = False,
     base_url: str = GMRT_URL,
 ) -> tuple[
-    npt.NDArray[np.floating | np.integer],
-    npt.NDArray[np.floating],
-    npt.NDArray[np.floating],
+    NDArray[np.floating | np.integer],
+    NDArray[np.floating],
+    NDArray[np.floating],
     Affine,
 ]:
     """
@@ -92,11 +94,11 @@ def gmrt(
     """
     # Input validation
     latlim, lonlim = _validate_latlon_limits(latlim, lonlim)
-    resolution = _validate_gmrt_resolution(resolution)
-    format = _validate_gmrt_format(format)
+    res = _validate_gmrt_resolution(res)
+    fmt = _validate_gmrt_format(fmt)
 
     # Load data
-    default_path = _gmrt_default_save_path(latlim, lonlim, resolution)
+    default_path = _gmrt_default_save_path(latlim, lonlim, res)
 
     # If the file exists and forcenew is False, load from file
     if not forcenew and os.path.exists(default_path):
@@ -105,9 +107,7 @@ def gmrt(
             Z = src.read(1)
             profile = src.profile
     else:
-        Z, profile = _fetch_gmrt_data(
-            latlim, lonlim, resolution, format, base_url=base_url
-        )
+        Z, profile = _fetch_gmrt_data(latlim, lonlim, res, fmt, base_url=base_url)
         # Save data
         if saveas is not None:
             if saveas == "default path":
@@ -130,48 +130,43 @@ def gmrt(
 
 
 def _validate_gmrt_resolution(
-    resolution: number | GmrtRes,
-    accepted_resolutions: Iterable[str] = GMRT_RESS,
-) -> number | GmrtRes:
+    res: Real | GmrtRes,
+    accepted_ress: Iterable[str] = GMRT_RESS,
+) -> Real | GmrtRes:
     """
     Validate resolution input.
     """
-    if isinstance(resolution, str):
-        assert (
-            resolution in accepted_resolutions
-        ), f"Resolution as a string must be one of {accepted_resolutions} (got '{resolution}')"
-    elif isinstance(resolution, (int, float)):
-        assert (
             resolution > 0
-        ), f"Resolution as a number must be positive (got {resolution})"
-    return resolution
+    if isinstance(res, str):
+        assert res in accepted_ress, (
+            f"Resolution as a string must be one of {accepted_ress} (got '{res}')"
+        )
+    elif isinstance(res, (int, float)):
+        assert res > 0, f"Resolution as a number must be positive (got {res})"
 
 
 def _validate_gmrt_format(
-    format: GmrtFmt,
     accepted_formats: Iterable[str] = GMRT_FMTS,
     format_replacements: dict[str, GmrtFmt] = gmrt_fmt_replacements,
 ) -> GmrtFmt:
     """
-    Validate format input.
     """
-    format = format.lower()  # type: ignore
-    format = format_replacements.get(format, format)
-    assert (
         format in accepted_formats
-    ), f"Format must be one of {accepted_formats} (got '{format}')"
-    return format
+    fmt = fmt.lower()  # type: ignore
+    fmt = format_replacements.get(fmt, fmt)
+    assert fmt in accepted_formats, (
+        f"Format must be one of {accepted_formats} (got '{fmt}')"
 
 
 def _construct_gmrt_request(
-    latlim: tuple[number, number],
-    lonlim: tuple[number, number],
-    resolution: number | str,
+    latlim: tuple[Real, Real],
     format: str,
     layer: str = "topo",
 ) -> dict[str, str | number]:
+) -> dict[str, str | Real]:
     """
     Convert input parameters to GMRT request parameters.
+    Converts input parameters to GMRT request parameters.
     """
     params: dict[str, str | number] = {}
     params.update(
@@ -190,9 +185,7 @@ def _construct_gmrt_request(
 
 
 def _fetch_gmrt_data(
-    latlim: tuple[number, number],
-    lonlim: tuple[number, number],
-    resolution: number | str,
+    latlim: tuple[Real, Real],
     format: str,
     base_url: str = GMRT_URL,
 ) -> tuple[

@@ -1,19 +1,18 @@
 """
 Derives raster coordinates from digital elevation model metadata.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
 import rasterio.transform as rt
+from numpy.typing import NDArray
 from rasterio.transform import Affine
-
-import numpy.typing as npt
 
 
 def transform2xy(
     transform: Affine, shape: tuple[int, int]
-) -> tuple[npt.NDArray[np.floating], npt.NDArray[np.floating]]:
+) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
     """
     Generate X, Y coordinate arrays from a rasterio affine transform and shape.
 

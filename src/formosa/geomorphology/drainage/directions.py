@@ -4,17 +4,18 @@ Defines and validates raster flow-direction encoding schemes.
 This module provides :class:`D8Directions`, which associates D8
 direction codes with their corresponding row and column offsets.
 
-Last modified: 2026-08-22, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 """
 
-import numpy as np
+from collections.abc import Callable
+from typing import TypeVar
 
-from typing import TypeVar, Tuple, Callable, Optional
-import numpy.typing as npt
+import numpy as np
+from numpy.typing import ArrayLike, NDArray
 
 names = ["self", "E", "SE", "S", "SW", "W", "NW", "N", "NE"]
 
-T = TypeVar("T", int, np.integer, npt.NDArray[np.integer])
+T = TypeVar("T", int, np.integer, NDArray[np.integer])
 
 
 class D8Directions:
@@ -26,9 +27,9 @@ class D8Directions:
         transform_codes: Callable | None = lambda x: 2 ** (x - 1),
         sort_by_distance: bool = True,
     ):
-        self.window = window
-        self.slices = slices
-        self.shape = shape
+        self.window: int = window
+        self.slices: int = slices
+        self.shape: str = shape
 
         self.offsets, self.codes, self.dirnames = construct_d8_directions(
             window=window,
@@ -56,7 +57,7 @@ class D8Directions:
             self.valid_code_lookup[code] = True
 
     @property
-    def no_flow_code(self) -> Optional[int]:
+    def no_flow_code(self) -> int | None:
         """
         The code representing no flow (i.e. have the offset of `(0, 0)`).
         If such a code does not exist, returns `None`.
@@ -77,8 +78,8 @@ class D8Directions:
             raise TypeError(f"Unsupported type for code: {type(code)}")
 
     def _code2offset_ndarray(
-        self, code: npt.NDArray[np.integer]
-    ) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.integer]]:
+        self, code: NDArray[np.integer]
+    ) -> tuple[NDArray[np.integer], NDArray[np.integer]]:
         code = np.asarray(code)
 
         if np.issubdtype(code.dtype, np.integer):
@@ -120,39 +121,35 @@ def construct_d8_directions(
     dir_list: list[str] | None = names,
     code_transform_func: Callable | None = lambda x: 2 ** (x - 1),
     sort_by_distance: bool = True,
-) -> Tuple[npt.NDArray[np.integer], npt.NDArray[np.integer], list[str]]:
+) -> tuple[NDArray[np.integer], NDArray[np.integer], list[str]]:
     assert window % 2 == 1, "Window size must be odd, got {window} instead"
     assert window >= 3, "Window size must be at least 3, got {window} instead"
     assert slices >= 2, "Number of slices must be at least 2, got {slices} instead"
     if dir_list is not None:
-        assert (
-            len(dir_list) == slices + 1
-        ), f"Number of names must be {slices + 1} (including self), got {len(dir_list)} instead"
+        assert len(dir_list) == slices + 1, (
+            f"Number of names must be {slices + 1} (including self), got {len(dir_list)} instead"
+        )
     if code_transform_func is None:
         code_transform_func = lambda x: x
 
     half_window: int = window // 2
 
-    i: npt.NDArray[np.integer] = np.arange(
-        -half_window, half_window + 1, dtype=np.int32
-    )
-    j: npt.NDArray[np.integer] = np.arange(
-        -half_window, half_window + 1, dtype=np.int32
-    )
+    i: NDArray[np.integer] = np.arange(-half_window, half_window + 1, dtype=np.int32)
+    j: NDArray[np.integer] = np.arange(-half_window, half_window + 1, dtype=np.int32)
     ii, jj = np.meshgrid(i, j, indexing="ij")
 
-    az: npt.NDArray[np.integer] = np.degrees(np.arctan2(ii, jj)) % 360
-    az_agg: npt.NDArray[np.integer] = np.mod(np.round(az * slices / 360), slices) + 1
+    az: NDArray[np.integer] = np.degrees(np.arctan2(ii, jj)) % 360
+    az_agg: NDArray[np.integer] = np.mod(np.round(az * slices / 360), slices) + 1
     az_agg[half_window, half_window] = 0  # centre pixel
 
-    dists: npt.NDArray[np.integer] = ii**2 + jj**2
+    dists: NDArray[np.integer] = ii**2 + jj**2
 
     if shape == "circular":
         mask = dists > (window / 2) ** 2
         az_agg[mask] = -1
 
-    offsets: npt.NDArray[np.integer] = np.array([ii.flatten(), jj.flatten()]).T
-    codes: npt.NDArray[np.integer] = np.zeros(az_agg.shape, dtype=np.int16)
+    offsets: NDArray[np.integer] = np.array([ii.flatten(), jj.flatten()]).T
+    codes: NDArray[np.integer] = np.zeros(az_agg.shape, dtype=np.int16)
     codes[az_agg > 0] = code_transform_func(az_agg[az_agg > 0])
     codes = codes.flatten()
     offsets = offsets[az_agg.flatten() >= 0]
@@ -186,8 +183,8 @@ def construct_d8_directions(
 
 
 def validate_direction_offsets(
-    ofsts: npt.ArrayLike,
-) -> npt.NDArray[np.int32]:
+    ofsts: ArrayLike,
+) -> NDArray[np.int32]:
     """
     Validates and formats row-column connectivity offsets.
     """
@@ -195,13 +192,13 @@ def validate_direction_offsets(
     if ofsts.ndim != 2 or ofsts.shape[1] != 2:
         raise ValueError(
             "Direction offsets must have shape (n, 2), "
-            f"but received shape {ofsts.shape}."
+            + f"but got shape {ofsts.shape}."
         )
     if ofsts.shape[0] == 0:
         raise ValueError("Direction offsets must contain at least one offset.")
     if not np.issubdtype(ofsts.dtype, np.integer):
         raise TypeError(
-            "Direction offsets must have an integer dtype, " f"but got {ofsts.dtype}."
+            "Direction offsets must have an integer dtype, " + f"but got {ofsts.dtype}."
         )
 
     int32_limits = np.iinfo(np.int32)
