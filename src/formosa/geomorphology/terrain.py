@@ -5,63 +5,37 @@ data.
 This module exposes public NumPy APIs for terrain metrics. Isolation
 and prominence use the internal Fortran backend.
 
-Last modified: 2026-08-22, En-Chi Lee (williameclee@gmail.com)
+Created: 2026-08-01, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 """
 
+import warnings
 from enum import IntFlag
-import numpy as np
+from typing import overload
 
+import numpy as np
+from numpy.typing import NDArray
+
+from formosa.geomorphology._native import terrain as terrain_f
 from formosa.geomorphology.drainage.directions import (
     D8Directions,
     validate_direction_offsets,
 )
-from formosa.geomorphology._native import terrain as terrain_f
-from formosa.utils import NpReal, Coords, NpCoords, NpCanonIndex, raise_fortran_error
-
-import warnings
-
-from typing import Optional, overload
-from numpy.typing import NDArray
-
-
-def _validate_format_dem(dem: NDArray[NpReal]) -> NDArray[NpReal]:
-    dem = np.asarray(dem)
-    if dem.ndim != 2 or 0 in dem.shape:
-        raise ValueError(
-            "DEM must be a non-empty 2D array, " + f"but received shape {dem.shape}."
-        )
-    if not np.issubdtype(dem.dtype, np.number):
-        raise TypeError("DEM must have a numeric dtype, " + f"but got {dem.dtype}.")
-    if np.issubdtype(dem.dtype, np.complexfloating):
-        raise TypeError(
-            "DEM must contain real-valued elevations, " + f"but got type {dem.dtype}."
-        )
-    return dem
-
-
-def _validate_format_valids(
-    valids: Optional[NDArray[np.bool_]], dem: NDArray[NpReal]
-) -> NDArray[np.bool_]:
-    finite = np.isfinite(dem)
-    if valids is None:
-        return finite
-    valids = np.asarray(valids, dtype=bool)
-    if valids.shape != dem.shape:
-        raise ValueError(
-            "Shapes for DEM and validity mask must match, "
-            f"but got shapes {dem.shape} and {valids.shape}, respectively."
-        )
-    valids = valids & finite
-    return valids  # type: ignore
+from formosa.geomorphology.raster_validation import (
+    validate_format_dem,
+    validate_format_valids,
+)
+from formosa.utils import Coords, NpCanonIndex, NpCoords, NpReal, raise_fortran_error
+from formosa.utils.validation import validate_same_shape
 
 
 def compute_slope(
-    dem: NDArray[np.number],
-    x: Optional[NDArray[NpCoords]] = None,
-    y: Optional[NDArray[NpCoords]] = None,
-    dx: Optional[Coords] = None,
-    dy: Optional[Coords] = None,
-) -> NDArray[NpCoords]:
+    dem: NDArray[NpReal],
+    x: NDArray[NpCoords] | None = None,
+    y: NDArray[NpCoords] | None = None,
+    dx: Coords | None = None,
+    dy: Coords | None = None,
+) -> NDArray[NpReal]:
     """
     Calculates *slope magnitude* from a gridded DEM.
 
@@ -72,17 +46,19 @@ def compute_slope(
     Parameters
     ----------
     dem : NDArray[number]
-        2D digital elevation model.
+        Digital elevation model raster.
+        - Expected shape: `(nrows, ncols)`.
     x, y : NDArray[float], optional
         Horizontal coordinate arrays for DEM columns and rows,
         respectively.
         Their gradients define local grid spacing.
-        Default inputs are `None`.
+        - Expected shape: `(nrows, ncols)`, same as `dem`.
+        - Default inputs are `None`.
     dx, dy : int | float, optional
         Constant column and row spacing, respectively.
         Each defaults to `1` when neither it nor its coordinate
         array is supplied.
-        Default spacings are `None`.
+        - Default spacings are `None`.
 
     Returns
     -------
@@ -90,13 +66,16 @@ def compute_slope(
         Magnitude of the elevation gradient in rise per horizontal
         distance unit, with the same shape as `dem`.
     """
+    dem = validate_format_dem(dem)
     if x is not None:
+        validate_same_shape(x, dem, "X coordinates", "DEM")
         dxx = np.gradient(x, axis=1)
     elif dx is not None:
         dxx = dx
     else:
         dxx = 1
     if y is not None:
+        validate_same_shape(y, dem, "Y coordinates", "DEM")
         dyy = np.gradient(y, axis=0)
     elif dy is not None:
         dyy = dy
@@ -112,7 +91,7 @@ def compute_slope(
 
 
 def compute_isolation(
-    dem: NDArray[np.number],
+    dem: NDArray[NpReal],
     valids: Optional[NDArray[np.bool_]] = None,
     dx: Coords = 1.0,
     dy: Coords = 1.0,
@@ -130,12 +109,14 @@ def compute_isolation(
     Parameters
     ----------
     dem : NDArray[number]
-        2D digital elevation model.
+        Digital elevation model raster.
+        - Expected shape: `(nrows, ncols)`.
     valids : NDArray[bool], optional
         Boolean mask indicating valid cells.
         Non-finite DEM cells are always invalid.
         If `None`, all finite cells are assumed valid.
-        Default input is `None`.
+        - Expected shape: `(nrows, ncols)`, same as `dem`.
+        - Default mask is `None`.
     dx, dy : int | float, optional
         Positive, finite column and row spacing, respectively.
         The isolation distances use the same units as these values.
@@ -144,33 +125,34 @@ def compute_isolation(
     Returns
     -------
     isos : NDArray[float32]
-        Isolation distances in the units of `dx` and `dy`, with the
-        same shape as `dem`.
+        Isolation distances in the units of `dx` and `dy`.
         Invalid cells and cells without an ILP contain `0`.
+        - Shape: `(nrows, ncols)`, same as `dem`.
     ilpis, ilpjs : NDArray[int32]
         0-based row (*y*) and column (*x*) indices of the isolation
         limit points.
         Cells without an ILP and invalid cells contain `-1`.
+        - Shape: `(nrows, ncols)`, same as `dem`.
     censored : NDArray[bool]
         Whether the isolation search reaches beyond the outer raster
         footprint before it reaches the reported ILP.
         Valid cells with no ILP are censored; invalid cells are
         not. Internal invalid regions are not treated as
         observation-window boundaries.
+        - Shape: `(nrows, ncols)`, same as `dem`.
 
     Raises
     ------
     ValueError
-        If `dem` is empty or not two-dimensional, or if `valids`
-        does not have the same shape as `dem`, or if either grid
-        spacing is non-finite, non-positive, or cannot be
-        represented by the native backend.
+        If `dem` is empty or not 2D, or if `valids` does not have
+        the same shape as `dem`, or if either grid spacing is non-
+        finite, non-positive, or cannot be represented by the native
+        backend.
     TypeError
         If `dem` is not a real numeric array or either grid spacing
         is not a real numeric scalar.
     RuntimeError
         If the Fortran backend reports an execution error.
-
     Notes
     -----
     See [Kirmse & de Ferranti (2017)](https://doi.org/10.1177/0309133317738163)
@@ -180,17 +162,7 @@ def compute_isolation(
     extends half a cell beyond each outer cell centre. Internal
     invalid cells are excluded as ILPs.
     """
-    dem = np.asarray(dem)
-    if dem.ndim != 2 or 0 in dem.shape:
-        raise ValueError(
-            "DEM must be a non-empty 2D array, " + f"but received shape {dem.shape}."
-        )
-    if not np.issubdtype(dem.dtype, np.number):
-        raise TypeError("DEM must have a numeric dtype, " + f"but got {dem.dtype}.")
-    if np.issubdtype(dem.dtype, np.complexfloating):
-        raise TypeError(
-            "DEM must contain real-valued elevations, " + f"but got type {dem.dtype}."
-        )
+    dem = validate_format_dem(dem)
 
     spacings: dict[str, np.float32] = {}
     for name, spacing in (("dx", dx), ("dy", dy)):
@@ -215,17 +187,7 @@ def compute_isolation(
     dx_f = spacings["dx"]
     dy_f = spacings["dy"]
 
-    finite = np.isfinite(dem)
-    if valids is None:
-        valids = finite
-    else:
-        valids = np.asarray(valids, dtype=bool)
-        if valids.shape != dem.shape:
-            raise ValueError(
-                "Shapes for DEM and validity mask must match, "
-                f"but got shapes {dem.shape} and {valids.shape}, respectively."
-            )
-        valids = valids & finite
+    valids = validate_format_valids(valids, dem, "DEM")
 
     isos, ilpis, ilpjs, censored, err_code = terrain_f.compute_isolation(
         dem.astype(np.float32, order="F"),
@@ -304,17 +266,17 @@ def compute_prominence(
     Parameters
     ----------
     dem : NDArray[number]
-        2D digital elevation model.
-        - Expected size: `(nrows, ncols)`
+        Digital elevation model raster.
+        - Expected shape: `(nrows, ncols)`.
     valids : NDArray[bool], optional
         Boolean mask indicating valid cells.
         Non-finite DEM cells are always invalid.
         If `None`, all finite cells are assumed valid.
-        - Expected size: `(nrows, ncols)`
-        - Default input is `None`.
+        - Expected shape: `(nrows, ncols)`, same as `dem`.
+        - Default mask is `None`.
     dir_scheme : D8Directions, optional
         Direction scheme defining neighbour connectivity offsets.
-        Default scheme is `D8Directions()`.
+        - Default scheme is `D8Directions()`.
 
     Returns
     -------
@@ -326,28 +288,28 @@ def compute_prominence(
         saddle. Non-summit cells contain `0`. Invalid cells and the
         highest regional summits with unknown prominence contain
         `-1`.
-        - Size: `(nrows, ncols)` (same as `dem`)
+        - Shape: `(nrows, ncols)`, same as `dem`.
     feats : NDArray[int32]
         Feature index raster containing 0-based feature IDs at peak
         and saddle cells, and `-1` elsewhere.
-        - Size: `(nrows, ncols)` (same as `dem`)
+        - Shape: `(nrows, ncols)`, same as `dem`.
     feat_types : NDArray[int32]
         Feature types indexed by 0-based feature ID: `1` for a peak
         and `2` for a saddle (see :class:`ProminenceFeatureKind`).
-        - Size: `(nfeats,)`
+        - Shape: `(nfeats,)`.
     feat_ijs : NDArray[int32]
         Zero-based representative `(row, column)` coordinates for
         each feature.
-        Representatives belong to their feature flat and are
+        Representatives belong to its feature flat and are
         nearest its centroid; ties use the smallest linear cell
         index.
-        - Size: `(nfeats, 2)`
+        - Shape: `(nfeats, 2)`.
     key_saddles : NDArray[int32]
         Key-saddle feature index for each peak feature.
         For peak features, contains the 0-based index of its key
         saddle. Entries for saddle features and unresolved regional
         summits contain `-1`.
-        - Size: `(nfeats,)`
+        - Shape: `(nfeats,)`.
     feat_prnts : NDArray[int32]
         Parent feature index for each feature in the divide tree.
         - For a subordinate peak, its parent is its key saddle.
@@ -377,8 +339,8 @@ def compute_prominence(
     See [Kirmse & de Ferranti (2017)](https://doi.org/10.1177/0309133317738163)
     for the definition of prominence and more details.
     """
-    dem = _validate_format_dem(dem)  # type: ignore
-    valids = _validate_format_valids(valids, dem)  # type: ignore
+    dem = validate_format_dem(dem)  # type: ignore
+    valids = validate_format_valids(valids, dem, "DEM")
     ofsts_f = validate_direction_offsets(dir_scheme.offsets)
 
     with np.errstate(over="ignore", invalid="ignore"):
@@ -393,7 +355,7 @@ def compute_prominence(
     ):
         warnings.warn(
             "Converting the DEM to float32 merges distinct elevation values; "
-            "peak, saddle, and prominence results may change.",
+            + "peak, saddle, and prominence results may change.",
             RuntimeWarning,
             stacklevel=2,
         )
@@ -423,8 +385,7 @@ def compute_prominence(
         dtype_limits = np.finfo(prom_dtype)  # type: ignore
     if np.any((proms < dtype_limits.min) | (proms > dtype_limits.max)):
         warnings.warn(
-            f"Prominence values exceed the range of output dtype "
-            f"{prom_dtype} and will overflow during conversion.",
+            f"Prominence values exceed the range of output dtype {prom_dtype} and will overflow during conversion.",
             RuntimeWarning,
             stacklevel=2,
         )

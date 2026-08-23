@@ -4,7 +4,7 @@ Computes flow-based raster metrics using the Python backend.
 This module implements internal routines called by the public-facing
 drainage API and is not intended to be used directly.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
@@ -29,36 +29,6 @@ def compute_flow_accumulation(
 
     # Initialisation
     I, J = dirs.shape
-
-    if indegs is None:
-        indegs = flowdir_py.count_indegree(dirs, dir_scheme=dir_scheme, valids=valids)
-    else:
-        assert (
-            indegs.shape == dirs.shape
-        ), f"Shape for flowdirs and indegree must match, but got indegree shape {indegs.shape} and flowdirs shape {dirs.shape} instead"
-
-    if valids is None:
-        valids = (dirs != 0) | (indegs > 0)
-    else:
-        assert (
-            valids.shape == dirs.shape
-        ), f"Shape for flowidr and valid mask must match, but got valid shape {valids.shape} and flowdirs shape {dirs.shape} instead"
-    if weights is None:
-        weights = np.where(valids, 1, 0).astype(np.uint64)  # type: ignore
-    else:
-        assert (
-            weights.shape == dirs.shape
-        ), f"Shape for flowdirs and weight must match, but got weight shape {weights.shape} and flowdirs shape {dirs.shape} instead"
-        weights = np.where(valids, weights, 0)  # type: ignore
-
-    if dsij is None:
-        _, _, dsij, _ = compute_downstream_indices(
-            dirs, dir_scheme=dir_scheme, return_flat_index=True
-        )
-    else:
-        assert (
-            dsij.shape == dirs.shape
-        ), f"Shape for flowdirs and downstream ij indices must match, but got dsij: {dsij.shape} and flowdirs: {dirs.shape} instead"
 
     indegs = indegs.flatten(order="F")
     valids = valids.flatten(order="F")  # type: ignore
@@ -96,12 +66,7 @@ def compute_flow_strahler_order(
 ) -> npt.NDArray[np.int16]:
     from collections import deque
 
-    if valids is None:
-        valids = np.ones(dirs.shape, dtype=bool)
-    if indegs is None:
-        indegs = flowdir_py.count_indegree(dirs, dir_scheme=dir_scheme, valids=valids)
-    else:
-        indegs = indegs.copy()
+    indegs = indegs.copy()
 
     downstream_i, downstream_j, _, downstream_valids = compute_downstream_indices(
         dirs, dir_scheme=dir_scheme, valids=valids, check=False, return_flat_index=False

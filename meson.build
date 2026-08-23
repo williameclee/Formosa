@@ -24,6 +24,7 @@ custom_target(
   '_native',
   input: files(
     'src/formosa/geomorphology/drainage/_backends/utils.f90',
+    'src/formosa/geomorphology/_backends/structs.f90',
     'src/formosa/geomorphology/geometry/_backends/distances.f90',
     'src/formosa/geomorphology/geometry/_backends/intersections.f90',
     'src/formosa/geomorphology/drainage/_backends/preprocessing.f90',

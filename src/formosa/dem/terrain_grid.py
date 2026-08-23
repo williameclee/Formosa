@@ -5,18 +5,18 @@ This module provides :class:`DEMGrid`, which coordinates raster
 input and geomorphological operations on a digital elevation model
 (DEM).
 
-Last modified: 2026-08-21, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 """
 
-from pathlib import Path
 import warnings
+from pathlib import Path
+
 import numpy as np
 import rasterio
 import rasterio.transform as rt
 import scipy.ndimage as ndi
 
 from formosa.dem.demio import read_dem
-from formosa.geomorphology.terrain import compute_slope, compute_prominence
 from formosa.geomorphology.drainage import (
     D8Directions,
     compute_dist2conf_max,
@@ -26,18 +26,21 @@ from formosa.geomorphology.drainage import (
     compute_flow_accumulation,
     compute_flow_strahler_order,
     compute_flowdir,
-    compute_ridgedir,
     compute_ridge_strahler_order,
+    compute_ridgedir,
     count_indegree,
     fill_depressions,
     get_neighbour_values,
-    invalidate_ocean_basins as _invalidate_ocean_basins,
     label_watersheds,
+)
+from formosa.geomorphology.drainage import (
+    invalidate_ocean_basins as _invalidate_ocean_basins,
 )
 from formosa.geomorphology.drainage.network import create_flowline_plot_data
 
 from typing import Optional
 import numpy.typing as npt
+from formosa.geomorphology.terrain import compute_prominence, compute_slope
 
 
 class DEMGrid:
@@ -222,11 +225,11 @@ class DEMGrid:
             previous_valid = self.valid.copy()
             self.valid = _invalidate_ocean_basins(
                 self.dem,
+                self.directions,
                 valids=self.valid,
-                ocean_level=self.ocean_threshold,
+                ocean_lvl=self.ocean_threshold,
                 flood_below=self._ocean_flood_below,
                 min_size=self._min_ocean_size,
-                dir_scheme=self.directions,
             )
             self._ocean_mask = previous_valid & ~self.valid
 
@@ -390,10 +393,7 @@ class DEMGrid:
         return self
 
     def invalidate_ocean_basins(
-        self,
-        ocean_level: int | float = 0,
-        min_size: int = 1,
-        flood_below: bool = True,
+        self, ocean_lvl: float = 0, min_size: int = 1, flood_below: bool = True
     ) -> "DEMGrid":
         """
         Marks sufficiently large boundary-connected ocean basins as
@@ -402,7 +402,7 @@ class DEMGrid:
 
         Parameters
         ----------
-        ocean_level : int | float, optional
+        ocean_lvl : float, optional
             Elevation threshold defining ocean cells.
             Default elevation is `0`.
         min_size : int, optional
@@ -412,9 +412,9 @@ class DEMGrid:
             are invalidated.
             Default size is `1`.
         flood_below : bool, optional
-            Whether elevations strictly below `ocean_level` qualify
+            Whether elevations strictly below `ocean_lvl` qualify
             as ocean cells.
-            When false, only cells exactly equal to `ocean_level`
+            When false, only cells exactly equal to `ocean_lvl`
             qualify.
             Default option is `True`.
 
@@ -431,11 +431,11 @@ class DEMGrid:
         previous_valid = self.valid.copy()
         self.valid = _invalidate_ocean_basins(
             self.dem,
+            self.directions,
             valids=self.valid,
-            ocean_level=ocean_level,
+            ocean_lvl=ocean_lvl,
             flood_below=flood_below,
             min_size=min_size,
-            dir_scheme=self.directions,
         )
 
         newly_invalid = previous_valid & ~self.valid
@@ -443,7 +443,7 @@ class DEMGrid:
             self._ocean_mask = newly_invalid
         else:
             self._ocean_mask |= newly_invalid
-        self.ocean_threshold = ocean_level
+        self.ocean_threshold = ocean_lvl
         self._min_ocean_size = min_size
         self._ocean_flood_below = flood_below
 

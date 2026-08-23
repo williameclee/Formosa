@@ -616,7 +616,7 @@ def test_compute_prominence_rejects_mismatched_validity_mask():
     dem = np.ones((2, 3), dtype=np.float32)
     valids = np.ones((3, 2), dtype=bool)
 
-    with pytest.raises(ValueError, match="Shapes for DEM and validity mask must match"):
+    with pytest.raises(ValueError, match="Shapes .* must match"):
         compute_prominence(dem, valids)
 
 

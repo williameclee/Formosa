@@ -1,20 +1,19 @@
 """
-Tests digital elevation model preprocessing using the FORTRAN
-backend.
+Tests digital elevation model preprocessing using the Fortran backend.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Created: 2026-08-01, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 """
 
-from tests.core import *
+from types import SimpleNamespace
 
-import pytest
 import numpy as np
-
-from formosa import D8Directions
-import formosa.geomorphology.drainage.preprocessing as preproc_m
+import pytest
 from formosa.geomorphology._native import drainage_preprocessing as preproc_f
 
-from types import SimpleNamespace
+import formosa.geomorphology.drainage.preprocessing as preproc_m
+from formosa import D8Directions
+from tests.core import *
 
 
 def test_detect_ocean_basins_labels_separate_boundary_components():
@@ -148,11 +147,11 @@ def test_invalidate_ocean_basins_rejects_noninteger_size(min_size):
         )
 
 
-@pytest.mark.parametrize("ocean_level", [np.nan, np.inf, -np.inf])
-def test_detect_ocean_basins_rejects_nonfinite_ocean_level(ocean_level):
+@pytest.mark.parametrize("ocean_lvl", [np.nan, np.inf, -np.inf])
+def test_detect_ocean_basins_rejects_nonfinite_ocean_level(ocean_lvl):
     with pytest.raises(ValueError, match="finite"):
         preproc_m.detect_ocean_basins_from_boundary(
-            np.zeros((2, 2), dtype=np.float32), ocean_level=ocean_level
+            np.zeros((2, 2), dtype=np.float32), ocean_lvl=ocean_lvl
         )
 
 
@@ -161,7 +160,7 @@ def test_detect_ocean_basins_rejects_nonboolean_flood_below_and_complex_dem():
     with pytest.raises(TypeError, match="boolean"):
         preproc_m.detect_ocean_basins_from_boundary(dem, flood_below="false")  # type: ignore
     with pytest.raises(TypeError, match="real-valued"):
-        preproc_m.detect_ocean_basins_from_boundary(dem.astype(np.complex64))
+        preproc_m.detect_ocean_basins_from_boundary(dem.astype(np.complex64))  # type: ignore
 
 
 def test_fill_depressions():
@@ -257,7 +256,7 @@ def test_fill_depressions_is_monotonic_and_idempotent_randomly():
 
 
 def test_fill_depressions_validates_mask_shape():
-    with pytest.raises(ValueError, match="must have the same shape"):
+    with pytest.raises(ValueError, match="Shapes .* must match"):
         preproc_m.fill_depressions(
             np.ones((3, 3), dtype=np.float32),
             valids=np.ones((2, 2), dtype=bool),

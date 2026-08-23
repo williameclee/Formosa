@@ -1,15 +1,25 @@
 from .backend import BACKENDS, Backend, raise_fortran_error
-from .typing import NpInt, NpCanonIndex, NpIndex, NpCoords, Coords, NpReal, Real
+from .typing import (
+    Coords,
+    NpCanonIndex,
+    NpCoords,
+    NpFlowDir,
+    NpIndex,
+    NpInt,
+    NpReal,
+    Real,
+)
 
 __all__ = [
     "BACKENDS",
     "Backend",
-    "raise_fortran_error",
-    "NpInt",
-    "NpCanonIndex",
-    "NpIndex",
-    "NpCoords",
     "Coords",
+    "NpCanonIndex",
+    "NpCoords",
+    "NpFlowDir",
+    "NpIndex",
+    "NpInt",
     "NpReal",
     "Real",
+    "raise_fortran_error",
 ]
