@@ -5,13 +5,13 @@ This module compares public isolation and prominence results with
 exhaustive reference calculations and covers input validation.
 
 Created: 2026-08-19, En-Chi Lee (williameclee@gmail.com)
-Last modified: 2026-08-22, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 """
 
-import pytest
-
 import heapq
+
 import numpy as np
+import pytest
 
 from formosa.geomorphology.drainage.directions import D8Directions
 from formosa.geomorphology.terrain import compute_isolation, compute_prominence
