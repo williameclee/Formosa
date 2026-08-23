@@ -118,6 +118,7 @@ def validate_same_shape(
 
 __all__ = [
     "validate_2d_raster",
+    "validate_array",
     "validate_same_shape",
     "validate_shape",
 ]

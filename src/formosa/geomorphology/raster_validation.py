@@ -125,9 +125,8 @@ def validate_format_flowdirs(
         - Shape: `(nrows, ncols)`.
     """
     dirs = np.asarray(dirs)
-    if against is None:
-        validate_2d_raster(dirs, "flow direction raster")
-    else:
+    validate_2d_raster(dirs, "flow direction raster")
+    if against is not None:
         validate_same_shape(dirs, against, "flow direction raster", against_name)
     if not np.issubdtype(dirs.dtype, np.integer):
         raise TypeError(
@@ -136,7 +135,7 @@ def validate_format_flowdirs(
     if np.isdtype(dirs.dtype, NpFlowDir):
         return dirs
     if (np.min(dirs) < 0) or (np.max(dirs) > 255):
-        raise TypeError(
+        raise ValueError(
             "Flow direction values must be in the range [0, 255], "
             + f"but got range [{np.min(dirs)}, {np.max(dirs)}]."
         )
@@ -192,11 +191,16 @@ def validate_format_freeform_coordinates(
         return x, y
     elif shape is None:
         raise ValueError("Cannot infer the shape of the coordinate rasters.")
+    if x is not None:
+        validate_shape(x, shape, "X coordinates")
+    if y is not None:
+        validate_shape(y, shape, "Y coordinates")
+
     x_lin = np.arange(shape[1])
     y_lin = np.arange(shape[0])
     x_grid, y_grid = np.meshgrid(x_lin, y_lin, indexing="xy")
-    x = np.asarray(x, dtype=dtype) if x is not None else np.asarray(x_grid, dtype=dtype)
-    y = np.asarray(y, dtype=dtype) if y is not None else np.asarray(y_grid, dtype=dtype)
+    x = x if x is not None else np.asarray(x_grid, dtype=dtype)
+    y = y if y is not None else np.asarray(y_grid, dtype=dtype)
     return x, y
 
 

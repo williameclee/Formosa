@@ -79,3 +79,11 @@ def test_flat_synthetic_gradients_handle_empty_inputs():
     assert pulling_err == 0
     np.testing.assert_array_equal(pushing, 0)
     np.testing.assert_array_equal(pulling, 0)
+
+
+def test_create_pulling_syn_grad_rejects_mismatched_shapes():
+    with pytest.raises(ValueError, match="must match"):
+        flat_m.create_pulling_syn_grad(
+            np.ones((2, 3), dtype=np.int32),
+            np.ones((3, 2), dtype=bool),
+        )
