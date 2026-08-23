@@ -30,11 +30,11 @@ from formosa.utils.validation import validate_same_shape
 
 
 def compute_slope(
-    x: Optional[NDArray[NpCoords]] = None,
-    y: Optional[NDArray[NpCoords]] = None,
-    dx: Optional[Coords] = None,
-    dy: Optional[Coords] = None,
     dem: NDArray[NpReal],
+    x: NDArray[NpCoords] | None = None,
+    y: NDArray[NpCoords] | None = None,
+    dx: Coords | None = None,
+    dy: Coords | None = None,
 ) -> NDArray[NpReal]:
     """
     Calculates *slope magnitude* from a gridded DEM.

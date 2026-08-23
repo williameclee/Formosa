@@ -304,6 +304,8 @@ def create_pulling_syn_grad(
         flat region.
         - Shape: `(nrows, ncols)`, same as `labels`.
     """
+    validate_same_shape(labels, low_edges, "flat label raster", "low edges mask")
+    
     z_syn, err_code = flat_f.create_pulling_syn_grad(
         labels.astype(np.int32, order="F"),
         low_edges.astype(bool, order="F"),

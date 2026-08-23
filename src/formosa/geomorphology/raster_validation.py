@@ -53,21 +53,21 @@ def validate_format_valids(
     against_name: str = "masked array",
 ) -> NDArray[np.bool_]:
     """
-    Validates and normalises a boolean validity mask against a 
+    Validates and normalises a boolean validity mask against a
     raster.
 
     Parameters
     ----------
     valids : NDArray[bool] | None
         Boolean mask indicating valid cells.
-        If `None`, every cell in `against` with a finite value is 
+        If `None`, every cell in `against` with a finite value is
         valid.
-        - Expected shape: `(nrows, ncols)`, same as `against` (when 
+        - Expected shape: `(nrows, ncols)`, same as `against` (when
             present).
     against : NDArray[number | bool] | None
         Reference array to compare the mask shape and finite values
         against.
-        - Expected shape: `(nrows, ncols)`, same as `valids` (when 
+        - Expected shape: `(nrows, ncols)`, same as `valids` (when
             present).
     against_name : str, optional
         Name of the reference array for error messages.
@@ -144,8 +144,8 @@ def validate_format_flowdirs(
 
 
 def validate_format_freeform_coordinates(
-    X: NDArray[NpCoords] | None,
-    Y: NDArray[NpCoords] | None,
+    x: NDArray[NpCoords] | None,
+    y: NDArray[NpCoords] | None,
     shape: tuple[int, int] | None = None,
     dtype: type | None = None,
 ) -> tuple[NDArray[NpCoords], NDArray[NpCoords]]:
@@ -154,16 +154,16 @@ def validate_format_freeform_coordinates(
 
     Parameters
     ----------
-    X : NDArray[number], optional
+    x : NDArray[number], optional
         Horizontal coordinate array.
         If `None`, column indices are generated using `shape`.
-        - Expected shape: `(nrows, ncols)`, same as `shape` (when 
+        - Expected shape: `(nrows, ncols)`, same as `shape` (when
             present).
         - Default input is `None`.
-    Y : NDArray[number], optional
+    y : NDArray[number], optional
         Vertical coordinate array.
         If `None`, row indices are generated using `shape`.
-        - Expected shape: `(nrows, ncols)`, same as `shape` (when 
+        - Expected shape: `(nrows, ncols)`, same as `shape` (when
             present).
         - Default input is `None`.
     shape : tuple[int, int], optional
@@ -176,26 +176,28 @@ def validate_format_freeform_coordinates(
 
     Returns
     -------
-    X : NDArray[number]
+    x : NDArray[number]
         Validated or generated horizontal coordinate raster.
         - Shape: `(nrows, ncols)`.
-    Y : NDArray[number]
+    y : NDArray[number]
         Validated or generated vertical coordinate raster.
         - Shape: `(nrows, ncols)`.
     """
-    if X is not None and Y is not None:
+    if x is not None and y is not None:
         if shape is not None:
-            validate_shape(X, shape, "X coordinates")
-            validate_shape(Y, shape, "Y coordinates")
+            validate_shape(x, shape, "X coordinates")
+            validate_shape(y, shape, "Y coordinates")
         else:
-            validate_same_shape(X, Y, "X coordinates", "Y coordinates")
-        return X, Y
+            validate_same_shape(x, y, "X coordinates", "Y coordinates")
+        return x, y
     elif shape is None:
         raise ValueError("Cannot infer the shape of the coordinate rasters.")
-    x = np.arange(shape[1], dtype=np.float32)
-    y = np.arange(shape[0], dtype=np.float32)
-    X, Y = np.meshgrid(x, y, indexing="xy")
-    return np.asarray(X, dtype=dtype), np.asarray(Y, dtype=dtype)
+    x_lin = np.arange(shape[1])
+    y_lin = np.arange(shape[0])
+    x_grid, y_grid = np.meshgrid(x_lin, y_lin, indexing="xy")
+    x = np.asarray(x, dtype=dtype) if x is not None else np.asarray(x_grid, dtype=dtype)
+    y = np.asarray(y, dtype=dtype) if y is not None else np.asarray(y_grid, dtype=dtype)
+    return x, y
 
 
 __all__ = [
