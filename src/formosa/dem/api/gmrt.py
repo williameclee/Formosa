@@ -1,7 +1,7 @@
 """
 Downloads digital elevation model data from the GMRT GridServer.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 """
 
 import os
@@ -46,7 +46,8 @@ def gmrt(
 ]:
     """
     Fetch DEM data from the GMRT server.
-    For documentation of the API itself, see: https://www.gmrt.org/services/gridserverinfo.php#!/services/getGMRTGridURLs
+    For documentation of the API itself, see:
+    https://www.gmrt.org/services/gridserverinfo.php#!/services/getGMRTGridURLs
 
     Parameters
     ----------
@@ -136,39 +137,42 @@ def _validate_gmrt_resolution(
     """
     Validate resolution input.
     """
-            resolution > 0
     if isinstance(res, str):
         assert res in accepted_ress, (
             f"Resolution as a string must be one of {accepted_ress} (got '{res}')"
         )
     elif isinstance(res, (int, float)):
         assert res > 0, f"Resolution as a number must be positive (got {res})"
+    return res
 
 
 def _validate_gmrt_format(
+    fmt: GmrtFmt,
     accepted_formats: Iterable[str] = GMRT_FMTS,
     format_replacements: dict[str, GmrtFmt] = gmrt_fmt_replacements,
 ) -> GmrtFmt:
     """
+    Validates format input.
     """
-        format in accepted_formats
     fmt = fmt.lower()  # type: ignore
     fmt = format_replacements.get(fmt, fmt)
     assert fmt in accepted_formats, (
         f"Format must be one of {accepted_formats} (got '{fmt}')"
+    )
+    return fmt
 
 
 def _construct_gmrt_request(
     latlim: tuple[Real, Real],
+    lonlim: tuple[Real, Real],
+    resolution: Real | str,
     format: str,
     layer: str = "topo",
-) -> dict[str, str | number]:
 ) -> dict[str, str | Real]:
     """
-    Convert input parameters to GMRT request parameters.
     Converts input parameters to GMRT request parameters.
     """
-    params: dict[str, str | number] = {}
+    params: dict[str, str | Real] = {}
     params.update(
         {
             "maxlatitude": latlim[1],
@@ -186,14 +190,16 @@ def _construct_gmrt_request(
 
 def _fetch_gmrt_data(
     latlim: tuple[Real, Real],
+    lonlim: tuple[Real, Real],
+    resolution: Real | str,
     format: str,
     base_url: str = GMRT_URL,
 ) -> tuple[
-    npt.NDArray[np.floating | np.integer],
+    NDArray[np.floating | np.integer],
     dict,
 ]:
     """
-    Fetch DEM data from the GMRT server.
+    Fetches DEM data from the GMRT server.
     """
     # Construct the URL
     params = _construct_gmrt_request(latlim, lonlim, resolution, format)
@@ -229,11 +235,11 @@ def _fetch_gmrt_data(
 def _gmrt_default_save_path(
     latlim: tuple[float | int, float | int],
     lonlim: tuple[float | int, float | int],
-    resolution: number | str,
+    resolution: Real | str,
     dir: Path = GMRT_LOCAL_DIR,
 ) -> Path:
     """
-    Generate the default local save path for GMRT DEM files.
+    Generates the default local save path for GMRT DEM files.
     """
     product_param = "gmrt"
     aoi_param = f"{latlim[0]}_{latlim[1]}_{lonlim[0]}_{lonlim[1]}"
@@ -247,6 +253,7 @@ def _gmrt_default_save_path(
 
 def main():
     import matplotlib.pyplot as plt
+
     from formosa.graphics.colour import light_terrain
 
     # Example usage of GMRT
