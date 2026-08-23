@@ -49,7 +49,7 @@ def validate_format_dem(dem: NDArray[NpReal]) -> NDArray[NpReal]:
 
 def validate_format_valids(
     valids: NDArray[np.bool_] | None,
-    against: NDArray[np.number | np.bool_] | None,
+    against: np.ndarray | None,
     against_name: str = "masked array",
 ) -> NDArray[np.bool_]:
     """
@@ -97,7 +97,7 @@ def validate_format_valids(
 
 def validate_format_flowdirs(
     dirs: NDArray[NpFlowDir],
-    against: NDArray[np.number | np.bool_] | None = None,
+    against: np.ndarray | None = None,
     against_name: str = "DEM",
 ) -> NDArray[NpFlowDir]:
     """
