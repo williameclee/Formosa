@@ -4,7 +4,7 @@ Labels watershed rasters using the Python backend.
 This module implements internal routines called by the public-facing
 drainage API and is not intended to be used directly.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
@@ -20,18 +20,6 @@ def label_watersheds(
     dir_scheme: D8Directions = D8Directions(),
     valids: Optional[npt.NDArray[np.bool_]] = None,
 ) -> npt.NDArray[np.int32]:
-    if valids is None:
-        valids = ~np.isnan(dirs)
-    elif isinstance(valids, np.ndarray):
-        assert (
-            valids.shape == dirs.shape
-        ), f"Shape for flow direction ({valids.shape}) and valid mask ({dirs.shape}) do not match."
-        # Removed the check for NaN values in flowdirs, since integer types cannot hold NaN anyway
-    else:
-        raise TypeError(
-            f"[FORMOSA] VALIDS must be either None or a numpy array, got {type(valids)} instead."
-        )
-
     I, J = dirs.shape
     ii, jj = np.meshgrid(
         np.arange(I, dtype=np.int32), np.arange(J, dtype=np.int32), indexing="ij"
