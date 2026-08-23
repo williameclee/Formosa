@@ -19,34 +19,39 @@ from formosa.geomorphology.drainage.neighbours import (
     compute_downstream_indices,
     get_neighbour_values,
 )
+from formosa.geomorphology.raster_validation import (
+    validate_format_dir_scheme,
+    validate_format_valids,
+)
 from formosa.utils import NpFlowDir, NpReal
 
 
 def compute_flowdir_simple(
     dem: NDArray[NpReal],
-    dir_scheme: D8Directions = D8Directions(),
-) -> tuple[NDArray[np.integer], NDArray[np.bool_]]:
+    dir_scheme: D8Directions | None = None,
+) -> tuple[NDArray[NpFlowDir], NDArray[np.bool_]]:
+    dir_scheme = validate_format_dir_scheme(dir_scheme)
     nabrs, codes, _ = get_neighbour_values(
-        dem, dir_scheme=dir_scheme, include_self=True, pad_val=np.max(dem) + 1
+        dem, dir_scheme, include_self=True, pad_val=np.max(dem) + 1
     )
     flow2self_code = np.where(np.all(dir_scheme.offsets == [0, 0], axis=1))[0][0]
-    dirs = np.full(dem.shape, flow2self_code, dtype=np.int32)
+    dirs = np.full(dem.shape, flow2self_code, dtype=NpFlowDir)
     # find where not all neighbours are nan
     valid_mask = ~np.all(np.isnan(nabrs), axis=0)
     dirs[valid_mask] = np.nanargmin(nabrs[:, valid_mask], axis=0)
 
-    dirs = codes[dirs].astype(np.int32)
+    dirs = codes[dirs].astype(NpFlowDir)
     is_flat = dirs == 0
     return dirs, is_flat
 
 
 def count_indegree(
     dirs: NDArray[NpFlowDir],
-    dir_scheme: D8Directions = D8Directions(),
+    dir_scheme: D8Directions | None = None,
     valids: NDArray[np.bool_] | None = None,
 ) -> NDArray[np.int8]:
-    if valids is None:
-        valids = np.ones(dirs.shape, dtype=bool)
+    dir_scheme = validate_format_dir_scheme(dir_scheme)
+    valids = validate_format_valids(valids, dirs, "flow direction raster")
     indegs = np.zeros(dirs.shape, dtype=np.int8)
     dsi, dsj, _, ds_valids = compute_downstream_indices(
         dirs, dir_scheme=dir_scheme, valids=valids, check=False, return_flat_index=False
@@ -69,9 +74,11 @@ def find_acyclic_flowdirs(
     dirs: NDArray[NpFlowDir],
     indegs: NDArray[np.integer],
     valids: NDArray[np.bool_],
-    dir_scheme: D8Directions = D8Directions(),
+    dir_scheme: D8Directions | None = None,
 ) -> NDArray[np.bool_]:
     """Finds valid cells that do not belong to a directed flow cycle."""
+    dir_scheme = validate_format_dir_scheme(dir_scheme)
+
     remaining_indegs = np.asarray(indegs, dtype=np.int8).copy()
     acyclics = np.zeros(valids.shape, dtype=bool)
     queue = deque(map(tuple, np.argwhere(valids & (remaining_indegs == 0))))

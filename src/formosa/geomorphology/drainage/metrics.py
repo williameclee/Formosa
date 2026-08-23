@@ -15,6 +15,7 @@ from formosa.geomorphology.drainage.directions import D8Directions
 from formosa.geomorphology.drainage.flowdir import count_indegree
 from formosa.geomorphology.drainage.neighbours import compute_downstream_indices
 from formosa.geomorphology.raster_validation import (
+    validate_format_dir_scheme,
     validate_format_flowdirs,
     validate_format_freeform_coordinates,
     validate_format_valids,
@@ -25,7 +26,7 @@ from formosa.utils.validation import validate_same_shape
 
 def compute_flow_accumulation(
     dirs: NDArray[NpFlowDir],
-    dir_scheme: D8Directions = D8Directions(),
+    dir_scheme: D8Directions | None = None,
     valids: NDArray[np.bool_] | None = None,
     weights: NDArray[np.floating] | None = None,
     indegs: NDArray[np.integer] | None = None,
@@ -82,6 +83,7 @@ def compute_flow_accumulation(
         - Shape: `(nrows, ncols)`, same as `dirs`.
     """
     dirs = validate_format_flowdirs(dirs)
+    dir_scheme = validate_format_dir_scheme(dir_scheme)
     valids = validate_format_valids(valids, dirs, "flow direction raster")
 
     if weights is not None:
@@ -130,7 +132,7 @@ def compute_flow_accumulation(
 
 def compute_flow_strahler_order(
     dirs: NDArray[NpFlowDir],
-    dir_scheme: D8Directions = D8Directions(),
+    dir_scheme: D8Directions | None = None,
     valids: NDArray[np.bool_] | None = None,
     indegs: NDArray[np.integer] | None = None,
     backend: Backend = "fortran",
@@ -174,6 +176,7 @@ def compute_flow_strahler_order(
     """
 
     dirs = validate_format_flowdirs(dirs)
+    dir_scheme = validate_format_dir_scheme(dir_scheme)
     valids = validate_format_valids(valids, dirs, "flow direction raster")
 
     if indegs is None:
@@ -201,7 +204,7 @@ def compute_flow_strahler_order(
 
 def compute_dist2source(
     dirs: NDArray[NpFlowDir],
-    dir_scheme: D8Directions = D8Directions(),
+    dir_scheme: D8Directions | None = None,
     x: NDArray[NpCoords] | None = None,
     y: NDArray[NpCoords] | None = None,
     valids: NDArray[np.bool_] | None = None,
@@ -255,6 +258,7 @@ def compute_dist2source(
         - Shape: `(nrows, ncols)`, same as `dirs`.
     """
     dirs = validate_format_flowdirs(dirs)
+    dir_scheme = validate_format_dir_scheme(dir_scheme)
     valids = validate_format_valids(valids, dirs, "flow direction raster")
     x, y = validate_format_freeform_coordinates(x, y, dirs.shape, np.float32)
     if indegs is None:
@@ -277,7 +281,7 @@ def compute_dist2source(
 
 def compute_dist2sink(
     dirs: NDArray[NpFlowDir],
-    dir_scheme: D8Directions = D8Directions(),
+    dir_scheme: D8Directions | None = None,
     x: NDArray[NpCoords] | None = None,
     y: NDArray[NpCoords] | None = None,
     valids: NDArray[np.bool_] | None = None,
@@ -318,6 +322,7 @@ def compute_dist2sink(
         - Shape: `(nrows, ncols)`, same as `dirs`.
     """
     dirs = validate_format_flowdirs(dirs)
+    dir_scheme = validate_format_dir_scheme(dir_scheme)
     valids = validate_format_valids(valids, dirs, "flow direction raster")
     x, y = validate_format_freeform_coordinates(x, y, dirs.shape, np.float32)
 

@@ -12,6 +12,7 @@ from numpy.typing import NDArray
 
 from formosa.geomorphology.drainage.directions import D8Directions
 from formosa.geomorphology.raster_validation import (
+    validate_format_dir_scheme,
     validate_format_flowdirs,
     validate_format_valids,
 )
@@ -20,7 +21,7 @@ from formosa.utils import NpCanonIndex, NpFlowDir
 
 def get_neighbour_values(
     array: np.ndarray,
-    dir_scheme: D8Directions = D8Directions(),
+    dir_scheme: D8Directions | None = None,
     pad_val: np.number | float = np.nan,
     include_self: bool = False,
     self_at_last: bool = False,
@@ -62,6 +63,7 @@ def get_neighbour_values(
         - Shape: `(N, 2)`.
     """
     # Input validation and initialisation
+    dir_scheme = validate_format_dir_scheme(dir_scheme)
     if np.issubdtype(array.dtype, np.integer) and pad_val is np.nan:
         warnings.warn(
             "Integer array does not support NaN padding, using max int instead"
@@ -102,7 +104,7 @@ def get_neighbour_values(
 
 def compute_downstream_indices(
     dirs: NDArray[NpFlowDir],
-    dir_scheme: D8Directions = D8Directions(),
+    dir_scheme: D8Directions | None = None,
     valids: NDArray[np.bool_] | None = None,
     check: bool = True,
     return_flat_index: bool = True,
@@ -169,6 +171,7 @@ def compute_downstream_indices(
         downstream indices are out of bounds.
     """
     dirs = validate_format_flowdirs(dirs)
+    dir_scheme = validate_format_dir_scheme(dir_scheme)
     valids = validate_format_valids(valids, dirs, "flow direction raster")
 
     I, J = dirs.shape

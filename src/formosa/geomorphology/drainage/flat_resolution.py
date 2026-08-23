@@ -16,6 +16,7 @@ from formosa.geomorphology.drainage.directions import D8Directions
 from formosa.geomorphology.drainage.neighbours import get_neighbour_values
 from formosa.geomorphology.raster_validation import (
     validate_format_dem,
+    validate_format_dir_scheme,
     validate_format_flowdirs,
     validate_format_valids,
 )
@@ -26,7 +27,7 @@ from formosa.utils.validation import validate_same_shape
 def find_flat_edges(
     dem: NDArray[NpReal],
     dirs: NDArray[NpFlowDir],
-    dir_scheme: D8Directions = D8Directions(),
+    dir_scheme: D8Directions | None = None,
     valids: NDArray[np.bool_] | None = None,
     backend: Backend = "fortran",
 ) -> tuple[NDArray[np.bool_], NDArray[np.bool_]]:
@@ -67,8 +68,9 @@ def find_flat_edges(
         - Shape: `(nrows, ncols)`, same as `dem`.
     """
     dem = validate_format_dem(dem)
-    valids = validate_format_valids(valids, dem)
     dirs = validate_format_flowdirs(dirs, dem)
+    dir_scheme = validate_format_dir_scheme(dir_scheme)
+    valids = validate_format_valids(valids, dem)
     match backend:
         case "python":
             low_edges, high_edges = fres_py.find_flat_edges(
@@ -92,8 +94,8 @@ def find_flat_edges(
 def label_flats(
     dem: NDArray[NpReal],
     seeds: NDArray[np.bool_],
+    dir_scheme: D8Directions | None = None,
     valids: NDArray[np.bool_] | None = None,
-    dir_scheme: D8Directions = D8Directions(),
 ) -> NDArray[np.int32]:
     """
     Separates and labels inidividual flat areas in a DEM.
@@ -107,15 +109,15 @@ def label_flats(
     seeds : NDArray[bool]
         Boolean mask indicating flat area locations.
         - Expected shape: `(nrows, ncols)`, same as `dem`.
+    dir_scheme : D8Directions, optional
+        Instance of `D8Directions` defining the flow direction
+        scheme.
+        - Default scheme is `D8Directions()`.
     valids : NDArray[bool], optional
         Boolean mask indicating valid cells in the DEM.
         If `None`, all cells are considered valid.
         - Expected shape: `(nrows, ncols)`, same as `dem`.
         - Default mask is `None`.
-    dir_scheme : D8Directions, optional
-        Instance of `D8Directions` defining the flow direction
-        scheme.
-        - Default scheme is `D8Directions()`.
 
     Returns
     -------
@@ -131,8 +133,9 @@ def label_flats(
         - Shape: `(nrows, ncols)`, same as `dem`.
     """
     dem = validate_format_dem(dem)
-    valids = validate_format_valids(valids, dem, "DEM")
     validate_same_shape(seeds, dem, "seed mask", "DEM")
+    dir_scheme = validate_format_dir_scheme(dir_scheme)
+    valids = validate_format_valids(valids, dem, "DEM")
 
     labels, err_code = flat_f.label_flats(
         dem.astype(np.float32, order="F"),
@@ -147,9 +150,9 @@ def label_flats(
 
 def find_flat(
     dem: NDArray[NpReal],
+    dir_scheme: D8Directions | None = None,
     valids: NDArray[np.bool_] | None = None,
     only_min: bool = True,
-    dir_scheme: D8Directions = D8Directions(window=3),
 ) -> NDArray[np.bool_]:
     """
     Identifies flat areas in a DEM where cells have no lower
@@ -160,6 +163,10 @@ def find_flat(
     dem : NDArray[number]
         Digital elevation model raster.
         - Expected shape: `(nrows, ncols)`.
+    dir_scheme : D8Directions, optional
+        Instance of `D8Directions` defining the neighbourhood for
+        the synthetic elevation gradient.
+        - Default scheme is `D8Directions()`.
     valids : NDArray[bool], optional
         Boolean mask indicating valid cells in the DEM.
         If `None`, all cells are considered valid.
@@ -170,10 +177,6 @@ def find_flat(
         neighbours qualify as flat.
         If False, cells equal to any neighbour are considered flat.
         - Default option is `True`.
-    dir_scheme_neighbourhood : D8Directions, optional
-        Instance of `D8Directions` defining the neighbourhood for
-        the synthetic elevation gradient.
-        - Default scheme is `D8Directions(window=3)`.
 
     Returns
     -------
@@ -182,6 +185,7 @@ def find_flat(
         - Shape: `(nrows, ncols)`, same as `dem`.
     """
     dem = validate_format_dem(dem)
+    dir_scheme = validate_format_dir_scheme(dir_scheme)
     valids = validate_format_valids(valids, dem, "DEM")
     if np.any(~valids):
         dem[~valids] = np.max(dem[~valids]) + 1
@@ -200,7 +204,7 @@ def find_flat(
 
 def find_ambiguous(
     dem: NDArray[NpReal],
-    dir_scheme: D8Directions = D8Directions(),
+    dir_scheme: D8Directions | None = None,
 ) -> NDArray[np.bool_]:
     """
     Detects ambiguous flow directions in a DEM, where multiple neighbouring cells have the same minimum elevation.
@@ -223,6 +227,8 @@ def find_ambiguous(
         - Shape: `(nrows, ncols)`, same as `dem`.
     """
     dem = validate_format_dem(dem)
+    dir_scheme = validate_format_dir_scheme(dir_scheme)
+
     nabrs, _, _ = get_neighbour_values(dem, dir_scheme=dir_scheme)
     min_nabrs = np.min(nabrs, axis=0)
     ambiguities = np.sum(nabrs == min_nabrs, axis=0) > 1

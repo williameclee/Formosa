@@ -21,6 +21,7 @@ from formosa.geomorphology.drainage.network.validation import (
     _validate_flowgraph_coverage,
 )
 from formosa.geomorphology.raster_validation import (
+    validate_format_dir_scheme,
     validate_format_flowdirs,
     validate_format_valids,
 )
@@ -36,8 +37,8 @@ from formosa.utils.validation import validate_same_shape
 
 def create_flowline_plot_data(
     dirs: NDArray[NpFlowDir],
+    dir_scheme: D8Directions | None = None,
     valids: NDArray[np.bool_] | None = None,
-    dir_scheme: D8Directions = D8Directions(),
     x: NDArray[NpCoords] | None = None,
     y: NDArray[NpCoords] | None = None,
 ) -> tuple[NDArray[NpCanonIndex], NDArray[NpCanonIndex]]:
@@ -50,16 +51,16 @@ def create_flowline_plot_data(
     dirs : NDArray[uint8]
         Flow direction raster.
         - Expected shape: `(nrows, ncols)`.
+    dir_scheme : D8Directions, optional
+        Instance of `D8Directions` defining the flow direction
+        scheme.
+        - Default scheme is `D8Directions()`.
     valids : NDArray[bool], optional
         Boolean mask indicating valid cells in the flow direction
         grid.
         If `None`, all cells are considered valid.
         - Expected shape: `(nrows, ncols)`, same as `dirs`.
         - Default mask is `None`.
-    dir_scheme : D8Directions, optional
-        Instance of `D8Directions` defining the flow direction
-        scheme.
-        - Default scheme is `D8Directions()`.
     x : NDArray[float], optional
         X-coordinates of each cell. If provided, the graph uses
         these coordinates instead of grid indices.
@@ -81,6 +82,7 @@ def create_flowline_plot_data(
         - Shape: `(3 * E,)`.
     """
     dirs = validate_format_flowdirs(dirs)
+    dir_scheme = validate_format_dir_scheme(dir_scheme)
     valids = validate_format_valids(valids, dirs, "flow direction raster")
 
     i, j = np.meshgrid(
@@ -125,7 +127,7 @@ def create_flowline_plot_data(
 
 def construct_flowgraph(
     dirs: NDArray[NpFlowDir],
-    dir_scheme: D8Directions = D8Directions(),
+    dir_scheme: D8Directions | None = None,
     valids: NDArray[np.bool_] | None = None,
     min_order: int = 2,
     orders: NDArray[np.integer] | None = None,
@@ -205,6 +207,7 @@ def construct_flowgraph(
     intentionally omitted from the arc representation.
     """
     dirs = validate_format_flowdirs(dirs)
+    dir_scheme = validate_format_dir_scheme(dir_scheme)
     valids = validate_format_valids(valids, dirs, "flow direction raster")
     if orders is None:
         orders = metrics_m.compute_flow_strahler_order(

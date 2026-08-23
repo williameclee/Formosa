@@ -23,6 +23,7 @@ from formosa.geomorphology.drainage.directions import (
 )
 from formosa.geomorphology.raster_validation import (
     validate_format_dem,
+    validate_format_dir_scheme,
     validate_format_valids,
 )
 from formosa.utils import Coords, NpCanonIndex, NpCoords, NpReal, raise_fortran_error
@@ -217,8 +218,8 @@ class ProminenceFeatureKind(IntFlag):
 @overload
 def compute_prominence(
     dem: NDArray[np.unsignedinteger],
+    dir_scheme: D8Directions | None = None,
     valids: NDArray[np.bool_] | None = None,
-    dir_scheme: D8Directions = D8Directions(),
 ) -> tuple[
     NDArray[np.int64],
     NDArray[np.int32],
@@ -232,8 +233,8 @@ def compute_prominence(
 @overload
 def compute_prominence(
     dem: NDArray[NpReal],
+    dir_scheme: D8Directions | None = None,
     valids: NDArray[np.bool_] | None = None,
-    dir_scheme: D8Directions = D8Directions(),
 ) -> tuple[
     NDArray[NpReal],
     NDArray[np.int32],
@@ -246,8 +247,8 @@ def compute_prominence(
 
 def compute_prominence(
     dem: NDArray[NpReal | np.unsignedinteger],
+    dir_scheme: D8Directions | None = None,
     valids: NDArray[np.bool_] | None = None,
-    dir_scheme: D8Directions = D8Directions(),
 ) -> tuple[
     NDArray[NpReal | np.int64],
     NDArray[np.int32],
@@ -269,15 +270,15 @@ def compute_prominence(
     dem : NDArray[number]
         Digital elevation model raster.
         - Expected shape: `(nrows, ncols)`.
+    dir_scheme : D8Directions, optional
+        Direction scheme defining neighbour connectivity offsets.
+        - Default scheme is `D8Directions()`.
     valids : NDArray[bool], optional
         Boolean mask indicating valid cells.
         Non-finite DEM cells are always invalid.
         If `None`, all finite cells are assumed valid.
         - Expected shape: `(nrows, ncols)`, same as `dem`.
         - Default mask is `None`.
-    dir_scheme : D8Directions, optional
-        Direction scheme defining neighbour connectivity offsets.
-        - Default scheme is `D8Directions()`.
 
     Returns
     -------
@@ -319,7 +320,6 @@ def compute_prominence(
         - For a saddle, its parent is the next enclosing saddle that
         joins its surrounding ridge system.
         - Root features contain `-1`.
-        - Size: `(nfeats,)`
 
     Raises
     ------
@@ -334,6 +334,7 @@ def compute_prominence(
         If conversion to the float32 backend merges distinct valid
         elevations, or if prominence values exceed the range of the
         returned dtype.
+        - Shape: `(nfeats,)`.
 
     Notes
     -----
@@ -342,6 +343,7 @@ def compute_prominence(
     """
     dem = validate_format_dem(dem)  # type: ignore
     valids = validate_format_valids(valids, dem, "DEM")
+    dir_scheme = validate_format_dir_scheme(dir_scheme)
     ofsts_f = validate_direction_offsets(dir_scheme.offsets)
 
     with np.errstate(over="ignore", invalid="ignore"):

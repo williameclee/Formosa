@@ -12,6 +12,7 @@ import formosa.geomorphology.drainage._backends.watersheds_py as wsheds_py
 from formosa.geomorphology._native import drainage_watersheds as basins_f
 from formosa.geomorphology.drainage.directions import D8Directions
 from formosa.geomorphology.raster_validation import (
+    validate_format_dir_scheme,
     validate_format_flowdirs,
     validate_format_valids,
 )
@@ -20,7 +21,7 @@ from formosa.utils import Backend, NpFlowDir, raise_fortran_error
 
 def label_watersheds(
     dirs: NDArray[NpFlowDir],
-    dir_scheme: D8Directions = D8Directions(),
+    dir_scheme: D8Directions | None = None,
     valids: NDArray[np.bool_] | None = None,
     backend: Backend = "fortran",
 ) -> NDArray[np.int32]:
@@ -50,27 +51,24 @@ def label_watersheds(
 
     Returns
     -------
-    watersheds : NDArray[int32]
+    ws : NDArray[int32]
         Watershed labels where each watershed is labelled with a
         unique integer.
         - Shape: `(nrows, ncols)`, same as `dirs`.
     """
     dirs = validate_format_flowdirs(dirs)
+    dir_scheme = validate_format_dir_scheme(dir_scheme)
     valids = validate_format_valids(valids, dirs, "flow direction raster")
 
     match backend:
         case "python":
-            watersheds = wsheds_py.label_watersheds(
-                dirs=dirs,
-                dir_scheme=dir_scheme,
-                valids=valids,
-            )
+            ws = wsheds_py.label_watersheds(dirs, dir_scheme, valids=valids)
         case "fortran":
-            watersheds, err_code = basins_f.label_watersheds(
+            ws, err_code = basins_f.label_watersheds(
                 dirs.astype(np.uint8, order="F"),
                 valids.astype(bool, order="F"),
                 dir_scheme.offsets.astype(np.int32, order="F"),
                 dir_scheme.codes.astype(np.uint8, order="F"),
             )
             raise_fortran_error("label_watersheds", err_code)
-    return watersheds.astype(np.int32, order="F")
+    return ws.astype(np.int32, order="F")

@@ -21,7 +21,7 @@ def compute_flow_accumulation(
     weights: NDArray[np.floating],
     indegs: NDArray[np.integer],
     dsij: NDArray[np.integer],
-    dir_scheme: D8Directions = D8Directions(),
+    dir_scheme: D8Directions | None = None,
 ) -> np.ndarray:
     from collections import deque
 

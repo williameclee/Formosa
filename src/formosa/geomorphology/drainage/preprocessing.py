@@ -18,6 +18,7 @@ from formosa.geomorphology._native import drainage_preprocessing as preproc_f
 from formosa.geomorphology.drainage.directions import D8Directions
 from formosa.geomorphology.raster_validation import (
     validate_format_dem,
+    validate_format_dir_scheme,
     validate_format_valids,
 )
 from formosa.utils import NpReal, raise_fortran_error
@@ -37,7 +38,7 @@ def _validate_format_ocean_level(ocean_lvl: Any) -> float:
 
 def detect_ocean_basins_from_boundary(
     dem: NDArray[NpReal],
-    dir_scheme: D8Directions = D8Directions(),
+    dir_scheme: D8Directions | None = None,
     valids: NDArray[np.bool_] | None = None,
     ocean_lvl: float = 0,
     flood_below: bool = True,
@@ -95,6 +96,7 @@ def detect_ocean_basins_from_boundary(
     See also: :func:`invalidate_ocean_basins`.
     """
     dem = validate_format_dem(dem)
+    dir_scheme = validate_format_dir_scheme(dir_scheme)
     valids = validate_format_valids(valids, dem, "DEM")
     ocean_lvl = _validate_format_ocean_level(ocean_lvl)
     if not isinstance(flood_below, (bool, np.bool_)):
@@ -116,7 +118,7 @@ def detect_ocean_basins_from_boundary(
 
 def invalidate_ocean_basins(
     dem: NDArray[NpReal],
-    dir_scheme: D8Directions = D8Directions(),
+    dir_scheme: D8Directions | None = None,
     valids: NDArray[np.bool_] | None = None,
     ocean_lvl: float = 0,
     flood_below: bool = True,
@@ -178,7 +180,7 @@ def invalidate_ocean_basins(
     Basins with cell counts smaller than `min_size` or disconnected
     from the boundary remain valid.
     """
-
+    dir_scheme = validate_format_dir_scheme(dir_scheme)
     if isinstance(min_size, (bool, np.bool_)) or not isinstance(
         min_size, (int, np.integer)
     ):
@@ -205,7 +207,7 @@ def invalidate_ocean_basins(
 
 def fill_depressions(
     dem: NDArray[NpReal],
-    dir_scheme: D8Directions = D8Directions(),
+    dir_scheme: D8Directions | None = None,
     valids: NDArray[np.bool_] | None = None,
     max_fill_size: int | None = None,
 ) -> NDArray[NpReal]:
@@ -257,7 +259,9 @@ def fill_depressions(
     processed in any order without changing the filled result.
     """
     dem = validate_format_dem(dem)
+    dir_scheme = validate_format_dir_scheme(dir_scheme)
     valids = validate_format_valids(valids, dem, "DEM")
+
     if not np.any(valids):
         return dem.copy()
     # Validate max_fill_size

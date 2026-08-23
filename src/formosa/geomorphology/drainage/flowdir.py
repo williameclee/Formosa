@@ -24,6 +24,7 @@ from formosa.geomorphology.drainage.flat_resolution import (
 from formosa.geomorphology.drainage.preprocessing import fill_depressions
 from formosa.geomorphology.raster_validation import (
     validate_format_dem,
+    validate_format_dir_scheme,
     validate_format_flowdirs,
     validate_format_valids,
 )
@@ -33,7 +34,7 @@ from formosa.utils.validation import validate_same_shape
 
 def _compute_flowdir_simple(
     dem: NDArray[NpReal],
-    dir_scheme: D8Directions = D8Directions(),
+    dir_scheme: D8Directions | None = None,
     valids: NDArray[np.bool_] | None = None,
     backend: Backend = "fortran",
 ) -> tuple[NDArray[NpFlowDir], NDArray[np.bool_]]:
@@ -68,6 +69,7 @@ def _compute_flowdir_simple(
         Boolean mask indicating cells belonging to flat areas.
         - Shape: `(nrows, ncols)`, same as `dem`.
     """
+    dir_scheme = validate_format_dir_scheme(dir_scheme)
     match backend:
         case "python":
             dirs, flats = flowdir_py.compute_flowdir_simple(dem, dir_scheme=dir_scheme)
@@ -85,7 +87,7 @@ def _compute_flowdir_simple(
 
 def _compute_flowdir_complete(
     dem: NDArray[NpReal],
-    dir_scheme: D8Directions = D8Directions(),
+    dir_scheme: D8Directions | None = None,
     valids: NDArray[np.bool_] | None = None,
     step_size: int = 4,
 ) -> tuple[NDArray[NpFlowDir], NDArray[np.bool_], NDArray[np.integer]]:
@@ -125,6 +127,7 @@ def _compute_flowdir_complete(
         Synthetic elevation that resolves flat areas.
         - Shape: `(nrows, ncols)`, same as `dem`.
     """
+    dir_scheme = validate_format_dir_scheme(dir_scheme)
     if step_size <= 0:
         raise ValueError(f"Step size must be a positive integer (got {step_size}).")
 
@@ -151,7 +154,7 @@ def _compute_flowdir_complete(
 
 def compute_flowdir(
     dem: NDArray[NpReal],
-    dir_scheme: D8Directions = D8Directions(),
+    dir_scheme: D8Directions | None = None,
     valids: NDArray[np.bool_] | None = None,
     fill_depression: bool = False,
     resolve_flat: bool = True,
@@ -197,6 +200,7 @@ def compute_flowdir(
         - Shape: `(nrows, ncols)`, same as `dem` (when present).
     """
     dem = validate_format_dem(dem)
+    dir_scheme = validate_format_dir_scheme(dir_scheme)
     valids = validate_format_valids(valids, dem, "DEM")
 
     if fill_depression:
@@ -217,7 +221,7 @@ def compute_flowdir(
 
 def count_indegree(
     dirs: NDArray[NpFlowDir],
-    dir_scheme: D8Directions = D8Directions(),
+    dir_scheme: D8Directions | None = None,
     valids: NDArray[np.bool_] | None = None,
     backend: Backend = "fortran",
 ) -> NDArray[np.int8]:
@@ -252,6 +256,7 @@ def count_indegree(
         - Shape: `(nrows, ncols)`, same as `dirs`.
     """
     dirs = validate_format_flowdirs(dirs)
+    dir_scheme = validate_format_dir_scheme(dir_scheme)
     valids = validate_format_valids(valids, dirs, "flow direction raster")
 
     match backend:
@@ -303,7 +308,7 @@ def _find_acyclic_flowdirs_fortran(
 
 def find_acyclic_flowdirs(
     dirs: NDArray[NpFlowDir],
-    dir_scheme: D8Directions = D8Directions(),
+    dir_scheme: D8Directions | None = None,
     valids: NDArray[np.bool_] | None = None,
     indegs: NDArray[np.integer] | None = None,
     backend: Backend = "fortran",
@@ -354,6 +359,7 @@ def find_acyclic_flowdirs(
         - Shape: `(nrows, ncols)`, same as `dirs`.
     """
     dirs = validate_format_flowdirs(dirs)
+    dir_scheme = validate_format_dir_scheme(dir_scheme)
     valids = validate_format_valids(valids, dirs, "flow direction raster")
 
     if indegs is None:
@@ -373,7 +379,7 @@ def find_acyclic_flowdirs(
 
 def find_cyclic_flowdirs(
     dirs: NDArray[NpFlowDir],
-    dir_scheme: D8Directions = D8Directions(),
+    dir_scheme: D8Directions | None = None,
     valids: NDArray[np.bool_] | None = None,
     indegs: NDArray[np.integer] | None = None,
     backend: Backend = "fortran",
@@ -421,6 +427,7 @@ def find_cyclic_flowdirs(
         - Shape: `(nrows, ncols)`, same as `dirs`.
     """
     dirs = validate_format_flowdirs(dirs)
+    dir_scheme = validate_format_dir_scheme(dir_scheme)
     valids = validate_format_valids(valids, dirs, "flow direction raster")
 
     acyclics = find_acyclic_flowdirs(

@@ -12,6 +12,7 @@ Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 import numpy as np
 from numpy.typing import NDArray
 
+from formosa.geomorphology import D8Directions
 from formosa.utils import NpCoords, NpFlowDir, NpReal
 from formosa.utils.validation import (
     validate_2d_raster,
@@ -204,8 +205,20 @@ def validate_format_freeform_coordinates(
     return x, y
 
 
+def validate_format_dir_scheme(dir_scheme: D8Directions | None) -> D8Directions:
+    if dir_scheme is None:
+        return D8Directions()
+    if not isinstance(dir_scheme, D8Directions):
+        raise TypeError(
+            "Direction scheme must be a 'D8Directions' object, "
+            + f"but got type {type(dir_scheme)}."
+        )
+    return dir_scheme
+
+
 __all__ = [
     "validate_format_dem",
+    "validate_format_dir_scheme",
     "validate_format_flowdirs",
     "validate_format_freeform_coordinates",
     "validate_format_valids",

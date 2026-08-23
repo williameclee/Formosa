@@ -12,14 +12,17 @@ from numpy.typing import NDArray
 
 from formosa.geomorphology.drainage.directions import D8Directions
 from formosa.geomorphology.drainage.neighbours import get_neighbour_values
-from formosa.utils import NpReal, NpFlowDir
+from formosa.geomorphology.raster_validation import validate_format_dir_scheme
+from formosa.utils import NpFlowDir, NpReal
 
 
 def compute_masked_flowdir(
     z: NDArray[NpReal],
     labels: NDArray[np.integer],
-    dir_scheme: D8Directions = D8Directions(),
+    dir_scheme: D8Directions | None = None,
 ) -> NDArray[NpFlowDir]:
+    dir_scheme = validate_format_dir_scheme(dir_scheme)
+
     nabrs, codes, _ = get_neighbour_values(
         z,
         dir_scheme=dir_scheme,
@@ -41,8 +44,10 @@ def compute_masked_flowdir(
 def find_flat_edges(
     dem: NDArray[NpReal],
     dirs: NDArray[NpFlowDir],
-    dir_scheme: D8Directions = D8Directions(),
+    dir_scheme: D8Directions | None = None,
 ) -> tuple[NDArray[np.bool_], NDArray[np.bool_]]:
+    dir_scheme = validate_format_dir_scheme(dir_scheme)
+
     nabrs, _, _ = get_neighbour_values(
         dem,
         dir_scheme=dir_scheme,
