@@ -28,7 +28,7 @@ def validate_array(
     """
     if not isinstance(arr, np.ndarray):
         raise TypeError(
-            f"{arr_name.capitalize()} must be a NumPy array"
+            f"{arr_name.capitalize()} must be a NumPy array, "
             + f"but got type {type(arr)}.",
         )
 
