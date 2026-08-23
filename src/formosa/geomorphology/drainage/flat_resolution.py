@@ -239,7 +239,7 @@ def find_ambiguous(
 def create_pushing_syn_grad(
     labels: NDArray[np.integer],
     high_edges: NDArray[np.bool_],
-    dir_scheme: D8Directions = D8Directions(),
+    dir_scheme: D8Directions | None = None,
 ) -> NDArray[np.int32]:
     """
     Produces a synthetic elevation that decreases away from 'high edges' of flats.
@@ -266,6 +266,7 @@ def create_pushing_syn_grad(
         each flat region.
         - Shape: `(nrows, ncols)`, same as `labels`.
     """
+    dir_scheme = validate_format_dir_scheme(dir_scheme)
     validate_same_shape(labels, high_edges, "label raster", "high edge mask")
 
     z_syn, err_code = flat_f.create_pushing_syn_grad(
@@ -280,7 +281,7 @@ def create_pushing_syn_grad(
 def create_pulling_syn_grad(
     labels: NDArray[np.integer],
     low_edges: NDArray[np.bool_],
-    dir_scheme: D8Directions = D8Directions(),
+    dir_scheme: D8Directions | None = None,
 ) -> NDArray[np.integer]:
     """
     Produces a synthetic elevation that drains towards 'low edges' of flats.
@@ -314,8 +315,9 @@ def create_pulling_syn_grad(
         flat region.
         - Shape: `(nrows, ncols)`, same as `labels`.
     """
+    dir_scheme = validate_format_dir_scheme(dir_scheme)
     validate_same_shape(labels, low_edges, "flat label raster", "low edges mask")
-    
+
     z_syn, err_code = flat_f.create_pulling_syn_grad(
         labels.astype(np.int32, order="F"),
         low_edges.astype(bool, order="F"),
@@ -328,7 +330,7 @@ def create_pulling_syn_grad(
 def compute_syn_flowdir(
     z: NDArray[NpReal],
     labels: NDArray[np.integer],
-    dir_scheme: D8Directions = D8Directions(),
+    dir_scheme: D8Directions | None = None,
     backend: Backend = "fortran",
 ) -> NDArray[np.uint8]:
     """
@@ -359,7 +361,9 @@ def compute_syn_flowdir(
         - Shape: `(nrows, ncols)`, same as `z`.
     """
     z = validate_format_dem(z)
+    dir_scheme = validate_format_dir_scheme(dir_scheme)
     validate_same_shape(labels, z, "label", "synthetic elevation rasters")
+
     match backend:
         case "python":
             dirs = fres_py.compute_masked_flowdir(z, labels, dir_scheme=dir_scheme)
