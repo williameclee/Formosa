@@ -5,31 +5,29 @@ This module identifies ocean basins, fills depressions, and performs
 other operations required before flow routing and metric
 calculation.
 
-Last modified: 2026-08-22, En-Chi Lee (williameclee@gmail.com)
+Created: 2026-08-01, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
+from numpy.typing import NDArray
 
-from formosa.geomorphology._validation import (
+from formosa.geomorphology._native import drainage_preprocessing as preproc_f
+from formosa.geomorphology.drainage.directions import D8Directions
+from formosa.geomorphology.raster_validation import (
     validate_format_dem,
     validate_format_valids,
 )
-from formosa.utils import raise_fortran_error
-from formosa.geomorphology.drainage.directions import D8Directions
-from formosa.geomorphology._native import drainage_preprocessing as preproc_f
-from formosa.utils import NpReal
-
-from typing import Optional
-import numpy.typing as npt
+from formosa.utils import NpReal, raise_fortran_error
 
 
 def detect_ocean_basins_from_boundary(
-    dem: npt.NDArray[NpReal],
-    valids: Optional[npt.NDArray[np.bool_]] = None,
-    ocean_level: int | float = 0,
+    dem: NDArray[NpReal],
+    valids: NDArray[np.bool_] | None = None,
+    ocean_lvl: float = 0,
     flood_below: bool = True,
     dir_scheme: D8Directions = D8Directions(),
-) -> npt.NDArray[np.int32]:
+) -> NDArray[np.int32]:
     """
     Labels threshold-matching ocean basins connected to the raster boundary.
 
@@ -39,12 +37,15 @@ def detect_ocean_basins_from_boundary(
     Parameters
     ----------
     dem : NDArray[number]
-        2D digital elevation model.
+        Digital elevation model raster.
+        - Expected shape: `(nrows, ncols)`.
     valids : NDArray[bool], optional
         Boolean mask indicating valid cells.
-        Invalid cells are excluded from ocean basin detection. If `None`, every cell with a finite elevation is valid.
-        Default input is `None`.
     ocean_level : int | float, optional
+        Invalid cells are excluded from ocean basin detection.
+        If `None`, every cell with a finite elevation is valid.
+        - Expected shape: `(nrows, ncols)`, same as `dem`.
+        - Default mask is `None`.
         Elevation threshold defining ocean cells.
         Default value is `0`.
     flood_below : bool, optional
@@ -103,13 +104,13 @@ def detect_ocean_basins_from_boundary(
 
 
 def invalidate_ocean_basins(
-    dem: npt.NDArray[NpReal],
-    valids: Optional[npt.NDArray[np.bool_]] = None,
-    ocean_level: int | float = 0,
+    dem: NDArray[NpReal],
+    dir_scheme: D8Directions = D8Directions(),
+    valids: NDArray[np.bool_] | None = None,
+    ocean_lvl: float = 0,
     flood_below: bool = True,
     min_size: int = 1,
-    dir_scheme: D8Directions = D8Directions(),
-) -> npt.NDArray[np.bool_]:
+) -> NDArray[np.bool_]:
     """
     Returns a validity mask with sufficiently large ocean basins
     invalidated.
@@ -117,13 +118,16 @@ def invalidate_ocean_basins(
     Parameters
     ----------
     dem : NDArray[number]
-        2D digital elevation model.
+        Digital elevation model raster.
+        - Expected shape: `(nrows, ncols)`.
     valids : NDArray[bool], optional
         Boolean mask indicating valid cells.
-        Invalid cells remain invalid in the output mask. If `None`,
-        every cell with a finite elevation is valid initially.
-        Default input is `None`.
     ocean_level : int | float, optional
+        Invalid cells remain invalid in the output mask.
+        If `None`, every cell with a finite elevation is valid
+        initially.
+        - Expected shape: `(nrows, ncols)`, same as `dem`.
+        - Default mask is `None`.
         Elevation threshold defining ocean cells.
         Default elevation is `0`.
     flood_below : bool, optional
@@ -187,11 +191,11 @@ def invalidate_ocean_basins(
 
 
 def fill_depressions(
-    dem: npt.NDArray[NpReal],
+    dem: NDArray[NpReal],
     dir_scheme: D8Directions = D8Directions(),
-    valids: Optional[npt.NDArray[np.bool_]] = None,
-    max_fill_size: Optional[int] = None,
-) -> npt.NDArray[NpReal]:
+    valids: NDArray[np.bool_] | None = None,
+    max_fill_size: int | None = None,
+) -> NDArray[NpReal]:
     """
     Fills depressions in a digital elevation model (DEM).
 
@@ -204,32 +208,34 @@ def fill_depressions(
     Parameters
     ----------
     dem : NDArray[number]
-        2D DEM.
+        Digital elevation model raster.
         The calculation uses 32-bit floating-point precision and
         converts the result back to the input dtype; the input is
         not modified.
+        - Expected shape: `(nrows, ncols)`.
     dir_scheme : D8Directions, optional
         Flow direction encoding scheme.
-        Default scheme is `D8Directions()`.
+        - Default scheme is `D8Directions()`.
     valids : NDArray[bool], optional
-        Boolean mask with the same shape as `dem`.
+        Boolean mask indicating valid cells.
         Invalid cells are excluded from the fill and retain their
         original elevations. Valid cells on the outer array boundary
         or adjacent to invalid cells are treated as priority-flood
         outlets.
         If `None`, every cell is assumed to be valid.
-        Default input is `None`.
+        - Expected shape: `(nrows, ncols)`, same as `dem`.
+        - Default mask is `None`.
     max_fill_size : int, optional
         Maximum size (in cells) of a depression before it is
         considered an internally-drained basin instead.
-        If `None`, all depressions are filled (equivalent to
-        infinity).
-        Default size is `None`.
+        If `None`, all depressions are filled.
+        - Default size is `None`.
 
     Returns
     -------
     dem_filled : NDArray[number]
-        Depression-filled DEM.
+        Depression-filled digital elevation model.
+        - Shape: `(nrows, ncols)`, same as `dem`.
 
     Notes
     -----

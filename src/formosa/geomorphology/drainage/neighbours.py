@@ -1,22 +1,21 @@
 """
-Locates neighbouring raster cells and retrieve their values.
+Locates neighbouring raster cells and retrieves their values.
 
+Created: 2026-08-01, En-Chi Lee (williameclee@gmail.com)
 Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 """
 
+import warnings
+
 import numpy as np
-
-from formosa.geomorphology.drainage.directions import D8Directions
-from formosa.utils import NpFlowDir, NpCanonIndex
-from formosa.geomorphology._validation import (
-    validate_format_valids,
-    validate_format_flowdirs,
-)
-
-from typing import Optional
 from numpy.typing import NDArray
 
-import warnings
+from formosa.geomorphology.drainage.directions import D8Directions
+from formosa.geomorphology.raster_validation import (
+    validate_format_flowdirs,
+    validate_format_valids,
+)
+from formosa.utils import NpCanonIndex, NpFlowDir
 
 
 def get_neighbour_values(
@@ -92,14 +91,14 @@ def get_neighbour_values(
 def compute_downstream_indices(
     dirs: NDArray[NpFlowDir],
     dir_scheme: D8Directions = D8Directions(),
-    valids: Optional[NDArray[np.bool_]] = None,
+    valids: NDArray[np.bool_] | None = None,
     check: bool = True,
     return_flat_index: bool = True,
     oob_is_okay: bool = False,
 ) -> tuple[
     NDArray[NpCanonIndex],
     NDArray[NpCanonIndex],
-    Optional[NDArray[NpCanonIndex]],
+    NDArray[NpCanonIndex] | None,
     NDArray[np.bool_],
 ]:
     """
@@ -108,14 +107,18 @@ def compute_downstream_indices(
     Parameters
     ----------
     dirs : NDArray[uint8]
-        A 2D array representing the flow directions for each cell.
+        Flow direction raster.
+        - Expected shape: `(nrows, ncols)`.
     dir_scheme : D8Directions, optional
-        An instance of D8Directions defining the flow direction scheme.
-        Default is D8Directions().
+        Instance of `D8Directions` defining the flow direction
+        scheme.
+        - Default scheme is `D8Directions()`.
     valids : NDArray[bool], optional
-        A boolean mask array indicating valid cells in the flow direction grid.
-        If None, all cells are considered valid.
-        Default is None.
+        Boolean mask indicating valid cells in the flow direction
+        grid.
+        If `None`, all cells are considered valid.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+        - Default mask is `None`.
     check : bool, optional
         Whether to raise an error if some downstream indices are out of bounds.
         Otherwise, only a warning is issued.

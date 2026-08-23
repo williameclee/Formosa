@@ -2,27 +2,25 @@
 Computes cell-level geomorphological metrics from raster flow
 directions.
 
+Created: 2026-08-01, En-Chi Lee (williameclee@gmail.com)
 Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
+from numpy.typing import NDArray
 
+from formosa.geomorphology._native import drainage_metrics as metrics_f
+from formosa.geomorphology.drainage._backends import metrics_py
 from formosa.geomorphology.drainage.directions import D8Directions
 from formosa.geomorphology.drainage.flowdir import count_indegree
-from formosa.geomorphology._native import drainage_metrics as metrics_f
-import formosa.geomorphology.drainage._backends.metrics_py as metrics_py
-from formosa.utils import NpFlowDir
-from formosa.utils import Backend, raise_fortran_error
-from formosa.geomorphology._validation import (
-    validate_2d_array,
-    validate_same_shape,
-    validate_format_valids,
+from formosa.geomorphology.drainage.neighbours import compute_downstream_indices
+from formosa.geomorphology.raster_validation import (
     validate_format_flowdirs,
+    validate_format_freeform_coordinates,
+    validate_format_valids,
 )
-
-
-from typing import Optional
-from numpy.typing import NDArray
+from formosa.utils import Backend, NpCoords, NpFlowDir, raise_fortran_error
+from formosa.utils.validation import validate_same_shape
 
 
 def compute_flow_accumulation(
@@ -40,19 +38,26 @@ def compute_flow_accumulation(
     Parameters
     ----------
     dirs : NDArray[uint8]
-        A 2D array representing the flow directions for each cell.
+        Flow direction raster.
+        - Expected shape: `(nrows, ncols)`.
     valids : NDArray[bool], optional
-        A boolean mask array indicating valid cells in the flow direction grid.
+        Boolean mask indicating valid cells in the flow direction
+        grid.
         If `None`, all cells are considered valid.
-        Default is `None`.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+        - Default mask is `None`.
     weights : NDArray[float], optional
-        A 2D array of weights for each cell, representing the contribution of each cell to its downstream cell.
+        Weights for each cell, representing the contribution of each
+        cell to its downstream cell.
         If `None`, each valid cell contributes a weight of 1.0.
-        Default is `None`.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+        - Default input is `None`.
     indegs : NDArray[int], optional
-        A 2D array representing the indegree (number of upstream cells) for each cell.
-        If `None`, `indegs` are computed from the flow direction grid.
-        Default is `None`.
+        In-degree (number of upstream cells) for each cell.
+        If `None`, `indegs` are computed from the flow direction
+        grid.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+        - Default input is `None`.
     dsij : NDArray[int], optional
         A 2D array of downstream cell indices for each cell.
         If `None`, downstream indices are computed from the flow direction grid.
@@ -68,9 +73,32 @@ def compute_flow_accumulation(
 
     Returns
     -------
-    accums : NDArray[float32]
-        A 2D array representing the flow accumulation for each cell.
+    accums : NDArray[float64]
+        Accumulated flow weights for each cell.
+        - Shape: `(nrows, ncols)`, same as `dirs`.
     """
+    dirs = validate_format_flowdirs(dirs)
+    valids = validate_format_valids(valids, dirs, "flow direction raster")
+
+    if weights is not None:
+        validate_same_shape(weights, dirs, "weights", "flow direction rasters")
+    else:
+        weights = np.ones_like(dirs, dtype=np.float64)
+
+    if indegs is None:
+        indegs = count_indegree(dirs, dir_scheme, valids=valids, backend=backend)
+    else:
+        validate_same_shape(indegs, dirs, "in-degree", "flow direction rasters")
+
+    if dsij is None:
+        _, _, dsij, _ = compute_downstream_indices(
+            dirs, dir_scheme=dir_scheme, valids=valids, check=False
+        )
+        assert dsij is not None
+    else:
+        validate_same_shape(
+            dsij, dirs, "downstream cell indices", "flow direction rasters"
+        )
     match backend:
         case "python":
             accums = metrics_py.compute_flow_accumulation(
@@ -82,31 +110,18 @@ def compute_flow_accumulation(
                 dir_scheme=dir_scheme,
             )
         case "fortran":
-            if indegs is None:
-                indegs = count_indegree(dirs, dir_scheme=dir_scheme)
-            else:
-                validate_2d_array(indegs, "in-degree raster")
-
-            if valids is None:
-                valids = np.ones(dirs.shape, dtype=bool)
-            else:
-                validate_format_valids(valids, indegs)
-
-            if weights is None:
-                weights = np.where(valids, 1.0, 0.0).astype(np.float32)
-                validate_same_shape(weights, indegs, "weights", "in-degree raster")
-
             accums, err_code = metrics_f.compute_flow_accumulation(
                 dirs.astype(np.uint8, order="F"),
                 valids.astype(bool, order="F"),
-                weights.astype(np.float32, order="F"),
+                weights.astype(np.float64, order="F"),
                 indegs.astype(np.int8, order="F"),
+                dsij.astype(np.int32, order="F"),
                 dir_scheme.offsets.astype(np.int32, order="F"),
                 dir_scheme.codes.astype(np.uint8, order="F"),
             )
             raise_fortran_error("compute_flow_accumulation", err_code)
-
-    return accums.astype(np.float32, order="F")
+    accums[~valids] = 0
+    return accums.astype(np.float64, order="F")
 
 
 def compute_flow_strahler_order(
@@ -122,18 +137,23 @@ def compute_flow_strahler_order(
     Parameters
     ----------
     dirs : NDArray[uint8]
-        2D array representing the flow directions for each cell.
+        Flow direction raster.
+        - Expected shape: `(nrows, ncols)`.
     dir_scheme : D8Directions, optional
-        Instance of `D8Directions` defining the flow direction scheme.
-        Default is `D8Directions()`.
+        Instance of `D8Directions` defining the flow direction
+        scheme.
+        - Default scheme is `D8Directions()`.
     valids : NDArray[bool], optional
-        Boolean mask array indicating valid cells in the flow direction grid.
+        Boolean mask indicating valid cells in the flow direction
+        grid.
         If `None`, all cells are considered valid.
-        Default is `None`.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+        - Default mask is `None`.
     indegs : NDArray[int], optional
-        2D array representing the number of upstream cells for each cell.
+        In-degree (number of upstream cells) for each cell.
         If `None`, it will be computed from the flow direction grid.
-        Default is `None`.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+        - Default input is `None`.
     backend : {'fortran', 'python'}, optional
         Backend to use for computation.
         `'fortran'` uses the Fortran extension for performance,
@@ -143,13 +163,9 @@ def compute_flow_strahler_order(
     Returns
     -------
     orders : NDArray[uint8]
-        2D integer array representing the Strahler order for each cell.
+        Strahler order for each cell.
         Invalid cells will have a Strahler order of 0.
-
-    Raises
-    ------
-    AssertionError
-        If the input have the wrong types or shapes.
+        - Shape: `(nrows, ncols)`, same as `dirs`.
     """
 
     dirs = validate_format_flowdirs(dirs)
@@ -192,24 +208,33 @@ def compute_dist2source(
     Parameters
     ----------
     dirs : NDArray[uint8]
-        A 2D array representing the flow direction for each cell.
+        Flow direction raster.
+        - Expected shape: `(nrows, ncols)`.
     dir_scheme : D8Directions, optional
-        An instance of `D8Directions` defining the flow direction scheme.
-        Default is `D8Directions()`.
-    x : NDArray[int | float], optional
-        A 2D array representing the x-coordinates of each cell. If `None`, cell indices are used.
-        Default is `None`.
-    y : NDArray[int | float], optional
-        A 2D array representing the y-coordinates of each cell. If `None`, cell indices are used.
-        Default is `None`.
+        Instance of `D8Directions` defining the flow direction
+        scheme.
+        - Default scheme is `D8Directions()`.
+    x : NDArray[float], optional
+        X-coordinates of each cell.
+        If `None`, cell column indices are used.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+        - Default input is `None`.
+    y : NDArray[float], optional
+        Y-coordinates of each cell.
+        If `None`, cell row indices are used.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+        - Default input is `None`.
     valids : NDArray[bool], optional
-        A boolean mask array indicating valid cells in the flow direction grid.
+        Boolean mask indicating valid cells in the flow direction
+        grid.
         If `None`, all cells are considered valid.
-        Default is `None`.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+        - Default mask is `None`.
     indegs : NDArray[int], optional
-        A 2D array representing the indegree (number of upstream cells) for each cell.
+        In-degree (number of upstream cells) for each cell.
         If `None`, indegs are computed from the flow direction grid.
-        Default is `None`.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+        - Default input is `None`.
 
     Returns
     -------
@@ -223,15 +248,9 @@ def compute_dist2source(
     ValueError
         If the shapes of the input arrays do not match the expected dimensions.
     """
-    validate_format_flowdirs(dirs)
+    dirs = validate_format_flowdirs(dirs)
     valids = validate_format_valids(valids, dirs, "flow direction raster")
-    if x is not None and y is not None:
-        validate_same_shape(x, dirs, "X coordinates", "flow direction raster")
-        validate_same_shape(y, dirs, "Y coordinates", "flow direction raster")
-    else:
-        x = np.arange(dirs.shape[1], dtype=np.float32)
-        y = np.arange(dirs.shape[0], dtype=np.float32)
-        x, y = np.meshgrid(x, y, indexing="xy")
+    x, y = validate_format_freeform_coordinates(x, y, dirs.shape, np.float32)
     if indegs is None:
         indegs = count_indegree(dirs, dir_scheme=dir_scheme)
     else:
@@ -265,29 +284,35 @@ def compute_dist2sink(
     dirs : NDArray[uint8]
         A 2D array representing the flow direction for each cell.
     dir_scheme : D8Directions, optional
-        An instance of `D8Directions` defining the flow direction scheme.
-        Default is `D8Directions()`.
-    x : NDArray[int | float], optional
-        A 2D array representing the x-coordinates of each cell. If `None`, a default grid will be created.
-    y : NDArray[int | float], optional
-        A 2D array representing the y-coordinates of each cell. If `None`, a default grid will be created.
+        Instance of `D8Directions` defining the flow direction
+        scheme.
+        - Default scheme is `D8Directions()`.
+    x : NDArray[float], optional
+        X-coordinates of each cell.
+        If `None`, cell column indices are used.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+        - Default input is `None`.
+    y : NDArray[float], optional
+        Y-coordinates of each cell.
+        If `None`, cell row indices are used.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+        - Default input is `None`.
     valids : NDArray[bool], optional
-        A boolean mask array where `True` indicates valid cells. If `None`, all non-NaN cells in `dirs` are considered valid.
+        Boolean mask indicating valid cells in the flow direction
+        grid.
+        If `None`, all cells are considered valid.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+        - Default mask is `None`.
 
     Returns
     -------
     dists : NDArray[float32]
-        A 2D array representing the upstream distance for each cell.
+        Upstream distance for each cell.
+        - Shape: `(nrows, ncols)`, same as `dirs`.
     """
-    validate_format_flowdirs(dirs)
+    dirs = validate_format_flowdirs(dirs)
     valids = validate_format_valids(valids, dirs, "flow direction raster")
-    if x is not None and y is not None:
-        validate_same_shape(x, dirs, "X coordinates", "flow direction raster")
-        validate_same_shape(y, dirs, "Y coordinates", "flow direction raster")
-    else:
-        x = np.arange(dirs.shape[1], dtype=np.float32)
-        y = np.arange(dirs.shape[0], dtype=np.float32)
-        x, y = np.meshgrid(x, y, indexing="xy")
+    x, y = validate_format_freeform_coordinates(x, y, dirs.shape, np.float32)
 
     dists, err_code = metrics_f.compute_dist2sink(
         dirs.astype(np.uint8, order="F"),

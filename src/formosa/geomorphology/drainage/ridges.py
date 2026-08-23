@@ -6,28 +6,26 @@ cell and its neighbours as a proxy for ridge likelihood, then
 applies conventional drainage network operations to the reciprocal
 field.
 
+Created: 2026-08-01, En-Chi Lee (williameclee@gmail.com)
 Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
+from numpy.typing import NDArray
 
-from formosa.geomorphology.drainage.directions import D8Directions
 import formosa.geomorphology.drainage.flowdir as flowdir_m
+from formosa.geomorphology._native import drainage_ridges as ridges_f
+from formosa.geomorphology.drainage.directions import D8Directions
 from formosa.geomorphology.drainage.metrics import (
     compute_dist2source,
     compute_flow_strahler_order,
 )
-from formosa.geomorphology._native import drainage_ridges as ridges_f
-from formosa.utils import NpFlowDir
-from formosa.utils import Backend, raise_fortran_error
-from formosa.geomorphology._validation import (
-    validate_same_shape,
-    validate_format_valids,
+from formosa.geomorphology.raster_validation import (
     validate_format_flowdirs,
+    validate_format_freeform_coordinates,
+    validate_format_valids,
 )
-
-from typing import Optional
-from numpy.typing import NDArray
+from formosa.utils import Backend, NpCoords, NpFlowDir, raise_fortran_error
 
 
 def compute_dist2conf_max(
@@ -50,32 +48,40 @@ def compute_dist2conf_max(
     Parameters
     ----------
     dirs : NDArray[uint8]
-        2D array representing the flow directions for each cell.
+        Flow direction raster.
+        - Expected shape: `(nrows, ncols)`.
     valids : NDArray[bool], optional
-        Boolean mask array where `True` indicates valid cells. If `None`, all cells are considered valid.
-        Default input is `None`.
-    x : NDArray[int | float], optional
-        2D array representing the x-coordinates of each cell. If `None`, a default grid will be created.
-        Default input is `None`.
-    y : NDArray[int | float], optional
-        2D array representing the y-coordinates of each cell. If `None`, a default grid will be created.
-        Default input is `None`.
+        Boolean mask indicating valid cells.
+        If `None`, all cells are considered valid.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+        - Default mask is `None`.
+    x : NDArray[float], optional
+        X-coordinates of each cell.
+        If `None`, cell column indices are used.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+        - Default input is `None`.
+    y : NDArray[float], optional
+        Y-coordinates of each cell.
+        If `None`, cell row indices are used.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+        - Default input is `None`.
     dir_scheme : D8Directions, optional
-        Instance of `D8Directions` defining the flow direction scheme.
-        Default scheme is `D8Directions()`.
+        Instance of `D8Directions` defining the flow direction
+        scheme.
+        - Default scheme is `D8Directions()`.
 
     Returns
     -------
-    NDArray[float32]
-        2D array representing the maximum distance to confluence for
-        each cell.
+    bmax : NDArray[float32]
+        Maximum distance to confluence for each cell.
+        - Shape: `(nrows, ncols)`, same as `dirs`.
 
     Notes
     -----
     See :func:`compute_dist2ridge` for computing the distance to
     ridge based on this field.
 
-    The FORTRAN backend represents the single-flow-direction raster
+    The Fortran backend represents the single-flow-direction raster
     as a forest: each valid cell has at most one downstream parent
     and each root is a sink. It computes parent, depth, sink, and
     cumulative-distance metadata once, then answers neighbouring-
@@ -91,13 +97,7 @@ def compute_dist2conf_max(
     """
     dirs = validate_format_flowdirs(dirs)
     valids = validate_format_valids(valids, dirs, "flow direction raster")
-    if x is not None and y is not None:
-        validate_same_shape(x, dirs, "X coordinates", "flow direction raster")
-        validate_same_shape(y, dirs, "Y coordinates", "flow direction raster")
-    else:
-        x = np.arange(dirs.shape[1], dtype=np.float32)
-        y = np.arange(dirs.shape[0], dtype=np.float32)
-        x, y = np.meshgrid(x, y, indexing="xy")
+    x, y = validate_format_freeform_coordinates(x, y, dirs.shape, np.float32)
 
     # Preserve already-compatible arrays. DEMGrid flow-direction and validity
     # arrays are commonly Fortran-contiguous, so unconditional astype calls here
@@ -123,6 +123,40 @@ def compute_ridgedir(
     x: Optional[NDArray[np.number]] = None,
     y: Optional[NDArray[np.number]] = None,
 ) -> NDArray[NpFlowDir]:
+    """
+    Computes flow directions over the inverted maximum-confluence field.
+
+    Parameters
+    ----------
+    dirs : NDArray[uint8]
+        Flow direction raster.
+        - Expected shape: `(nrows, ncols)`.
+    dir_scheme : D8Directions, optional
+        Instance of `D8Directions` defining the flow direction
+        scheme.
+        - Default scheme is `D8Directions()`.
+    valids : NDArray[bool], optional
+        Boolean mask indicating valid cells.
+        If `None`, all cells are considered valid.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+        - Default mask is `None`.
+    x : NDArray[float], optional
+        X-coordinates of each cell.
+        If `None`, cell column indices are used.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+        - Default input is `None`.
+    y : NDArray[float], optional
+        Y-coordinates of each cell.
+        If `None`, cell row indices are used.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+        - Default input is `None`.
+
+    Returns
+    -------
+    ridgedirs : NDArray[uint8]
+        Flow directions along ridge paths.
+        - Shape: `(nrows, ncols)`, same as `dirs`.
+    """
     bmax = compute_dist2conf_max(dirs, valids=valids, x=x, y=y, dir_scheme=dir_scheme)
     bmaxdirs, _, _ = flowdir_m.compute_flowdir(
         -bmax, dir_scheme=dir_scheme, valids=valids, fill_depression=True
@@ -146,28 +180,40 @@ def compute_dist2ridge(
     Parameters
     ----------
     dirs : NDArray[uint8]
-        2D array representing the flow directions for each cell.
+        Flow direction raster.
+        - Expected shape: `(nrows, ncols)`.
     dir_scheme : D8Directions, optional
         Instance of `D8Directions` defining the flow direction scheme.
         Default scheme is `D8Directions()`.
     valids : NDArray[bool], optional
-        Boolean mask array where `True` indicates valid cells.
+        Boolean mask indicating valid cells.
         If `None`, all cells are considered valid.
-        Default input is `None`.
-    x : NDArray[int | float], optional
-        2D array representing the x-coordinates of each cell.
-        If `None`, a default grid will be created.
-        Default input is `None`.
-    y : NDArray[int | float], optional
-        2D array representing the y-coordinates of each cell.
-        If `None`, a default grid will be created.
-        Default input is `None`.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+        - Default mask is `None`.
+    x : NDArray[float], optional
+        X-coordinates of each cell.
+        If `None`, cell column indices are used.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+        - Default input is `None`.
+    y : NDArray[float], optional
+        Y-coordinates of each cell.
+        If `None`, cell row indices are used.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+        - Default input is `None`.
+    dir_is_ridge : bool, optional
+        Whether `dirs` is already a ridge flow direction grid.
+        - Default option is `False`.
 
     Returns
     -------
     bmaxdists : NDArray[float32]
-        2D array representing the distance to ridge for each cell.
+        Distance to ridge for each cell.
+        - Shape: `(nrows, ncols)`, same as `dirs`.
     """
+    dirs = validate_format_flowdirs(dirs)
+    valids = validate_format_valids(valids, dirs, "flow direction raster")
+    x, y = validate_format_freeform_coordinates(x, y, dirs.shape, np.float32)
+
     if dir_is_ridge:
         bmaxdirs = dirs
     else:
@@ -191,12 +237,38 @@ def compute_ridge_strahler_order(
     """
     Parameters
     ----------
+    dirs : NDArray[uint8]
+        Flow direction raster.
+        - Expected shape: `(nrows, ncols)`.
+    dir_scheme : D8Directions, optional
+        Instance of `D8Directions` defining the flow direction
+        scheme.
+        - Default scheme is `D8Directions()`.
+    valids : NDArray[bool], optional
+        Boolean mask indicating valid cells in the flow direction
+        grid.
+        If `None`, all cells are considered valid.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+        - Default mask is `None`.
+    indegs : NDArray[int], optional
+        In-degree (number of upstream cells) for each cell.
+        If `None`, it will be computed from the ridge flow
+        directions.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+        - Default input is `None`.
     backend : {'fortran', 'python'}, optional
         Backend to use for computation.
         `'fortran'` uses the FORTRAN extension for performance,
         while `'python'` uses a pure Python implementation.
         Default backend is `'fortran'`.
+
+    Returns
+    -------
+    orders : NDArray[uint8]
+        Ridge Strahler order for each cell.
+        - Shape: `(nrows, ncols)`, same as `dirs`.
     """
+    dirs = validate_format_flowdirs(dirs)
 
     if dir_is_ridge:
         bmaxdirs = dirs

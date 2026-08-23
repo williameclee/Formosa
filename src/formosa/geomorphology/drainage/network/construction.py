@@ -1,32 +1,37 @@
 """
 Constructs flow graphs from raster flow directions.
 
+Created: 2026-08-01, En-Chi Lee (williameclee@gmail.com)
 Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
+from numpy.typing import NDArray
 
-from formosa.geomorphology.drainage.directions import D8Directions
-from formosa.geomorphology.drainage.neighbours import compute_downstream_indices
 import formosa.geomorphology.drainage.flowdir as flowdir_m
 import formosa.geomorphology.drainage.metrics as metrics_m
+import formosa.geomorphology.drainage.network._backends.construction_py as constr_py
+from formosa.geomorphology._native import network_construction as constr_f
+from formosa.geomorphology.drainage.directions import D8Directions
+from formosa.geomorphology.drainage.neighbours import compute_downstream_indices
 from formosa.geomorphology.drainage.network.editing import remove_unused_vertices
 from formosa.geomorphology.drainage.network.validation import (
     DirectedFlowCycleError,
     _valid_flow_edges,
     _validate_flowgraph_coverage,
 )
-from formosa.geomorphology._native import network_construction as constr_f
-import formosa.geomorphology.drainage.network._backends.construction_py as constr_py
-from formosa.utils import NpFlowDir, NpCanonIndex, NpCoords
-from formosa.utils import Backend, raise_fortran_error
-from formosa.geomorphology._validation import (
-    validate_format_valids,
+from formosa.geomorphology.raster_validation import (
     validate_format_flowdirs,
+    validate_format_valids,
 )
-
-from typing import Optional
-from numpy.typing import NDArray
+from formosa.utils import (
+    Backend,
+    NpCanonIndex,
+    NpCoords,
+    NpFlowDir,
+    raise_fortran_error,
+)
+from formosa.utils.validation import validate_same_shape
 
 
 def create_flowline_plot_data(
@@ -43,26 +48,28 @@ def create_flowline_plot_data(
     Parameters
     ----------
     dirs : NDArray[uint8]
-        2D array representing the flow directions for each cell.
+        Flow direction raster.
+        - Expected shape: `(nrows, ncols)`.
     valids : NDArray[bool], optional
-        Boolean mask array indicating valid cells in the flow
-        direction grid.
+        Boolean mask indicating valid cells in the flow direction
+        grid.
         If `None`, all cells are considered valid.
-        Default is `None`.
-    directions : D8Directions, optional
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+        - Default mask is `None`.
+    dir_scheme : D8Directions, optional
         Instance of `D8Directions` defining the flow direction
         scheme.
-        Default is `D8Directions()`.
-    x : NDArray[number], optional
-        2D array representing the x-coordinates of each cell.
-        If provided, the graph will use these coordinates instead of
-        grid indices.
-        Default is `None`.
-    y : NDArray[number], optional
-        2D array representing the y-coordinates of each cell.
-        If provided, the graph will use these coordinates instead of
-        grid indices.
-        Default is `None`.
+        - Default scheme is `D8Directions()`.
+    x : NDArray[float], optional
+        X-coordinates of each cell. If provided, the graph uses
+        these coordinates instead of grid indices.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+        - Default input is `None`.
+    y : NDArray[float], optional
+        Y-coordinates of each cell. If provided, the graph uses
+        these coordinates instead of grid indices.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+        - Default input is `None`.
 
     Returns
     -------
@@ -84,6 +91,8 @@ def create_flowline_plot_data(
     )
 
     if x is not None and y is not None:
+        validate_same_shape(x, dirs, "X coordinates", "flow direction raster")
+        validate_same_shape(y, dirs, "Y coordinates", "flow direction raster")
         j, i = x, y
 
         # Map i,j to actual coordinates
@@ -129,25 +138,27 @@ def construct_flowgraph(
     Parameters
     ----------
     dirs : NDArray[uint8]
-        2D array representing the flow directions for each cell.
+        Flow direction raster.
+        - Expected shape: `(nrows, ncols)`.
     dir_scheme : D8Directions, optional
         Instance of `D8Directions` defining the flow direction
         scheme.
-        Default scheme is `D8Directions()`.
+        - Default scheme is `D8Directions()`.
     valids : NDArray[bool], optional
-        Boolean mask array indicating valid cells in the flow
-        direction grid.
+        Boolean mask indicating valid cells in the flow direction
+        grid.
         If `None`, all cells are considered valid.
-        Default mask is `None`.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+        - Default mask is `None`.
     min_order : int, optional
         Minimum Strahler order to include in the flow graph (see
         `orders`).
         Default order is 2.
     orders : NDArray[uint8], optional
-        2D integer array representing the Strahler order for each
-        cell.
-        If `None`, it will be computed from the flow direction grid.
-        Default input is `None`.
+        Strahler order for each cell.
+        If `None`, computed from the flow direction grid.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+        - Default input is `None`.
     preserve_junctions : bool, optional
         Whether to preserve junctions in the flow graph.
         Default option is `True`.
@@ -198,6 +209,8 @@ def construct_flowgraph(
         orders = metrics_m.compute_flow_strahler_order(
             dirs, dir_scheme, valids=valids, backend=backend
         )
+    else:
+        validate_same_shape(orders, dirs, "Strahler order", "flow direction rasters")
 
     # Find seed cells to start with
     valids = valids & (orders >= min_order)
@@ -257,7 +270,7 @@ def construct_flowgraph(
     _validate_flowgraph_coverage(vtxs, endpts, dsi, dsj, has_valid_ds)
 
     if remove_unused:
-        vtxs, endpts = remove_unused_vertices(vtxs, endpts)  # type: ignore
+        vtxs, endpts = remove_unused_vertices(vtxs, endpts)
 
     return (
         arc_orders,

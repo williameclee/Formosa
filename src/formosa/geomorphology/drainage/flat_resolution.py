@@ -4,28 +4,23 @@ Resolves flat areas in digital elevation models for flow routing.
 The algorithms assign synthetic gradients to flats and mainly follow
 Barnes *et al.* (2014), https://doi.org/10.1016/j.cageo.2013.01.009.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
-
-from formosa.utils import Backend, raise_fortran_error
-from formosa.geomorphology._validation import (
-    validate_same_shape,
-    validate_format_dem,
-    validate_format_valids,
-    validate_format_flowdirs,
-)
-import formosa.geomorphology.drainage._backends.flat_resolution_py
-from formosa.geomorphology.drainage.directions import D8Directions
-from formosa.geomorphology.drainage.neighbours import (
-    get_neighbour_values,
-)
-from formosa.geomorphology._native import drainage_flat_resolution as flat_f
-from formosa.utils import NpFlowDir, NpReal
-
-from typing import Optional
 from numpy.typing import NDArray
+
+import formosa.geomorphology.drainage._backends.flat_resolution_py as fres_py
+from formosa.geomorphology._native import drainage_flat_resolution as flat_f
+from formosa.geomorphology.drainage.directions import D8Directions
+from formosa.geomorphology.drainage.neighbours import get_neighbour_values
+from formosa.geomorphology.raster_validation import (
+    validate_format_dem,
+    validate_format_flowdirs,
+    validate_format_valids,
+)
+from formosa.utils import Backend, NpFlowDir, NpReal, raise_fortran_error
+from formosa.utils.validation import validate_same_shape
 
 
 def find_flat_edges(
@@ -42,16 +37,20 @@ def find_flat_edges(
     Parameters
     ----------
     dem : NDArray[number]
-        A 2D array representing the digital elevation model (DEM).
-    dirs : NDArray[integer]
-        A 2D array representing the flow direction for each cell in the DEM.
+        Digital elevation model raster.
+        - Expected shape: `(nrows, ncols)`.
+    dirs : NDArray[uint8]
+        Flow direction raster.
+        - Expected shape: `(nrows, ncols)`, same as `dem`.
     dir_scheme : D8Directions, optional
-        An instance of D8Directions defining the flow direction scheme that `flowdirs` uses.
-        Default is `D8Directions()`.
+        Instance of `D8Directions` defining the flow direction
+        scheme.
+        - Default scheme is `D8Directions()`.
     valids : NDArray[bool], optional
-        A boolean mask array indicating valid cells in the DEM.
+        Boolean mask indicating valid cells in the DEM.
         If `None`, all cells are considered valid.
-        Default is `None`.
+        - Expected shape: `(nrows, ncols)`, same as `dem`.
+        - Default mask is `None`.
     backend : {'fortran', 'python'}, optional
         Backend to use for computation.
         `'fortran'` uses the FORTRAN extension for performance,
@@ -61,19 +60,19 @@ def find_flat_edges(
     Returns
     -------
     low_edges : NDArray[bool]
-        A boolean mask array where True indicates cells that are low edges of flat areas.
+        Boolean mask indicating low-edge cells of flat areas.
+        - Shape: `(nrows, ncols)`, same as `dem`.
     high_edges : NDArray[bool]
-        A boolean mask array where True indicates cells that are high edges of flat areas.
+        Boolean mask indicating high-edge cells of flat areas.
+        - Shape: `(nrows, ncols)`, same as `dem`.
     """
     dem = validate_format_dem(dem)
     valids = validate_format_valids(valids, dem)
     dirs = validate_format_flowdirs(dirs, dem)
     match backend:
         case "python":
-            low_edges, high_edges = (
-                formosa.geomorphology.drainage._backends.flat_resolution_py.find_flat_edges(
-                    dem, dirs, dir_scheme=dir_scheme
-                )
+            low_edges, high_edges = fres_py.find_flat_edges(
+                dem, dirs, dir_scheme=dir_scheme
             )
         case "fortran":
             low_edges, high_edges = flat_f.find_flat_edges(
@@ -103,21 +102,22 @@ def label_flats(
     Parameters
     ----------
     dem : NDArray[number]
-        A 2D array representing the digital elevation model (DEM).
+        Digital elevation model raster.
+        - Expected shape: `(nrows, ncols)`.
     seeds : NDArray[bool]
-        Boolean mask array indicating flat area locations.
+        Boolean mask indicating flat area locations.
+        - Expected shape: `(nrows, ncols)`, same as `dem`.
     valids : NDArray[bool], optional
-        A boolean mask array indicating valid cells in the DEM.
+        Boolean mask indicating valid cells in the DEM.
         If `None`, all cells are considered valid.
-        Default is `None`.
+        - Expected shape: `(nrows, ncols)`, same as `dem`.
+        - Default mask is `None`.
     dir_scheme : D8Directions, optional
         An instance of `D8Directions` defining the flow direction scheme.
         Default is `D8Directions()`.
 
     Returns
     -------
-    labels : NDArray[int]
-        A 2D integer array where each flat region is labeled with a unique integer.
 
     Raises
     ------
@@ -125,6 +125,9 @@ def label_flats(
         If the input seeds is not of the expected type or format.
     ValueError
         If the shapes of the input arrays do not match the expected dimensions.
+    labels : NDArray[int32]
+        Unique integer label for each flat region.
+        - Shape: `(nrows, ncols)`, same as `dem`.
     """
     dem = validate_format_dem(dem)
     valids = validate_format_valids(valids, dem, "DEM")
@@ -153,23 +156,27 @@ def find_flat(
     Parameters
     ----------
     dem : NDArray[number]
-        A 2D array representing the digital elevation model (DEM).
-    valid : NDArray[bool], optional
-        A boolean mask array indicating valid cells in the DEM.
+        Digital elevation model raster.
+        - Expected shape: `(nrows, ncols)`.
+    valids : NDArray[bool], optional
+        Boolean mask indicating valid cells in the DEM.
         If `None`, all cells are considered valid.
-        Default is `None`.
+        - Expected shape: `(nrows, ncols)`, same as `dem`.
+        - Default mask is `None`.
     only_min : bool, optional
-        If True, only cells that are equal to the minimum of their neighbours are considered flat.
+        Whether only cells strictly equal to the minimum of their
+        neighbours qualify as flat.
         If False, cells equal to any neighbour are considered flat.
-        Default is True.
     dir_scheme : D8Directions, optional
         An instance of D8Directions defining the neighbour offsets.
         Default is D8Directions(window=3).
+        - Default option is `True`.
 
     Returns
     -------
     flats : NDArray[bool]
-        A boolean mask array where True indicates cells that are part of flat areas.
+        Boolean mask indicating cells belonging to flat areas.
+        - Shape: `(nrows, ncols)`, same as `dem`.
     """
     dem = validate_format_dem(dem)
     valids = validate_format_valids(valids, dem, "DEM")
@@ -198,7 +205,8 @@ def find_ambiguous(
     Parameters
     ----------
     dem : NDArray[number]
-        A 2D array representing the digital elevation model (DEM).
+        Digital elevation model raster.
+        - Expected shape: `(nrows, ncols)`.
     dir_scheme : D8Directions, optional
         An instance of `D8Directions` defining the flow direction scheme.
         Default is `D8Directions()`.
@@ -206,7 +214,9 @@ def find_ambiguous(
     Returns
     -------
     ambiguities : NDArray[bool]
-        A boolean mask array where True indicates cells with ambiguous flow directions.
+        Boolean mask indicating cells with ambiguous flow
+        directions.
+        - Shape: `(nrows, ncols)`, same as `dem`.
     """
     dem = validate_format_dem(dem)
     neighbours, _, _ = get_neighbour_values(dem, dir_scheme=dir_scheme)
@@ -228,10 +238,13 @@ def create_pushing_syn_grad(
     Parameters
     ----------
     labels : NDArray[number]
-        A 2D array where each flat region is labeled with a unique integer.
-        It is assumed that non-flat areas are labeled with 0, and flat areas have positive integer labels starting from 1 (the Fortran extension relies on this).
+        Integer label raster for flat regions.
+        Non-flat areas are labelled with `0`, and flat areas have
+        positive integer labels starting from `1`.
+        - Expected shape: `(nrows, ncols)`.
     high_edges : NDArray[bool]
-        A boolean mask array indicating high edge locations.
+        Boolean mask indicating high-edge locations.
+        - Expected shape: `(nrows, ncols)`, same as `labels`.
     dir_scheme : D8Directions, optional
         An instance of D8Directions defining the flow direction scheme, here it is used to determine the offsets for neighbor cells.
         Default is `D8Directions()`.
@@ -239,14 +252,9 @@ def create_pushing_syn_grad(
     Returns
     -------
     z_syn : NDArray[int32]
-        A 2D integer array representing the synthetic elevation that increases away from high edges within each flat region.
-
-    Raises
-    ------
-    TypeError
-        If the input high_edges is not of the expected type or format.
-    ValueError
-        If the shapes of the input arrays do not match the expected dimensions.
+        Synthetic elevation increasing away from high edges within
+        each flat region.
+        - Shape: `(nrows, ncols)`, same as `labels`.
     """
     validate_same_shape(labels, high_edges, "label raster", "high edge mask")
 
@@ -260,7 +268,7 @@ def create_pushing_syn_grad(
 
 
 def create_pulling_syn_grad(
-    labels: NDArray[np.number],
+    labels: NDArray[np.integer],
     low_edges: NDArray[np.bool_],
     dir_scheme: D8Directions = D8Directions(),
 ) -> NDArray[np.integer]:
@@ -271,10 +279,13 @@ def create_pulling_syn_grad(
     Parameters
     ----------
     labels : NDArray[number]
-        A 2D array where each flat region is labeled with a unique integer.
-        It is assumed that non-flat areas are labeled with 0, and flat areas have positive integer labels starting from 1 (the Fortran extension relies on this).
+        Integer label raster for flat regions.
+        Non-flat areas are labelled with `0`, and flat areas have
+        positive integer labels starting from `1`.
+        - Expected shape: `(nrows, ncols)`.
     low_edges : NDArray[bool]
-        A boolean mask array indicating low edge locations.
+        Boolean mask indicating low-edge locations.
+        - Expected shape: `(nrows, ncols)`, same as `labels`.
     dir_scheme : D8Directions, optional
         An instance of D8Directions defining the flow direction scheme, here it is used to determine the offsets for neighbor cells.
         Default is `D8Directions()`.
@@ -282,7 +293,6 @@ def create_pulling_syn_grad(
     Returns
     -------
     z_syn : NDArray[integer]
-        A 2D integer array representing the synthetic elevation that increases towards low edges within each flat region.
 
     Raises
     ------
@@ -290,6 +300,9 @@ def create_pulling_syn_grad(
         If the input low_edges is not of the expected type or format.
     ValueError
         If the shapes of the input arrays do not match the expected dimensions.
+        Synthetic elevation increasing towards low edges within each
+        flat region.
+        - Shape: `(nrows, ncols)`, same as `labels`.
     """
     z_syn, err_code = flat_f.create_pulling_syn_grad(
         labels.astype(np.int32, order="F"),
@@ -312,10 +325,12 @@ def compute_syn_flowdir(
 
     Parameters
     ----------
-    z : NDArray[int | float]
-        A 2D array representing the synthetic elevation within flat areas.
+    z : NDArray[number]
+        Synthetic elevation raster within flat areas.
+        - Expected shape: `(nrows, ncols)`.
     labels : NDArray[int]
-        A 2D array where each flat region is labeled with a unique integer.
+        Integer label raster for flat regions.
+        - Expected shape: `(nrows, ncols)`, same as `z`.
     dir_scheme : D8Directions, optional
         An instance of `D8Directions` defining the flow direction scheme.
         Default is `D8Directions()`.
@@ -327,14 +342,15 @@ def compute_syn_flowdir(
 
     Returns
     -------
-    dirs : NDArray[int]
-        A 2D integer array representing the flow directions within flat areas.
+    dirs : NDArray[uint8]
+        Flow directions within flat areas.
+        - Shape: `(nrows, ncols)`, same as `z`.
     """
+    z = validate_format_dem(z)
+    validate_same_shape(labels, z, "label", "synthetic elevation rasters")
     match backend:
         case "python":
-            dirs = formosa.geomorphology.drainage._backends.flat_resolution_py.compute_masked_flowdir(
-                z, labels, dir_scheme=dir_scheme
-            )
+            dirs = fres_py.compute_masked_flowdir(z, labels, dir_scheme=dir_scheme)
         case "fortran":
             dirs = flat_f.compute_syn_flowdir(
                 z.astype(np.int32, order="F"),

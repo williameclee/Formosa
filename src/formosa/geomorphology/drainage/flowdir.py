@@ -4,33 +4,31 @@ Computes and analyse raster flow directions.
 The analyses in this module operate on raster flow fields; explicit
 flow-graph representations are implemented in :mod:`formosa.geomorphology.drainage.network`.
 
-Last modified: 2026-08-22, En-Chi Lee (williameclee@gmail.com)
+Created: 2026-08-01, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
+from numpy.typing import NDArray
 
-from formosa.utils import Backend, raise_fortran_error
-from formosa.geomorphology._validation import (
-    validate_same_shape,
-    validate_format_dem,
-    validate_format_valids,
-    validate_format_flowdirs,
-)
+from formosa.geomorphology._native import drainage_flowdir as flowdir_f
+from formosa.geomorphology.drainage._backends import flowdir_py
 from formosa.geomorphology.drainage.directions import D8Directions
-from formosa.geomorphology.drainage.preprocessing import fill_depressions
 from formosa.geomorphology.drainage.flat_resolution import (
-    label_flats,
-    find_flat_edges,
+    compute_syn_flowdir,
     create_pulling_syn_grad,
     create_pushing_syn_grad,
-    compute_syn_flowdir,
+    find_flat_edges,
+    label_flats,
 )
-from formosa.geomorphology._native import drainage_flowdir as flowdir_f
-import formosa.geomorphology.drainage._backends.flowdir_py as flowdir_py
-from formosa.utils import NpFlowDir, NpReal
-
-from typing import Optional
-from numpy.typing import NDArray
+from formosa.geomorphology.drainage.preprocessing import fill_depressions
+from formosa.geomorphology.raster_validation import (
+    validate_format_dem,
+    validate_format_flowdirs,
+    validate_format_valids,
+)
+from formosa.utils import Backend, NpFlowDir, NpReal, raise_fortran_error
+from formosa.utils.validation import validate_same_shape
 
 
 def _compute_flowdir_simple(
@@ -45,26 +43,30 @@ def _compute_flowdir_simple(
     Parameters
     ----------
     dem : NDArray[number]
-        A 2D array representing the digital elevation model (DEM).
+        Digital elevation model raster.
+        - Expected shape: `(nrows, ncols)`.
     dir_scheme : D8Directions, optional
-        An instance of `D8Directions` defining the flow direction scheme.
-        Default is `D8Directions()`.
+        Instance of `D8Directions` defining the flow direction scheme.
+        - Default scheme is `D8Directions()`.
     valids : NDArray[bool], optional
-        A boolean mask array indicating valid cells in the DEM.
+        Boolean mask indicating valid cells in the DEM.
         If `None`, all cells are considered valid.
-        Default is `None`.
+        - Expected shape: `(nrows, ncols)`, same as `dem`.
+        - Default mask is `None`.
     backend : {'fortran', 'python'}, optional
         Backend to use for computation.
         `'fortran'` uses the Fortran extension for performance,
         while `'python'` uses a pure Python implementation.
-        Default backend is `'fortran'`.
+        - Default backend is `'fortran'`.
 
     Returns
     -------
     dirs : NDArray[uint8]
-        A 2D integer array representing the flow directions for each cell in the DEM.
+        Flow direction raster.
+        - Shape: `(nrows, ncols)`, same as `dem`.
     flats : NDArray[bool]
-        A boolean mask array where True indicates cells that are part of flat areas.
+        Boolean mask indicating cells belonging to flat areas.
+        - Shape: `(nrows, ncols)`, same as `dem`.
     """
     match backend:
         case "python":
@@ -94,14 +96,17 @@ def _compute_flowdir_complete(
     Parameters
     ----------
     dem : NDArray[number]
-        A 2D array representing the digital elevation model (DEM).
+        Digital elevation model raster.
+        - Expected shape: `(nrows, ncols)`.
     dir_scheme : D8Directions, optional
-        An instance of `D8Directions` defining the flow direction scheme.
-        Default is `D8Directions()`.
+        Instance of `D8Directions` defining the flow direction
+        scheme.
+        - Default scheme is `D8Directions()`.
     valids : NDArray[bool], optional
-        A boolean mask array indicating valid cells in the DEM.
+        Boolean mask indicating valid cells in the DEM.
         If `None`, all cells are considered valid.
-        Default is `None`.
+        - Expected shape: `(nrows, ncols)`, same as `dem`.
+        - Default mask is `None`.
     step_size : int, optional
         The increment in synthetic elevation per step away from low edges to avoid ties when combined with the result of `compute_away_from_high`.
         Default is 4.
@@ -109,11 +114,14 @@ def _compute_flowdir_complete(
     Returns
     -------
     dirs : NDArray[uint8]
-        A 2D integer array representing the flow directions for each cell in the DEM.
+        Flow direction raster.
+        - Shape: `(nrows, ncols)`, same as `dem`.
     flats : NDArray[bool]
-        A boolean mask array where True indicates cells that are part of flat areas.
-    z_syn : NDArray[int]
-        A 2D integer array representing the synthetic elevation that resolves flat areas.
+        Boolean mask indicating cells belonging to flat areas.
+        - Shape: `(nrows, ncols)`, same as `dem`.
+    z_syn : NDArray[int32]
+        Synthetic elevation that resolves flat areas.
+        - Shape: `(nrows, ncols)`, same as `dem`.
     """
     if step_size <= 0:
         raise ValueError(f"Step size must be a positive integer (got {step_size}).")
@@ -153,14 +161,16 @@ def compute_flowdir(
     Parameters
     ----------
     dem : NDArray[number]
-        2D array representing the digital elevation model (DEM).
+        Digital elevation model raster.
+        - Expected shape: `(nrows, ncols)`.
     dir_scheme : D8Directions, optional
         Instance of `D8Directions` defining the flow direction scheme.
-        Default is `D8Directions()`.
+        - Default scheme is `D8Directions()`.
     valids : NDArray[bool], optional
-        Boolean mask array indicating valid cells in the DEM.
+        Boolean mask indicating valid cells in the DEM.
         If `None`, all cells are considered valid.
-        Default is `None`.
+        - Expected shape: `(nrows, ncols)`, same as `dem`.
+        - Default mask is `None`.
     fill_depression : bool, optional
         Whether to fill depressions in the DEM before computing flow directions.
         Default is False.
@@ -174,11 +184,15 @@ def compute_flowdir(
     Returns
     -------
     dirs : NDArray[uint8]
-        2D integer array representing the flow directions for each cell in the DEM.
+        Flow direction raster.
+        - Shape: `(nrows, ncols)`, same as `dem`.
     flats : NDArray[bool]
-        Boolean mask array where True indicates cells that are part of flat areas.
-    syn_grads : NDArray[int] | None
-        2D integer array representing the synthetic elevation that resolves flat areas, or None if `resolve_flat` is `False`.
+        Boolean mask indicating cells belonging to flat areas.
+        - Shape: `(nrows, ncols)`, same as `dem`.
+    syn_grads : NDArray[int32] | None
+        Synthetic elevation that resolves flat areas, or `None` if
+        `resolve_flat` is `False`.
+        - Shape: `(nrows, ncols)`, same as `dem` (when present).
     """
     dem = validate_format_dem(dem)
     valids = validate_format_valids(valids, dem, "DEM")
@@ -211,14 +225,18 @@ def count_indegree(
     Parameters
     ----------
     dirs : NDArray[uint8]
-        2D array representing the flow directions for each cell
+        Flow direction raster.
+        - Expected shape: `(nrows, ncols)`.
     dir_scheme : D8Directions, optional
-        An instance of `D8Directions` defining the flow direction scheme
-        Default is `D8Directions()`.
-    valids : NDArray[int], optional
-        2D array mask indicating whether the cell is valid
-        If not provided, all cells are assumed to be valid.
-        Default is `None`.
+        Instance of `D8Directions` defining the flow direction
+        scheme.
+        - Default scheme is `D8Directions()`.
+    valids : NDArray[bool], optional
+        Boolean mask indicating valid cells in the flow direction
+        grid.
+        If `None`, all cells are considered valid.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+        - Default mask is `None`.
     backend : {'fortran', 'python'}, optional
         Backend to use for computation.
         `'fortran'` uses the Fortran extension for performance,
@@ -228,7 +246,8 @@ def count_indegree(
     Returns
     -------
     indegs : NDArray[int8]
-        A 2D integer array representing the in-degree (number of upstream cells) for each cell.
+        In-degree (number of upstream cells) for each cell.
+        - Shape: `(nrows, ncols)`, same as `dirs`.
     """
     dirs = validate_format_flowdirs(dirs)
     valids = validate_format_valids(valids, dirs, "flow direction raster")
@@ -296,18 +315,21 @@ def find_acyclic_flowdirs(
     Parameters
     ----------
     dirs : NDArray[uint8]
-        Flow directions for each cell.
+        Flow direction raster.
+        - Expected shape: `(nrows, ncols)`.
     dir_scheme : D8Directions, optional
         Flow direction scheme defining the direction codes and offsets.
         The default scheme is `D8Directions()`.
     valids : NDArray[bool], optional
-        Mask indicating cells included in the flow field. If `None`, all cells
-        are considered valid.
-        The default mask is `None`.
+        Boolean mask indicating valid cells in the flow field.
+        If `None`, all cells are considered valid.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+        - Default mask is `None`.
     indegs : NDArray[int], optional
-        Indegrees computed for the same valid flow field. If `None`, they are
-        computed using the selected backend.
-        The default input is `None`.
+        In-degrees computed for the same valid flow field.
+        If `None`, they are computed using the selected backend.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+        - Default input is `None`.
     backend : {'fortran', 'python'}, optional
         Backend to use for computation.
         `'fortran'` uses the Fortran extension for performance,
@@ -317,8 +339,6 @@ def find_acyclic_flowdirs(
     Returns
     -------
     acyclics : NDArray[bool]
-        Mask that is true for valid acyclic cells and false for cyclic or
-        invalid cells.
 
     Raises
     ------
@@ -328,6 +348,8 @@ def find_acyclic_flowdirs(
         If the Fortran backend cannot allocate its workspace.
     RuntimeError
         If the Fortran backend reports queue overflow or an unexpected status.
+        Boolean mask indicating valid acyclic cells.
+        - Shape: `(nrows, ncols)`, same as `dirs`.
     """
     dirs = validate_format_flowdirs(dirs)
     valids = validate_format_valids(valids, dirs, "flow direction raster")
@@ -360,18 +382,21 @@ def find_cyclic_flowdirs(
     Parameters
     ----------
     dirs : NDArray[uint8]
-        Flow directions for each cell.
+        Flow direction raster.
+        - Expected shape: `(nrows, ncols)`.
     dir_scheme : D8Directions, optional
-        Flow direction scheme defining the direction codes and offsets.
-        The default scheme is `D8Directions()`.
+        Flow direction scheme defining direction codes and offsets.
+        - Default scheme is `D8Directions()`.
     valids : NDArray[bool], optional
-        Mask indicating cells included in the flow field. If `None`, all cells
-        are considered valid.
-        The default input is `None`.
+        Boolean mask indicating valid cells in the flow field.
+        If `None`, all cells are considered valid.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+        - Default mask is `None`.
     indegs : NDArray[int], optional
-        Indegrees computed for the same valid flow field. If `None`, they are
-        computed using the selected backend.
-        The default input is `None`.
+        In-degrees computed for the same valid flow field.
+        If `None`, they are computed using the selected backend.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+        - Default input is `None`.
     backend : {'fortran', 'python'}, optional
         Backend to use for computation.
         `'fortran'` uses the Fortran extension for performance,
@@ -381,8 +406,6 @@ def find_cyclic_flowdirs(
     Returns
     -------
     cyclics : NDArray[bool]
-        Mask that is true for valid cyclic cells and false for acyclic or
-        invalid cells.
 
     Raises
     ------
@@ -392,14 +415,13 @@ def find_cyclic_flowdirs(
         If the Fortran backend cannot allocate its workspace.
     RuntimeError
         If the Fortran backend reports queue overflow or an unexpected status.
+        Boolean mask indicating valid cyclic cells.
+        - Shape: `(nrows, ncols)`, same as `dirs`.
     """
+    dirs = validate_format_flowdirs(dirs)
     valids = validate_format_valids(valids, dirs, "flow direction raster")
 
     acyclics = find_acyclic_flowdirs(
-        dirs,
-        dir_scheme=dir_scheme,
-        valids=valids,
-        indegs=indegs,
-        backend=backend,
+        dirs, dir_scheme, valids=valids, indegs=indegs, backend=backend
     )
     return np.asarray(valids & ~acyclics, dtype=bool, order="F")
