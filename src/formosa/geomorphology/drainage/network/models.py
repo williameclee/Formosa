@@ -1,9 +1,10 @@
 """
 Represents drainage networks as flow graphs.
 
-Last modified: 2026-08-18, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
 
 import numpy as np
