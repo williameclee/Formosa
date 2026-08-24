@@ -1,5 +1,5 @@
 """
-Tests unconstrained triangulation using the FORTRAN backend.
+Tests unconstrained triangulation using the Fortran backend.
 
 This module covers native coordinate-type and range validation by
 the public meshing API.

@@ -1,7 +1,7 @@
-!> Constructs flow graphs from direction rasters using the FORTRAN backend.
+!> Constructs flow graphs from direction rasters using the Fortran backend.
 !!
 !! This internal module is called by the Python network API and
-!! other FORTRAN routines and is not intended to be used directly.
+!! other Fortran routines and is not intended to be used directly.
 !!
 !! Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
 module network_construction

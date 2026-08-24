@@ -1,5 +1,5 @@
 """
-Verifies ridge-network parity between the Python and FORTRAN
+Verifies ridge-network parity between the Python and Fortran
 backends.
 
 Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)

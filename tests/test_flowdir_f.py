@@ -1,5 +1,5 @@
 """
-Tests flow-direction derivation using the FORTRAN backend.
+Tests flow-direction derivation using the Fortran backend.
 
 Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """

@@ -1,5 +1,5 @@
 """
-Tests shared utility routines in the FORTRAN backend.
+Tests shared utility routines in the Fortran backend.
 
 Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """

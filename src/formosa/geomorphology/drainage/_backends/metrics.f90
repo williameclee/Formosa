@@ -1,4 +1,4 @@
-!> Computes flow-based raster metrics using the FORTRAN backend.
+!> Computes flow-based raster metrics using the Fortran backend.
 !!
 !! This internal module is called by the Python drainage API and is
 !! not intended to be used directly.

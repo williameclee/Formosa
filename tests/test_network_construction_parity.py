@@ -1,5 +1,5 @@
 """
-Verifies flow-graph construction parity across Python and FORTRAN
+Verifies flow-graph construction parity across Python and Fortran
 backends.
 
 Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)

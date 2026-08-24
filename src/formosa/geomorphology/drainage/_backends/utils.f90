@@ -1,8 +1,8 @@
-!> Provides shared utilities for the FORTRAN drainage backends.
+!> Provides shared utilities for the Fortran drainage backends.
 !!
 !! This internal module supports array-index conversion, flow-
 !! direction code decoding, raster masking, and priority queues used
-!! by other FORTRAN modules.
+!! by other Fortran modules.
 !!
 !! Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 module utils

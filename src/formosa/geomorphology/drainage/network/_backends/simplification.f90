@@ -1,7 +1,7 @@
-!> Simplifies flow-graph arcs using the FORTRAN backend.
+!> Simplifies flow-graph arcs using the Fortran backend.
 !!
 !! This internal module is called by the Python network API and
-!! other FORTRAN routines and is not intended to be used directly.
+!! other Fortran routines and is not intended to be used directly.
 !!
 !! Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 module network_simplification

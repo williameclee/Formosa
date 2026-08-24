@@ -1,4 +1,5 @@
-!> Resolves flats in digital elevation models using the FORTRAN backend.
+!> Resolves flats in digital elevation models using the Fortran 
+!! backend.
 !!
 !! The algorithms assign synthetic gradients to flats and mainly
 !! follow Barnes et al. (2014), https://doi.org/10.1016/j.cageo.2013.01.009.

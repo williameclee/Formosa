@@ -1,5 +1,5 @@
 """
-Defines computational backends and translate FORTRAN status codes.
+Defines computational backends and translate Fortran status codes.
 
 Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """
@@ -23,7 +23,7 @@ def raise_fortran_error(
     errors: Mapping[int, tuple[type[Exception], str]] = DEFAULT_ERROR_MAP,
 ) -> None:
     """
-    Raises the Python exception corresponding to a FORTRAN status
+    Raises the Python exception corresponding to a Fortran status
     code.
 
     The default project convention is:
@@ -40,7 +40,7 @@ def raise_fortran_error(
         Name of the operation to display in the error message.
         This is typically the function name.
     err_code : int
-        FORTRAN status code.
+        Fortran status code.
     errors : dict[int, tuple[Exception, str]], optional
         How `err_code` should be interpreted.
         Each code maps to a type of exception to raise and an error

@@ -1,8 +1,8 @@
 """
-Tests flat resolution using the FORTRAN backend.
+Tests flat resolution using the Fortran backend.
 
 This module covers native results, boundary cases, and translation
-of FORTRAN status codes by the public drainage API.
+of Fortran status codes by the public drainage API.
 
 Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 """

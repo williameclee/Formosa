@@ -1,4 +1,4 @@
-!> Derives and analyses ridge networks using the FORTRAN backend.
+!> Derives and analyses ridge networks using the Fortran backend.
 !!
 !! The method treats the maximum confluence distance between a
 !! raster cell and its neighbours as a proxy for ridge likelihood,

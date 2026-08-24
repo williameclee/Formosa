@@ -1,7 +1,7 @@
-!> Labels watershed rasters using the FORTRAN backend.
+!> Labels watershed rasters using the Fortran backend.
 !!
 !! This internal module is called by the Python drainage API and
-!! other FORTRAN routines and is not intended to be used directly.
+!! other Fortran routines and is not intended to be used directly.
 !!
 !! Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 module drainage_watersheds
