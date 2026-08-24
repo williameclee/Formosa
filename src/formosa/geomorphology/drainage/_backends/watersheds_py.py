@@ -30,24 +30,24 @@ def label_watersheds(
         zip(ii[valids & (dirs == 0)], jj[valids & (dirs == 0)])
     )
 
-    watershed = -np.ones(dirs.shape, dtype=np.int32)
+    ws = -np.ones(dirs.shape, dtype=np.int32)
 
     for label, seed in enumerate(seeds):
         to_fill: list[tuple[int, int]] = [seed]
 
         while to_fill:
             ci, cj = to_fill.pop(0)
-            watershed[ci, cj] = label
+            ws[ci, cj] = label
             for code, (di, dj) in zip(codes, offsets):
                 ni, nj = ci - di, cj - dj
                 if (ni < 0 or ni >= I) or (nj < 0 or nj >= J):
                     continue
                 elif not valids[ni, nj]:
                     continue
-                elif watershed[ni, nj] != -1:
+                elif ws[ni, nj] != -1:
                     continue
 
                 if dirs[ni, nj] == code:
                     to_fill.append((ni, nj))
-    watershed = watershed + 1  # make background 0 and watersheds start from 1
-    return watershed
+    ws = ws + 1  # make background 0 and watersheds start from 1
+    return ws

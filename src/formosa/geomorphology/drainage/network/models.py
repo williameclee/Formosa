@@ -64,8 +64,10 @@ class FlowGraph:
         return self
 
     def concat(self) -> "FlowGraph":
-        self.arc_orders, self.indices, self.arc_endpts = concat_flowgraph(
-            self.arc_orders, self.indices, self.arc_endpts
+        self.arc_orders, self.indices, self.arc_endpts = (
+            concat_flowgraph(
+                self.arc_orders, self.indices, self.arc_endpts
+            )
         )
         return self
 
@@ -76,12 +78,14 @@ class FlowGraph:
         remove_unused: bool = False,
         backend: Backend = "fortran",
     ) -> "FlowGraph":
-        self.arc_orders, self.indices, self.arc_endpts, _ = simplify_flowgraph(
-            *(self.arc_orders, self.indices, self.arc_endpts),
-            tol=tol,
-            check_topology=check_topology,
-            remove_unused=remove_unused,
-            backend=backend,
+        self.arc_orders, self.indices, self.arc_endpts, _ = (
+            simplify_flowgraph(
+                *(self.arc_orders, self.indices, self.arc_endpts),
+                tol=tol,
+                check_topology=check_topology,
+                remove_unused=remove_unused,
+                backend=backend,
+            )
         )
         return self
 

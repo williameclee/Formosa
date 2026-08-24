@@ -4,19 +4,18 @@ Prepares digital elevation models for drainage analysis in Python.
 This module implements the internal Python backend called by the
 public-facing drainage API and is not intended to be used directly.
 
-Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
-
-from typing import Optional
 
 import numpy as np
 from numpy.typing import NDArray
 
+from formosa.utils import NpReal
 
-def fill_depressions(
-    dem: NDArray[np.floating],
-    valids: NDArray[np.bool_],
-) -> NDArray[np.floating]:
+
+def fill_depressions[Z: NpReal](
+    dem: NDArray[Z], valids: NDArray[np.bool_]
+) -> NDArray[Z]:
     """
     Fill D8 depressions using iterative reconstruction by erosion.
 

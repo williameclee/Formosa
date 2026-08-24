@@ -32,10 +32,10 @@ def compute_masked_flowdir(
     # Mask neighbours that are not in the same flat
     nabrs = np.where(nabr_labels != labels[np.newaxis, :, :], np.inf, nabrs)
     min_indices = np.argmin(nabrs, axis=0)
-    flowdirs = codes[min_indices]
-    flowdirs[labels == 0] = 0
+    dirs = codes[min_indices]
+    dirs[labels == 0] = 0
 
-    return flowdirs.astype(NpFlowDir)
+    return dirs.astype(NpFlowDir)
 
 
 def find_flat_edges(

@@ -15,13 +15,13 @@ from formosa.geomorphology.drainage.neighbours import compute_downstream_indices
 from formosa.utils import NpFlowDir
 
 
-def compute_flow_accumulation(
+def compute_flow_accumulation[W: np.floating](
     dirs: NDArray[NpFlowDir],
     valids: NDArray[np.bool_],
-    weights: NDArray[np.floating],
+    wgts: NDArray[W],
     indegs: NDArray[np.integer],
     dsij: NDArray[np.integer],
-) -> np.ndarray:
+) -> NDArray[W]:
     from collections import deque
 
     # Initialisation
@@ -29,12 +29,12 @@ def compute_flow_accumulation(
 
     indegs = indegs.flatten(order="F")
     valids = valids.flatten(order="F")
-    weights = weights.flatten(order="F")
+    wgts = wgts.flatten(order="F")
     dsij = dsij.flatten(order="F")
     dirs = dirs.flatten(order="F")
 
-    # Initialize accumulation with self weight
-    accumulation = weights.ravel().astype(weights.dtype, copy=True)
+    # Initialise accumulation with self weight
+    accums = wgts.ravel().astype(wgts.dtype, copy=True)
 
     # Queue sources (indeg == 0) among valid cells
     q = deque(np.flatnonzero((indegs == 0) & valids))
@@ -45,14 +45,14 @@ def compute_flow_accumulation(
         v = dsij[u]
         if not valids[v]:
             continue
-        accumulation[v] += accumulation[u]
+        accums[v] += accums[u]
         indegs[v] -= 1
         if indegs[v] == 0:
             q.append(v)
 
-    accumulation = accumulation.reshape(I, J, order="F")
+    accums = accums.reshape(I, J, order="F")
 
-    return accumulation
+    return accums
 
 
 def compute_flow_strahler_order(
@@ -69,40 +69,35 @@ def compute_flow_strahler_order(
         dirs, dir_enc, valids=valids, check=False, return_flat_index=False
     )
 
-    strahler_order = np.zeros(indegs.shape, dtype=np.int16)
+    orders = np.zeros(indegs.shape, dtype=np.int16)
     seeds_mask = valids & (indegs == 0)
-    strahler_order[seeds_mask] = 1
+    orders[seeds_mask] = 1
 
-    max_upstream_order = np.zeros(indegs.shape, dtype=np.int16)
-    max_upstream_count = np.zeros(indegs.shape, dtype=np.int8)
+    max_upstrm_order = np.zeros(indegs.shape, dtype=np.int16)
+    max_upstrm_cnt = np.zeros(indegs.shape, dtype=np.int8)
 
     ii, jj = np.indices(indegs.shape, dtype=np.int32)
     seeds = deque(zip(ii[seeds_mask], jj[seeds_mask]))  # type: ignore
 
     while seeds:
         ci, cj = seeds.popleft()
-        if (
-            not downstream_valids[ci, cj]
-            or not valids[dsi, dsj]
-            or (ci, cj) == (dsi, dsj)
-        ):
         dsi = dsis[ci, cj]
         dsj = dsjs[ci, cj]
         if not ds_valids[ci, cj] or not valids[dsi, dsj] or (ci, cj) == (dsi, dsj):
             continue
 
-        upstream_order = strahler_order[ci, cj]
-        if upstream_order > max_upstream_order[dsi, dsj]:
-            max_upstream_order[dsi, dsj] = upstream_order
-            max_upstream_count[dsi, dsj] = 1
-        elif upstream_order == max_upstream_order[dsi, dsj]:
-            max_upstream_count[dsi, dsj] += 1
+        upstrm_order = orders[ci, cj]
+        if upstrm_order > max_upstrm_order[dsi, dsj]:
+            max_upstrm_order[dsi, dsj] = upstrm_order
+            max_upstrm_cnt[dsi, dsj] = 1
+        elif upstrm_order == max_upstrm_order[dsi, dsj]:
+            max_upstrm_cnt[dsi, dsj] += 1
 
         indegs[dsi, dsj] -= 1
         if indegs[dsi, dsj] == 0:
-            strahler_order[dsi, dsj] = max_upstream_order[dsi, dsj]
-            if max_upstream_count[dsi, dsj] >= 2:
-                strahler_order[dsi, dsj] += 1
+            orders[dsi, dsj] = max_upstrm_order[dsi, dsj]
+            if max_upstrm_cnt[dsi, dsj] >= 2:
+                orders[dsi, dsj] += 1
             seeds.append((dsi, dsj))
 
-    return strahler_order
+    return orders

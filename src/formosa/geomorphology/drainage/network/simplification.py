@@ -1,7 +1,7 @@
 """
 Simplifies flow-graph arcs while preserving valid topology.
 
-Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
 from typing import overload
@@ -146,7 +146,7 @@ def _simplify_multiple_flowgraphs[O: NpInt, V: NpCoords, E: NpIndex](
             ) = solve_graph_overlaps(
                 *(all_orders_list[i], all_vtxs_list[i], all_endpts_list[i]),
                 *(all_orders_list[j], all_vtxs_list[j], all_endpts_list[j]),
-                allow_overlap=True,
+                allow_ovlp=True,
             )
 
     # Concatenate the graphs while retaining the graph membership of each arc
@@ -225,7 +225,8 @@ def _simplify_single_flowgraph[O: NpInt, V: NpCoords, E: NpIndex](
     graph_ids: NDArray[np.integer] | None = None,
 ) -> tuple[NDArray[O], NDArray[V], NDArray[E], NDArray[np.bool_]]:
     """
-    Core function to simplify a single flow graph using RDP algorithm.
+    Core function to simplify a single flow graph using RDP
+    algorithm.
     """
     if backend != "fortran":
         raise NotImplementedError(

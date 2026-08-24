@@ -98,9 +98,8 @@ class DEMGrid:
                 self.x = np.reshape(self.x, (-1,)).reshape(self.dem.shape)
                 self.y = np.reshape(self.y, (-1,)).reshape(self.dem.shape)
             else:
-                assert x.shape == dem.shape and y.shape == dem.shape, (
-                    f"Provided x and y coordinates must match the shape of the DEM array (got DEM: {dem.shape}, x: {x.shape}, y: {y.shape})"
-                )
+                validate_same_shape(x, dem, "X coordinates", "DEM")
+                validate_same_shape(y, dem, "Y coordinates", "DEM")
                 self.x = x
                 self.y = y
         else:

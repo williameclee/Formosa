@@ -104,20 +104,20 @@ def _validate_flowgraph_coverage(
     represented = np.zeros(has_valid_ds.shape, dtype=bool)
 
     # Identify consecutive vertex pairs that belong to an arc.
-    segment_counts = np.zeros(vtxs.shape[0], dtype=np.int32)
-    np.add.at(segment_counts, arc_endpts[:, 0], 1)
-    np.add.at(segment_counts, arc_endpts[:, 1], -1)
-    segment_valids = np.cumsum(segment_counts)[:-1] > 0
+    seg_cnts = np.zeros(vtxs.shape[0], dtype=np.int32)
+    np.add.at(seg_cnts, arc_endpts[:, 0], 1)
+    np.add.at(seg_cnts, arc_endpts[:, 1], -1)
+    seg_valids = np.cumsum(seg_cnts)[:-1] > 0
 
-    sources = vtxs[:-1][segment_valids]
-    targets = vtxs[1:][segment_valids]
+    srcs = vtxs[:-1][seg_valids]
+    targets = vtxs[1:][seg_valids]
 
     # Confirm each represented edge matches the source cell's expected downstream.
-    matches = (targets[:, 0] == dsi[sources[:, 0], sources[:, 1]]) & (
-        targets[:, 1] == dsj[sources[:, 0], sources[:, 1]]
+    matches = (targets[:, 0] == dsi[srcs[:, 0], srcs[:, 1]]) & (
+        targets[:, 1] == dsj[srcs[:, 0], srcs[:, 1]]
     )
-    matched_sources = sources[matches]
-    represented[matched_sources[:, 0], matched_sources[:, 1]] = True
+    matched_srcs = srcs[matches]
+    represented[matched_srcs[:, 0], matched_srcs[:, 1]] = True
 
     missing_sources = np.argwhere(has_valid_ds & ~represented)
     if missing_sources.size:
@@ -170,23 +170,21 @@ def _locate_invalid_graph_topology_fortran(
     """
     vtxs_f = np.asfortranarray(vtxs.T, dtype=np.float32)
     endpts_f = np.asfortranarray(endpts.T, dtype=np.int32) + 1
-    capacity = max(vtxs_f.shape[1] // 100, 3)  # Arbitrary capacity that seems to work
+    cpty = max(vtxs_f.shape[1] // 100, 3)  # Arbitrary capacity that seems to work
 
-    intxs, nintxs, err_code = val_f.scan_invalid_graph_topology(
-        vtxs_f, endpts_f, capacity
-    )
+    intxs, nintxs, err_code = val_f.scan_invalid_graph_topology(vtxs_f, endpts_f, cpty)
     raise_fortran_error("scan_invalid_graph_topology", err_code)
 
     if nintxs == 0:
         return None
 
-    if nintxs > capacity:
-        expected_nintxs = nintxs
+    if nintxs > cpty:
+        exp_nintxs = nintxs
         intxs, nintxs, err_code = val_f.scan_invalid_graph_topology(
-            vtxs_f, endpts_f, expected_nintxs
+            vtxs_f, endpts_f, exp_nintxs
         )
         raise_fortran_error("scan_invalid_graph_topology", err_code)
-        if nintxs != expected_nintxs:
+        if nintxs != exp_nintxs:
             raise RuntimeError(
                 "Topology-intersection count changed during exact-size retry."
             )
@@ -197,9 +195,7 @@ def _locate_invalid_graph_topology_fortran(
 
 
 def locate_invalid_graph_topology(
-    vtxs: NDArray[NpCoords],
-    endpts: NDArray[NpIndex],
-    backend: Backend = "fortran",
+    vtxs: NDArray[NpCoords], endpts: NDArray[NpIndex], backend: Backend = "fortran"
 ) -> NDArray[np.int32] | None:
     """
     Locates invalid topologies (segment intersections) within and
