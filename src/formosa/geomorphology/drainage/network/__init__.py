@@ -1,17 +1,18 @@
+from .construction import construct_flowgraph, create_flowline_plot_data
+from .editing import concat_flowgraph, insert_endpt, remove_unused_vertices
 from .models import FlowGraph
+from .simplification import simplify_flowgraph
 from .validation import (
     DirectedFlowCycleError,
     GraphTopologyError,
     IncompleteFlowGraphError,
     InvalidOriginalGraphTopology,
     UnresolvedSimplificationTopology,
+    locate_invalid_graph_topology,
 )
-from .construction import construct_flowgraph, create_flowline_plot_data
-from .validation import locate_invalid_graph_topology
-from .editing import concat_flowgraph, insert_endpt, remove_unused_vertices
-from .simplification import simplify_flowgraph
 
 __all__ = [
+    "FlowGraph",
     "DirectedFlowCycleError",
     "GraphTopologyError",
     "IncompleteFlowGraphError",

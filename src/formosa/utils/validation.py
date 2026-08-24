@@ -9,12 +9,9 @@ Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
-from numpy.typing import NDArray
 
 
-def validate_array(
-    arr: NDArray[np.number | np.bool_], arr_name: str = "array"
-) -> None:
+def validate_array(arr: np.ndarray, arr_name: str = "array") -> None:
     """
     Validates that an input argument is a NumPy array.
 
@@ -33,9 +30,7 @@ def validate_array(
         )
 
 
-def validate_2d_raster(
-    arr: NDArray[np.number | np.bool_], arr_name: str = "array"
-) -> None:
+def validate_2d_raster(arr: np.ndarray, arr_name: str = "array") -> None:
     """
     Validates that an array is a non-empty 2D raster.
 
@@ -57,7 +52,7 @@ def validate_2d_raster(
 
 
 def validate_shape(
-    arr: NDArray[np.number | np.bool_],
+    arr: np.ndarray,
     shape: tuple[int, int],
     arr_name: str = "array",
 ) -> None:
@@ -84,8 +79,8 @@ def validate_shape(
 
 
 def validate_same_shape(
-    arr1: NDArray[np.number | np.bool_],
-    arr2: NDArray[np.number | np.bool_],
+    arr1: np.ndarray,
+    arr2: np.ndarray,
     arr1_name: str = "array 1",
     arr2_name: str = "array 2",
 ) -> None:

@@ -6,16 +6,19 @@ other operations required before flow routing and metric
 calculation.
 
 Created: 2026-08-01, En-Chi Lee (williameclee@gmail.com)
-Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
+
+from typing import Any
 
 import numpy as np
 from numpy.typing import NDArray
 
 from formosa.geomorphology._native import drainage_preprocessing as preproc_f
-from formosa.geomorphology.drainage.directions import D8Directions
+from formosa.geomorphology.drainage.directions import DirectionEncoding
 from formosa.geomorphology.raster_validation import (
     validate_format_dem,
+    validate_format_dir_encoding,
     validate_format_valids,
 )
 from formosa.utils import NpReal, raise_fortran_error
@@ -35,25 +38,29 @@ def _validate_format_ocean_level(ocean_lvl: Any) -> float:
 
 def detect_ocean_basins_from_boundary(
     dem: NDArray[NpReal],
-    dir_scheme: D8Directions = D8Directions(),
+    dir_scheme: DirectionEncoding | None = None,
     valids: NDArray[np.bool_] | None = None,
     ocean_lvl: float = 0,
     flood_below: bool = True,
 ) -> NDArray[np.int32]:
     """
-    Labels threshold-matching ocean basins connected to the raster boundary.
+    Labels threshold-matching ocean basins connected to the raster
+    boundary.
 
-    A nonzero label identifies one connected boundary basin. Invalid cells, cells above `ocean_level`, and qualifying cells disconnected from the boundary receive label zero.
-    When `flood_below` is false, only cells exactly equal to `ocean_level` are included.
+    A nonzero label identifies one connected boundary basin. Invalid
+    cells, cells above `ocean_lvl`, and qualifying cells
+    disconnected from the boundary receive label zero. When
+    `flood_below` is false, only cells exactly equal to
+    `ocean_lvl` are included.
 
     Parameters
     ----------
     dem : NDArray[number]
         Digital elevation model raster.
         - Expected shape: `(nrows, ncols)`.
-    dir_scheme : D8Directions, optional
-        Instance of `D8Directions` defining neighbour offsets.
-        - Default scheme is `D8Directions()`.
+    dir_scheme : DirectionEncoding, optional
+        Direction encoding scheme defining neighbour offsets.
+        - Default scheme is `D8DirectionEncoding()`.
     valids : NDArray[bool], optional
         Boolean mask indicating valid cells.
         Invalid cells are excluded from ocean basin detection.
@@ -62,7 +69,7 @@ def detect_ocean_basins_from_boundary(
         - Default mask is `None`.
     ocean_lvl : float, optional
         Elevation threshold defining ocean cells.
-        - Default elevation is 0.
+        - Default elevation is `0`.
     flood_below : bool, optional
         Whether elevations strictly below `ocean_lvl` qualify as
         ocean cells.
@@ -72,18 +79,6 @@ def detect_ocean_basins_from_boundary(
 
     Returns
     -------
-    NDArray[int32]
-        Ocean basin labels with the same shape as `dem`.
-
-    Raises
-    ------
-    ValueError
-        If `dem` is empty or not two-dimensional, or if `valids` shape does not
-        match `dem`.
-    TypeError
-        If `dem` does not have a numeric dtype.
-    RuntimeError
-        If the Fortran routine encounters an execution error.
     basins : NDArray[int32]
         Ocean basin labels.
         - Shape: `(nrows, ncols)`, same as `dem`.
@@ -93,6 +88,7 @@ def detect_ocean_basins_from_boundary(
     See also: :func:`invalidate_ocean_basins`.
     """
     dem = validate_format_dem(dem)
+    dir_scheme = validate_format_dir_encoding(dir_scheme)
     valids = validate_format_valids(valids, dem, "DEM")
     ocean_lvl = _validate_format_ocean_level(ocean_lvl)
     if not isinstance(flood_below, (bool, np.bool_)):
@@ -114,7 +110,7 @@ def detect_ocean_basins_from_boundary(
 
 def invalidate_ocean_basins(
     dem: NDArray[NpReal],
-    dir_scheme: D8Directions = D8Directions(),
+    dir_enc: DirectionEncoding | None = None,
     valids: NDArray[np.bool_] | None = None,
     ocean_lvl: float = 0,
     flood_below: bool = True,
@@ -129,9 +125,9 @@ def invalidate_ocean_basins(
     dem : NDArray[number]
         Digital elevation model raster.
         - Expected shape: `(nrows, ncols)`.
-    dir_scheme : D8Directions, optional
-        Instance of `D8Directions` defining neighbour offsets.
-        - Default scheme is `D8Directions()`.
+    dir_enc : DirectionEncoding, optional
+        Direction encoding scheme defining neighbour offsets.
+        - Default scheme is `D8DirectionEncoding()`.
     valids : NDArray[bool], optional
         Boolean mask indicating valid cells.
         Invalid cells remain invalid in the output mask.
@@ -141,7 +137,7 @@ def invalidate_ocean_basins(
         - Default mask is `None`.
     ocean_lvl : int | float, optional
         Elevation threshold defining ocean cells.
-        - Default elevation is 0.
+        - Default elevation is `0`.
     flood_below : bool, optional
         Whether elevations strictly below `ocean_lvl` qualify as
         ocean cells.
@@ -152,20 +148,11 @@ def invalidate_ocean_basins(
         Minimum cell count threshold for ocean basin invalidation.
         Ocean basins containing at least this number of cells are
         invalidated.
-        - Default size is 1.
+        - Default size is `1`.
 
     Returns
     -------
     valids : NDArray[bool]
-
-    Raises
-    ------
-    ValueError
-        If `min_size` is less than 1, `dem` is empty or not 2D, or if `valids` shape does not match `dem`.
-    TypeError
-        If `dem` does not have a numeric dtype.
-    RuntimeError
-        If the Fortran routine encounters an execution error.
         Validity mask with sufficiently large ocean basin cells set
         to `False`.
         - Shape: `(nrows, ncols)`, same as `dem`.
@@ -176,7 +163,7 @@ def invalidate_ocean_basins(
     Basins with cell counts smaller than `min_size` or disconnected
     from the boundary remain valid.
     """
-
+    dir_enc = validate_format_dir_encoding(dir_enc)
     if isinstance(min_size, (bool, np.bool_)) or not isinstance(
         min_size, (int, np.integer)
     ):
@@ -186,7 +173,7 @@ def invalidate_ocean_basins(
 
     dem = np.asarray(dem)
     basins = detect_ocean_basins_from_boundary(
-        dem, dir_scheme, valids=valids, ocean_lvl=ocean_lvl, flood_below=flood_below
+        dem, dir_enc, valids=valids, ocean_lvl=ocean_lvl, flood_below=flood_below
     )
     if valids is None:
         out_valids = np.isfinite(dem)
@@ -195,15 +182,15 @@ def invalidate_ocean_basins(
         out_valids &= np.isfinite(dem)
 
     counts = np.bincount(basins.ravel())
-    sufficiently_large = counts >= min_size
-    sufficiently_large[0] = False
-    out_valids[sufficiently_large[basins]] = False
+    large = counts >= min_size
+    large[0] = False
+    out_valids[large[basins]] = False
     return out_valids
 
 
 def fill_depressions(
     dem: NDArray[NpReal],
-    dir_scheme: D8Directions = D8Directions(),
+    dir_enc: DirectionEncoding | None = None,
     valids: NDArray[np.bool_] | None = None,
     max_fill_size: int | None = None,
 ) -> NDArray[NpReal]:
@@ -224,9 +211,9 @@ def fill_depressions(
         converts the result back to the input dtype; the input is
         not modified.
         - Expected shape: `(nrows, ncols)`.
-    dir_scheme : D8Directions, optional
+    dir_enc : DirectionEncoding, optional
         Flow direction encoding scheme.
-        - Default scheme is `D8Directions()`.
+        - Default scheme is `D8DirectionEncoding()`.
     valids : NDArray[bool], optional
         Boolean mask indicating valid cells.
         Invalid cells are excluded from the fill and retain their
@@ -255,7 +242,9 @@ def fill_depressions(
     processed in any order without changing the filled result.
     """
     dem = validate_format_dem(dem)
+    dir_enc = validate_format_dir_encoding(dir_enc)
     valids = validate_format_valids(valids, dem, "DEM")
+
     if not np.any(valids):
         return dem.copy()
     # Validate max_fill_size
@@ -270,7 +259,7 @@ def fill_depressions(
         dem_f32,
         valids.astype(bool, order="F"),
         np.zeros(dem.shape, dtype=bool, order="F"),
-        dir_scheme.offsets.astype(np.int32, order="F"),
+        dir_enc.offsets.astype(np.int32, order="F"),
     )
     raise_fortran_error("fill_depression", err_code)
 
@@ -280,12 +269,12 @@ def fill_depressions(
     # Find depressions
     labels, err_code = preproc_f.label_mask_areas(
         (valids & (dem_filled > dem_f32)).astype(bool, order="F"),
-        dir_scheme.offsets.astype(np.int32, order="F"),
+        dir_enc.offsets.astype(np.int32, order="F"),
     )
     raise_fortran_error("label_mask_areas", err_code)
     # Count depressions
-    counts = np.bincount(labels.ravel())
-    is_large = counts > max_fill_size
+    cnts = np.bincount(labels.ravel())
+    is_large = cnts > max_fill_size
     is_large[0] = False  # The first is 0, the non-depression cells
     # Treat large depressions as internally drained basins:
     # Add the lowest original cell of each basin to a shared sink
@@ -303,7 +292,7 @@ def fill_depressions(
             dem_f32,
             valids.astype(bool, order="F"),
             more_sinks,
-            dir_scheme.offsets.astype(np.int32, order="F"),
+            dir_enc.offsets.astype(np.int32, order="F"),
         )
         raise_fortran_error("fill_depression", err_code)
         large_basin_mask = is_large[labels]

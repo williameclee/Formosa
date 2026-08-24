@@ -1,7 +1,7 @@
 """
 Defines and transforms colour maps for terrain visualisation.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
@@ -15,7 +15,26 @@ def truncate_colormap(
     n: int = 256,
 ) -> LinearSegmentedColormap:
     """
-    Truncate a colormap to a specified range.
+    Truncates a colour map to a specified range.
+
+    Parameters
+    ----------
+    cmap : LinearSegmentedColormap
+        Source colour map to truncate.
+    minval : float, optional
+        Lower bound of the normalised range `[0, 1]`.
+        - Default value is `0.0`.
+    maxval : float, optional
+        Upper bound of the normalised range `[0, 1]`.
+        - Default value is `1.0`.
+    n : int, optional
+        Number of interpolation points.
+        - Default point count is `256`.
+
+    Returns
+    -------
+    new_cmap : LinearSegmentedColormap
+        Truncated colour map.
     """
     new_cmap = LinearSegmentedColormap.from_list(
         f"trunc({cmap.name},{minval:.2f},{maxval:.2f})",
@@ -44,16 +63,28 @@ def light_terrain(
     """
     Loads a light terrain colour map.
 
-    :param minval: Truncation minimum value
-    :type minval: float
-    :param maxval: Truncation maximum value
-    :type maxval: float
-    :param N: Number of colour levels
-    :type N: int
-    :param reverse: Whether to reverse the colour map
-    :type reverse: bool
-    :return: The light terrain colour map
-    :rtype: LinearSegmentedColormap
+    Parameters
+    ----------
+    minval : float, optional
+        Lower truncation bound.
+        - Default value is `0.0`.
+    maxval : float, optional
+        Upper truncation bound.
+        - Default value is `1.0`.
+    N : int, optional
+        Number of colour levels.
+        - Default level count is `256`.
+    reverse : bool, optional
+        Whether to reverse the colour sequence.
+        - Default option is `False`.
+    **kwargs
+        Additional keyword arguments passed to
+        `LinearSegmentedColormap.from_list`.
+
+    Returns
+    -------
+    cmap : LinearSegmentedColormap
+        Light terrain colour map.
     """
     cmap = LinearSegmentedColormap.from_list(
         "light_terrain_cmap",
@@ -76,18 +107,33 @@ def dune(
     **kwargs,
 ) -> LinearSegmentedColormap:
     """
-    Loads a light terrain colour map.
+    Loads a dune earth-tone colour map.
 
-    :param minval: Truncation minimum value
-    :type minval: float
-    :param maxval: Truncation maximum value
-    :type maxval: float
-    :param N: Number of colour levels
-    :type N: int
-    :param reverse: Whether to reverse the colour map
-    :type reverse: bool
-    :return: The light terrain colour map
-    :rtype: LinearSegmentedColormap
+    Parameters
+    ----------
+    minval : float, optional
+        Lower truncation bound.
+        - Default value is `0.0`.
+    maxval : float, optional
+        Upper truncation bound.
+        - Default value is `1.0`.
+    N : int, optional
+        Number of colour levels.
+        - Default level count is `256`.
+    reverse : bool, optional
+        Whether to reverse the colour sequence.
+        - Default option is `False`.
+    alpha : bool, optional
+        Whether to include custom alpha transparency values.
+        - Default option is `False`.
+    **kwargs
+        Additional keyword arguments passed to
+        `LinearSegmentedColormap.from_list`.
+
+    Returns
+    -------
+    cmap : LinearSegmentedColormap
+        Dune colour map.
     """
     if alpha:
         dune_val_w_alpha = dune_val.copy()
@@ -119,18 +165,30 @@ def mist(
     **kwargs,
 ) -> LinearSegmentedColormap:
     """
-    Loads a light terrain colour map.
+    Loads a mist blue-tone colour map.
 
-    :param minval: Truncation minimum value
-    :type minval: float
-    :param maxval: Truncation maximum value
-    :type maxval: float
-    :param N: Number of colour levels
-    :type N: int
-    :param reverse: Whether to reverse the colour map
-    :type reverse: bool
-    :return: The light terrain colour map
-    :rtype: LinearSegmentedColormap
+    Parameters
+    ----------
+    minval : float, optional
+        Lower truncation bound.
+        - Default value is `0.0`.
+    maxval : float, optional
+        Upper truncation bound.
+        - Default value is `1.0`.
+    N : int, optional
+        Number of colour levels.
+        - Default level count is `256`.
+    reverse : bool, optional
+        Whether to reverse the colour sequence.
+        - Default option is `False`.
+    **kwargs
+        Additional keyword arguments passed to
+        `LinearSegmentedColormap.from_list`.
+
+    Returns
+    -------
+    cmap : LinearSegmentedColormap
+        Mist colour map.
     """
     cmap = LinearSegmentedColormap.from_list(
         "mist_cmap",
@@ -159,18 +217,30 @@ def iceberg(
     **kwargs,
 ) -> LinearSegmentedColormap:
     """
-    Loads a light terrain colour map.
+    Loads an iceberg pale-blue colour map.
 
-    :param minval: Truncation minimum value
-    :type minval: float
-    :param maxval: Truncation maximum value
-    :type maxval: float
-    :param N: Number of colour levels
-    :type N: int
-    :param reverse: Whether to reverse the colour map
-    :type reverse: bool
-    :return: The light terrain colour map
-    :rtype: LinearSegmentedColormap
+    Parameters
+    ----------
+    minval : float, optional
+        Lower truncation bound.
+        - Default value is `0.0`.
+    maxval : float, optional
+        Upper truncation bound.
+        - Default value is `1.0`.
+    N : int, optional
+        Number of colour levels.
+        - Default level count is `256`.
+    reverse : bool, optional
+        Whether to reverse the colour sequence.
+        - Default option is `False`.
+    **kwargs
+        Additional keyword arguments passed to
+        `LinearSegmentedColormap.from_list`.
+
+    Returns
+    -------
+    cmap : LinearSegmentedColormap
+        Iceberg colour map.
     """
     cmap = LinearSegmentedColormap.from_list(
         "iceberg_cmap",

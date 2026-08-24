@@ -5,30 +5,71 @@ backend.
 This module implements internal routines called by the public-facing
 network API and is not intended to be used directly.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
+from numpy.typing import NDArray
 
-from formosa.geomorphology.drainage.directions import D8Directions
-
-
-import numpy.typing as npt
-from typing import Optional
+from formosa.geomorphology.drainage.directions import DirectionEncoding
+from formosa.utils import NpFlowDir
 
 
 def construct_flowgraph(
-    dirs: npt.NDArray[np.integer],
-    dir_scheme: D8Directions,
-    valids: npt.NDArray[np.bool_],
-    orders: npt.NDArray[np.integer],
-    indegs: npt.NDArray[np.integer],
-    seeds: npt.NDArray[np.bool_],
+    dirs: NDArray[NpFlowDir],
+    dir_enc: DirectionEncoding,
+    valids: NDArray[np.bool_],
+    orders: NDArray[np.integer],
+    indegs: NDArray[np.integer],
+    seeds: NDArray[np.bool_],
     preserve_junctions: bool = True,
-    ncells: Optional[int] = None,
-) -> tuple[
-    int, int, npt.NDArray[np.int8], npt.NDArray[np.int32], npt.NDArray[np.int32]
-]:
+    ncells: int | None = None,
+) -> tuple[int, int, NDArray[np.int8], NDArray[np.int32], NDArray[np.int32]]:
+    """
+    Traces flow direction rasters into arc-based flow graph structures.
+
+    Parameters
+    ----------
+    dirs : NDArray[uint8]
+        Flow direction raster.
+        - Expected shape: `(nrows, ncols)`.
+    dir_enc : DirectionEncoding
+        Flow direction encoding scheme.
+    valids : NDArray[bool]
+        Boolean mask indicating valid cells.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+    orders : NDArray[int]
+        Strahler stream orders for each cell.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+    indegs : NDArray[int]
+        Upstream in-degrees for each cell.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+    seeds : NDArray[bool]
+        Boolean mask indicating seed cells to start tracing from.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+    preserve_junctions : bool, optional
+        Whether to break arcs at confluences with in-degree >= 2.
+        - Default option is `True`.
+    ncells : int | None, optional
+        Capacity estimate for allocated graph buffers.
+        - Default size is `None`.
+
+    Returns
+    -------
+    narcs : int
+        Number of valid arcs constructed.
+    nverts : int
+        Number of valid vertices stored.
+    graph_orders : NDArray[int8]
+        Strahler order for each arc.
+        - Shape: `(ncells,)`.
+    graph_verts : NDArray[int32]
+        (row, col) grid coordinates of all traced vertices.
+        - Shape: `(2, 2 * ncells)`.
+    graph_endpts : NDArray[int32]
+        Start and end vertex index in `graph_verts` for each arc.
+        - Shape: `(2, ncells)`.
+    """
     seens = np.zeros_like(dirs, dtype=np.bool_)
 
     # Hold the cell ijs of the start and end node
@@ -55,7 +96,7 @@ def construct_flowgraph(
         seens[si, sj] = True
 
         # Skip isolated point
-        di, dj = dir_scheme.code2d8offset(dirs[si, sj])
+        di, dj = dir_enc.code_to_offset(dirs[si, sj])
         if (di == 0) and (dj == 0):
             continue
 
@@ -68,7 +109,7 @@ def construct_flowgraph(
         ci, cj = si, sj
 
         while True:
-            di, dj = dir_scheme.code2d8offset(dirs[ci, cj])
+            di, dj = dir_enc.code_to_offset(dirs[ci, cj])
             ni = ci + di
             nj = cj + dj
 

@@ -1,22 +1,20 @@
 """
 Validates flow graphs and report invalid topology.
 
-Last modified: 2026-08-18, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
+from numpy.typing import NDArray
 
-from formosa.utils import Backend, NpCanonIndex, raise_fortran_error
-from formosa.geomorphology.drainage.directions import D8Directions
+import formosa.geomorphology.drainage.network._backends.validation_py as val_py
+from formosa.geomorphology._native import network_validation as val_f
+from formosa.geomorphology.drainage.directions import DirectionEncoding
 from formosa.geomorphology.drainage.neighbours import (
     compute_downstream_indices,
 )
-from formosa.geomorphology._native import network_validation as val_f
-import formosa.geomorphology.drainage.network._backends.validation_py as val_py
-
-from typing import Optional
-from numpy.typing import NDArray
-from formosa.utils.typing import NpIndex, NpCoords
+from formosa.utils import Backend, NpCanonIndex, raise_fortran_error
+from formosa.utils.typing import NpCoords, NpFlowDir, NpIndex
 
 
 class GraphTopologyError(RuntimeError):
@@ -45,8 +43,7 @@ class DirectedFlowCycleError(GraphTopologyError):
     def __init__(self, cycle_ijs: NDArray[np.integer]) -> None:
         self.cycle_ijs = np.asarray(cycle_ijs, dtype=np.int32).copy()
         super().__init__(
-            "Selected flow graph contains directed cycles at "
-            f"{self.cycle_ijs.tolist()}."
+            f"Selected flow graph contains directed cycles at {self.cycle_ijs.tolist()}."
         )
 
 
@@ -58,7 +55,7 @@ class IncompleteFlowGraphError(GraphTopologyError):
     def __init__(
         self,
         missing_vtxs: NDArray[np.integer],
-        missing_edges: Optional[NDArray[np.integer]] = None,
+        missing_edges: NDArray[np.integer] | None = None,
     ) -> None:
         self.missing_ijs = np.asarray(missing_vtxs, dtype=np.int32).copy()
         if missing_edges is None:
@@ -66,31 +63,20 @@ class IncompleteFlowGraphError(GraphTopologyError):
         else:
             self.missing_edges = np.asarray(missing_edges, dtype=np.int32).copy()
         super().__init__(
-            "Flow-graph construction omitted selected directed edges "
-            f"{self.missing_edges.tolist()}; participating cells are "
-            f"{self.missing_ijs.tolist()}."
+            f"Flow-graph construction omitted selected directed edges {self.missing_edges.tolist()}; "
+            + f"participating cells are {self.missing_ijs.tolist()}."
         )
 
 
 def _valid_flow_edges(
-    dirs: NDArray[np.integer],
-    valids: NDArray[np.bool_],
-    dir_scheme: D8Directions,
-) -> tuple[
-    NDArray[NpCanonIndex],
-    NDArray[NpCanonIndex],
-    NDArray[np.bool_],
-]:
+    dirs: NDArray[NpFlowDir], valids: NDArray[np.bool_], dir_enc: DirectionEncoding
+) -> tuple[NDArray[NpCanonIndex], NDArray[NpCanonIndex], NDArray[np.bool_]]:
     """
     Returns downstream indices and a mask indicating whether the
     cell flows into a valid neighbouring (non-self) edge.
     """
     dsi, dsj, _, ds_inbounds = compute_downstream_indices(
-        dirs,
-        dir_scheme=dir_scheme,
-        check=False,
-        return_flat_index=False,
-        oob_is_okay=True,
+        dirs, dir_enc, check=False, return_flat_index=False, oob_is_okay=True
     )
 
     # Whether the downstream cell is also valid (not just inbound)
@@ -98,7 +84,7 @@ def _valid_flow_edges(
     ds_valids[ds_inbounds] = valids[dsi[ds_inbounds], dsj[ds_inbounds]]
 
     # Exclude self-loops (where offsets di, dj == 0)
-    not_self = dirs != dir_scheme.no_flow_code
+    not_self = dirs != dir_enc.no_flow_code
 
     has_valid_ds = valids & ds_valids & not_self
     return dsi, dsj, has_valid_ds
@@ -118,20 +104,20 @@ def _validate_flowgraph_coverage(
     represented = np.zeros(has_valid_ds.shape, dtype=bool)
 
     # Identify consecutive vertex pairs that belong to an arc.
-    segment_counts = np.zeros(vtxs.shape[0], dtype=np.int32)
-    np.add.at(segment_counts, arc_endpts[:, 0], 1)
-    np.add.at(segment_counts, arc_endpts[:, 1], -1)
-    segment_valids = np.cumsum(segment_counts)[:-1] > 0
+    seg_cnts = np.zeros(vtxs.shape[0], dtype=np.int32)
+    np.add.at(seg_cnts, arc_endpts[:, 0], 1)
+    np.add.at(seg_cnts, arc_endpts[:, 1], -1)
+    seg_valids = np.cumsum(seg_cnts)[:-1] > 0
 
-    sources = vtxs[:-1][segment_valids]
-    targets = vtxs[1:][segment_valids]
+    srcs = vtxs[:-1][seg_valids]
+    targets = vtxs[1:][seg_valids]
 
     # Confirm each represented edge matches the source cell's expected downstream.
-    matches = (targets[:, 0] == dsi[sources[:, 0], sources[:, 1]]) & (
-        targets[:, 1] == dsj[sources[:, 0], sources[:, 1]]
+    matches = (targets[:, 0] == dsi[srcs[:, 0], srcs[:, 1]]) & (
+        targets[:, 1] == dsj[srcs[:, 0], srcs[:, 1]]
     )
-    matched_sources = sources[matches]
-    represented[matched_sources[:, 0], matched_sources[:, 1]] = True
+    matched_srcs = srcs[matches]
+    represented[matched_srcs[:, 0], matched_srcs[:, 1]] = True
 
     missing_sources = np.argwhere(has_valid_ds & ~represented)
     if missing_sources.size:
@@ -149,7 +135,7 @@ def _validate_flowgraph_coverage(
 def _locate_invalid_graph_topology_fortran(
     vtxs: NDArray[NpCoords],
     endpts: NDArray[NpIndex],
-) -> Optional[NDArray[np.int32]]:
+) -> NDArray[np.int32] | None:
     """
     Returns every topology violation using the capacity-aware
     Fortran scanner.
@@ -171,36 +157,24 @@ def _locate_invalid_graph_topology_fortran(
     NDArray[int32] or None
         Complete `(nintxs, 5)` intersection records using 0-based
         indices, or `None` when no violations are found.
-
-    Raises
-    ------
-    ValueError
-        If the low-level scanner rejects its inputs.
-    MemoryError
-        If scanner workspace or result allocation fails.
-    RuntimeError
-        If the scanner returns an unexpected status or the exact
-        count changes during the retry.
     """
     vtxs_f = np.asfortranarray(vtxs.T, dtype=np.float32)
     endpts_f = np.asfortranarray(endpts.T, dtype=np.int32) + 1
-    capacity = max(vtxs_f.shape[1] // 100, 3)  # Arbitrary capacity that seems to work
+    cpty = max(vtxs_f.shape[1] // 100, 3)  # Arbitrary capacity that seems to work
 
-    intxs, nintxs, err_code = val_f.scan_invalid_graph_topology(
-        vtxs_f, endpts_f, capacity
-    )
+    intxs, nintxs, err_code = val_f.scan_invalid_graph_topology(vtxs_f, endpts_f, cpty)
     raise_fortran_error("scan_invalid_graph_topology", err_code)
 
     if nintxs == 0:
         return None
 
-    if nintxs > capacity:
-        expected_nintxs = nintxs
+    if nintxs > cpty:
+        exp_nintxs = nintxs
         intxs, nintxs, err_code = val_f.scan_invalid_graph_topology(
-            vtxs_f, endpts_f, expected_nintxs
+            vtxs_f, endpts_f, exp_nintxs
         )
         raise_fortran_error("scan_invalid_graph_topology", err_code)
-        if nintxs != expected_nintxs:
+        if nintxs != exp_nintxs:
             raise RuntimeError(
                 "Topology-intersection count changed during exact-size retry."
             )
@@ -211,10 +185,8 @@ def _locate_invalid_graph_topology_fortran(
 
 
 def locate_invalid_graph_topology(
-    vtxs: NDArray[NpCoords],
-    endpts: NDArray[NpIndex],
-    backend: Backend = "fortran",
-) -> Optional[NDArray[np.int32]]:
+    vtxs: NDArray[NpCoords], endpts: NDArray[NpIndex], backend: Backend = "fortran"
+) -> NDArray[np.int32] | None:
     """
     Locates invalid topologies (segment intersections) within and
     between arcs in a graph.
@@ -227,22 +199,23 @@ def locate_invalid_graph_topology(
     Parameters
     ----------
     vtxs : NDArray[number]
-        2D array of shape `(V,2)` representing the grid coordinates
-        (i, j) of each vertex.
-    arc_endpts : NDArray[integer]
-        2D array of shape `(A,2)` containing the start and end
-        vertex indices for each arc in `vtxs`.
+        Grid coordinates (i, j) of each vertex.
+        - Expected shape: `(nvtxs, 2)`.
+    endpts : NDArray[int]
+        Start and end vertex indices for each arc in `vtxs`.
+        - Expected shape: `(narcs, 2)`.
     backend : {'fortran', 'python'}, optional
         Backend to use for computation.
         `'fortran'` uses the Fortran extension for performance,
         while `'python'` uses a pure Python implementation.
-        Default backend is `'fortran'`.
+        - Default backend is `'fortran'`.
 
     Returns
     -------
-    NDArray[int32] or None
-        2D array of shape `(nintxs, 5)` representing the detected
-        intersections, or `None` if no intersections are found.
+    intxs : NDArray[int32] | None
+        Detected intersections, or `None` if no intersections are
+        found.
+        - Shape: `(nintxs, 5)`.
         The rows are sorted lexicographically and each row contains:
         - `iarc`: Index of the first arc (0-based).
         - `jarc`: Index of the second arc (0-based).
@@ -256,17 +229,6 @@ def locate_invalid_graph_topology(
             - 3 : Identical segment.
             - 4 : Endpoint-on-interior (T-junction).
             - 5 : Degenerate segment (some line is actually a point).
-
-    Raises
-    ------
-    ValueError
-        If the shape of `vtxs` or `endpts` is invalid.
-    MemoryError
-        If the Fortran backend cannot allocate its scan workspace or
-        result.
-    RuntimeError
-        If the Fortran scanner returns an unexpected error or an
-        inconsistent count during the exact-size retry.
     """
     if vtxs.ndim != 2 or vtxs.shape[1] != 2:
         raise ValueError("Invalid array shapes passed.")
@@ -294,11 +256,11 @@ def locate_invalid_graph_topology(
 
 
 def _ignore_identical_intergraph_arcs(
-    intxs: Optional[NDArray[np.int32]],
+    intxs: NDArray[np.int32] | None,
     vtxs: NDArray[NpCoords],
     endpts: NDArray[NpIndex],
     graph_ids: NDArray[np.integer],
-) -> Optional[NDArray[np.int32]]:
+) -> NDArray[np.int32] | None:
     """
     Removes topology violations between identical arcs in different
     graphs.
@@ -332,8 +294,8 @@ def _ignore_identical_intergraph_arcs(
 def _locate_disallowed_graph_topology(
     vtxs: NDArray[NpCoords],
     endpts: NDArray[NpIndex],
-    graph_ids: Optional[NDArray[np.integer]] = None,
-) -> Optional[NDArray[np.int32]]:
+    graph_ids: NDArray[np.integer] | None = None,
+) -> NDArray[np.int32] | None:
     """
     Locates violations in arrays stored in internal (2,N) layout.
     """

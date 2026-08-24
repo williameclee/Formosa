@@ -3,7 +3,7 @@
 !! This internal module is called by the Python network API and
 !! other Fortran routines and is not intended to be used directly.
 !!
-!! Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
+!! Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 module network_validation
     use utils, only: ERR_NO_ERROR, ERR_INVALID_INPUT, &
                      ERR_ALLOCATION_FAILURE
@@ -11,8 +11,9 @@ module network_validation
     implicit none(type, external)
     private :: argsort_arcs, record_topology_intersection
 contains
+    !> Helper function for :func:'scan_invalid_graph_topology' to
+    !! sort the arcs by the left edge of their bounding box.
     pure function argsort_arcs(bboxes) result(indices)
-        ! Helper function for 'scan_invalid_graph_topology' to sort the arcs by the left edge of their bounding box.
         implicit none(type, external)
         ! Arguments
         real, intent(in), contiguous :: bboxes(:, :)
@@ -45,12 +46,14 @@ contains
         end do
     end function argsort_arcs
 
+    !> Counts one detected topology violation and stores it if
+    !! capacity remains.
+    !!
+    !! The total count is incremented even after 'intxs' is full.
+    !! This lets the caller distinguish the number stored from the
+    !! exact number found and retry with an exactly sized buffer
+    !! when necessary.
     pure subroutine record_topology_intersection(record, intxs, nintxs)
-        !! Counts one detected topology violation and stores it if capacity remains.
-        !!
-        !! The total count is incremented even after 'intxs' is full. This lets
-        !! the caller distinguish the number stored from the exact number found
-        !! and retry with an exactly sized buffer when necessary.
         implicit none(type, external)
         integer, intent(in) :: record(5)
             !! Intersection record: arc IDs, segment IDs, and intersection flag
@@ -74,7 +77,7 @@ contains
         real, intent(in), contiguous :: vtxs(:, :)
             !! Vertex coordinates arranged as (2, V).
         integer, intent(in), contiguous :: arc_endpts(:, :)
-            !! Inclusive, one-based arc endpoint indices arranged as '(2, narcs)'
+            !! Inclusive, 1-based arc endpoint indices arranged as '(2, narcs)'
         integer, intent(in) :: capacity
             !! Maximum number of intersection records that can be stored
         ! Outputs
@@ -85,9 +88,9 @@ contains
             !! Exact number of violations found, which may exceed 'capacity'
         integer, intent(out) :: err_code
             !! Code indicating the status of the result
-            !!   - 0: Programme executed properly
-            !!   - 1: Input dimensions are incorrect, or input capacity is invalid
-            !!   - 2: Memory allocation failed
+            !! - 0: Programme executed properly
+            !! - 1: Input dimensions are incorrect, or input capacity is invalid
+            !! - 2: Memory allocation failed
         ! Local variables
         integer :: narcs
         integer :: i, j, iarc, jarc, iseg, jseg

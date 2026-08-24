@@ -1,20 +1,20 @@
 """
-Tests flat resolution using the FORTRAN backend.
+Tests flat resolution using the Fortran backend.
 
 This module covers native results, boundary cases, and translation
-of FORTRAN status codes by the public drainage API.
+of Fortran status codes by the public drainage API.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
-import pytest
-import numpy as np
+from types import SimpleNamespace
 
-from formosa import D8Directions
-import formosa.geomorphology.drainage.flat_resolution as flat_m
+import numpy as np
+import pytest
 from formosa.geomorphology._native import drainage_flat_resolution as flat_f
 
-from types import SimpleNamespace
+import formosa.geomorphology.drainage.flat_resolution as flat_m
+from formosa import D8DirectionEncoding
 
 
 @pytest.mark.parametrize(
@@ -27,22 +27,22 @@ from types import SimpleNamespace
     ],
 )
 def test_label_flats_translates_fortran_errors(
-    monkeypatch: pytest.MonkeyPatch, err_code, exception, detail
+    monkeypatch: pytest.MonkeyPatch, err_code: int, exception: Exception, detail: str
 ):
     def fake_label(*args):
         return np.zeros((1, 1), dtype=np.int32), err_code
 
     monkeypatch.setattr(flat_m, "flat_f", SimpleNamespace(label_flats=fake_label))
 
-    with pytest.raises(exception, match=rf"label_flats.*{detail}.*{err_code}"):
-        flat_m.label_flats(
+    with pytest.raises(exception, match=rf"label_flats.*{detail}.*{err_code}"):  # pyright: ignore[reportArgumentType]
+        _ = flat_m.label_flats(
             np.zeros((1, 1), dtype=np.float32), np.ones((1, 1), dtype=bool)
         )
 
 
 def test_flat_synthetic_gradients_follow_breadth_first_layers():
     labels = np.ones((5, 5), dtype=np.int32, order="F")
-    offsets = D8Directions().offsets.astype(np.int32, order="F")
+    offsets = D8DirectionEncoding().offsets.astype(np.int32, order="F")
     centre = np.zeros(labels.shape, dtype=bool, order="F")
     centre[2, 2] = True
 
@@ -70,7 +70,7 @@ def test_flat_synthetic_gradients_follow_breadth_first_layers():
 def test_flat_synthetic_gradients_handle_empty_inputs():
     labels = np.zeros((2, 3), dtype=np.int32, order="F")
     edges = np.zeros(labels.shape, dtype=bool, order="F")
-    offsets = D8Directions().offsets.astype(np.int32, order="F")
+    offsets = D8DirectionEncoding().offsets.astype(np.int32, order="F")
 
     pushing, pushing_err = flat_f.create_pushing_syn_grad(labels, edges, offsets)
     pulling, pulling_err = flat_f.create_pulling_syn_grad(labels, edges, offsets)
@@ -83,7 +83,7 @@ def test_flat_synthetic_gradients_handle_empty_inputs():
 
 def test_create_pulling_syn_grad_rejects_mismatched_shapes():
     with pytest.raises(ValueError, match="must match"):
-        flat_m.create_pulling_syn_grad(
+        _ = flat_m.create_pulling_syn_grad(
             np.ones((2, 3), dtype=np.int32),
             np.ones((3, 2), dtype=bool),
         )

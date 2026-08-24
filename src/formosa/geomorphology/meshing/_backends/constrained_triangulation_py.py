@@ -6,20 +6,20 @@ triangulation through edge flipping. Base triangulation and
 facet-neighbour construction are implemented separately in
 `triangulation_py.py`.
 
-Created: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
+Created: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
+from numpy.typing import NDArray
 
-from formosa.geomorphology.geometry import orient
 from formosa.geomorphology.drainage.network import GraphTopologyError
+from formosa.geomorphology.geometry import orient
 from formosa.geomorphology.meshing._backends.triangulation_py import (
-    _canonical_edge,
+    canonical_edge,
     find_facet_neighbours,
 )
-
-from numpy.typing import NDArray
-from formosa.utils.typing import NpCoords, NpCanonIndex
+from formosa.utils.typing import NpCanonIndex, NpCoords
 
 
 def _update_flipped_neighbours(
@@ -174,7 +174,7 @@ def _find_crossing_edges(
 
     # Pack crossing edge descriptors into output list
     return [
-        (int(iface), int(iside), _canonical_edge(int(a), int(b)))
+        (int(iface), int(iside), canonical_edge(int(a), int(b)))
         for iface, iside, a, b in zip(ifaces[xng], isides[xng], l[xng], m[xng])
     ]
 
@@ -253,9 +253,6 @@ def recover_constraint_edge(
 
     Raises
     ------
-    ValueError
-        If `nabrs` is supplied but its shape does not match
-        `faces`.
     GraphTopologyError
         If constraint edge crosses a locked edge, no flippable edge
         crosses the constraint, or edge flips fail to make progress
@@ -263,8 +260,8 @@ def recover_constraint_edge(
     """
     u, v = map(int, edge)
 
-    target = _canonical_edge(u, v)
-    locked = {_canonical_edge(*locked_edge) for locked_edge in (locked_edges or set())}
+    target = canonical_edge(u, v)
+    locked = {canonical_edge(*locked_edge) for locked_edge in (locked_edges or set())}
 
     r_faces = np.array(faces, dtype=NpCanonIndex, order="C", copy=True)
     if nabrs is None:
@@ -329,9 +326,7 @@ def recover_constraint_edge(
 
 
 def recover_constraint_edges(
-    vtxs: NDArray[NpCoords],
-    faces: NDArray[NpCanonIndex],
-    edges: NDArray[NpCanonIndex],
+    vtxs: NDArray[NpCoords], faces: NDArray[NpCanonIndex], edges: NDArray[NpCanonIndex]
 ) -> tuple[NDArray[NpCanonIndex], NDArray[NpCanonIndex]]:
     """
     Recovers a set of non-crossing constraint edges in a
@@ -371,7 +366,7 @@ def recover_constraint_edges(
     locked: set[tuple[int, int]] = set()
 
     for iedge, edge in enumerate(edges):
-        target = _canonical_edge(int(edge[0]), int(edge[1]))
+        target = canonical_edge(int(edge[0]), int(edge[1]))
         if target in initial_mesh_edges or target in locked:
             locked.add(target)
             continue

@@ -1,10 +1,11 @@
-!> Computes raster flow directions using the FORTRAN backend.
+!> Computes raster flow directions using the Fortran backend.
 !!
 !! This internal module is called by the Python drainage API. It
 !! also provides raster-level analyses of the resulting flow field;
 !! flow-graph operations are implemented in the network modules.
 !!
-!! Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
+!! Created: 2026-08-01, En-Chi Lee (williameclee@gmail.com)
+!! Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 module drainage_flowdir
     use iso_c_binding, only: c_int8_t
     use utils, only: ERR_NO_ERROR, ERR_INVALID_INPUT, &
@@ -13,14 +14,14 @@ module drainage_flowdir
                      array2d_oob, mask2ij
     implicit none(type, external)
 contains
+    !> Finds D-n flow directions for a given elevation grid, using
+    !! the provided flow direction codes and offsets.
+    !!
+    !! Also identifies flat cells where no flow direction can be
+    !! assigned.
     subroutine compute_flowdir_simple( &
         z, valids, dirs, is_flat, nrows, ncols, &
         offsets, codes, noffsets)
-        !! Finds D-n flow directions for a given elevation grid,
-        !! using the provided flow direction codes and offsets.
-        !!
-        !! Also identifies flat cells where no flow direction can be
-        !! assigned.
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols
@@ -66,36 +67,36 @@ contains
         !$omp COLLAPSE(2) &
         !$omp SCHEDULE(STATIC)
         do cj = 1, ncols
-            do ci = 1, nrows
-                if (.not. valids(ci, cj)) cycle
+        do ci = 1, nrows
+            if (.not. valids(ci, cj)) cycle
 
-                zmin = z(ci, cj)
+            zmin = z(ci, cj)
 
-                do iofs = 1, noffsets
-                    ni = ci + offsets(iofs, 1)
-                    nj = cj + offsets(iofs, 2)
-                    ! Check bounds
-                    if (array2d_oob(ni, nj, nrows, ncols)) cycle
-                    ! Check if neighbour is part of the same flat
-                    if (.not. valids(ni, nj)) cycle
-                    ! Check if neighbour has lower elevation
-                    if (z(ni, nj) < zmin) then
-                        zmin = z(ni, nj)
-                        dirs(ci, cj) = codes(iofs)
-                    end if
-                end do
-                if (dirs(ci, cj) == noflow_code) then
-                    is_flat(ci, cj) = .true.
+            do iofs = 1, noffsets
+                ni = ci + offsets(iofs, 1)
+                nj = cj + offsets(iofs, 2)
+                ! Check bounds
+                if (array2d_oob(ni, nj, nrows, ncols)) cycle
+                ! Check if neighbour is part of the same flat
+                if (.not. valids(ni, nj)) cycle
+                ! Check if neighbour has lower elevation
+                if (z(ni, nj) < zmin) then
+                    zmin = z(ni, nj)
+                    dirs(ci, cj) = codes(iofs)
                 end if
             end do
+            if (dirs(ci, cj) == noflow_code) then
+                is_flat(ci, cj) = .true.
+            end if
+        end do
         end do
         !$omp END PARALLEL DO
     end subroutine compute_flowdir_simple
 
+    !> Computes the number of upstream cells (indegs) for each cell.
     subroutine count_indegree( &
         dirs, valids, indegs, nrows, ncols, &
         offsets, codes, noffsets)
-        !! Computes the number of upstream cells (indegs) for each cell
         !! in a flow direction grid.
         implicit none(type, external)
         ! Arguments
@@ -110,10 +111,12 @@ contains
         integer, intent(in) :: offsets(noffsets, 2)
             !! List of offsets for each flow direction
         integer(c_int8_t), intent(in) :: codes(noffsets)
-            !! List of flow direction codes corresponding to the offsets
+            !! List of flow direction codes corresponding to the 
+            !! offsets
         ! Outputs
         integer(c_int8_t), intent(out) :: indegs(nrows, ncols)
-            !! Grid of indegree values, i.e. number of upstream cells that flow into each cell
+            !! Grid of in-degree values, i.e. number of upstream 
+            !! cells that flow into each cell
         ! Local variables
         integer :: iofs
             !! Index for iterating through offsets
@@ -126,40 +129,40 @@ contains
         !$omp COLLAPSE(2) &
         !$omp SCHEDULE(STATIC)
         do cj = 1, ncols
-            do ci = 1, nrows
-                if (.not. valids(ci, cj)) cycle
+        do ci = 1, nrows
+            if (.not. valids(ci, cj)) cycle
 
-                ! Loop over offsets to find neighbours flowing into current cell
-                do iofs = 1, noffsets
-                    ! Upstream neighbour indices
-                    ni = ci - offsets(iofs, 1)
-                    nj = cj - offsets(iofs, 2)
-                    ! Check bounds
-                    if (array2d_oob(ni, nj, nrows, ncols)) cycle
-                    ! Check if neighbour is valid
-                    if (.not. valids(ni, nj)) cycle
-                    ! Skip self-loops
-                    if (ni == ci .and. nj == cj) cycle
-                    ! Check if neighbour flows into current cell
-                    if (dirs(ni, nj) == codes(iofs)) then
-                        indegs(ci, cj) = indegs(ci, cj) + int(1, kind=c_int8_t)
-                    end if
-                end do
+            ! Loop over offsets to find neighbours flowing into current cell
+            do iofs = 1, noffsets
+                ! Upstream neighbour indices
+                ni = ci - offsets(iofs, 1)
+                nj = cj - offsets(iofs, 2)
+                ! Check bounds
+                if (array2d_oob(ni, nj, nrows, ncols)) cycle
+                ! Check if neighbour is valid
+                if (.not. valids(ni, nj)) cycle
+                ! Skip self-loops
+                if (ni == ci .and. nj == cj) cycle
+                ! Check if neighbour flows into current cell
+                if (dirs(ni, nj) == codes(iofs)) then
+                    indegs(ci, cj) = indegs(ci, cj) + int(1, kind=c_int8_t)
+                end if
             end do
+        end do
         end do
         !$omp END PARALLEL DO
     end subroutine count_indegree
 
+    !> Identifies valid cells that are not part of a directed flow
+    !! cycle.
+    !!
+    !! Uses Kahn's algorithm to traverse cells from 0-in-degree
+    !! seeds, successively removing their outgoing edges. Valid
+    !! cells not reached by this traversal belong to a directed
+    !! cycle and remain false in 'acyclics'.
     subroutine find_acyclic_flowdirs( &
         dirs, indegs, valids, nrows, ncols, &
         offsets, codes, noffsets, acyclics, err_code)
-        !! Identifies valid cells that are not part of a directed
-        !! flow cycle.
-        !!
-        !! Uses Kahn's algorithm to traverse cells from 0-in-degree
-        !! seeds, successively removing their outgoing edges. Valid
-        !! cells not reached by this traversal belong to a directed
-        !! cycle and remain false in 'acyclics'.
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols
@@ -167,7 +170,7 @@ contains
         integer(c_int8_t), intent(in) :: dirs(nrows, ncols)
             !! Flow direction grid, using the provided codes
         integer(c_int8_t), intent(in) :: indegs(nrows, ncols)
-            !! Indegree grid for the valid flow field
+            !! In-degree grid for the valid flow field
         logical(kind=1), intent(in) :: valids(nrows, ncols)
             !! Validity mask (false for no-data)
         integer, intent(in) :: noffsets
@@ -194,7 +197,7 @@ contains
             !! Remaining indegrees after removing edges from
             !! processed cells
         logical(kind=1), allocatable :: seeds(:, :)
-            !! Mask of valid zero-indegree cells used to initialise
+            !! Mask of valid 0-in-degree cells used to initialise
             !! the queue
         integer, allocatable :: seed_ijs(:, :)
             !! Queue of (i, j) indices awaiting processing
@@ -226,7 +229,7 @@ contains
         rem_indegs = indegs
         acyclics = .false.
 
-        ! Process and extend the queue of zero-indegree cells
+        ! Process and extend the queue of 0-in-degree cells
         iseed = 1
         do while (iseed <= nseeds)
             ci = seed_ijs(1, iseed)
@@ -246,9 +249,9 @@ contains
             ! Check not a self-loop
             if (ni == ci .and. nj == cj) cycle
 
-            ! Decrement indegree of downstream cell
+            ! Decrement in-degree of downstream cell
             rem_indegs(ni, nj) = rem_indegs(ni, nj) - int(1, kind=c_int8_t)
-            ! If indegree is zero, add to tofill buffer
+            ! If in-degree is 0, add to tofill buffer
             if (rem_indegs(ni, nj) /= 0) cycle
 
             nseeds = nseeds + 1

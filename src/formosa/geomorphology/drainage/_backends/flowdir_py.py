@@ -6,50 +6,99 @@ flow field; flow-graph operations are implemented in the network
 package. These internal routines are called by the public-facing
 drainage API.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
-import numpy as np
 from collections import deque
 
-from formosa.geomorphology.drainage.directions import D8Directions
-from formosa.geomorphology.drainage.neighbours import (
-    get_neighbour_values,
-    compute_downstream_indices,
-)
+import numpy as np
+from numpy.typing import NDArray
 
-from typing import Optional
-import numpy.typing as npt
+from formosa.geomorphology.drainage.directions import DirectionEncoding
+from formosa.geomorphology.drainage.neighbours import (
+    compute_downstream_indices,
+    get_neighbour_values,
+)
+from formosa.geomorphology.raster_validation import (
+    validate_format_dir_encoding,
+    validate_format_valids,
+)
+from formosa.utils import NpFlowDir, NpReal
 
 
 def compute_flowdir_simple(
-    dem: npt.NDArray[np.number],
-    dir_scheme: D8Directions = D8Directions(),
-) -> tuple[npt.NDArray[np.integer], npt.NDArray[np.bool_]]:
-    neighbours, codes, _ = get_neighbour_values(
-        dem, dir_scheme=dir_scheme, include_self=True, pad_value=np.max(dem) + 1
-    )
-    flow2self_code = np.where(np.all(dir_scheme.offsets == [0, 0], axis=1))[0][0]
-    flowdirs = np.full(dem.shape, flow2self_code, dtype=np.int32)
-    # find where not all neighbours are nan
-    valid_mask = ~np.all(np.isnan(neighbours), axis=0)
-    flowdirs[valid_mask] = np.nanargmin(neighbours[:, valid_mask], axis=0)
+    dem: NDArray[NpReal],
+    dir_enc: DirectionEncoding | None = None,
+) -> tuple[NDArray[NpFlowDir], NDArray[np.bool_]]:
+    """
+    Computes steepest-descent flow directions without flat resolution.
 
-    flowdirs = codes[flowdirs].astype(np.int32)
-    is_flat = flowdirs == 0
-    return flowdirs, is_flat
+    Parameters
+    ----------
+    dem : NDArray[number]
+        Digital elevation model raster.
+        - Expected shape: `(nrows, ncols)`.
+    dir_enc : DirectionEncoding, optional
+        Flow direction encoding scheme.
+        - Default scheme is `D8DirectionEncoding()`.
+
+    Returns
+    -------
+    dirs : NDArray[uint8]
+        Flow direction raster.
+        - Shape: `(nrows, ncols)`, same as `dem`.
+    is_flat : NDArray[bool]
+        Boolean mask indicating flat cells.
+        - Shape: `(nrows, ncols)`, same as `dem`.
+    """
+    dir_enc = validate_format_dir_encoding(dir_enc)
+    nabrs, codes, _ = get_neighbour_values(
+        dem, dir_enc, include_self=True, pad_val=np.max(dem) + 1
+    )
+    flow2self_code = np.where(np.all(dir_enc.offsets == [0, 0], axis=1))[0][0]
+    dirs = np.full(dem.shape, flow2self_code, dtype=NpFlowDir)
+    # find where not all neighbours are nan
+    valid_mask = ~np.all(np.isnan(nabrs), axis=0)
+    dirs[valid_mask] = np.nanargmin(nabrs[:, valid_mask], axis=0)
+
+    dirs = codes[dirs].astype(NpFlowDir)
+    is_flat = dirs == 0
+    return dirs, is_flat
 
 
 def count_indegree(
-    dirs: npt.NDArray[np.integer],
-    dir_scheme: D8Directions = D8Directions(),
-    valids: Optional[npt.NDArray[np.bool_]] = None,
-) -> npt.NDArray[np.int8]:
-    if valids is None:
-        valids = np.ones(dirs.shape, dtype=bool)
+    dirs: NDArray[NpFlowDir],
+    dir_enc: DirectionEncoding | None = None,
+    valids: NDArray[np.bool_] | None = None,
+) -> NDArray[np.int8]:
+    """
+    Counts the number of upstream cells for each cell.
+
+    Parameters
+    ----------
+    dirs : NDArray[uint8]
+        Flow direction raster.
+        - Expected shape: `(nrows, ncols)`.
+    dir_enc : DirectionEncoding, optional
+        Flow direction encoding scheme.
+        - Default scheme is `D8DirectionEncoding()`.
+    valids : NDArray[bool], optional
+        Boolean mask indicating valid cells.
+        If `None`, all cells are considered valid.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+        - Default mask is `None`.
+
+    Returns
+    -------
+    indegs : NDArray[int8]
+        Upstream in-degree for each cell.
+        - Shape: `(nrows, ncols)`, same as `dirs`.
+    """
+    dir_enc = validate_format_dir_encoding(dir_enc)
+    valids = validate_format_valids(valids, dirs, "flow direction raster")
     indegs = np.zeros(dirs.shape, dtype=np.int8)
     dsi, dsj, _, ds_valids = compute_downstream_indices(
-        dirs, dir_scheme=dir_scheme, valids=valids, check=False, return_flat_index=False
+        dirs, dir_enc=dir_enc, valids=valids, check=False, return_flat_index=False
     )
 
     for i in range(dirs.shape[0]):
@@ -66,26 +115,28 @@ def count_indegree(
 
 
 def find_acyclic_flowdirs(
-    dirs: npt.NDArray[np.integer],
-    indegs: npt.NDArray[np.integer],
-    valids: npt.NDArray[np.bool_],
-    dir_scheme: D8Directions = D8Directions(),
-) -> npt.NDArray[np.bool_]:
+    dirs: NDArray[NpFlowDir],
+    indegs: NDArray[np.integer],
+    valids: NDArray[np.bool_],
+    dir_enc: DirectionEncoding | None = None,
+) -> NDArray[np.bool_]:
     """Finds valid cells that do not belong to a directed flow cycle."""
+    dir_enc = validate_format_dir_encoding(dir_enc)
+
     remaining_indegs = np.asarray(indegs, dtype=np.int8).copy()
     acyclics = np.zeros(valids.shape, dtype=bool)
     queue = deque(map(tuple, np.argwhere(valids & (remaining_indegs == 0))))
 
     dsi, dsj, _, ds_inbounds = compute_downstream_indices(
         dirs,
-        dir_scheme=dir_scheme,
+        dir_enc=dir_enc,
         check=False,
         return_flat_index=False,
         oob_is_okay=True,
     )
     ds_valids = np.zeros(valids.shape, dtype=bool)
     ds_valids[ds_inbounds] = valids[dsi[ds_inbounds], dsj[ds_inbounds]]
-    di, dj = dir_scheme.code2d8offset(dirs)
+    di, dj = dir_enc.code_to_offset(dirs)
     has_valid_ds = valids & ds_valids & ((di != 0) | (dj != 0))
 
     while queue:

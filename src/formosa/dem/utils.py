@@ -1,35 +1,37 @@
 """
 Derives raster coordinates from digital elevation model metadata.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
 import rasterio.transform as rt
+from numpy.typing import NDArray
 from rasterio.transform import Affine
-
-import numpy.typing as npt
 
 
 def transform2xy(
     transform: Affine, shape: tuple[int, int]
-) -> tuple[npt.NDArray[np.floating], npt.NDArray[np.floating]]:
+) -> tuple[NDArray[np.floating], NDArray[np.floating]]:
     """
-    Generate X, Y coordinate arrays from a rasterio affine transform and shape.
+    Generates X and Y coordinate arrays from an affine transform.
 
     Parameters
     ----------
     transform : Affine
-        Affine transformation mapping pixel coordinates to spatial coordinates.
+        Affine transformation mapping pixel coordinates to spatial
+        coordinates.
     shape : tuple[int, int]
-        Shape of the raster data as (rows, columns).
+        Shape of the raster data as `(nrows, ncols)`.
 
     Returns
-        -------
-    x : ndarray[float]
-        2D array of x-coordinates.
-    y : ndarray[float]
-        2D array of y-coordinates.
+    -------
+    x : NDArray[float]
+        x-coordinates.
+        - Shape: `shape`.
+    y : NDArray[float]
+        y-coordinates.
+        - Shape: `shape`.
     """
     ii, jj = np.meshgrid(np.arange(shape[1]), np.arange(shape[0]))
     xx, yy = rt.xy(transform, jj, ii)

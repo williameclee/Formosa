@@ -1,4 +1,9 @@
-"""Tests terrain operations that do not require a native backend result."""
+"""
+Tests terrain operations that do not require a native backend
+result.
+
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
+"""
 
 import numpy as np
 import pytest
@@ -32,4 +37,6 @@ def test_compute_slope_rejects_coordinate_shape_mismatch(axis):
     kwargs = {axis: coordinate}
 
     with pytest.raises(ValueError, match="must match"):
-        compute_slope(np.zeros((3, 3)), **kwargs)
+        _ = compute_slope(
+            np.zeros((3, 3)), **kwargs  # pyright: ignore[reportArgumentType]
+        )

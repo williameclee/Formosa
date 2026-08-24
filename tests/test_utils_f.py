@@ -1,17 +1,19 @@
 """
-Tests shared utility routines in the FORTRAN backend.
+Tests shared utility routines in the Fortran backend.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
-import pytest
-from tests.core import *
-
 import numpy as np
-
-from formosa import D8Directions
-import formosa.geomorphology.drainage.neighbours as utils_m
+import pytest
 from formosa.geomorphology._native import utils as utils_f
+from numpy.typing import NDArray
+
+import formosa.geomorphology.drainage.neighbours as utils_m
+from formosa import D8DirectionEncoding
+from formosa.geomorphology.drainage import DirectionEncoding
+from formosa.utils.typing import NpCanonIndex, NpFlowDir, NpReal
+from tests.core import *
 
 
 @pytest.mark.parametrize(
@@ -26,7 +28,7 @@ from formosa.geomorphology._native import utils as utils_f
         (1, 5, 3, 4, 0),
     ],
 )
-def test_ij2id(i, j, nrows, ncols, id):
+def test_ij2id(i: int, j: int, nrows: int, ncols: int, id: int):
     assert utils_f.ij2id_checked(i, j, nrows, ncols) == id
 
 
@@ -41,7 +43,7 @@ def test_ij2id(i, j, nrows, ncols, id):
         (13, 3, 4, 0, 0, False),
     ],
 )
-def test_id2ij(id, nrows, ncols, i, j, is_valid):
+def test_id2ij(id: int, nrows: int, ncols: int, i: int, j: int, is_valid: bool):
     assert utils_f.id2ij_checked(id, nrows, ncols) == (i, j, is_valid)
 
 
@@ -66,7 +68,13 @@ def test_id2ij(id, nrows, ncols, i, j, is_valid):
         ),
     ],
 )
-def test_mask2id(mask, max_len, exp_cnt, exp_err_code, exp_ids):
+def test_mask2id(
+    mask: NDArray[np.bool_],
+    max_len: int,
+    exp_cnt: int,
+    exp_err_code: int,
+    exp_ids: NDArray[np.integer],
+):
     ids, cnt, err_code = utils_f.mask2id(mask.astype(bool, order="F"), max_len)
 
     assert cnt == exp_cnt
@@ -96,7 +104,13 @@ def test_mask2id(mask, max_len, exp_cnt, exp_err_code, exp_ids):
         ),
     ],
 )
-def test_mask2ij(mask, max_len, exp_cnt, exp_err_code, exp_ijs):
+def test_mask2ij(
+    mask: NDArray[np.bool_],
+    max_len: int,
+    exp_cnt: int,
+    exp_err_code: int,
+    exp_ijs: NDArray[np.integer],
+):
     ijs, cnt, err_code = utils_f.mask2ij(mask.astype(bool, order="F"), max_len)
 
     assert cnt == exp_cnt
@@ -128,23 +142,25 @@ def test_direction_utilities_infer_input_shapes():
 
 
 def _assert_min_heap(queue, queue_size, elevations):
-    for position in range(queue_size):
-        left = 2 * position + 1
+    for pos in range(queue_size):
+        left = 2 * pos + 1
         right = left + 1
-        parent_elevation = elevations[queue[position] - 1]
+        prnt_z = elevations[queue[pos] - 1]
         if left < queue_size:
-            assert parent_elevation <= elevations[queue[left] - 1]
+            assert prnt_z <= elevations[queue[left] - 1]
         if right < queue_size:
-            assert parent_elevation <= elevations[queue[right] - 1]
+            assert prnt_z <= elevations[queue[right] - 1]
 
 
-def _drain_priority_queue(queue, queue_size, elevations):
+def _drain_priority_queue(
+    queue: NDArray[np.int32], queue_size: NDArray[np.int32], dem: NDArray[NpReal]
+):
     popped_ids = []
     while queue_size.item() > 0:
-        popped, err_code = utils_f.pop_priority_queue(queue, queue_size, elevations)
+        popped, err_code = utils_f.pop_priority_queue(queue, queue_size, dem)
         assert err_code == 0
         popped_ids.append(popped)
-        _assert_min_heap(queue, queue_size.item(), elevations)
+        _assert_min_heap(queue, queue_size.item(), dem)
     return popped_ids
 
 
@@ -156,7 +172,9 @@ def _drain_priority_queue(queue, queue_size, elevations):
         ([5, 1, 4, 3, 2], [2, 5, 4, 3, 1]),
     ],
 )
-def test_priority_queue_push_pop_order(z, exp_ids):
+def test_priority_queue_push_pop_order(
+    z: NDArray[NpReal] | list[int], exp_ids: NDArray[NpReal] | list[int]
+):
     z = np.array(z, dtype=np.float32)
     queue = np.zeros(z.size, dtype=np.int32)
     queue_size = np.array(0, dtype=np.int32)
@@ -176,12 +194,12 @@ def test_priority_queue_matches_sorted_random_elevations():
     queue = np.zeros(z.size, dtype=np.int32)
     queue_size = np.array(0, dtype=np.int32)
 
-    for cell_id in insertion_order:
-        err_code = utils_f.push_priority_queue(queue, queue_size, int(cell_id), z)
+    for cid in insertion_order:
+        err_code = utils_f.push_priority_queue(queue, queue_size, int(cid), z)
         assert err_code == 0
 
-    expected = (np.argsort(z) + 1).tolist()
-    assert _drain_priority_queue(queue, queue_size, z) == expected
+    exp = (np.argsort(z) + 1).tolist()
+    assert _drain_priority_queue(queue, queue_size, z) == exp
 
 
 def test_priority_queue_handles_equal_elevations_and_reports_invalid_operations():
@@ -213,14 +231,14 @@ def test_priority_queue_handles_equal_elevations_and_reports_invalid_operations(
 
 @pytest.mark.parametrize(
     (
-        *("dirs", "dir_scheme", "valids"),
+        *("dirs", "dir_enc", "valids"),
         *("exp_dsi", "exp_dsj", "exp_dsij", "exp_inbounds"),
         "should_warn",
     ),
     [
         (
             [[3, 3, 3], [3, 3, 3], [1, 1, 0]],
-            D8Directions(transform_codes=lambda x: x),
+            D8DirectionEncoding(code_trans_func=lambda x: x),
             None,
             [[1, 1, 1], [2, 2, 2], [2, 2, 2]],
             [[0, 1, 2], [0, 1, 2], [1, 2, 2]],
@@ -230,7 +248,7 @@ def test_priority_queue_handles_equal_elevations_and_reports_invalid_operations(
         ),
         (
             [[5, 1, 1], [5, 1, 1], [5, 1, 1]],
-            D8Directions(transform_codes=lambda x: x),
+            D8DirectionEncoding(code_trans_func=lambda x: x),
             None,
             [[0, 0, 0], [1, 1, 1], [2, 2, 2]],
             [[-1, 2, 3], [-1, 2, 3], [-1, 2, 3]],
@@ -240,7 +258,7 @@ def test_priority_queue_handles_equal_elevations_and_reports_invalid_operations(
         ),
         (
             [[3, 3, 3], [3, 3, 3], [1, 1, 0]],
-            D8Directions(transform_codes=lambda x: x),
+            D8DirectionEncoding(code_trans_func=lambda x: x),
             [[F, T, T], [T, T, T], [T, T, T]],
             [[-1, 1, 1], [2, 2, 2], [2, 2, 2]],
             [[-1, 1, 2], [0, 1, 2], [1, 2, 2]],
@@ -250,7 +268,7 @@ def test_priority_queue_handles_equal_elevations_and_reports_invalid_operations(
         ),
         (
             [[1, 2, 2, 2], [8, 1, 1, 1], [8, 8, 8, 8], [1, 2, 1, 2]],
-            D8Directions(transform_codes=lambda x: x),
+            D8DirectionEncoding(code_trans_func=lambda x: x),
             None,
             [[0, 1, 1, 1], [0, 1, 1, 1], [1, 1, 1, 1], [3, 4, 3, 4]],
             [[1, 2, 3, 4], [1, 2, 3, 4], [1, 2, 3, 4], [1, 2, 3, 4]],
@@ -261,26 +279,33 @@ def test_priority_queue_handles_equal_elevations_and_reports_invalid_operations(
     ],
 )
 def test_downstreamid(
-    dirs, dir_scheme, valids, exp_dsi, exp_dsj, exp_dsij, exp_inbounds, should_warn
+    dirs: NDArray[NpFlowDir],
+    dir_enc: DirectionEncoding,
+    valids: NDArray[np.bool_] | None,
+    exp_dsi: NDArray[NpCanonIndex],
+    exp_dsj: NDArray[NpCanonIndex],
+    exp_dsij: NDArray[NpCanonIndex] | None,
+    exp_inbounds: NDArray[np.bool_],
+    should_warn: bool,
 ):
     if should_warn:
         with pytest.raises(ValueError):
             dsi, dsj, dsij, ds_inbounds = utils_m.compute_downstream_indices(
                 np.array(dirs),
-                dir_scheme=dir_scheme,
+                dir_enc,
                 valids=np.array(valids) if valids is not None else None,
             )
         with pytest.warns(UserWarning):
             dsi, dsj, dsij, ds_inbounds = utils_m.compute_downstream_indices(
                 np.array(dirs),
-                dir_scheme=dir_scheme,
+                dir_enc,
                 valids=np.array(valids) if valids is not None else None,
                 check=False,
             )
     else:
         dsi, dsj, dsij, ds_inbounds = utils_m.compute_downstream_indices(
             np.array(dirs),
-            dir_scheme=dir_scheme,
+            dir_enc,
             valids=np.array(valids) if valids is not None else None,
         )
     np.testing.assert_array_equal(dsi, np.array(exp_dsi))

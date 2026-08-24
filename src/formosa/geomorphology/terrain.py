@@ -6,7 +6,7 @@ This module exposes public NumPy APIs for terrain metrics. Isolation
 and prominence use the internal Fortran backend.
 
 Created: 2026-08-01, En-Chi Lee (williameclee@gmail.com)
-Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
 import warnings
@@ -18,11 +18,12 @@ from numpy.typing import NDArray
 
 from formosa.geomorphology._native import terrain as terrain_f
 from formosa.geomorphology.drainage.directions import (
-    D8Directions,
+    DirectionEncoding,
     validate_direction_offsets,
 )
 from formosa.geomorphology.raster_validation import (
     validate_format_dem,
+    validate_format_dir_encoding,
     validate_format_valids,
 )
 from formosa.utils import Coords, NpCanonIndex, NpCoords, NpReal, raise_fortran_error
@@ -64,7 +65,8 @@ def compute_slope(
     -------
     slope : NDArray[float]
         Magnitude of the elevation gradient in rise per horizontal
-        distance unit, with the same shape as `dem`.
+        distance unit.
+        - Shape: `(nrows, ncols)`, same as `dem`.
     """
     dem = validate_format_dem(dem)
     if x is not None:
@@ -86,13 +88,13 @@ def compute_slope(
     slope_x /= dxx
     slope_y /= dyy
 
-    slope = np.sqrt(slope_x**2 + slope_y**2)
+    slope = np.sqrt(slope_x**2 + slope_y**2).astype(dem.dtype)
     return slope
 
 
 def compute_isolation(
     dem: NDArray[NpReal],
-    valids: Optional[NDArray[np.bool_]] = None,
+    valids: NDArray[np.bool_] | None = None,
     dx: Coords = 1.0,
     dy: Coords = 1.0,
 ) -> tuple[
@@ -120,7 +122,7 @@ def compute_isolation(
     dx, dy : int | float, optional
         Positive, finite column and row spacing, respectively.
         The isolation distances use the same units as these values.
-        Both default to `1.0`.
+        - Default spacings are `1.0`.
 
     Returns
     -------
@@ -141,18 +143,6 @@ def compute_isolation(
         observation-window boundaries.
         - Shape: `(nrows, ncols)`, same as `dem`.
 
-    Raises
-    ------
-    ValueError
-        If `dem` is empty or not 2D, or if `valids` does not have
-        the same shape as `dem`, or if either grid spacing is non-
-        finite, non-positive, or cannot be represented by the native
-        backend.
-    TypeError
-        If `dem` is not a real numeric array or either grid spacing
-        is not a real numeric scalar.
-    RuntimeError
-        If the Fortran backend reports an execution error.
     Notes
     -----
     See [Kirmse & de Ferranti (2017)](https://doi.org/10.1177/0309133317738163)
@@ -216,8 +206,8 @@ class ProminenceFeatureKind(IntFlag):
 @overload
 def compute_prominence(
     dem: NDArray[np.unsignedinteger],
-    valids: Optional[NDArray[np.bool_]] = None,
-    dir_scheme: D8Directions = D8Directions(),
+    dir_enc: DirectionEncoding | None = None,
+    valids: NDArray[np.bool_] | None = None,
 ) -> tuple[
     NDArray[np.int64],
     NDArray[np.int32],
@@ -231,8 +221,8 @@ def compute_prominence(
 @overload
 def compute_prominence(
     dem: NDArray[NpReal],
-    valids: Optional[NDArray[np.bool_]] = None,
-    dir_scheme: D8Directions = D8Directions(),
+    dir_enc: DirectionEncoding | None = None,
+    valids: NDArray[np.bool_] | None = None,
 ) -> tuple[
     NDArray[NpReal],
     NDArray[np.int32],
@@ -245,8 +235,8 @@ def compute_prominence(
 
 def compute_prominence(
     dem: NDArray[NpReal | np.unsignedinteger],
-    valids: Optional[NDArray[np.bool_]] = None,
-    dir_scheme: D8Directions = D8Directions(),
+    dir_enc: DirectionEncoding | None = None,
+    valids: NDArray[np.bool_] | None = None,
 ) -> tuple[
     NDArray[NpReal | np.int64],
     NDArray[np.int32],
@@ -268,15 +258,15 @@ def compute_prominence(
     dem : NDArray[number]
         Digital elevation model raster.
         - Expected shape: `(nrows, ncols)`.
+    dir_enc : DirectionEncoding, optional
+        Direction scheme defining neighbour connectivity offsets.
+        - Default scheme is `D8DirectionEncoding()`.
     valids : NDArray[bool], optional
         Boolean mask indicating valid cells.
         Non-finite DEM cells are always invalid.
         If `None`, all finite cells are assumed valid.
         - Expected shape: `(nrows, ncols)`, same as `dem`.
         - Default mask is `None`.
-    dir_scheme : D8Directions, optional
-        Direction scheme defining neighbour connectivity offsets.
-        - Default scheme is `D8Directions()`.
 
     Returns
     -------
@@ -318,21 +308,7 @@ def compute_prominence(
         - For a saddle, its parent is the next enclosing saddle that
         joins its surrounding ridge system.
         - Root features contain `-1`.
-        - Size: `(nfeats,)`
-
-    Raises
-    ------
-    ValueError
-        If `dem` is empty or not 2D, or if `valids` does not have
-        the same shape as `dem`.
-    TypeError
-        If `dem` is not a real numeric array.
-    RuntimeError
-        If the Fortran backend reports an execution error.
-    RuntimeWarning
-        If conversion to the float32 backend merges distinct valid
-        elevations, or if prominence values exceed the range of the
-        returned dtype.
+        - Shape: `(nfeats,)`.
 
     Notes
     -----
@@ -341,7 +317,8 @@ def compute_prominence(
     """
     dem = validate_format_dem(dem)  # type: ignore
     valids = validate_format_valids(valids, dem, "DEM")
-    ofsts_f = validate_direction_offsets(dir_scheme.offsets)
+    dir_enc = validate_format_dir_encoding(dir_enc)
+    ofsts_f = validate_direction_offsets(dir_enc.offsets)
 
     with np.errstate(over="ignore", invalid="ignore"):
         dem_f = np.asfortranarray(dem, dtype=np.float32)

@@ -1,21 +1,20 @@
 """
 Tests public operations that mutate flow graphs.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
-from tests.core import *
-
-import pytest
 import numpy as np
+import pytest
 
-from formosa import D8Directions
 import formosa.geomorphology.drainage.network.construction as constr_m
 import formosa.geomorphology.drainage.network.editing as editing_m
+from formosa import D8DirectionEncoding
+from tests.core import *
 
 
 def test_remove_unused_vertices_compacts_arc_ranges():
-    vertices = np.array(
+    vtxs = np.array(
         [
             [99, 99],
             *([0, 0], [1, 0]),
@@ -27,42 +26,38 @@ def test_remove_unused_vertices_compacts_arc_ranges():
     )
     endpts = np.array([[1, 2], [5, 7]], dtype=np.int32)
 
-    compact_vertices, compact_endpts = editing_m.remove_unused_vertices(
-        vertices, endpts
-    )
+    compact_vtxs, compact_endpts = editing_m.remove_unused_vertices(vtxs, endpts)
 
     np.testing.assert_array_equal(
-        compact_vertices, [[0, 0], [1, 0], [2, 0], [3, 0], [4, 0]]
+        compact_vtxs, [[0, 0], [1, 0], [2, 0], [3, 0], [4, 0]]
     )
     np.testing.assert_array_equal(compact_endpts, [[0, 1], [2, 4]])
     assert compact_endpts[0, 1] + 1 == compact_endpts[1, 0]
 
 
 def test_remove_unused_vertices_handles_empty_graph():
-    vertices = np.array([[99, 99]], dtype=np.int32)
+    vtxs = np.array([[99, 99]], dtype=np.int32)
     endpts = np.empty((0, 2), dtype=np.int32)
 
-    compact_vertices, compact_endpts = editing_m.remove_unused_vertices(
-        vertices, endpts
-    )
+    compact_vtxs, compact_endpts = editing_m.remove_unused_vertices(vtxs, endpts)
 
-    assert compact_vertices.shape == (0, 2)
-    assert compact_vertices.dtype == vertices.dtype
+    assert compact_vtxs.shape == (0, 2)
+    assert compact_vtxs.dtype == vtxs.dtype
     assert compact_endpts.shape == (0, 2)
     assert compact_endpts.dtype == endpts.dtype
 
 
 def test_insert_endpt_can_remove_unused_vertices():
     orders = np.array([1], dtype=np.int8)
-    vertices = np.array([[99, 99], [0, 0], [1, 0], [2, 0], [98, 98]])
+    vtxs = np.array([[99, 99], [0, 0], [1, 0], [2, 0], [98, 98]])
     endpts = np.array([[1, 3]], dtype=np.int32)
 
-    out_orders, out_vertices, out_endpts = editing_m.insert_endpt(
-        orders, vertices, endpts, 2, remove_unused=True
+    out_orders, out_vtxs, out_endpts = editing_m.insert_endpt(
+        orders, vtxs, endpts, 2, remove_unused=True
     )
 
     np.testing.assert_array_equal(out_orders, [1, 1])
-    np.testing.assert_array_equal(out_vertices, [[0, 0], [1, 0], [1, 0], [2, 0]])
+    np.testing.assert_array_equal(out_vtxs, [[0, 0], [1, 0], [1, 0], [2, 0]])
     np.testing.assert_array_equal(out_endpts, [[0, 1], [2, 3]])
 
 
@@ -197,21 +192,19 @@ def test_graph_insert_endpt():
 
 
 def test_network_graph_concat_3x3():
-    dir_scheme = D8Directions(transform_codes=lambda x: x)
+    dir_enc = D8DirectionEncoding(code_trans_func=lambda x: x)
 
     dirs = np.array([[3, 3, 3], [3, 3, 3], [1, 1, 0]])
     valids = np.array([[T, F, T], [T, T, T], [T, T, T]])
-    arc_orders, vertex_ijs, arc_endpts = constr_m.construct_flowgraph(
-        dirs, dir_scheme=dir_scheme, backend="python", min_order=1, valids=valids
+    orders, vtxs, endpts = constr_m.construct_flowgraph(
+        dirs, dir_enc, min_order=1, valids=valids, backend="python"
     )
 
     exp_s_orders = np.array([1, 2])
     exp_s_endpts = np.array([[0, 10], [12, 13]])
 
-    s_arc_orders, s_vertex_ijs, s_arc_endpts = editing_m.concat_flowgraph(
-        arc_orders, vertex_ijs, arc_endpts
-    )
-    assert s_vertex_ijs.shape[0] == vertex_ijs.shape[0] + arc_orders.shape[0] - 1
-    assert arc_endpts[-1, 1] == vertex_ijs.shape[0] - 1
-    np.testing.assert_array_equal(s_arc_orders, exp_s_orders)
-    np.testing.assert_array_equal(s_arc_endpts, exp_s_endpts)
+    s_orders, s_vtxs, s_endpts = editing_m.concat_flowgraph(orders, vtxs, endpts)
+    assert s_vtxs.shape[0] == vtxs.shape[0] + orders.shape[0] - 1
+    assert endpts[-1, 1] == vtxs.shape[0] - 1
+    np.testing.assert_array_equal(s_orders, exp_s_orders)
+    np.testing.assert_array_equal(s_endpts, exp_s_endpts)

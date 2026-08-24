@@ -7,7 +7,7 @@ applies conventional drainage network operations to the reciprocal
 field.
 
 Created: 2026-08-01, En-Chi Lee (williameclee@gmail.com)
-Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
@@ -15,12 +15,13 @@ from numpy.typing import NDArray
 
 import formosa.geomorphology.drainage.flowdir as flowdir_m
 from formosa.geomorphology._native import drainage_ridges as ridges_f
-from formosa.geomorphology.drainage.directions import D8Directions
+from formosa.geomorphology.drainage.directions import DirectionEncoding
 from formosa.geomorphology.drainage.metrics import (
     compute_dist2source,
     compute_flow_strahler_order,
 )
 from formosa.geomorphology.raster_validation import (
+    validate_format_dir_encoding,
     validate_format_flowdirs,
     validate_format_freeform_coordinates,
     validate_format_valids,
@@ -30,10 +31,10 @@ from formosa.utils import Backend, NpCoords, NpFlowDir, raise_fortran_error
 
 def compute_dist2conf_max(
     dirs: NDArray[NpFlowDir],
-    valids: Optional[NDArray[np.bool_]] = None,
-    x: Optional[NDArray[np.number]] = None,
-    y: Optional[NDArray[np.number]] = None,
-    dir_scheme: D8Directions = D8Directions(),
+    dir_enc: DirectionEncoding | None = None,
+    valids: NDArray[np.bool_] | None = None,
+    x: NDArray[NpCoords] | None = None,
+    y: NDArray[NpCoords] | None = None,
 ) -> NDArray[np.float32]:
     """
     Computes the maximum distance to confluence for each cell with
@@ -50,6 +51,9 @@ def compute_dist2conf_max(
     dirs : NDArray[uint8]
         Flow direction raster.
         - Expected shape: `(nrows, ncols)`.
+    dir_enc : DirectionEncoding, optional
+        Flow direction encoding scheme.
+        - Default scheme is `D8DirectionEncoding()`.
     valids : NDArray[bool], optional
         Boolean mask indicating valid cells.
         If `None`, all cells are considered valid.
@@ -65,10 +69,6 @@ def compute_dist2conf_max(
         If `None`, cell row indices are used.
         - Expected shape: `(nrows, ncols)`, same as `dirs`.
         - Default input is `None`.
-    dir_scheme : D8Directions, optional
-        Instance of `D8Directions` defining the flow direction
-        scheme.
-        - Default scheme is `D8Directions()`.
 
     Returns
     -------
@@ -96,6 +96,7 @@ def compute_dist2conf_max(
     copies.
     """
     dirs = validate_format_flowdirs(dirs)
+    dir_enc = validate_format_dir_encoding(dir_enc)
     valids = validate_format_valids(valids, dirs, "flow direction raster")
     x, y = validate_format_freeform_coordinates(x, y, dirs.shape, np.float32)
 
@@ -107,8 +108,8 @@ def compute_dist2conf_max(
         np.asfortranarray(valids, dtype=bool),
         np.asfortranarray(x, dtype=np.float32),
         np.asfortranarray(y, dtype=np.float32),
-        np.asfortranarray(dir_scheme.offsets, dtype=np.int32),
-        np.asfortranarray(dir_scheme.codes, dtype=np.uint8),
+        np.asfortranarray(dir_enc.offsets, dtype=np.int32),
+        np.asfortranarray(dir_enc.codes, dtype=np.uint8),
     )
     raise_fortran_error("compute_max_branch_dist", err_code)
     # f2py normally returns the requested representation already; this is then
@@ -118,10 +119,10 @@ def compute_dist2conf_max(
 
 def compute_ridgedir(
     dirs: NDArray[NpFlowDir],
-    dir_scheme: D8Directions = D8Directions(),
-    valids: Optional[NDArray[np.bool_]] = None,
-    x: Optional[NDArray[np.number]] = None,
-    y: Optional[NDArray[np.number]] = None,
+    dir_enc: DirectionEncoding | None = None,
+    valids: NDArray[np.bool_] | None = None,
+    x: NDArray[NpCoords] | None = None,
+    y: NDArray[NpCoords] | None = None,
 ) -> NDArray[NpFlowDir]:
     """
     Computes flow directions over the inverted maximum-confluence field.
@@ -131,10 +132,9 @@ def compute_ridgedir(
     dirs : NDArray[uint8]
         Flow direction raster.
         - Expected shape: `(nrows, ncols)`.
-    dir_scheme : D8Directions, optional
-        Instance of `D8Directions` defining the flow direction
-        scheme.
-        - Default scheme is `D8Directions()`.
+    dir_enc : DirectionEncoding, optional
+        Flow direction encoding scheme.
+        - Default scheme is `D8DirectionEncoding()`.
     valids : NDArray[bool], optional
         Boolean mask indicating valid cells.
         If `None`, all cells are considered valid.
@@ -157,34 +157,39 @@ def compute_ridgedir(
         Flow directions along ridge paths.
         - Shape: `(nrows, ncols)`, same as `dirs`.
     """
-    bmax = compute_dist2conf_max(dirs, valids=valids, x=x, y=y, dir_scheme=dir_scheme)
+    dir_enc = validate_format_dir_encoding(dir_enc)
+    bmax = compute_dist2conf_max(dirs, dir_enc, valids=valids, x=x, y=y)
     bmaxdirs, _, _ = flowdir_m.compute_flowdir(
-        -bmax, dir_scheme=dir_scheme, valids=valids, fill_depression=True
+        -bmax, dir_enc, valids=valids, fill_depression=True
     )
     return bmaxdirs.astype(NpFlowDir, order="F")
 
 
 def compute_dist2ridge(
     dirs: NDArray[NpFlowDir],
-    dir_scheme: D8Directions = D8Directions(),
-    valids: Optional[NDArray[np.bool_]] = None,
-    x: Optional[NDArray[np.number]] = None,
-    y: Optional[NDArray[np.number]] = None,
+    dir_enc: DirectionEncoding | None = None,
+    valids: NDArray[np.bool_] | None = None,
+    x: NDArray[NpCoords] | None = None,
+    y: NDArray[NpCoords] | None = None,
     dir_is_ridge: bool = False,
 ) -> NDArray[np.float32]:
     """
-    Computes the 'distance to ridge' for each cell in the flow direction grid.
+    Computes the 'distance to ridge' for each cell in the flow
+    direction grid.
 
-    The ridge network/intensity is defined as the maximum distance to confluence (see `compute_flow_dist2conf_max`), and the distance to ridge is computed as the downstream distance traversing the inverse of the intensity.
+    The ridge network/intensity is defined as the maximum distance
+    to confluence (see :func:`compute_dist2conf_max`), and the
+    distance to ridge is computed as the downstream distance
+    traversing the inverse of the intensity.
 
     Parameters
     ----------
     dirs : NDArray[uint8]
         Flow direction raster.
         - Expected shape: `(nrows, ncols)`.
-    dir_scheme : D8Directions, optional
-        Instance of `D8Directions` defining the flow direction scheme.
-        Default scheme is `D8Directions()`.
+    dir_enc : DirectionEncoding, optional
+        Flow direction encoding scheme.
+        - Default scheme is `D8DirectionEncoding()`.
     valids : NDArray[bool], optional
         Boolean mask indicating valid cells.
         If `None`, all cells are considered valid.
@@ -211,39 +216,37 @@ def compute_dist2ridge(
         - Shape: `(nrows, ncols)`, same as `dirs`.
     """
     dirs = validate_format_flowdirs(dirs)
+    dir_enc = validate_format_dir_encoding(dir_enc)
     valids = validate_format_valids(valids, dirs, "flow direction raster")
     x, y = validate_format_freeform_coordinates(x, y, dirs.shape, np.float32)
 
     if dir_is_ridge:
         bmaxdirs = dirs
     else:
-        bmaxdirs = compute_ridgedir(
-            dirs, dir_scheme=dir_scheme, valids=valids, x=x, y=y
-        )
-    bmaxdists = compute_dist2source(
-        bmaxdirs, dir_scheme=dir_scheme, x=x, y=y, valids=valids
-    )
+        bmaxdirs = compute_ridgedir(dirs, dir_enc, valids=valids, x=x, y=y)
+    bmaxdists = compute_dist2source(bmaxdirs, dir_enc, x=x, y=y, valids=valids)
     return bmaxdists
 
 
 def compute_ridge_strahler_order(
     dirs: NDArray[NpFlowDir],
-    dir_scheme: D8Directions = D8Directions(),
-    valids: Optional[NDArray[np.bool_]] = None,
-    indegs: Optional[NDArray[np.integer]] = None,
-    backend: Backend = "fortran",
+    dir_enc: DirectionEncoding | None = None,
+    valids: NDArray[np.bool_] | None = None,
+    indegs: NDArray[np.integer] | None = None,
     dir_is_ridge: bool = False,
+    backend: Backend = "fortran",
 ) -> NDArray[np.uint8]:
     """
+    Computes Strahler order for the ridge network.
+
     Parameters
     ----------
     dirs : NDArray[uint8]
         Flow direction raster.
         - Expected shape: `(nrows, ncols)`.
-    dir_scheme : D8Directions, optional
-        Instance of `D8Directions` defining the flow direction
-        scheme.
-        - Default scheme is `D8Directions()`.
+    dir_enc : DirectionEncoding, optional
+        Flow direction encoding scheme.
+        - Default scheme is `D8DirectionEncoding()`.
     valids : NDArray[bool], optional
         Boolean mask indicating valid cells in the flow direction
         grid.
@@ -256,11 +259,14 @@ def compute_ridge_strahler_order(
         directions.
         - Expected shape: `(nrows, ncols)`, same as `dirs`.
         - Default input is `None`.
+    dir_is_ridge : bool, optional
+        Whether `dirs` is already a ridge flow direction grid.
+        - Default option is `False`.
     backend : {'fortran', 'python'}, optional
         Backend to use for computation.
-        `'fortran'` uses the FORTRAN extension for performance,
+        `'fortran'` uses the Fortran extension for performance,
         while `'python'` uses a pure Python implementation.
-        Default backend is `'fortran'`.
+        - Default backend is `'fortran'`.
 
     Returns
     -------
@@ -269,12 +275,13 @@ def compute_ridge_strahler_order(
         - Shape: `(nrows, ncols)`, same as `dirs`.
     """
     dirs = validate_format_flowdirs(dirs)
+    dir_enc = validate_format_dir_encoding(dir_enc)
 
     if dir_is_ridge:
         bmaxdirs = dirs
     else:
-        bmaxdirs = compute_ridgedir(dirs, dir_scheme=dir_scheme, valids=valids)
+        bmaxdirs = compute_ridgedir(dirs, dir_enc, valids=valids)
     orders = compute_flow_strahler_order(
-        bmaxdirs, dir_scheme=dir_scheme, valids=valids, indegs=indegs, backend=backend
+        bmaxdirs, dir_enc, valids=valids, indegs=indegs, backend=backend
     )
     return orders.astype(np.uint8, order="F")

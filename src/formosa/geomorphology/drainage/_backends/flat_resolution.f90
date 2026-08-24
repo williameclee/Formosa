@@ -1,10 +1,11 @@
-!> Resolves flats in digital elevation models using the FORTRAN backend.
+!> Resolves flats in digital elevation models using the Fortran
+!! backend.
 !!
 !! The algorithms assign synthetic gradients to flats and mainly
-!! follow Barnes et al. (2014), https://doi.org/10.1016/j.cageo.2013.01.009.
+!! follow [Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009).
 !! This internal module is called by the Python drainage API.
 !!
-!! Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
+!! Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 module drainage_flat_resolution
     use iso_c_binding, only: c_int8_t
     use utils, only: ERR_NO_ERROR, ERR_INVALID_INPUT, &
@@ -12,22 +13,23 @@ module drainage_flat_resolution
     use utils, only: find_noflow_code, array2d_oob, mask2ij
     implicit none(type, external)
 contains
+    !> Finds D-n flow directions for a synthetic elevation grid,
+    !! using the provided flow direction codes and offsets.
+    !!
+    !! The flow directions are only computed for cells that are part
+    !! of flats, as indicated by the  label grid. For each flat
+    !! cell, the flow direction is assigned towards the neighbour
+    !! with the lowest elevation within the same flat region. If no
+    !! neighbour has a lower elevation, the cell is assigned the no-
+    !! flow code.
+    !!
+    !! Notes
+    !! -----
+    !! This function is intended to be used for the synthetic
+    !! terrain to resolve flats, which should be integer-typed.
     subroutine compute_syn_flowdir( &
         z, flats, dirs, nrows, ncols, &
         offsets, codes, noffsets)
-        !! Finds D-n flow directions for a synthetic elevation grid,
-        !! using the provided flow direction codes and offsets.
-        !!
-        !! The flow directions are only computed for cells that are
-        !! part of flats, as indicated by the  label grid. For each
-        !! flat cell, the flow direction is assigned towards the
-        !! neighbour with the lowest elevation within the same flat
-        !! region. If no neighbour has a lower elevation, the cell
-        !! is assigned the no-flow code.
-        !!
-        !! Note: This function is intended to be used for the
-        !! synthetic terrain to resolve flats, which should be
-        !! integer-typed.
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols
@@ -69,38 +71,38 @@ contains
         !$omp COLLAPSE(2) &
         !$omp SCHEDULE(STATIC)
         do cj = 1, ncols
-            do ci = 1, nrows
-                if (flats(ci, cj) == 0) cycle
+        do ci = 1, nrows
+            if (flats(ci, cj) == 0) cycle
 
-                zmin = z(ci, cj)
+            zmin = z(ci, cj)
 
-                do iofs = 1, noffsets
-                    ni = ci + offsets(iofs, 1)
-                    nj = cj + offsets(iofs, 2)
-                    ! Check bounds
-                    if (array2d_oob(ni, nj, nrows, ncols)) cycle
-                    ! Skip if neighbour is different flat
-                    if (flats(ni, nj) /= flats(ci, cj)) cycle
-                    ! Check if neighbour has lower elevation
-                    if (z(ni, nj) < zmin) then
-                        zmin = z(ni, nj)
-                        dirs(ci, cj) = codes(iofs)
-                    end if
-                end do
+            do iofs = 1, noffsets
+                ni = ci + offsets(iofs, 1)
+                nj = cj + offsets(iofs, 2)
+                ! Check bounds
+                if (array2d_oob(ni, nj, nrows, ncols)) cycle
+                ! Skip if neighbour is different flat
+                if (flats(ni, nj) /= flats(ci, cj)) cycle
+                ! Check if neighbour has lower elevation
+                if (z(ni, nj) < zmin) then
+                    zmin = z(ni, nj)
+                    dirs(ci, cj) = codes(iofs)
+                end if
             end do
+        end do
         end do
         !$omp END PARALLEL DO
     end subroutine compute_syn_flowdir
 
+    !> Finds the cells on the edges of flat areas that drain to
+    !! lower terrain (low edges) and those that are adjacent to
+    !! higher terrain (high edges).
+    !!
+    !! From [Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009),
+    !! Algorithm 3 (p. 133).
     subroutine find_flat_edges( &
         z, dirs, valids, is_low_edge, is_high_edge, nrows, ncols, &
         offsets, codes, noffsets)
-        !! Finds the cells on the edges of flat areas that drain to
-        !! lower terrain (low edges) and those that are adjacent to
-        !! higher terrain (high edges).
-        !!
-        !! From [R. Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009),
-        !! Algorithm 3 (p. 133).
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols
@@ -144,46 +146,45 @@ contains
         !$omp COLLAPSE(2) &
         !$omp SCHEDULE(STATIC)
         do cj = 1, ncols
-            do ci = 1, nrows
-                if (.not. valids(ci, cj)) cycle
+        do ci = 1, nrows
+            if (.not. valids(ci, cj)) cycle
 
-                do iofs = 1, noffsets
-                    ni = ci + offsets(iofs, 1)
-                    nj = cj + offsets(iofs, 2)
-                    ! Check bounds
-                    if (array2d_oob(ni, nj, nrows, ncols)) cycle
-                    ! Skip if neighbour is not valid
-                    if (.not. valids(ni, nj)) cycle
-                    ! Check for low edge
-                    if (dirs(ci, cj) /= noflow_code .and. &
-                        dirs(ni, nj) == noflow_code .and. &
-                        z(ci, cj) == z(ni, nj)) then
-                        is_low_edge(ci, cj) = .true.
-                        exit
-                    end if
-                    ! Check for high edge
-                    if (dirs(ci, cj) == noflow_code .and. &
-                        z(ci, cj) < z(ni, nj)) then
-                        is_high_edge(ci, cj) = .true.
-                        exit
-                    end if
-                end do
+            do iofs = 1, noffsets
+                ni = ci + offsets(iofs, 1)
+                nj = cj + offsets(iofs, 2)
+                ! Check bounds
+                if (array2d_oob(ni, nj, nrows, ncols)) cycle
+                ! Skip if neighbour is not valid
+                if (.not. valids(ni, nj)) cycle
+                ! Check for low edge
+                if (dirs(ci, cj) /= noflow_code .and. &
+                    dirs(ni, nj) == noflow_code .and. &
+                    z(ci, cj) == z(ni, nj)) then
+                    is_low_edge(ci, cj) = .true.
+                    exit
+                end if
+                ! Check for high edge
+                if (dirs(ci, cj) == noflow_code .and. &
+                    z(ci, cj) < z(ni, nj)) then
+                    is_high_edge(ci, cj) = .true.
+                    exit
+                end if
             end do
+        end do
         end do
         !$omp END PARALLEL DO
     end subroutine find_flat_edges
 
+    !> Labels connected flat regions in the elevation grid, using a
+    !! flood-fill algorithm starting from the provided seed cells.
+    !!
+    !! Only valid cells (as indicated by the valids mask) will be
+    !! considered for labelling. Each flat region will be assigned a
+    !! unique integer label in the output grid, while non-flat cells
+    !! will be assigned 0.
     pure subroutine label_flats( &
         z, seeds, valids, flats, nrows, ncols, &
         offsets, noffsets, err_code)
-        !! Labels connected flat regions in the elevation grid,
-        !! using a flood-fill algorithm starting from the provided
-        !! seed cells.
-        !!
-        !! Only valid cells (as indicated by the valids mask) will
-        !! be considered for labelling. Each flat region will be
-        !! assigned a unique integer label in the output  grid,
-        !! while non-flat cells will be assigned 0.
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols
@@ -205,14 +206,14 @@ contains
             !! for non-flat cells)
         integer, intent(out) :: err_code
             !! Code indicating the status of the result
-            !!   - 0: Programme executed properly
-            !!   - 1: A high-edge seed does not belong to a labelled
+            !! - 0: Programme executed properly
+            !! - 1: A high-edge seed does not belong to a labelled
             !!     flat
-            !!   - 2: Internal workspace allocation failed
-            !!   - 3: Flat-flooding buffer capacity was exceeded
+            !! - 2: Internal workspace allocation failed
+            !! - 3: Flat-flooding buffer capacity was exceeded
         ! Local variables
         integer :: iflat
-            !! Index of the current flat region being labeled
+            !! Index of the current flat region being labelled
             !! (!= issed because same flat can have multiple seeds)
         integer, allocatable :: seed_ijs(:, :)
             !! List of (i, j) indices for seed cells
@@ -227,7 +228,7 @@ contains
         integer :: si, sj, ci, cj, ni, nj
             !! Rows/columns for seed, current and neighbour cells
         real :: sz
-            !! Elevation of the current flat region being labeled
+            !! Elevation of the current flat region being labelled
         integer :: iofs
             !! Index for iterating through offsets
         integer :: alloc_stat
@@ -260,7 +261,7 @@ contains
 
             ! Skip if not valid
             if (.not. valids(si, sj)) cycle
-            ! Skip if already labeled
+            ! Skip if already labelled
             if (flats(si, sj) /= 0) cycle
 
             sz = z(si, sj)
@@ -284,7 +285,7 @@ contains
                     if (array2d_oob(ni, nj, nrows, ncols)) cycle
                     ! Skip if not valid
                     if (.not. valids(ni, nj)) cycle
-                    ! Skip if already labeled
+                    ! Skip if already labelled
                     if (flats(ni, nj) /= 0) cycle
                     ! Skip if not the same flat (i.e. different elevation)
                     if (z(ni, nj) /= sz) cycle
@@ -302,18 +303,16 @@ contains
 
             iflat = iflat + 1
         end do
-        deallocate (flat_ijs)
-        deallocate (seed_ijs)
     end subroutine label_flats
 
+    !> Produces a synthetic elevation that decreases away from 'high
+    !! edges' of flats.
+    !!
+    !! Modified from [Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009),
+    !! Algorithm 5 (p. 133--134).
     pure subroutine create_pushing_syn_grad( &
         z, flats, nrows, ncols, &
         high_edges, offsets, noffsets, err_code)
-        !! Produces a synthetic elevation that decreases away from
-        !! 'high edges' of flats.
-        !!
-        !! Modified from [R. Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009),
-        !! Algorithm 5 (p. 133--134).
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols
@@ -333,9 +332,9 @@ contains
             !! flow away from high edges
         integer, intent(out) :: err_code
             !! Code indicating the status of the result
-            !!   - 0: Programme executed properly
-            !!   - 2: Internal workspace allocation failed
-            !!   - 3: High-edge queue capacity was exceeded or an
+            !! - 0: Programme executed properly
+            !! - 2: Internal workspace allocation failed
+            !! - 3: High-edge queue capacity was exceeded or an
             !!     index was out of bounds
         ! Local variables
         integer :: nflats
@@ -388,8 +387,7 @@ contains
             err_code)
         if (err_code /= ERR_NO_ERROR) return
         if (nedges == 0) then
-            ! No high edges found, set z to zero and exit
-            deallocate (high_edge_ijs)
+            ! No high edges found, set z to 0 and exit
             return
         end if
 
@@ -477,17 +475,16 @@ contains
         do concurrent(ci=1:nrows, cj=1:ncols, flats(ci, cj) /= 0)
             z(ci, cj) = maxdist(flats(ci, cj)) - z(ci, cj) + 1
         end do
-        deallocate (maxdist)
     end subroutine create_pushing_syn_grad
 
+    !> Produces a synthetic elevation that drains towards 'low
+    !! edges' of flats.
+    !!
+    !! Modified from [Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009),
+    !! Algorithm 6 (p. 134).
     pure subroutine create_pulling_syn_grad( &
         z, flats, nrows, ncols, &
         low_edges, offsets, noffsets, err_code)
-        !! Produces a synthetic elevation that drains towards 'low
-        !! edges' of flats.
-        !!
-        !! Modified from [R. Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009),
-        !! Algorithm 6 (p. 134).
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols
@@ -506,9 +503,9 @@ contains
             !! Synthetic elevation grid that drains towards low edges
         integer, intent(out) :: err_code
             !! Code indicating the status of the result
-            !!   - 0: Programme executed properly
-            !!   - 2: Internal workspace allocation failed
-            !!   - 3: Low-edge queue capacity was exceeded or an
+            !! - 0: Programme executed properly
+            !! - 2: Internal workspace allocation failed
+            !! - 3: Low-edge queue capacity was exceeded or an
             !!     index was out of bounds
         ! Local variables
         integer :: iofs
@@ -619,7 +616,5 @@ contains
                 layer_end = nedges
             end if
         end do
-        deallocate (queued)
-        deallocate (low_edges_ijs)
     end subroutine create_pulling_syn_grad
 end module drainage_flat_resolution

@@ -7,17 +7,18 @@ triangulation and facet-neighbour behaviour are tested separately in
 `test_triangulation.py`.
 
 Created: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
-import pytest
-
 import numpy as np
+import pytest
+from numpy.typing import NDArray
 
-from formosa.utils import BACKENDS
 from formosa.geomorphology.drainage.network import GraphTopologyError
 from formosa.geomorphology.geometry import orient
 from formosa.geomorphology.meshing import triangulation as tri_m
-from tests.test_triangulation import _mesh_edges
+from formosa.utils import BACKENDS, Backend
+from tests.test_triangulation import _mesh_edges  # pyright: ignore[reportPrivateUsage]
 
 
 def test_recover_constraint_edges_rejects_unknown_backend():
@@ -26,7 +27,9 @@ def test_recover_constraint_edges_rejects_unknown_backend():
     edges = np.empty((0, 2), dtype=np.int32)
 
     with pytest.raises(ValueError, match="Unknown backend"):
-        tri_m.recover_constraint_edges(vtxs, faces, edges, backend="unknown")  # type: ignore
+        _ = tri_m.recover_constraint_edges(
+            vtxs, faces, edges, backend="unknown"  # pyright: ignore[reportArgumentType]
+        )
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
@@ -41,27 +44,27 @@ def test_recover_constraint_edges_rejects_unknown_backend():
     ],
 )
 def test_recover_constraint_edges_rejects_invalid_edge_arrays(
-    backend, edges, error, message
+    backend: Backend, edges: NDArray[np.int32], error, message: str
 ):
     vtxs = np.array([[0, 0], [1, 0], [0, 1]], dtype=np.int32)
     faces = np.array([[0, 1, 2]], dtype=np.int32)
 
     with pytest.raises(error, match=message):
-        tri_m.recover_constraint_edges(vtxs, faces, edges, backend=backend)
+        _ = tri_m.recover_constraint_edges(vtxs, faces, edges, backend=backend)
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_recover_constraint_edges_reports_failing_edge_position(backend):
+def test_recover_constraint_edges_reports_failing_edge_position(backend: Backend):
     vtxs = np.array([[0, 0], [1, 0], [0, 1], [1, 1]], dtype=np.int32)
     faces = np.array([[0, 1, 2], [1, 3, 2]], dtype=np.int32)
     edges = np.array([[1, 2], [0, 3]], dtype=np.int32)
 
     with pytest.raises(GraphTopologyError, match=r"constraint edge 1 \(0, 3\)"):
-        tri_m.recover_constraint_edges(vtxs, faces, edges, backend=backend)
+        _ = tri_m.recover_constraint_edges(vtxs, faces, edges, backend=backend)
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_recover_constraint_edges_returns_canonical_facet_topology(backend):
+def test_recover_constraint_edges_returns_canonical_facet_topology(backend: Backend):
     vtxs = np.array([[0, 0], [1, 0], [0, 1], [1, 1]], dtype=np.int32)
     faces = np.array([[3, 2, 1], [2, 0, 1]], dtype=np.int32)
     edges = np.empty((0, 2), dtype=np.int32)
@@ -80,7 +83,7 @@ def test_recover_constraint_edges_returns_canonical_facet_topology(backend):
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_recover_constraint_edges_accepts_empty_constraint_set(backend):
+def test_recover_constraint_edges_accepts_empty_constraint_set(backend: Backend):
     vtxs = np.array([[0, 0], [1, 0], [0, 1]], dtype=np.int32)
     faces = np.array([[0, 1, 2]], dtype=np.int32)
 
@@ -93,7 +96,7 @@ def test_recover_constraint_edges_accepts_empty_constraint_set(backend):
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_recover_constraint_edges_recovers_and_preserves_every_edge(backend):
+def test_recover_constraint_edges_recovers_and_preserves_every_edge(backend: Backend):
     vtxs = np.indices((2, 4)).reshape(2, -1).T.astype(np.int32)
     faces = np.array(
         [
@@ -129,11 +132,16 @@ def test_recover_constraint_edge_rejects_unknown_backend():
     faces = np.array([[0, 1, 2]], dtype=np.int32)
 
     with pytest.raises(ValueError, match="Unknown backend"):
-        tri_m.recover_constraint_edge(vtxs, faces, (0, 1), backend="unknown")  # type: ignore
+        _ = tri_m.recover_constraint_edge(
+            vtxs,
+            faces,
+            (0, 1),
+            backend="unknown",  # pyright: ignore[reportArgumentType]
+        )
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_exterior_guard_makes_boundary_constraint_recoverable(backend):
+def test_exterior_guard_makes_boundary_constraint_recoverable(backend: Backend):
     vtxs = np.array([[0, 0], [0, 4], [2, 2], [-2, 2]], dtype=np.int32)
     faces = np.array([[0, 2, 3], [1, 3, 2]], dtype=np.int32)
 
@@ -145,27 +153,29 @@ def test_exterior_guard_makes_boundary_constraint_recoverable(backend):
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_recover_constraint_edge_rejects_edge_outside_dented_mesh_boundary(backend):
+def test_recover_constraint_edge_rejects_edge_outside_dented_mesh_boundary(
+    backend: Backend,
+):
     vtxs = np.array([[0, 0], [0, 4], [1, 2], [2, 2]], dtype=np.int32)
     faces = np.array([[0, 3, 2], [2, 3, 1]], dtype=np.int32)
 
     with pytest.raises(GraphTopologyError):
-        tri_m.recover_constraint_edge(vtxs, faces, (0, 1), backend=backend)
+        _ = tri_m.recover_constraint_edge(vtxs, faces, (0, 1), backend=backend)
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_recover_constraint_edge_does_not_flip_locked_crossing_edge(backend):
+def test_recover_constraint_edge_does_not_flip_locked_crossing_edge(backend: Backend):
     vtxs = np.array([[0, 0], [1, 0], [0, 1], [1, 1]], dtype=np.int32)
     faces = np.array([[0, 1, 2], [1, 3, 2]], dtype=np.int32)
 
     with pytest.raises(GraphTopologyError):
-        tri_m.recover_constraint_edge(
+        _ = tri_m.recover_constraint_edge(
             vtxs, faces, (0, 3), locked_edges={(2, 1)}, backend=backend
         )
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_recover_constraint_edge_is_noop_when_edge_exists(backend):
+def test_recover_constraint_edge_is_noop_when_edge_exists(backend: Backend):
     vtxs = np.array([[0, 0], [1, 0], [0, 1]], dtype=np.int32)
     faces = np.array([[0, 1, 2]], dtype=np.int32)
 
@@ -176,7 +186,7 @@ def test_recover_constraint_edge_is_noop_when_edge_exists(backend):
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_recover_constraint_edge_allows_neutral_progress_flip(backend):
+def test_recover_constraint_edge_allows_neutral_progress_flip(backend: Backend):
     vtxs = np.array(
         [
             [10, 73],
@@ -201,7 +211,7 @@ def test_recover_constraint_edge_allows_neutral_progress_flip(backend):
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_recover_constraint_edge_handles_multiple_crossings(backend):
+def test_recover_constraint_edge_handles_multiple_crossings(backend: Backend):
     vtxs = np.indices((2, 4)).reshape(2, -1).T.astype(np.int32)
     faces = np.array(
         [
@@ -227,7 +237,7 @@ def test_recover_constraint_edge_handles_multiple_crossings(backend):
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_recover_constraint_edge_flips_crossing_diagonal(backend):
+def test_recover_constraint_edge_flips_crossing_diagonal(backend: Backend):
     vtxs = np.array([[0, 0], [1, 0], [0, 1], [1, 1]], dtype=np.int32)
     faces = np.array([[0, 1, 2], [1, 3, 2]], dtype=np.int32)
     input_nabrs = tri_m.find_facet_neighbours(faces, backend=backend)
@@ -264,7 +274,7 @@ def test_find_crossing_edges_fortran_does_not_modify_inputs():
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_find_crossing_edges_preserves_mesh_order(backend):
+def test_find_crossing_edges_preserves_mesh_order(backend: Backend):
     vtxs = np.indices((2, 4)).reshape(2, -1).T.astype(np.int32)
     faces = np.array(
         [
@@ -290,7 +300,9 @@ def test_find_crossing_edges_preserves_mesh_order(backend):
 
 @pytest.mark.parametrize("backend", BACKENDS)
 @pytest.mark.parametrize("edge", [(0, 1), (0, 2), (0, 4)])
-def test_find_crossing_edges_excludes_nonproper_intersections(backend, edge):
+def test_find_crossing_edges_excludes_nonproper_intersections(
+    backend: Backend, edge: tuple[int, int]
+):
     vtxs = np.array([[0, 0], [0, 2], [2, 0], [2, 2], [1, 1]], dtype=np.int32)
     faces = np.array([[0, 2, 4], [2, 3, 4], [3, 1, 4], [1, 0, 4]], dtype=np.int32)
     nabrs = tri_m.find_facet_neighbours(faces, backend=backend)
@@ -301,7 +313,9 @@ def test_find_crossing_edges_excludes_nonproper_intersections(backend, edge):
 
 @pytest.mark.parametrize("backend", BACKENDS)
 @pytest.mark.parametrize("scale", [1, 100_000])
-def test_find_crossing_edges_returns_unique_canonical_edges(backend, scale):
+def test_find_crossing_edges_returns_unique_canonical_edges(
+    backend: Backend, scale: float
+):
     vtxs = np.array([[0, 0], [0, 1], [1, 0], [1, 1]], dtype=np.int32) * scale
     faces = np.array([[0, 2, 1], [2, 3, 1]], dtype=np.int32)
     nabrs = tri_m.find_facet_neighbours(faces, backend=backend)
@@ -325,14 +339,14 @@ def test_find_crossing_edges_returns_unique_canonical_edges(backend, scale):
     ],
 )
 def test_flip_quadrilateral_edge_rejects_unflippable_quadrilateral(
-    vtxs, faces, backend
+    vtxs: NDArray[np.int32], faces: NDArray[np.int32], backend: Backend
 ):
     with pytest.raises(GraphTopologyError):
         tri_m.flip_quadrilateral_edge(vtxs, faces, 0, 0, backend=backend)
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_flip_quadrilateral_edge_rejects_boundary_edge(backend):
+def test_flip_quadrilateral_edge_rejects_boundary_edge(backend: Backend):
     vtxs = np.array([[0, 0], [1, 0], [0, 1]], dtype=np.int32)
     faces = np.array([[0, 1, 2]], dtype=np.int32)
 
@@ -341,7 +355,7 @@ def test_flip_quadrilateral_edge_rejects_boundary_edge(backend):
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_flip_quadrilateral_edge_is_topologically_reversible(backend):
+def test_flip_quadrilateral_edge_is_topologically_reversible(backend: Backend):
     vtxs = np.array([[0, 0], [1, 0], [0, 1], [1, 1]], dtype=np.int32)
     faces = np.array([[0, 1, 2], [1, 3, 2]], dtype=np.int32)
     f_faces, f_nabrs = tri_m.flip_quadrilateral_edge(vtxs, faces, 0, 0, backend=backend)
@@ -357,7 +371,7 @@ def test_flip_quadrilateral_edge_is_topologically_reversible(backend):
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_flip_quadrilateral_edge_updates_outside_neighbours(backend):
+def test_flip_quadrilateral_edge_updates_outside_neighbours(backend: Backend):
     vtxs = np.array([[0, 0], [1, 0], [0, 1], [1, 1], [2, 0], [-1, 0]], dtype=np.int32)
     faces = np.array([[0, 1, 2], [1, 3, 2], [1, 4, 3], [5, 0, 2]], dtype=np.int32)
     nabrs = tri_m.find_facet_neighbours(faces, backend=backend)
@@ -375,7 +389,9 @@ def test_flip_quadrilateral_edge_updates_outside_neighbours(backend):
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_flip_quadrilateral_edge_replaces_convex_quadrilateral_diagonal(backend):
+def test_flip_quadrilateral_edge_replaces_convex_quadrilateral_diagonal(
+    backend: Backend,
+):
     vtxs = np.array([[0, 0], [1, 0], [0, 1], [1, 1]], dtype=np.int32)
     faces = np.array([[0, 1, 2], [1, 3, 2]], dtype=np.int32)
     nabrs = tri_m.find_facet_neighbours(faces, backend=backend)

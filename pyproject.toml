@@ -28,3 +28,7 @@ dev = [
     "snakeviz",
     "ninja",
 ]
+
+[tool.ruff.format]
+indent-style = "space"
+quote-style = "double"

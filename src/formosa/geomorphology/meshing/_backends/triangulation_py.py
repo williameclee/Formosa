@@ -7,19 +7,31 @@ meshing API. Constrained edge recovery is implemented separately in
 `constrained_triangulation_py.py`.
 
 Created: 2026-08-12, En-Chi Lee (williameclee@gmail.com)
-Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
+from numpy.typing import NDArray
 
 from formosa.geomorphology.drainage.network import GraphTopologyError
 from formosa.geomorphology.geometry import incircle, orient
-
-from numpy.typing import NDArray
-from formosa.utils.typing import NpCoords, NpCanonIndex
+from formosa.utils.typing import NpCanonIndex, NpCoords
 
 
-def _canonical_edge(u: int, v: int) -> tuple[int, int]:
+def canonical_edge(u: int, v: int) -> tuple[int, int]:
+    """
+    Returns an undirected edge with sorted vertex endpoints.
+
+    Parameters
+    ----------
+    u, v : int
+        Vertex indices forming the edge.
+
+    Returns
+    -------
+    edge : tuple[int, int]
+        Sorted pair `(min(u, v), max(u, v))`.
+    """
     return (u, v) if u < v else (v, u)
 
 
@@ -95,7 +107,7 @@ def is_bad_facet(
     ninf = face.count(iinf)
     if ninf > 1:
         raise GraphTopologyError(
-            f"Facet must contains no more than 1 infinite vertex, "
+            "Facet must contains no more than 1 infinite vertex, "
             + f"but {face} got {ninf}."
         )
 
@@ -124,10 +136,7 @@ def is_bad_facet(
 
 
 def insert_vertex(
-    ivtx: int,
-    vtxs: NDArray[NpCoords],
-    faces: list[tuple[int, int, int]],
-    iinf: int,
+    ivtx: int, vtxs: NDArray[NpCoords], faces: list[tuple[int, int, int]], iinf: int
 ) -> list[tuple[int, int, int]]:
     """
     Inserts a new vertex into a Delaunay triangulation using Bowyer-
@@ -156,7 +165,7 @@ def insert_vertex(
     for iface in bad_faces:
         a, b, c = faces[iface]
         for u, v in ((a, b), (b, c), (c, a)):
-            key = _canonical_edge(u, v)
+            key = canonical_edge(u, v)
             prev = edges.pop(key, None)
             if prev is not None and prev != (v, u):
                 raise GraphTopologyError(
@@ -184,8 +193,7 @@ def insert_vertex(
 
 
 def order_ccw(
-    face: tuple[int, int, int],
-    vtxs: NDArray[NpCoords],
+    face: tuple[int, int, int], vtxs: NDArray[NpCoords]
 ) -> tuple[int, int, int]:
     """
     Reorders vertices of a triangle such that it is
@@ -204,6 +212,21 @@ def order_ccw(
 
 
 def triangulate_points(vtxs: NDArray[NpCoords]) -> NDArray[NpCanonIndex]:
+    """
+    Computes an unconstrained Delaunay triangulation using Bowyer-Watson.
+
+    Parameters
+    ----------
+    vtxs : NDArray[number]
+        Unique vertex coordinates.
+        - Expected shape: `(nvtxs, 2)`.
+
+    Returns
+    -------
+    faces : NDArray[int32]
+        Triangle vertex indices.
+        - Shape: `(nfaces, 3)`.
+    """
     faces, seed_ids, iinf = make_initial_facets(vtxs)
 
     # Add vertices by a deterministic order independent of input
@@ -286,3 +309,14 @@ def find_facet_neighbours(
 
     edge_owners = {edge: (iface, iside) for edge, (iface, iside, _) in owners.items()}
     return nabrs, edge_owners
+
+
+__all__ = [
+    "canonical_edge",
+    "find_facet_neighbours",
+    "insert_vertex",
+    "is_bad_facet",
+    "make_initial_facets",
+    "order_ccw",
+    "triangulate_points",
+]

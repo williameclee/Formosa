@@ -1,15 +1,16 @@
-!> Derives and analyses ridge networks using the FORTRAN backend.
+!> Derives and analyses ridge networks using the Fortran backend.
 !!
 !! The method treats the maximum confluence distance between a
 !! raster cell and its neighbours as a proxy for ridge likelihood,
 !! then applies conventional drainage operations to the reciprocal
 !! field. This internal module is called by the Python drainage API.
 !!
-!! Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
+!! Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 module drainage_ridges
     use iso_c_binding, only: c_int8_t
     use utils, only: ERR_NO_ERROR, ERR_INVALID_INPUT, &
-                     ERR_ALLOCATION_FAILURE, ERR_OVERFLOW
+                     ERR_ALLOCATION_FAILURE, ERR_OVERFLOW, &
+                     ERR_COMPUTATION_FAILURE
     use utils, only: fill_offset_lookup, array2d_oob, ij2id_checked
     use distances, only: l2dist_xy
     implicit none(type, external)
@@ -17,11 +18,11 @@ module drainage_ridges
                propagate_flowtree_metadata, build_flowtree_metadata, &
                find_flowtree_confluence
 contains
+    !> Resolves each valid cell's immediate downstream ID and
+    !! simultaneously count the upstream children of every
+    !! destination cell.
     subroutine resolve_flowtree_links( &
         dirs, valids, offset_lookup, nrows, ncols, ds_ids, indegs)
-        !! Resolves each valid cell's immediate downstream ID and
-        !! simultaneously count the upstream children of every
-        !! destination cell.
         implicit none(type, external)
         integer, intent(in) :: nrows, ncols
             !! Number of raster rows and columns
@@ -32,7 +33,7 @@ contains
         integer, intent(in) :: offset_lookup(0:255, 2)
             !! Row/column offset indexed by the unsigned direction code.
         integer, intent(out) :: ds_ids(nrows*ncols)
-            !! Immediate downstream cell ID, or zero at a sink.
+            !! Immediate downstream cell ID, or 0 at a sink.
         integer(c_int8_t), intent(out) :: indegs(nrows*ncols)
             !! Number of valid upstream children targeting each cell.
         integer :: code
@@ -45,9 +46,10 @@ contains
         ds_ids = 0
         indegs = 0
 
-        ! Resolve one downstream edge per valid source cell. Coordinates are
-        ! checked before linear encoding so an invalid pair cannot wrap into a
-        ! different, apparently legitimate cell ID.
+        ! Resolve one downstream edge per valid source cell.
+        ! Coordinates are checked before linear encoding so an
+        ! invalid pair cannot wrap into a different, apparently
+        ! legitimate cell ID.
         !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(ci, cj, ni, nj, code, cid, dsid) &
         !$omp COLLAPSE(2) SCHEDULE(STATIC)
         do cj = 1, ncols
@@ -81,7 +83,7 @@ contains
         logical(kind=1), intent(in) :: valids(nrows, ncols)
             !! True for cells belonging to the flow tree; false for no-data.
         integer, intent(in) :: ds_ids(nrows*ncols)
-            !! Immediate downstream ID for every cell; zero at sinks.
+            !! Immediate downstream ID for every cell; 0 at sinks.
         integer(c_int8_t), intent(inout) :: indegs(nrows*ncols)
             !! Remaining unprocessed upstream-child count for Kahn traversal.
         integer, intent(out) :: topo_order(nrows*ncols)
@@ -93,7 +95,7 @@ contains
         integer, intent(out) :: nlvls
             !! Number of dependency frontiers recorded in lvl_ends.
         integer, intent(out) :: err_code
-            !! Zero on success, one for a cycle, or two for allocation failure.
+            !! 0 on success, 1 for a cycle, or 2 for allocation failure.
         ! Local variables
         integer, allocatable :: grown_lvl_ends(:)
             !! Temporary buffer used when geometrically growing lvl_ends.
@@ -115,7 +117,7 @@ contains
         lvl_end = 0
         nvalid = 0
 
-        ! Count number of valid cells and push 0-indegree cells into 'topo_order'
+        ! Count number of valid cells and push 0-in-degree cells into 'topo_order'
         do cid = 1, nrows*ncols
             ci = mod(cid - 1, nrows) + 1
             cj = (cid - 1)/nrows + 1
@@ -165,16 +167,16 @@ contains
         if (topo_cnt /= nvalid) err_code = ERR_INVALID_INPUT
     end subroutine build_flowtree_topology
 
+    !> Propagates depth, sink identity, and metric distance from
+    !! sinks towards sources in reverse dependency-frontier order.
     subroutine propagate_flowtree_metadata( &
         ds_ids, x, y, topo_order, lvl_ends, nlvls, nrows, ncols, &
         depths, sink_ids, sink_dists)
-        !! Propagates depth, sink identity, and metric distance from sinks towards
-        !! sources in reverse dependency-frontier order.
         implicit none(type, external)
         integer, intent(in) :: nrows, ncols, nlvls
             !! Raster dimensions and number of dependency frontiers.
         integer, intent(in) :: ds_ids(nrows*ncols)
-            !! Immediate downstream ID for every cell; zero at sinks.
+            !! Immediate downstream ID for every cell; 0 at sinks.
         real, intent(in) :: x(nrows, ncols), y(nrows, ncols)
             !! Map-space coordinates used to calculate metric edge lengths.
         integer, intent(in) :: topo_order(nrows*ncols), lvl_ends(:)
@@ -249,21 +251,11 @@ contains
         end do
     end subroutine propagate_flowtree_metadata
 
+    !> Coordinate construction of reusable metadata for the
+    !! downstream tree.
     subroutine build_flowtree_metadata( &
         dirs, valids, x, y, offset_lookup, nrows, ncols, &
         ds_ids, depths, sink_ids, sink_dists, topo_order, topo_cnt, err_code)
-        !! Coordinate construction of reusable metadata for the downstream tree.
-        !!
-        !! The work is deliberately split into three independently testable
-        !! phases:
-        !!
-        !!   resolve_flow_tree_links       -- downstream IDs and indegrees;
-        !!   build_flow_tree_topology      -- Kahn frontiers and cycle detection;
-        !!   propagate_flow_tree_metadata  -- depths, sinks, and distances.
-        !!
-        !! topo_order is returned because compute_max_branch_dist reuses it to
-        !! construct lowest common ancestor (LCA) jump pointers before releasing
-        !! the full-grid workspace.
         implicit none(type, external)
         integer, intent(in) :: nrows, ncols
             !! Number of raster rows and columns.
@@ -276,7 +268,7 @@ contains
         integer, intent(in) :: offset_lookup(0:255, 2)
             !! Row/column offset indexed by the unsigned direction code.
         integer, intent(out) :: ds_ids(nrows*ncols)
-            !! Immediate downstream parent ID, or zero when the cell is a sink.
+            !! Immediate downstream parent ID, or 0 when the cell is a sink.
         integer, intent(out) :: depths(nrows*ncols)
             !! Number of downstream edges from each cell to its sink.
         integer, intent(out) :: sink_ids(nrows*ncols)
@@ -288,7 +280,7 @@ contains
         integer, intent(out) :: topo_cnt
             !! Number of valid entries written to topo_order.
         integer, intent(out) :: err_code
-            !! Zero on success, one for a cycle, or two for allocation failure.
+            !! 0 on success, 1 for a cycle, or 2 for allocation failure.
         integer(c_int8_t), allocatable :: indegs(:)
             !! Mutable upstream-child counts consumed by Kahn traversal.
         integer, allocatable :: lvl_ends(:)
@@ -304,9 +296,6 @@ contains
                   lvl_ends(max(1, min(nrows*ncols, 1024))), stat=alloc_stat)
         if (alloc_stat /= 0) then
             err_code = ERR_ALLOCATION_FAILURE
-            if (allocated(indegs)) deallocate (indegs)
-            if (allocated(topo_order)) deallocate (topo_order)
-            if (allocated(lvl_ends)) deallocate (lvl_ends)
             return
         end if
 
@@ -317,47 +306,47 @@ contains
             valids, ds_ids, indegs, nrows, ncols, &
             topo_order, topo_cnt, lvl_ends, nlvls, err_code)
         if (err_code /= ERR_NO_ERROR) then
-            deallocate (indegs, topo_order, lvl_ends)
             return
         end if
 
         call propagate_flowtree_metadata( &
             ds_ids, x, y, topo_order, lvl_ends, nlvls, nrows, ncols, &
             depths, sink_ids, sink_dists)
-
-        deallocate (indegs, lvl_ends)
     end subroutine build_flowtree_metadata
 
-    pure function find_flowtree_confluence(cid1, cid2, ds_ids, depths, jump_ids) &
-        result(confluence_id)
-        !! Returns the first common downstream cell using depth-block jumps.
-        !!
-        !! depth is measured from a cell downstream to its sink. jump_ids(v)
-        !! identifies the anchor at the top of v's fixed-size depth block. The
-        !! first loop skips whole blocks from whichever node has the deeper
-        !! anchor. Once both nodes share an anchor, the second loop follows
-        !! individual parent edges until they meet.
-        !!
-        !! For maximum tree depth D and block size B this changes a worst-case
-        !! O(D) parent walk into approximately O(D/B + B), while needing only
-        !! one jump integer per cell rather than the O(N log D) storage required
-        !! by binary lifting.
-        !!
-        !! Precondition: cell 1 and cell 2 belong to the same sink tree. The caller
-        !! establishes this without a per-query sink comparison: every pair of
-        !! adjacent cells in different trees has both endpoints marked as basin
-        !! boundary cells and is skipped before calling this function.
+    !> Returns the first common downstream cell using depth-block
+    !! jumps.
+    !!
+    !! depth is measured from a cell downstream to its sink.
+    !! jump_ids(v) identifies the anchor at the top of v's fixed-
+    !! size depth block. The first loop skips whole blocks from
+    !! whichever node has the deeper anchor. Once both nodes share
+    !! an anchor, the second loop follows individual parent edges
+    !! until they meet.
+    !!
+    !! For maximum tree depth D and block size B this changes a
+    !! worst-case O(D) parent walk into approximately O(D/B + B),
+    !! while needing only one jump integer per cell rather than the
+    !! O(N log D) storage required by binary lifting.
+    !!
+    !! Precondition: cell 1 and cell 2 belong to the same sink tree.
+    !! The caller establishes this without a per-query sink
+    !! comparison: every pair of adjacent cells in different trees
+    !! has both endpoints marked as basin boundary cells and is
+    !! skipped before calling this function.
+    pure function find_flowtree_confluence( &
+        cid1, cid2, ds_ids, depths, jump_ids) result(confluence_id)
         implicit none(type, external)
         integer, intent(in) :: cid1, cid2
-            !! Linear IDs of the two cells to process.
+            !! Linear IDs of the 2 cells to process.
         integer, intent(in) :: ds_ids(:)
-            !! Immediate downstream parent ID for every cell; zero at sinks.
+            !! Immediate downstream parent ID for every cell; 0 at sinks.
         integer, intent(in) :: depths(:)
             !! Number of downstream edges between each cell and its sink.
         integer, intent(in) :: jump_ids(:)
             !! Depth-block anchor ID used to skip groups of parent edges.
         integer :: confluence_id
-            !! Linear ID of the first common downstream cell; zero on invalid input.
+            !! Linear ID of the first common downstream cell; 0 on invalid input.
         integer :: pid1, pid2
             !! Mutable downstream cursors used while aligning and joining paths.
 
@@ -387,32 +376,28 @@ contains
         confluence_id = pid1
     end function find_flowtree_confluence
 
+    !> Computes, for every valid cell, the largest distance from
+    !! that cell to its first downstream confluence with any of its
+    !! eight neighbours. If a neighbour belongs to another sink
+    !! tree, the 2 paths never converge and the cell's complete
+    !! distance to its sink is considered.
+    !!
+    !! The implementation has four phases:
+    !!  1. Build the downstream forest and cumulative sink metadata.
+    !!  2. Mark cells touching a different sink tree. Their answer
+    !!     is known immediately to be their complete sink distance.
+    !!  3. Reuse the no-longer-needed sink-ID array for depth-block
+    !!     jump pointers used by lowest-common-ancestor searches.
+    !!  4. Examine each undirected neighbour edge once and
+    !!     atomically update the maximum for its 2 endpoints.
+    !!
+    !! The tree representation avoids tracing 2 complete flow
+    !! paths for every neighbour pair. It also uses shared O(N)
+    !! metadata rather than a full-grid visited/path workspace for
+    !! every OpenMP thread.
     subroutine compute_max_branch_dist( &
         maxbdists, dirs, valids, x, y, nrows, ncols, &
         offsets, codes, noffsets, err_code)
-        !! Computes, for every valid cell, the largest distance from
-        !! that cell to its first downstream confluence with any of
-        !! its eight neighbours. If a neighbour belongs to another
-        !! sink tree, the two paths never converge and the cell's
-        !! complete distance to its sink is considered.
-        !!
-        !! The implementation has four phases:
-        !!
-        !!  1. Build the downstream forest and cumulative sink
-        !!     metadata.
-        !!  2. Mark cells touching a different sink tree. Their
-        !!     answer is known
-        !!     immediately to be their complete sink distance.
-        !!  3. Reuse the no-longer-needed sink-ID array for depth-
-        !!     block jump
-        !!     pointers used by lowest-common-ancestor searches.
-        !!  4. Examine each undirected neighbour edge once and
-        !!     atomically update the maximum for its two endpoints.
-        !!
-        !! The tree representation avoids tracing two complete flow
-        !! paths for every neighbour pair. It also uses shared O(N)
-        !! metadata rather than a full-grid visited/path workspace
-        !! for every OpenMP thread.
         implicit none(type, external)
         ! Inputs
         integer, intent(in) :: nrows, ncols
@@ -455,7 +440,7 @@ contains
         logical(kind=1), allocatable :: is_boundary(:)
             !! True when a cell touches a valid cell belonging to another sink.
         real :: dist1, dist2
-            !! Branch distances from the two endpoints of the current grid edge.
+            !! Branch distances from the 2 endpoints of the current grid edge.
         integer :: nneighbour
             !! Index of the neighbour orientation currently being evaluated.
         integer :: neighbour_offsets(4, 2)
@@ -487,11 +472,7 @@ contains
         ! eight-neighbour edge once. The opposite directions would duplicate
         ! both the confluence work and atomic output updates.
         parameter(neighbour_offsets= &
-                  reshape([1, -1, &
-                           0, 1, &
-                           1, 1, &
-                           1, 0 &
-                           ], [4, 2]))
+                  reshape([1, -1, 0, 1, 1, 1, 1, 0], [4, 2]))
         ! Boundary classification assigns a property to the current cell only,
         ! so it requires the complete eight-neighbour stencil.
         parameter(boundary_offsets= &
@@ -521,7 +502,6 @@ contains
                   is_boundary(nrows*ncols), stat=alloc_stat)
         if (alloc_stat /= 0) then
             err_code = ERR_ALLOCATION_FAILURE
-            deallocate (offset_lookup)
             return
         end if
 
@@ -530,8 +510,7 @@ contains
             ds_ids, depths, sink_ids, sink_dists, &
             topo_order, topo_cnt, err_code)
         if (err_code /= ERR_NO_ERROR) then
-            deallocate (offset_lookup, ds_ids, depths, sink_ids, &
-                        sink_dists, is_boundary)
+            err_code = ERR_COMPUTATION_FAILURE
             return
         end if
 
@@ -542,31 +521,31 @@ contains
         !$omp PRIVATE(ci, cj, ni, nj, nneighbour, cid, nid, on_border) &
         !$omp COLLAPSE(2) SCHEDULE(STATIC)
         do cj = 1, ncols
-            do ci = 1, nrows
-                if (.not. valids(ci, cj)) cycle
-                ! ci/cj are loop-controlled and already in bounds, making this
-                ! unchecked column-major encoding safe.
-                cid = ci + (cj - 1)*nrows
-                ! Every stencil offset has magnitude <= 1. Interior cells can
-                ! omit all per-neighbour bounds comparisons; only cells on the
-                ! thin outer border require explicit coordinate checks.
-                on_border = ci == 1 .or. ci == nrows .or. cj == 1 .or. cj == ncols
-                do nneighbour = 1, size(boundary_offsets, 1)
-                    ni = ci + boundary_offsets(nneighbour, 1)
-                    nj = cj + boundary_offsets(nneighbour, 2)
-                    if (on_border) then
-                        if (array2d_oob(ni, nj, nrows, ncols)) cycle
-                    end if
-                    if (.not. valids(ni, nj)) cycle
-                    ! ni/nj are either interior-safe or checked above, so an
-                    ! invalid coordinate cannot wrap into a legitimate ID.
-                    nid = ni + (nj - 1)*nrows
-                    if (sink_ids(cid) == sink_ids(nid)) cycle
-                    is_boundary(cid) = .true.
-                    maxbdists(ci, cj) = sink_dists(cid)
-                    exit
-                end do
+        do ci = 1, nrows
+            if (.not. valids(ci, cj)) cycle
+            ! ci/cj are loop-controlled and already in bounds, making this
+            ! unchecked column-major encoding safe.
+            cid = ci + (cj - 1)*nrows
+            ! Every stencil offset has magnitude <= 1. Interior cells can
+            ! omit all per-neighbour bounds comparisons; only cells on the
+            ! thin outer border require explicit coordinate checks.
+            on_border = ci == 1 .or. ci == nrows .or. cj == 1 .or. cj == ncols
+            do nneighbour = 1, size(boundary_offsets, 1)
+                ni = ci + boundary_offsets(nneighbour, 1)
+                nj = cj + boundary_offsets(nneighbour, 2)
+                if (on_border) then
+                    if (array2d_oob(ni, nj, nrows, ncols)) cycle
+                end if
+                if (.not. valids(ni, nj)) cycle
+                ! ni/nj are either interior-safe or checked above, so an
+                ! invalid coordinate cannot wrap into a legitimate ID.
+                nid = ni + (nj - 1)*nrows
+                if (sink_ids(cid) == sink_ids(nid)) cycle
+                is_boundary(cid) = .true.
+                maxbdists(ci, cj) = sink_dists(cid)
+                exit
             end do
+        end do
         end do
         !$omp END PARALLEL DO
 
@@ -584,58 +563,53 @@ contains
         end do
         deallocate (topo_order)
 
-        ! Static scheduling is intentional. Unchunked dynamic scheduling created
-        ! one runtime work assignment per collapsed grid cell and dominated the
-        ! representative workload.
         !$omp PARALLEL DO DEFAULT(SHARED) &
         !$omp PRIVATE(ci, cj, ni, nj, nneighbour, cid, nid, on_border) &
         !$omp PRIVATE(conf_id, dist1, dist2) &
         !$omp SCHEDULE(STATIC) COLLAPSE(2)
         do cj = 1, ncols
-            do ci = 1, nrows
-                if (.not. valids(ci, cj)) cycle
-                cid = ci + (cj - 1)*nrows
-                on_border = ci == 1 .or. ci == nrows .or. cj == 1 .or. cj == ncols
-                do nneighbour = 1, size(neighbour_offsets, 1)
-                    ni = ci + neighbour_offsets(nneighbour, 1)
-                    nj = cj + neighbour_offsets(nneighbour, 2)
-                    if (on_border) then
-                        if (array2d_oob(ni, nj, nrows, ncols)) cycle
-                    end if
-                    if (.not. valids(ni, nj)) cycle
-                    nid = ni + (nj - 1)*nrows
-                    ! Different-tree pairs necessarily have both flags set and
-                    ! already contributed full sink distances in phase 2.
-                    if (is_boundary(cid) .and. is_boundary(nid)) cycle
+        do ci = 1, nrows
+            if (.not. valids(ci, cj)) cycle
+            cid = ci + (cj - 1)*nrows
+            on_border = ci == 1 .or. ci == nrows .or. cj == 1 .or. cj == ncols
+            do nneighbour = 1, size(neighbour_offsets, 1)
+                ni = ci + neighbour_offsets(nneighbour, 1)
+                nj = cj + neighbour_offsets(nneighbour, 2)
+                if (on_border) then
+                    if (array2d_oob(ni, nj, nrows, ncols)) cycle
+                end if
+                if (.not. valids(ni, nj)) cycle
+                nid = ni + (nj - 1)*nrows
+                ! Different-tree pairs necessarily have both flags set and
+                ! already contributed full sink distances in phase 2.
+                if (is_boundary(cid) .and. is_boundary(nid)) cycle
 
-                    conf_id = find_flowtree_confluence( &
-                              cid, nid, ds_ids, depths, sink_ids)
-                    if (conf_id == 0) then
-                        ! Defensive fallback for an invalid/no-confluence query.
-                        dist1 = sink_dists(cid)
-                        dist2 = sink_dists(nid)
-                    else
-                        dist1 = sink_dists(cid) - sink_dists(conf_id)
-                        dist2 = sink_dists(nid) - sink_dists(conf_id)
-                    end if
-                    if (.not. is_boundary(cid)) then
-                        ! An endpoint participates in several edge updates that
-                        ! may be owned by different threads. Atomic MAX prevents
-                        ! lost updates without per-thread full-grid result arrays.
-                        !$omp ATOMIC UPDATE
-                        maxbdists(ci, cj) = max(maxbdists(ci, cj), dist1)
-                        !$omp END ATOMIC
-                    end if
-                    if (.not. is_boundary(nid)) then
-                        !$omp ATOMIC UPDATE
-                        maxbdists(ni, nj) = max(maxbdists(ni, nj), dist2)
-                        !$omp END ATOMIC
-                    end if
-                end do
+                conf_id = find_flowtree_confluence( &
+                          cid, nid, ds_ids, depths, sink_ids)
+                if (conf_id == 0) then
+                    ! Defensive fallback for an invalid/no-confluence query.
+                    dist1 = sink_dists(cid)
+                    dist2 = sink_dists(nid)
+                else
+                    dist1 = sink_dists(cid) - sink_dists(conf_id)
+                    dist2 = sink_dists(nid) - sink_dists(conf_id)
+                end if
+                if (.not. is_boundary(cid)) then
+                    ! An endpoint participates in several edge updates that
+                    ! may be owned by different threads. Atomic MAX prevents
+                    ! lost updates without per-thread full-grid result arrays.
+                    !$omp ATOMIC UPDATE
+                    maxbdists(ci, cj) = max(maxbdists(ci, cj), dist1)
+                    !$omp END ATOMIC
+                end if
+                if (.not. is_boundary(nid)) then
+                    !$omp ATOMIC UPDATE
+                    maxbdists(ni, nj) = max(maxbdists(ni, nj), dist2)
+                    !$omp END ATOMIC
+                end if
             end do
         end do
+        end do
         !$omp END PARALLEL DO
-        deallocate (offset_lookup, ds_ids, depths, &
-                    sink_ids, sink_dists, is_boundary)
     end subroutine compute_max_branch_dist
 end module drainage_ridges

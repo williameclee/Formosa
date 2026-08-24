@@ -1,22 +1,24 @@
 """
 Downloads digital elevation model data from the GMRT GridServer.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 """
 
 import os
+from collections.abc import Iterable
 from pathlib import Path
-import requests
+from typing import Literal, TypeAlias
+
+import numpy as np
 import rasterio
+import requests
+from numpy.typing import NDArray
 from rasterio import Affine
 from rasterio.io import MemoryFile
-import numpy as np
 
 from formosa.core import DATA_DIR
-from formosa.dem.api.utils import number, _validate_latlon_limits, _dem_post_processing
-
-from typing import Literal, TypeAlias, TypeVar, Iterable
-import numpy.typing as npt
+from formosa.dem.api.utils import _dem_post_processing, _validate_latlon_limits
+from formosa.utils import Real
 
 GmrtRes: TypeAlias = Literal["default", "med", "high", "max"]
 GMRT_FMTS = ("netcdf", "coards", "esriascii", "geotiff")
@@ -29,22 +31,21 @@ GMRT_RESS = ("default", "med", "high", "max")
 
 
 def gmrt(
-    latlim: tuple[number, number],
-    lonlim: tuple[number, number],
-    resolution: number | GmrtRes = "default",
-    format: GmrtFmt = "geotiff",
+    latlim: tuple[Real, Real],
+    lonlim: tuple[Real, Real],
+    res: Real | GmrtRes = "default",
+    fmt: GmrtFmt = "geotiff",
     saveas: str | Path | None = "default path",
     forcenew: bool = False,
     base_url: str = GMRT_URL,
 ) -> tuple[
-    npt.NDArray[np.floating | np.integer],
-    npt.NDArray[np.floating],
-    npt.NDArray[np.floating],
+    NDArray[np.floating | np.integer],
+    NDArray[np.floating],
+    NDArray[np.floating],
     Affine,
 ]:
     """
-    Fetch DEM data from the GMRT server.
-    For documentation of the API itself, see: https://www.gmrt.org/services/gridserverinfo.php#!/services/getGMRTGridURLs
+    Fetches DEM data from the GMRT server.
 
     Parameters
     ----------
@@ -52,51 +53,62 @@ def gmrt(
         Latitude limits (min, max) in degrees.
     lonlim : tuple[number, number]
         Longitude limits (min, max) in degrees.
-    resolution : number | "default" | "med" | "high" | "max", optional
-        Resolution of the DEM data. Can be a positive number or one of the predefined strings
-        (default is "default").
-    format : str, optional
-        Format of the DEM data. Must be one of "netcdf", "coards",
-        "esriascii", or "geotiff"
-        (default is "geotiff").
+    res : number | {"default", "med", "high", "max"}, optional
+        Resolution of the DEM data. Can be a positive number or one
+        of the predefined strings.
+        - Default resolution is `"default"`.
+    fmt : {"netcdf", "coards", "esriascii", "geotiff"}, optional
+        Format of the DEM data.
+        - Default format is `"geotiff"`.
     saveas : str | Path | None, optional
-        Path to save the downloaded DEM file. If "default path", saves to åthe default path.
-        If None, does not save the file
-        (default is "default path").
+        Path to save the downloaded DEM file.
+        If `"default path"`, saves to the default path.
+        If `None`, does not save the file.
+        - Default path is `"default path"`.
     forcenew : bool, optional
-        If True, forces a new download even if the file already exists
-        (default is False).
+        Whether to force a new download even if the file exists.
+        - Default option is `False`.
     base_url : str, optional
-        Base URL of the GMRT server
-        (default is GMRT_URL).
+        Base URL of the GMRT server.
+        - Default URL is `GMRT_URL`.
 
     Returns
     -------
-    Z : ndarray[floating | integer]
+    dem : NDArray[number]
         2D array of elevation values.
-    X : ndarray[floating]
-        2D array of x-coordinates corresponding to Z.
-    Y : ndarray[floating]
-        2D array of y-coordinates corresponding to Z.
+        - Shape: `(nrows, ncols)`.
+    x : NDArray[float]
+        x-coordinates corresponding to `dem`.
+        - Shape: `(nrows, ncols)`, same as `dem`.
+    y : NDArray[float]
+        y-coordinates corresponding to `dem`.
+        - Shape: `(nrows, ncols)`, same as `dem`.
     transform : rasterio.Affine
-        Affine transformation mapping pixel coordinates to spatial coordinates.
+        Affine transformation mapping pixel coordinates to spatial
+        coordinates.
 
     Raises
     ------
     ValueError
-        If input parameters are invalid or if no data is available for the specified bounds.
+        If input parameters are invalid or if no data is available
+        for the specified bounds.
     ConnectionError
         If there is a failure in connecting to the GMRT server.
     FileNotFoundError
         If the requested data is not found on the GMRT server.
+
+    Notes
+    -----
+    For documentation of the API itself, see:
+    https://www.gmrt.org/services/gridserverinfo.php#!/services/getGMRTGridURLs
     """
     # Input validation
     latlim, lonlim = _validate_latlon_limits(latlim, lonlim)
-    resolution = _validate_gmrt_resolution(resolution)
-    format = _validate_gmrt_format(format)
+    res = _validate_gmrt_resolution(res)
+    fmt = _validate_gmrt_format(fmt)
 
     # Load data
-    default_path = _gmrt_default_save_path(latlim, lonlim, resolution)
+    default_path = _gmrt_default_save_path(latlim, lonlim, res)
 
     # If the file exists and forcenew is False, load from file
     if not forcenew and os.path.exists(default_path):
@@ -105,9 +117,7 @@ def gmrt(
             Z = src.read(1)
             profile = src.profile
     else:
-        Z, profile = _fetch_gmrt_data(
-            latlim, lonlim, resolution, format, base_url=base_url
-        )
+        Z, profile = _fetch_gmrt_data(latlim, lonlim, res, fmt, base_url=base_url)
         # Save data
         if saveas is not None:
             if saveas == "default path":
@@ -130,50 +140,48 @@ def gmrt(
 
 
 def _validate_gmrt_resolution(
-    resolution: number | GmrtRes,
-    accepted_resolutions: Iterable[str] = GMRT_RESS,
-) -> number | GmrtRes:
+    res: Real | GmrtRes,
+    accepted_ress: Iterable[str] = GMRT_RESS,
+) -> Real | GmrtRes:
     """
     Validate resolution input.
     """
-    if isinstance(resolution, str):
-        assert (
-            resolution in accepted_resolutions
-        ), f"Resolution as a string must be one of {accepted_resolutions} (got '{resolution}')"
-    elif isinstance(resolution, (int, float)):
-        assert (
-            resolution > 0
-        ), f"Resolution as a number must be positive (got {resolution})"
-    return resolution
+    if isinstance(res, str):
+        assert res in accepted_ress, (
+            f"Resolution as a string must be one of {accepted_ress} (got '{res}')"
+        )
+    elif isinstance(res, (int, float)):
+        assert res > 0, f"Resolution as a number must be positive (got {res})"
+    return res
 
 
 def _validate_gmrt_format(
-    format: GmrtFmt,
+    fmt: GmrtFmt,
     accepted_formats: Iterable[str] = GMRT_FMTS,
     format_replacements: dict[str, GmrtFmt] = gmrt_fmt_replacements,
 ) -> GmrtFmt:
     """
-    Validate format input.
+    Validates format input.
     """
-    format = format.lower()  # type: ignore
-    format = format_replacements.get(format, format)
-    assert (
-        format in accepted_formats
-    ), f"Format must be one of {accepted_formats} (got '{format}')"
-    return format
+    fmt = fmt.lower()  # type: ignore
+    fmt = format_replacements.get(fmt, fmt)
+    assert fmt in accepted_formats, (
+        f"Format must be one of {accepted_formats} (got '{fmt}')"
+    )
+    return fmt
 
 
 def _construct_gmrt_request(
-    latlim: tuple[number, number],
-    lonlim: tuple[number, number],
-    resolution: number | str,
+    latlim: tuple[Real, Real],
+    lonlim: tuple[Real, Real],
+    resolution: Real | str,
     format: str,
     layer: str = "topo",
-) -> dict[str, str | number]:
+) -> dict[str, str | Real]:
     """
-    Convert input parameters to GMRT request parameters.
+    Converts input parameters to GMRT request parameters.
     """
-    params: dict[str, str | number] = {}
+    params: dict[str, str | Real] = {}
     params.update(
         {
             "maxlatitude": latlim[1],
@@ -190,17 +198,17 @@ def _construct_gmrt_request(
 
 
 def _fetch_gmrt_data(
-    latlim: tuple[number, number],
-    lonlim: tuple[number, number],
-    resolution: number | str,
+    latlim: tuple[Real, Real],
+    lonlim: tuple[Real, Real],
+    resolution: Real | str,
     format: str,
     base_url: str = GMRT_URL,
 ) -> tuple[
-    npt.NDArray[np.floating | np.integer],
+    NDArray[np.floating | np.integer],
     dict,
 ]:
     """
-    Fetch DEM data from the GMRT server.
+    Fetches DEM data from the GMRT server.
     """
     # Construct the URL
     params = _construct_gmrt_request(latlim, lonlim, resolution, format)
@@ -236,11 +244,11 @@ def _fetch_gmrt_data(
 def _gmrt_default_save_path(
     latlim: tuple[float | int, float | int],
     lonlim: tuple[float | int, float | int],
-    resolution: number | str,
+    resolution: Real | str,
     dir: Path = GMRT_LOCAL_DIR,
 ) -> Path:
     """
-    Generate the default local save path for GMRT DEM files.
+    Generates the default local save path for GMRT DEM files.
     """
     product_param = "gmrt"
     aoi_param = f"{latlim[0]}_{latlim[1]}_{lonlim[0]}_{lonlim[1]}"
@@ -254,6 +262,7 @@ def _gmrt_default_save_path(
 
 def main():
     import matplotlib.pyplot as plt
+
     from formosa.graphics.colour import light_terrain
 
     # Example usage of GMRT

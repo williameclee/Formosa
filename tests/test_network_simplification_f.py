@@ -1,18 +1,19 @@
 """
-Tests flow-graph simplification using the FORTRAN backend.
+Tests flow-graph simplification using the Fortran backend.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
-from tests.core import *
-
-import pytest
 import warnings
+
 import numpy as np
+import pytest
+from pytest import MonkeyPatch
 
 import formosa.geomorphology.drainage.network as nwork_m
-import formosa.geomorphology.drainage.network.validation as val_m
 import formosa.geomorphology.drainage.network.simplification as simp_m
+import formosa.geomorphology.drainage.network.validation as val_m
+from tests.core import *
 
 
 def test_simplify_single_flowgraph():
@@ -61,7 +62,7 @@ def test_simplify_single_flowgraph():
     with warnings.catch_warnings():
         warnings.simplefilter("default")
         filters_before = list(warnings.filters)
-        simp_m.simplify_flowgraph(
+        _ = simp_m.simplify_flowgraph(
             *(orders, verts_topo, endpts_topo),
             tol=1.5,
             check_topology=True,
@@ -102,20 +103,25 @@ def test_simplify_flowgraph_validates_arc_orders():
     orders = [np.array([1]), np.array([2])]
 
     with pytest.raises(TypeError, match="must be NumPy arrays"):
-        simp_m.simplify_flowgraph(
-            np.array([1]), "not-an-array", endpts, check_topology=False  # type: ignore
+        simp_m.simplify_flowgraph(  # pyright: ignore[reportCallIssue]
+            np.array([1]),
+            "not-an-array",  # pyright: ignore[reportArgumentType]
+            endpts,
+            check_topology=False,
         )
 
     with pytest.raises(ValueError, match="Order array has length 0"):
-        simp_m.simplify_flowgraph(
+        _ = simp_m.simplify_flowgraph(
             np.array([], dtype=np.uint8), verts, endpts, check_topology=False
         )
 
     with pytest.raises(ValueError, match="must have the same length"):
-        simp_m.simplify_flowgraph(orders, [verts], [endpts], check_topology=False)
+        _ = simp_m.simplify_flowgraph(orders, [verts], [endpts], check_topology=False)
 
 
-def test_simplify_rejects_invalid_final_graph_from_valid_input(monkeypatch):
+def test_simplify_rejects_invalid_final_graph_from_valid_input(
+    monkeypatch: MonkeyPatch,
+):
     verts = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 0.0], [0.5, 0.5], [1.5, 0.5]])
     endpts = np.array([[0, 2], [3, 4]])
     orders = np.array([1, 2])
@@ -134,7 +140,7 @@ def test_simplify_rejects_invalid_final_graph_from_valid_input(monkeypatch):
     )
 
     with pytest.raises(nwork_m.UnresolvedSimplificationTopology) as exc_info:
-        simp_m.simplify_flowgraph(
+        _ = simp_m.simplify_flowgraph(
             orders, verts, endpts, tol=1.0, check_topology=True, backend="fortran"
         )
 
@@ -163,20 +169,20 @@ def test_simplify_rejects_invalid_final_graph_from_invalid_input(
     )
 
     with pytest.raises(nwork_m.InvalidOriginalGraphTopology) as exc_info:
-        simp_m.simplify_flowgraph(
+        _ = simp_m.simplify_flowgraph(
             orders, verts, endpts, tol=1.0, check_topology=True, backend="fortran"
         )
 
 
 def test_simplify_skips_final_validation_when_topology_check_is_disabled(
-    monkeypatch,
+    monkeypatch: MonkeyPatch,
 ):
     def fail_if_called(*args, **kwargs):
         raise AssertionError("Topology validation should be disabled.")
 
     monkeypatch.setattr(simp_m, "_locate_disallowed_graph_topology", fail_if_called)
 
-    simp_m.simplify_flowgraph(
+    _ = simp_m.simplify_flowgraph(
         np.array([1]),
         np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]]),
         np.array([[0, 2]]),

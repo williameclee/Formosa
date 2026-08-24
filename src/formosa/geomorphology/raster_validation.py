@@ -6,18 +6,25 @@ elevation models, validity masks, flow directions, and coordinate
 rasters.
 
 Created: 2026-08-22, En-Chi Lee (williameclee@gmail.com)
-Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
 from numpy.typing import NDArray
+from typing import TypeVar
 
+from formosa.geomorphology.drainage.directions import (
+    DirectionEncoding,
+    D8DirectionEncoding,
+)
 from formosa.utils import NpCoords, NpFlowDir, NpReal
 from formosa.utils.validation import (
     validate_2d_raster,
     validate_same_shape,
     validate_shape,
 )
+
+E = TypeVar("E", bound=DirectionEncoding)
 
 
 def validate_format_dem(dem: NDArray[NpReal]) -> NDArray[NpReal]:
@@ -49,7 +56,7 @@ def validate_format_dem(dem: NDArray[NpReal]) -> NDArray[NpReal]:
 
 def validate_format_valids(
     valids: NDArray[np.bool_] | None,
-    against: NDArray[np.number | np.bool_] | None,
+    against: np.ndarray | None,
     against_name: str = "masked array",
 ) -> NDArray[np.bool_]:
     """
@@ -97,7 +104,7 @@ def validate_format_valids(
 
 def validate_format_flowdirs(
     dirs: NDArray[NpFlowDir],
-    against: NDArray[np.number | np.bool_] | None = None,
+    against: np.ndarray | None = None,
     against_name: str = "DEM",
 ) -> NDArray[NpFlowDir]:
     """
@@ -204,8 +211,37 @@ def validate_format_freeform_coordinates(
     return x, y
 
 
+def validate_format_dir_encoding(
+    dir_enc: DirectionEncoding | None,
+) -> DirectionEncoding:
+    """
+    Validates and standardises a flow direction encoding scheme.
+
+    Parameters
+    ----------
+    dir_enc : DirectionEncoding | None
+        Flow direction encoding scheme.
+        If `None`, defaults to standard D8 direction encoding.
+        - Default scheme is `None`.
+
+    Returns
+    -------
+    dir_enc : DirectionEncoding
+        Validated flow direction encoding scheme.
+    """
+    if dir_enc is None:
+        return D8DirectionEncoding()
+    if not isinstance(dir_enc, DirectionEncoding):
+        raise TypeError(
+            "Direction scheme must be a 'DirectionEncoding' object, "
+            + f"but got type {type(dir_enc)}."
+        )
+    return dir_enc
+
+
 __all__ = [
     "validate_format_dem",
+    "validate_format_dir_encoding",
     "validate_format_flowdirs",
     "validate_format_freeform_coordinates",
     "validate_format_valids",

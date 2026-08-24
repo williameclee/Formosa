@@ -1,25 +1,24 @@
 """
 Detects and resolves overlapping or crossing flow-graph topology.
 
-Last modified: 2026-08-18, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
 from dataclasses import dataclass
-import numpy as np
 
+import numpy as np
+from numpy.typing import NDArray
+
+from formosa.geomorphology._native import network_simplification as simp_f
+from formosa.geomorphology.drainage.network.editing import remove_unused_vertices
 from formosa.geomorphology.drainage.network.validation import (
     _locate_disallowed_graph_topology,
 )
-from formosa.geomorphology.drainage.network.editing import remove_unused_vertices
-from formosa.geomorphology._native import network_simplification as simp_f
-
-from typing import Optional, Generic
-from numpy.typing import NDArray
-from formosa.utils.typing import NpInt, NpIndex, NpCoords
+from formosa.utils.typing import NpCoords, NpIndex, NpInt
 
 
 @dataclass
-class _GraphVertexAnalysis(Generic[NpCoords]):
+class _GraphVertexAnalysis:
     """
     Reusable vertex metadata for one flow graph.
 
@@ -48,7 +47,7 @@ class _GraphVertexAnalysis(Generic[NpCoords]):
 
 
 @dataclass
-class _SharedVertexAnalysis(Generic[NpCoords]):
+class _SharedVertexAnalysis:
     """
     Vertex metadata shared by a pair of flow graphs.
 
@@ -130,7 +129,10 @@ def _analyse_graph_vertices(
 
     # `vert_inv` maps each used occurrence to its deduplicated vertex
     vtxs, vtx_inv, vtx_cnts = np.unique(
-        vtxs[used_ids], axis=0, return_inverse=True, return_counts=True
+        vtxs[used_ids],
+        axis=0,
+        return_inverse=True,
+        return_counts=True,
     )
     # A repeated coordinate is an endpoint if any of its occurrences is one
     is_endpt = np.zeros(vtxs.shape[0], dtype=bool)
@@ -173,15 +175,15 @@ def _find_shared_graph_vertices(
     conversion.
     """
     dtype = np.result_type(g1.vtxs.dtype, g2.vtxs.dtype)
-    g1_verts = np.ascontiguousarray(g1.vtxs, dtype=dtype)
-    g2_verts = np.ascontiguousarray(g2.vtxs, dtype=dtype)
+    g1_vtxs = np.ascontiguousarray(g1.vtxs, dtype=dtype)
+    g2_vtxs = np.ascontiguousarray(g2.vtxs, dtype=dtype)
     # Encode each vertex row as one fixed-width value for `intersect1d`.
-    row_dtype = np.dtype((np.void, dtype.itemsize * g1_verts.shape[1]))
-    g1_keys = g1_verts.view(row_dtype).ravel()
-    g2_keys = g2_verts.view(row_dtype).ravel()
+    row_dtype = np.dtype((np.void, dtype.itemsize * g1_vtxs.shape[1]))
+    g1_keys = g1_vtxs.view(row_dtype).ravel()
+    g2_keys = g2_vtxs.view(row_dtype).ravel()
     _, g1_ids, g2_ids = np.intersect1d(g1_keys, g2_keys, return_indices=True)
     return _SharedVertexAnalysis(
-        vtxs=g1_verts[g1_ids],
+        vtxs=g1_vtxs[g1_ids],
         g1_vtx_ids=g1_ids.astype(np.intp, copy=False),
         g2_vtx_ids=g2_ids.astype(np.intp, copy=False),
         g1_is_endpt=g1.is_endpt[g1_ids],
@@ -191,12 +193,12 @@ def _find_shared_graph_vertices(
     )
 
 
-def find_graph_overlaps(
-    g1_vtxs: NDArray[NpCoords],
-    g1_endpts: NDArray[NpIndex],
-    g2_vtxs: NDArray[NpCoords],
-    g2_endpts: NDArray[NpIndex],
-) -> tuple[NDArray[NpCoords], NDArray[NpCoords], NDArray[NpCoords], NDArray[NpCoords]]:
+def find_graph_overlaps[V: NpCoords, E: NpIndex](
+    g1_vtxs: NDArray[V],
+    g1_endpts: NDArray[E],
+    g2_vtxs: NDArray[V],
+    g2_endpts: NDArray[E],
+) -> tuple[NDArray[V], NDArray[V], NDArray[V], NDArray[V]]:
     """
     Finds and classifies the shared vertices of two graphs.
 
@@ -237,35 +239,36 @@ def find_graph_overlaps(
         _analyse_graph_vertices(g1_vtxs, g1_endpts),
         _analyse_graph_vertices(g2_vtxs, g2_endpts),
     )
-    overlaps = shared.vtxs.astype(g1_vtxs.dtype, copy=False)
+    ovlps = shared.vtxs.astype(g1_vtxs.dtype, copy=False)
 
     # Partition the overlaps by their roles in the two graphs
-    endpt_endpt = overlaps[shared.g1_is_endpt & shared.g2_is_endpt]
-    intr_intr = overlaps[~shared.g1_is_endpt & ~shared.g2_is_endpt]
-    g1_intr_g2_endpt = overlaps[~shared.g1_is_endpt & shared.g2_is_endpt]
-    g1_endpt_g2_intr = overlaps[shared.g1_is_endpt & ~shared.g2_is_endpt]
+    endpt_endpt = ovlps[shared.g1_is_endpt & shared.g2_is_endpt]
+    intr_intr = ovlps[~shared.g1_is_endpt & ~shared.g2_is_endpt]
+    g1_intr_g2_endpt = ovlps[~shared.g1_is_endpt & shared.g2_is_endpt]
+    g1_endpt_g2_intr = ovlps[shared.g1_is_endpt & ~shared.g2_is_endpt]
 
     return (endpt_endpt, intr_intr, g1_intr_g2_endpt, g1_endpt_g2_intr)
 
 
 def _find_shared_vertex_neighbours(
-    analysis: _GraphVertexAnalysis,
+    anlys: _GraphVertexAnalysis,
     endpts: NDArray[np.integer],
     shared_vtx_ids: NDArray[NpIndex],
     context: NDArray[np.bool_],
 ) -> tuple[NDArray[np.bool_], NDArray[np.bool_]]:
     """
-    Finds adjacency between shared vertices using integer vertex IDs.
+    Finds adjacency between shared vertices using integer vertex
+    IDs.
 
     Parameters
     ----------
-    analysis : _GraphVertexAnalysis
+    anlys : _GraphVertexAnalysis
         Unique-vertex metadata for the graph being inspected.
     endpts : NDArray[int]
         (A,2) array of inclusive arc ranges in the graph's stored
         vertex array.
     shared_vtx_ids : NDArray[int]
-        Unique-vertex IDs in `analysis` for every vertex shared by
+        Unique-vertex IDs in `anlys` for every vertex shared by
         the two graphs.
     context : NDArray[bool]
         Mask over the shared vertices selecting those that may
@@ -292,14 +295,14 @@ def _find_shared_vertex_neighbours(
         return prev_alsos, after_alsos
 
     # Translate graph-local unique IDs to positions in the shared arrays.
-    unique_to_shared = np.full(analysis.vtxs.shape[0], -1, dtype=np.intp)
-    unique_to_shared[shared_vtx_ids] = np.arange(shared_vtx_ids.size)
-    vtx_shared_ids = np.full(analysis.vtx_inv_ids.shape, -1, dtype=np.intp)
-    used = analysis.vtx_inv_ids >= 0
-    vtx_shared_ids[used] = unique_to_shared[analysis.vtx_inv_ids[used]]
+    uniq_to_shared = np.full(anlys.vtxs.shape[0], -1, dtype=np.intp)
+    uniq_to_shared[shared_vtx_ids] = np.arange(shared_vtx_ids.size)
+    vtx_shared_ids = np.full(anlys.vtx_inv_ids.shape, -1, dtype=np.intp)
+    used = anlys.vtx_inv_ids >= 0
+    vtx_shared_ids[used] = uniq_to_shared[anlys.vtx_inv_ids[used]]
 
     # A difference array marks consecutive stored rows belonging to one arc.
-    segment_counts = np.zeros(analysis.vtx_inv_ids.size, dtype=np.int32)
+    segment_counts = np.zeros(anlys.vtx_inv_ids.size, dtype=np.int32)
     np.add.at(segment_counts, endpts[:, 0], 1)
     np.add.at(segment_counts, endpts[:, 1], -1)
     same_arc = np.cumsum(segment_counts)[:-1] > 0
@@ -314,13 +317,13 @@ def _find_shared_vertex_neighbours(
     return prev_alsos, after_alsos
 
 
-def _split_arcs_at_vertex_ids(
-    orders: NDArray[np.integer],
-    vtxs: NDArray[NpCoords],
-    endpts: NDArray[NpIndex],
-    analysis: _GraphVertexAnalysis,
-    split_coord_ids: NDArray[NpIndex],
-) -> tuple[NDArray[np.integer], NDArray[NpCoords], NDArray[NpIndex]]:
+def _split_arcs_at_vertex_ids[O: NpInt, V: NpCoords, E: NpIndex](
+    orders: NDArray[O],
+    vtxs: NDArray[V],
+    endpts: NDArray[E],
+    anlys: _GraphVertexAnalysis,
+    split_coord_ids: NDArray[E],
+) -> tuple[NDArray[O], NDArray[V], NDArray[E]]:
     """
     Splits all requested interior vertices while rebuilding arrays
     once.
@@ -333,11 +336,11 @@ def _split_arcs_at_vertex_ids(
         (V,n) array of stored vertex coordinates.
     endpts : NDArray[int]
         (A,2) array of inclusive arc ranges into `ijs`.
-    analysis : _GraphVertexAnalysis
+    anlys : _GraphVertexAnalysis
         Reusable metadata previously calculated from `ijs` and
         `endpts`.
     split_coord_ids : NDArray[int]
-        Unique-vertex IDs in `analysis` that should become arc
+        Unique-vertex IDs in `anlys` that should become arc
         endpoints.
 
     Returns
@@ -362,14 +365,14 @@ def _split_arcs_at_vertex_ids(
         return orders, vtxs, endpts
 
     # Convert unique-coordinate IDs to a mask over stored vertex rows
-    split_vtxs = np.isin(analysis.vtx_inv_ids, split_coord_ids)
-    chunks: list[NDArray[NpCoords]] = []
+    split_vtxs = np.isin(anlys.vtx_inv_ids, split_coord_ids)
+    chunks: list[NDArray[V]] = []
     new_orders: list[np.generic | int] = []
     lengths: list[int] = []
     for order, (start, end) in zip(orders, endpts):
         # Existing arc endpoints are boundaries already; split only interiors
-        interior = np.flatnonzero(split_vtxs[start + 1 : end]) + start + 1
-        boundaries = np.concatenate(([start], interior, [end]))
+        intr = np.flatnonzero(split_vtxs[start + 1 : end]) + start + 1
+        boundaries = np.concatenate(([start], intr, [end]))
         for left, right in zip(boundaries[:-1], boundaries[1:]):
             chunk = vtxs[left : right + 1]
             chunks.append(chunk)
@@ -381,26 +384,19 @@ def _split_arcs_at_vertex_ids(
     ends = np.cumsum(lengths, dtype=np.intp) - 1
     starts = np.concatenate(([0], ends[:-1] + 1))
     new_endpts = np.column_stack((starts, ends)).astype(endpts.dtype, copy=False)
-    return np.asarray(new_orders, dtype=orders.dtype), new_vtxs, new_endpts
+    return (np.asarray(new_orders, dtype=orders.dtype), new_vtxs, new_endpts)
 
 
-def solve_graph_overlaps(
-    g1_orders: NDArray[NpInt],
-    g1_vtxs: NDArray[NpCoords],
-    g1_endpts: NDArray[NpIndex],
-    g2_orders: NDArray[NpInt],
-    g2_vtxs: NDArray[NpCoords],
-    g2_endpts: NDArray[NpIndex],
-    allows_arcs_overlap: bool = True,
+def solve_graph_overlaps[O: NpInt, V: NpCoords, E: NpIndex](
+    g1_orders: NDArray[O],
+    g1_vtxs: NDArray[V],
+    g1_endpts: NDArray[E],
+    g2_orders: NDArray[O],
+    g2_vtxs: NDArray[V],
+    g2_endpts: NDArray[E],
+    allow_ovlp: bool = True,
     remove_unused: bool = False,
-) -> tuple[
-    NDArray[NpInt],
-    NDArray[NpCoords],
-    NDArray[NpIndex],
-    NDArray[NpInt],
-    NDArray[NpCoords],
-    NDArray[NpIndex],
-]:
+) -> tuple[NDArray[O], NDArray[V], NDArray[E], NDArray[O], NDArray[V], NDArray[E]]:
     """
     Splits two graphs at shared vertices to align their arc
     endpoints.
@@ -408,7 +404,7 @@ def solve_graph_overlaps(
     Vertices that are endpoints in only one graph are inserted as
     endpoints in the other graph. Interior overlaps are inserted
     into both graphs unless they belong to a shared arc and
-    `allows_arcs_overlap` is `True`.
+    `allow_ovlp` is `True`.
 
     Parameters
     ----------
@@ -430,7 +426,7 @@ def solve_graph_overlaps(
     g2_endpts : NDArray[int]
         (A2,2) array containing the inclusive starting and ending
         vertex indices of each arc in the second graph.
-    allows_arcs_overlap : bool, optional
+    allow_ovlp : bool, optional
         Whether shared sequences of interior vertices may remain
         overlapping without being split into separate arcs.
         If true, consecutive overlap of vertices are isolated as a
@@ -459,53 +455,53 @@ def solve_graph_overlaps(
         Updated inclusive endpoint indices of the arcs in the second
         graph.
     """
-    g1_analysis = _analyse_graph_vertices(g1_vtxs, g1_endpts)
-    g2_analysis = _analyse_graph_vertices(g2_vtxs, g2_endpts)
-    shared = _find_shared_graph_vertices(g1_analysis, g2_analysis)
+    g1_anlys = _analyse_graph_vertices(g1_vtxs, g1_endpts)
+    g2_anlys = _analyse_graph_vertices(g2_vtxs, g2_endpts)
+    shared = _find_shared_graph_vertices(g1_anlys, g2_anlys)
     g1_ep = shared.g1_is_endpt
     g2_ep = shared.g2_is_endpt
     intr_intr = ~g1_ep & ~g2_ep
-    g1_intr_g2_vert = ~g1_ep & g2_ep
-    g1_vert_g2_intr = g1_ep & ~g2_ep
+    g1_intr_g2_vtx = ~g1_ep & g2_ep
+    g1_vtx_g2_intr = g1_ep & ~g2_ep
 
     split_both = intr_intr.copy()
-    if allows_arcs_overlap and np.any(intr_intr):
+    if allow_ovlp and np.any(intr_intr):
         # Coordinates already duplicated across arcs, together with
         # mismatched endpoints that this call will split, bound an
         # existing shared run
         context = intr_intr | (
             (g1_ep & g2_ep & (shared.g1_cnts > 1) & (shared.g2_cnts > 1))
-            | (g1_intr_g2_vert & (shared.g2_cnts > 1))
-            | (g1_vert_g2_intr & (shared.g1_cnts > 1))
+            | (g1_intr_g2_vtx & (shared.g2_cnts > 1))
+            | (g1_vtx_g2_intr & (shared.g1_cnts > 1))
         )
         g1_prev, g1_after = _find_shared_vertex_neighbours(
-            g1_analysis, g1_endpts, shared.g1_vtx_ids, context
+            g1_anlys, g1_endpts, shared.g1_vtx_ids, context
         )
         g2_prev, g2_after = _find_shared_vertex_neighbours(
-            g2_analysis, g2_endpts, shared.g2_vtx_ids, context
+            g2_anlys, g2_endpts, shared.g2_vtx_ids, context
         )
         split_both = intr_intr & ~(g1_prev & g1_after & g2_prev & g2_after)
 
-    g1_split = g1_intr_g2_vert | split_both
-    g2_split = g1_vert_g2_intr | split_both
+    g1_split = g1_intr_g2_vtx | split_both
+    g2_split = g1_vtx_g2_intr | split_both
     g1_orders, g1_vtxs, g1_endpts = _split_arcs_at_vertex_ids(
         g1_orders,
         g1_vtxs,
         g1_endpts,
-        g1_analysis,
+        g1_anlys,
         shared.g1_vtx_ids[g1_split],  # type: ignore
     )
     g2_orders, g2_vtxs, g2_endpts = _split_arcs_at_vertex_ids(
         g2_orders,
         g2_vtxs,
         g2_endpts,
-        g2_analysis,
+        g2_anlys,
         shared.g2_vtx_ids[g2_split],  # type: ignore
     )
     if remove_unused:
         g1_vtxs, g1_endpts = remove_unused_vertices(g1_vtxs, g1_endpts)
         g2_vtxs, g2_endpts = remove_unused_vertices(g2_vtxs, g2_endpts)
-    return g1_orders, g1_vtxs, g1_endpts, g2_orders, g2_vtxs, g2_endpts
+    return (g1_orders, g1_vtxs, g1_endpts, g2_orders, g2_vtxs, g2_endpts)
 
 
 def _resolve_topology_intersections(
@@ -513,7 +509,7 @@ def _resolve_topology_intersections(
     endpts: NDArray[NpIndex],
     vtx_keeps: NDArray[np.bool_],
     tol: float,
-    graph_ids: Optional[NDArray[np.integer]] = None,
+    graph_ids: NDArray[np.integer] | None = None,
     max_iters: int = 4,
 ) -> NDArray[np.bool_]:
     """
@@ -533,11 +529,11 @@ def _resolve_topology_intersections(
         - max_iters = 1: Make at most one repair attempt.
         - max_iters = N: Make at most N attempts.
     """
-    vertex_cumsum = np.cumsum(vtx_keeps) - 1
-    vertices_aux = vtxs[:, vtx_keeps]
-    endpts_aux = vertex_cumsum[endpts]
+    vtx_cumsum = np.cumsum(vtx_keeps) - 1
+    vtxs_aux = vtxs[:, vtx_keeps]
+    endpts_aux = vtx_cumsum[endpts]
 
-    intxs = _locate_disallowed_graph_topology(vertices_aux, endpts_aux, graph_ids)
+    intxs = _locate_disallowed_graph_topology(vtxs_aux, endpts_aux, graph_ids)
 
     niters = 0
     while (intxs is not None) and (niters < max_iters):
@@ -546,18 +542,18 @@ def _resolve_topology_intersections(
         for iarc in np.unique(intxs[:, :2]):
             start = endpts[0, iarc]
             end = endpts[1, iarc]
-            arc_length = end - start + 1
+            arc_len = end - start + 1
             vtx_keeps[start : end + 1] = simp_f.simplify_flowgraph(
                 vtxs[:, start : end + 1].astype(np.float32, order="F"),
-                np.array([[1], [arc_length]], dtype=np.int32, order="F"),
+                np.array([[1], [arc_len]], dtype=np.int32, order="F"),
                 tol,
             ).astype(bool)
         # Squeeze the vertices and map the arc endpoints to the new indices
-        vertex_cumsum = np.cumsum(vtx_keeps) - 1
-        vertices_aux = vtxs[:, vtx_keeps]
-        endpts_aux = vertex_cumsum[endpts]
+        vtx_cumsum = np.cumsum(vtx_keeps) - 1
+        vtxs_aux = vtxs[:, vtx_keeps]
+        endpts_aux = vtx_cumsum[endpts]
 
-        intxs = _locate_disallowed_graph_topology(vertices_aux, endpts_aux, graph_ids)
+        intxs = _locate_disallowed_graph_topology(vtxs_aux, endpts_aux, graph_ids)
     # If there are still intersections after that many iterations, don't simplify those arc
     if intxs is not None:
         for iarc in np.unique(intxs[:, :2]):

@@ -7,16 +7,18 @@ validatio and error translation. Constrained edge recovery is tested
 separately in `test_triangulation_constrained.py`.
 
 Created: 2026-08-12, En-Chi Lee (williameclee@gmail.com)
-Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
 import pytest
+from numpy.typing import NDArray
 
 from formosa.geomorphology.drainage.network import GraphTopologyError
 from formosa.geomorphology.geometry import incircle, orient
 from formosa.geomorphology.meshing import triangulation as tri_m
-from formosa.utils import BACKENDS
+from formosa.utils import BACKENDS, Backend
+from formosa.utils.typing import NpCanonIndex, NpCoords
 
 
 def _mesh_edges(triangles: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
@@ -28,13 +30,15 @@ def _mesh_edges(triangles: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
 
 
 def _coordinate_edges(
-    vtxs: np.ndarray, triangles: np.ndarray
+    vtxs: NDArray[NpCanonIndex], triangles: NDArray[NpCanonIndex]
 ) -> set[tuple[tuple[int, int], tuple[int, int]]]:
     edges, _ = _mesh_edges(triangles)
     return {tuple(sorted((tuple(vtxs[u]), tuple(vtxs[v])))) for u, v in edges}  # type: ignore
 
 
-def _assert_valid_delaunay(vtxs: np.ndarray, triangles: np.ndarray) -> None:
+def _assert_valid_delaunay(
+    vtxs: NDArray[NpCoords], triangles: NDArray[NpCanonIndex]
+) -> None:
     assert triangles.ndim == 2
     assert triangles.shape[1] == 3
     assert triangles.dtype == np.int32
@@ -77,13 +81,15 @@ def _assert_valid_delaunay(vtxs: np.ndarray, triangles: np.ndarray) -> None:
         np.array([[10, 7], [11, 0], [11, 1], [11, 11]], dtype=np.int32),
     ],
 )
-def test_triangulate_points_produces_valid_delaunay_mesh(points, backend):
+def test_triangulate_points_produces_valid_delaunay_mesh(
+    points: NDArray[NpCoords], backend: Backend
+):
     triangles = tri_m.triangulate_points(points, backend=backend)
     _assert_valid_delaunay(points, triangles)
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_triangulate_points_returns_canonical_triangle_order(backend):
+def test_triangulate_points_returns_canonical_triangle_order(backend: Backend):
     vtxs = np.array(
         [[0, 0], [1, 5], [3, 2], [5, 7], [8, 1], [9, 6], [4, 4]],
         dtype=np.int32,
@@ -110,7 +116,7 @@ def test_triangulate_points_backend_order_is_identical():
 
 @pytest.mark.parametrize("backend", BACKENDS)
 @pytest.mark.parametrize("shape", [(2, 2), (3, 3), (5, 5), (3, 7)])
-def test_triangulate_regular_raster_grid(shape, backend):
+def test_triangulate_regular_raster_grid(shape: tuple[int, int], backend: Backend):
     nrows, ncols = shape
     vtxs = np.indices(shape).reshape(2, -1).T.astype(np.int32)
 
@@ -135,14 +141,16 @@ def test_triangulate_regular_raster_grid(shape, backend):
         ),
     ],
 )
-def test_triangulate_accepts_collinear_subsets(vtxs, backend):
+def test_triangulate_accepts_collinear_subsets(
+    vtxs: NDArray[NpCoords], backend: Backend
+):
     triangles = tri_m.triangulate_points(vtxs, backend=backend)
 
     _assert_valid_delaunay(vtxs, triangles)
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_triangulation_is_invariant_to_input_order(backend):
+def test_triangulation_is_invariant_to_input_order(backend: Backend):
     vtxs = np.array(
         [[0, 0], [1, 5], [3, 2], [5, 7], [8, 1], [9, 6], [4, 4]],
         dtype=np.int32,
@@ -159,7 +167,7 @@ def test_triangulation_is_invariant_to_input_order(backend):
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_cocircular_permutations_produce_valid_triangulations(backend):
+def test_cocircular_permutations_produce_valid_triangulations(backend: Backend):
     vtxs = np.array([[0, 0], [0, 4], [4, 0], [4, 4]], dtype=np.int32)
 
     for permutation in (
@@ -174,7 +182,7 @@ def test_cocircular_permutations_produce_valid_triangulations(backend):
 
 @pytest.mark.parametrize("backend", BACKENDS)
 @pytest.mark.parametrize("nvtxs", [10, 30, 100])
-def test_triangulate_deterministic_random_raster_points(nvtxs, backend):
+def test_triangulate_deterministic_random_raster_points(nvtxs: int, backend: Backend):
     rng = np.random.default_rng(20260812 + nvtxs)
     candidates = rng.integers(0, 10_000, size=(nvtxs * 2, 2), dtype=np.int32)
     vtxs = np.unique(candidates, axis=0)[:nvtxs]
@@ -187,7 +195,7 @@ def test_triangulate_deterministic_random_raster_points(nvtxs, backend):
 
 @pytest.mark.parametrize("backend", BACKENDS)
 @pytest.mark.parametrize("offset", [10_000, 20_123])
-def test_triangulation_is_translation_invariant(offset, backend):
+def test_triangulation_is_translation_invariant(offset: float, backend: Backend):
     vtxs = np.array(
         [[0, 0], [1, 5], [3, 2], [5, 7], [8, 1], [9, 6], [4, 4]],
         dtype=np.int32,
@@ -205,7 +213,7 @@ def test_triangulation_is_translation_invariant(offset, backend):
 
 @pytest.mark.parametrize("backend", BACKENDS)
 @pytest.mark.parametrize("scale", [2, 7, 1_000])
-def test_triangulation_is_scale_invariant(scale, backend):
+def test_triangulation_is_scale_invariant(scale: float, backend: Backend):
     vtxs = np.array(
         [[0, 0], [1, 5], [3, 2], [5, 7], [8, 1], [9, 6], [4, 4]],
         dtype=np.int32,
@@ -238,14 +246,16 @@ def test_triangulation_is_scale_invariant(scale, backend):
         ),
     ],
 )
-def test_triangulate_int32_extreme_coordinates(vtxs, backend):
+def test_triangulate_int32_extreme_coordinates(
+    vtxs: NDArray[NpCoords], backend: Backend
+):
     triangles = tri_m.triangulate_points(vtxs, backend=backend)
 
     _assert_valid_delaunay(vtxs, triangles)
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_triangulate_rejects_duplicate_vertices(backend):
+def test_triangulate_rejects_duplicate_vertices(backend: Backend):
     points = np.array([[0, 0], [1, 0], [0, 1], [1, 0]], dtype=np.int32)
 
     with pytest.raises(ValueError, match="1 duplicates"):
@@ -253,7 +263,7 @@ def test_triangulate_rejects_duplicate_vertices(backend):
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_triangulate_rejects_collinear_vertices(backend):
+def test_triangulate_rejects_collinear_vertices(backend: Backend):
     vtxs = np.array([[0, 0], [1, 1], [2, 2]], dtype=np.int32)
 
     with pytest.raises(GraphTopologyError):
@@ -268,31 +278,31 @@ def test_triangulate_rejects_collinear_vertices(backend):
         np.zeros((3, 3), dtype=np.int32),
     ],
 )
-def test_triangulate_rejects_invalid_shapes(vtxs, backend):
+def test_triangulate_rejects_invalid_shapes(vtxs: NDArray[NpCoords], backend: Backend):
     with pytest.raises(ValueError, match="shape"):
         tri_m.triangulate_points(vtxs, backend=backend)
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
 @pytest.mark.parametrize("nvtxs", [0, 1, 2])
-def test_triangulate_rejects_too_few_vertices(nvtxs, backend):
+def test_triangulate_rejects_too_few_vertices(nvtxs: int, backend: Backend):
     vtxs = np.arange(nvtxs * 2, dtype=np.int32).reshape(nvtxs, 2)
 
     with pytest.raises(ValueError, match="At least 3 vertices"):
-        tri_m.triangulate_points(vtxs, backend=backend)
+        _ = tri_m.triangulate_points(vtxs, backend=backend)
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
 @pytest.mark.parametrize("dtype", [np.bool_, np.str_, object])
-def test_triangulate_rejects_non_numeric_coordinates(dtype, backend):
+def test_triangulate_rejects_non_numeric_coordinates(dtype: type, backend: Backend):
     vtxs = np.array([[0, 0], [0, 2], [2, 0]], dtype=dtype)
 
     with pytest.raises(TypeError):
-        tri_m.triangulate_points(vtxs, backend=backend)
+        _ = tri_m.triangulate_points(vtxs, backend=backend)
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_triangulate_accepts_noncontiguous_vertex_array(backend):
+def test_triangulate_accepts_noncontiguous_vertex_array(backend: Backend):
     storage = np.zeros((6, 4), dtype=np.int32)
     storage[:, ::2] = np.array(
         [[0, 0], [0, 4], [4, 0], [4, 4], [1, 2], [3, 1]], dtype=np.int32
@@ -308,7 +318,9 @@ def test_triangulate_points_rejects_unknown_backend():
     vtxs = np.array([[0, 0], [0, 1], [1, 0]], dtype=np.int32)
 
     with pytest.raises(ValueError, match="Unknown backend"):
-        tri_m.triangulate_points(vtxs, backend="unknown")  # type: ignore
+        _ = tri_m.triangulate_points(
+            vtxs, backend="unknown"  # pyright: ignore[reportArgumentType]
+        )
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
@@ -316,22 +328,24 @@ def test_triangulate_points_rejects_unknown_backend():
     ("faces", "exp_nabrs"),
     [
         (
-            np.array([[0, 1, 2]], dtype=np.int32),
-            np.array([[-1, -1, -1]], dtype=np.int32),
+            np.array([[0, 1, 2]], dtype=NpCanonIndex),
+            np.array([[-1, -1, -1]], dtype=NpCanonIndex),
         ),
         (
-            np.array([[0, 1, 2], [1, 3, 2]], dtype=np.int32),
-            np.array([[1, -1, -1], [-1, 0, -1]], dtype=np.int32),
+            np.array([[0, 1, 2], [1, 3, 2]], dtype=NpCanonIndex),
+            np.array([[1, -1, -1], [-1, 0, -1]], dtype=NpCanonIndex),
         ),
         (
-            np.array([[0, 1, 4], [0, 4, 3], [1, 2, 5], [1, 5, 4]], dtype=np.int32),
+            np.array([[0, 1, 4], [0, 4, 3], [1, 2, 5], [1, 5, 4]], dtype=NpCanonIndex),
             np.array(
-                [[3, 1, -1], [-1, -1, 0], [-1, 3, -1], [-1, 0, 2]], dtype=np.int32
+                [[3, 1, -1], [-1, -1, 0], [-1, 3, -1], [-1, 0, 2]], dtype=NpCanonIndex
             ),
         ),
     ],
 )
-def test_find_facet_neighbours(faces, exp_nabrs, backend):
+def test_find_facet_neighbours(
+    faces: NDArray[NpCanonIndex], exp_nabrs: NDArray[NpCanonIndex], backend: Backend
+):
     nabrs = tri_m.find_facet_neighbours(faces, backend=backend)
 
     np.testing.assert_array_equal(nabrs, exp_nabrs)
@@ -340,7 +354,7 @@ def test_find_facet_neighbours(faces, exp_nabrs, backend):
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_find_facet_neighbours_accepts_noncontiguous_input(backend):
+def test_find_facet_neighbours_accepts_noncontiguous_input(backend: Backend):
     storage = np.array([[0, 99, 1, 99, 2, 99], [1, 99, 3, 99, 2, 99]], dtype=np.int32)
     faces = storage[:, ::2]
     assert not faces.flags.c_contiguous
@@ -350,13 +364,15 @@ def test_find_facet_neighbours_accepts_noncontiguous_input(backend):
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_find_facet_neighbours_rejects_invalid_shape(backend):
+def test_find_facet_neighbours_rejects_invalid_shape(backend: Backend):
     with pytest.raises(ValueError, match="shape"):
-        tri_m.find_facet_neighbours(np.array([0, 1, 2]), backend=backend)
+        _ = tri_m.find_facet_neighbours(np.array([0, 1, 2]), backend=backend)
 
 
 def test_find_facet_neighbours_rejects_unknown_backend():
     faces = np.array([[0, 1, 2]], dtype=np.int32)
 
     with pytest.raises(ValueError, match="Unknown backend"):
-        tri_m.find_facet_neighbours(faces, backend="unknown")  # type: ignore
+        _ = tri_m.find_facet_neighbours(
+            faces, backend="unknown"  # pyright: ignore[reportArgumentType]
+        )

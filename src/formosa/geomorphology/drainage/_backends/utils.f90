@@ -1,10 +1,10 @@
-!> Provides shared utilities for the FORTRAN drainage backends.
+!> Provides shared utilities for the Fortran drainage backends.
 !!
 !! This internal module supports array-index conversion, flow-
 !! direction code decoding, raster masking, and priority queues used
-!! by other FORTRAN modules.
+!! by other Fortran modules.
 !!
-!! Last modified: 2026-08-21, En-Chi Lee (williameclee@gmail.com)
+!! Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 module utils
     use iso_c_binding, only: c_int8_t
     implicit none(type, external)
@@ -15,9 +15,9 @@ module utils
     integer, parameter :: ERR_OVERFLOW = 3
     integer, parameter :: ERR_COMPUTATION_FAILURE = 4
 contains
-    logical pure function array2d_oob(i, j, nrows, ncols) result(is_oob)
-        !! Checks whether a pair of array index (i, j) is
-        !! out-of-bounds
+    !> Checks whether a pair of array index (i, j) is out-of-bounds.
+    logical pure function array2d_oob(i, j, nrows, ncols) &
+        result(is_oob)
         implicit none(type, external)
         integer, intent(in) :: i, j
             !! Row and column indices
@@ -43,12 +43,12 @@ contains
         id = i + (j - 1)*nrows
     end function ij2id
 
+    !> Encodes a valid 1-based grid coordinate as a linear
+    !! cell ID.
+    !!
+    !! 0 is returned for an out-of-bounds coordinate and is never a
+    !! valid cell ID.
     pure function ij2id_checked(i, j, nrows, ncols) result(id)
-        !! Encodes a valid one-based grid coordinate as a linear
-        !! cell ID.
-        !!
-        !! Zero is returned for an out-of-bounds coordinate and is
-        !! never a valid cell ID.
         implicit none(type, external)
         integer, intent(in) :: i, j
             !! Row and column indices
@@ -67,8 +67,9 @@ contains
         end if
     end function ij2id_checked
 
+    !> Decodes a 1-based linear cell ID, rejecting IDs outside the
+    !! grid.
     pure subroutine id2ij_checked(cell_id, nrows, ncols, i, j, is_valid)
-        !! Decodes a one-based linear cell ID, rejecting IDs outside the grid.
         implicit none(type, external)
         integer, intent(in) :: cell_id, nrows, ncols
         integer, intent(out) :: i, j
@@ -86,8 +87,8 @@ contains
         j = (cell_id - 1)/nrows + 1
     end subroutine id2ij_checked
 
+    !> Converts a mask to validated 1-based linear cell IDs.
     pure subroutine mask2id(mask, ids, nids, cnt, err_code)
-        !! Converts a mask to validated one-based linear cell IDs.
         implicit none(type, external)
         logical(kind=1), intent(in), contiguous :: mask(:, :)
         integer, intent(in) :: nids
@@ -97,25 +98,26 @@ contains
         cnt = 0
         err_code = ERR_NO_ERROR
         do cj = lbound(mask, 2), ubound(mask, 2)
-            do ci = lbound(mask, 1), ubound(mask, 1)
-                if (.not. mask(ci, cj)) cycle
-                if (cnt == nids) then
-                    err_code = ERR_OVERFLOW
-                    return
-                end if
-                cnt = cnt + 1
-                ids(cnt) = ij2id_checked(ci, cj, size(mask, 1), size(mask, 2))
-            end do
+        do ci = lbound(mask, 1), ubound(mask, 1)
+            if (.not. mask(ci, cj)) cycle
+            if (cnt == nids) then
+                err_code = ERR_OVERFLOW
+                return
+            end if
+            cnt = cnt + 1
+            ids(cnt) = ij2id_checked(ci, cj, size(mask, 1), size(mask, 2))
+        end do
         end do
     end subroutine mask2id
 
+    !> Converts a 2D logical mask to a list of (i, j) indices where
+    !! the mask is true.
+    !!
+    !! The output list will have a maximum size of (2, nij), and the
+    !! actual number of valid indices found will be returned in
+    !! 'cnt'. If the number of valid indices exceeds nij, the
+    !! remaining will be ignored.
     pure subroutine mask2ij(mask, ij, nij, cnt, err_code)
-        !! Converts a 2D logical mask to a list of (i, j) indices where
-        !! the mask is true.
-        !! The output list will have a maximum size of 2-by-'nij', and
-        !! the actual number of valid indices found will be returned in
-        !! 'cnt'. If the number of valid indices exceeds nij, the
-        !! remaining will be ignored.
         implicit none(type, external)
         ! Arguments
         logical(kind=1), intent(in), contiguous :: mask(:, :)
@@ -124,31 +126,32 @@ contains
             !! Maximum number of indices to return
         ! Outputs
         integer, intent(out) :: ij(2, nij)
-            !! Output list of (i, j) indices where mask is true, with a maximum size of 2-by-nij
+            !! Output list of (i, j) indices where mask is true,
+            !! with a maximum size of (2, nij)
         integer, intent(out) :: cnt
             !! Actual number of valid indices found (up to nij)
         integer, intent(out) :: err_code
             !! Code indicating the status of the result
-            !!   - 0: Programme executed properly
-            !!   - 3: Output index buffer capacity was exceeded
+            !! - 0: Programme executed properly
+            !! - 3: Output index buffer capacity was exceeded
         ! Local variables
         integer :: ci, cj
 
-        ! Count number of valid neighbors
+        ! Count number of valid neighbours
         cnt = 0
         err_code = ERR_NO_ERROR
 
         do cj = lbound(mask, 2), ubound(mask, 2)
-            do ci = lbound(mask, 1), ubound(mask, 1)
-                if (.not. mask(ci, cj)) cycle
-                if (cnt == nij) then
-                    err_code = ERR_OVERFLOW
-                    return
-                end if
-                cnt = cnt + 1
-                ij(1, cnt) = ci
-                ij(2, cnt) = cj
-            end do
+        do ci = lbound(mask, 1), ubound(mask, 1)
+            if (.not. mask(ci, cj)) cycle
+            if (cnt == nij) then
+                err_code = ERR_OVERFLOW
+                return
+            end if
+            cnt = cnt + 1
+            ij(1, cnt) = ci
+            ij(2, cnt) = cj
+        end do
         end do
     end subroutine mask2ij
 
@@ -171,11 +174,12 @@ contains
         b = mod1(a + s, p)
     end function modshift
 
-    pure function find_noflow_code(offsets, codes, default_noflow_code) result(noflow_code)
-        !! For pairs of flow direction codes and their corresponding
-        !! offsets, find the code that corresponds to the no-flow
-        !! direction (0, 0). If not found, return the provided default
-        !! no-flow code or 0 if not provided.
+    !> For pairs of flow direction codes and their corresponding
+    !! offsets, find the code that corresponds to the no-flow
+    !! direction (0, 0). If not found, return the provided default
+    !! no-flow code or 0 if not provided.
+    pure function find_noflow_code( &
+        offsets, codes, default_noflow_code) result(noflow_code)
         implicit none(type, external)
         ! Arguments
         integer, intent(in), contiguous :: offsets(:, :)
@@ -206,13 +210,15 @@ contains
         end do
     end function find_noflow_code
 
-    pure function find_opposite_codes(offsets, codes) result(opp_codes)
-        !! For pairs of flow direction codes and their corresponding
-        !! offsets, find the list of codes that correspond to the
-        !! opposite direction of each code.
-        !! For example, if code 1 corresponds to offset (1, 0), and code
-        !! 2 corresponds to offset (-1, 0), then code 2 is the opposite
-        !! code of code 1 and vice verse.
+    !> For pairs of flow direction codes and their corresponding
+    !! offsets, find the list of codes that correspond to the
+    !! opposite direction of each code.
+    !!
+    !! For example, if code 1 corresponds to offset (1, 0), and code
+    !! 2 corresponds to offset (-1, 0), then code 2 is the opposite
+    !! code of code 1 and vice verse.
+    pure function find_opposite_codes(offsets, codes) &
+        result(opp_codes)
         implicit none(type, external)
         ! Arguments
         integer, intent(in), contiguous :: offsets(:, :)
@@ -227,26 +233,27 @@ contains
 
         ! Loop through offsets to find opposite codes
         do iofs = 1, size(codes)
-            do jofs = 1, size(codes)
-                if (offsets(iofs, 1) == -offsets(jofs, 1) .and. &
-                    offsets(iofs, 2) == -offsets(jofs, 2)) then
-                    opp_codes(iofs) = codes(jofs)
-                    exit
-                end if
-            end do
+        do jofs = 1, size(codes)
+            if (offsets(iofs, 1) == -offsets(jofs, 1) .and. &
+                offsets(iofs, 2) == -offsets(jofs, 2)) then
+                opp_codes(iofs) = codes(jofs)
+                exit
+            end if
+        end do
         end do
     end function find_opposite_codes
 
+    !> For pairs of flow direction codes and their corresponding
+    !! offsets, create a lookup table (array) where the index
+    !! corresponds to the code and the value is the offset.
+    !!
+    !! The offset codes must be between 0 and 255, and the returned
+    !! lookup table will have a size of (256, 2) to accommodate all
+    !! possible codes. Unused indices will have an offset of
+    !! (-99, -99) to indicate invalid code.
+    !! For example, if code 1 corresponds to offset (1, 0), then
+    !! diffs(1, :) = (1, 0).
     pure function fill_offset_lookup(offsets, codes) result(diffs)
-        !! For pairs of flow direction codes and their corresponding
-        !! offsets, create a lookup table (array) where the index
-        !! corresponds to the code and the value is the offset.
-        !! The offset codes must be between 0 and 255, and the returned
-        !! lookup table will have a size of 256-by-2 to accommodate all
-        !! possible codes. Unused indices will have an offset of
-        !! (-99, -99) to indicate invalid code.
-        !! For example, if code 1 corresponds to offset (1, 0), then
-        !! diffs(1, :) = (1, 0).
         implicit none(type, external)
         ! Arguments
         integer, intent(in), contiguous :: offsets(:, :)
@@ -271,9 +278,9 @@ contains
         end do
     end function fill_offset_lookup
 
+    !> Decides whether a cell is lower than another cell and
+    !! therefore has a higher priority in the priority queue.
     pure logical function is_lower_id(id1, id2, z) result(is_lower)
-        !! Decides whether a cell is lower than another cell and
-        !! therefore has a higher priority in the priority queue.
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: id1, id2
@@ -289,17 +296,17 @@ contains
         end if
     end function is_lower_id
 
+    !> Pushes a cell id to the priority queue.
+    !!
+    !! The cell is moved to an appropriate location such that the
+    !! cell's corresponding value in 'z' is larger than its parent's
+    !! but smaller than all its children.
+    !!
+    !! Notes
+    !! -----
+    !! See :func:'pop_priority_queue' for the push operation.
     pure subroutine push_priority_queue( &
         queue, queue_size, new, z, err_code)
-        !! Pushes a cell id to the priority queue.
-        !!
-        !! The cell is moved to an appropriate location such that
-        !! the cell's corresponding value in 'z' is larger than its
-        !! parent's but smaller than all its children.
-        !!
-        !! Notes
-        !! -----
-        !! See :func:'pop_priority_queue' for the push operation.
         implicit none(type, external)
         ! Arguments
         integer, intent(inout) :: queue(:)
@@ -314,9 +321,9 @@ contains
             !! values
         integer, intent(out) :: err_code
             !! Code indicating the status of the result
-            !!   - 0: Programme executed properly
-            !!   - 1: Invalid input
-            !!   - 3: Queue overflow
+            !! - 0: Programme executed properly
+            !! - 1: Invalid input
+            !! - 3: Queue overflow
         ! Local variables
         integer :: pos, parent_pos
             !! For swapping the new cell to the right position
@@ -327,10 +334,10 @@ contains
 
         ! First make sure the queue is large enough
         if (queue_size < 0) then
-            err_code = ERR_INVALID_INPUT ! Incorrect input
+            err_code = ERR_INVALID_INPUT
             return
         elseif (queue_size >= size(queue)) then
-            err_code = ERR_OVERFLOW ! Overflow
+            err_code = ERR_OVERFLOW
             return
         end if
 
@@ -351,18 +358,18 @@ contains
         end do
     end subroutine push_priority_queue
 
+    !> Pops the linear cell ID with the highest priority from the
+    !! priority queue.
+    !!
+    !! The queue is then resorted such that the internal tree
+    !! structure (such that all children have larger value than
+    !! their parent) is preserved.
+    !!
+    !! Notes
+    !! -----
+    !! See :func:'push_priority_queue' for the push operation.
     pure subroutine pop_priority_queue( &
         queue, queue_size, popped, z, err_code)
-        !! Pops the linear cell ID with the highest priority from
-        !! the priority queue.
-        !!
-        !! The queue is then resorted such that the internal tree
-        !! structure (such that all children have larger value than
-        !! their parent) is preserved.
-        !!
-        !! Notes
-        !! -----
-        !! See :func:'push_priority_queue' for the push operation.
         implicit none(type, external)
         ! Arguments
         integer, intent(inout) :: queue(:)
@@ -391,11 +398,11 @@ contains
 
         ! Check the queue is normal
         if (queue_size <= 0) then
-            err_code = ERR_INVALID_INPUT ! Incorrect input
+            err_code = ERR_INVALID_INPUT
             popped = 0
             return
         elseif (queue_size > size(queue)) then
-            err_code = ERR_OVERFLOW ! Overflow
+            err_code = ERR_OVERFLOW
             popped = 0
             return
         end if

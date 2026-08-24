@@ -1,22 +1,23 @@
 """
 Downloads digital elevation model data from OpenTopography.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 """
 
 import os
 from pathlib import Path
-import requests
+from typing import Literal, TypeAlias
+
+import numpy as np
 import rasterio
+import requests
+from numpy.typing import NDArray
 from rasterio import Affine
 from rasterio.io import MemoryFile
-import numpy as np
 
 from formosa.core import DATA_DIR
-from formosa.dem.api.utils import number, _validate_latlon_limits, _dem_post_processing
-
-from typing import Literal, TypeAlias, TypeVar
-import numpy.typing as npt
+from formosa.dem.api.utils import _dem_post_processing, _validate_latlon_limits
+from formosa.utils import Real
 
 OpenTopoProduct: TypeAlias = Literal[
     "SRTMGL3",
@@ -36,23 +37,22 @@ OPENTOPO_LOCAL_DIR = DATA_DIR / "DEM" / "opentopo"
 
 
 def opentopo(
-    latlim: tuple[number, number],
-    lonlim: tuple[number, number],
+    latlim: tuple[Real, Real],
+    lonlim: tuple[Real, Real],
     api_key: str,
     product: OpenTopoProduct = "SRTMGL3",
-    format: str = "geotiff",
+    fmt: str = "geotiff",
     saveas: str | Path | None = "default path",
     forcenew: bool = False,
     base_url: str = OPENTOPO_URL,
 ) -> tuple[
-    npt.NDArray[np.floating | np.integer],
-    npt.NDArray[np.floating],
-    npt.NDArray[np.floating],
+    NDArray[np.floating | np.integer],
+    NDArray[np.floating],
+    NDArray[np.floating],
     Affine,
 ]:
     """
-    Fetch DEM data from the OpenTopography server.
-    For documentation of the API itself, see: https://portal.opentopography.org/apidocs/#/Public/getGlobalDem
+    Fetches DEM data from the OpenTopography server.
 
     Parameters
     ----------
@@ -63,42 +63,55 @@ def opentopo(
     api_key : str
         API key for accessing OpenTopography services.
     product : str, optional
-        DEM product to fetch. Must be one of the supported products
-        (default is "SRTMGL3").
-    format : str, optional
+        DEM product to fetch. Must be one of the supported products.
+        - Default product is `"SRTMGL3"`.
+    fmt : str, optional
         Format of the DEM data. Must be one of "netcdf", "coards",
-        "esriascii", or "geotiff"
-        (default is "geotiff").
+        "esriascii", or "geotiff".
+        - Default format is `"geotiff"`.
     saveas : str | Path | None, optional
-        Path to save the downloaded DEM file. If "default path", saves to the default path.
-        If None, does not save the file
-        (default is "default path").
+        Path to save the downloaded DEM file.
+        If `"default path"`, saves to the default path.
+        If `None`, does not save the file.
+        - Default path is `"default path"`.
     forcenew : bool, optional
-        If True, forces a new download even if the file already exists
-        (default is False).
+        Whether to force a new download even if the file exists.
+        - Default option is `False`.
     base_url : str, optional
-        Base URL of the OpenTopography server
-        (default is OPENTOPO_URL).
+        Base URL of the OpenTopography server.
+        - Default URL is `OPENTOPO_URL`.
 
     Returns
     -------
-    Z : ndarray[floating | integer]
+    dem : NDArray[number]
         2D array of elevation values.
-    X : ndarray[floating]
-        2D array of x-coordinates corresponding to Z.
-    Y : ndarray[floating]
-        2D array of y-coordinates corresponding to Z.
+        - Shape: `(nrows, ncols)`.
+    x : NDArray[float]
+        x-coordinates corresponding to `dem`.
+        - Shape: `(nrows, ncols)`, same as `dem`.
+    y : NDArray[float]
+        y-coordinates corresponding to `dem`.
+        - Shape: `(nrows, ncols)`, same as `dem`.
     transform : rasterio.Affine
-        Affine transformation mapping pixel coordinates to spatial coordinates.
+        Affine transformation mapping pixel coordinates to spatial
+        coordinates.
 
     Raises
     ------
     ValueError
-        If input parameters are invalid or if no data is available for the specified bounds.
+        If input parameters are invalid or if no data is available
+        for the specified bounds.
     ConnectionError
-        If there is a failure in connecting to the OpenTopography server.
+        If there is a failure in connecting to the OpenTopography
+        server.
     FileNotFoundError
-        If the requested data is not found on the OpenTopography server.
+        If the requested data is not found on the OpenTopography
+        server.
+
+    Notes
+    -----
+    For documentation of the API itself, see:
+    https://portal.opentopography.org/apidocs/#/Public/getGlobalDem
     """
     # Input validation
     if api_key is None:
@@ -114,7 +127,7 @@ def opentopo(
             profile = src.profile
     else:
         Z, profile = _fetch_opentopo_data(
-            latlim, lonlim, product, format, api_key, opentopo_url=base_url
+            latlim, lonlim, product, fmt, api_key, opentopo_url=base_url
         )
         # Save data
         if saveas is not None:
@@ -140,20 +153,20 @@ def opentopo(
 
 
 def _construct_opentopo_url(
-    latlim: tuple[number, number],
-    lonlim: tuple[number, number],
+    latlim: tuple[Real, Real],
+    lonlim: tuple[Real, Real],
     product: str,
-    format: str,
+    fmt: str,
     api_key: str,
-) -> dict[str, str | number]:
+) -> dict[str, str | Real]:
     """
-    Convert input parameters to OpenTopography request parameters.
+    Converts input parameters to OpenTopography request parameters.
     """
-    match format.lower():
+    match fmt.lower():
         case "tiff" | "geotiff":
-            format = "GTiff"
+            fmt = "GTiff"
 
-    params: dict[str, str | number] = {}
+    params: dict[str, str | Real] = {}
     params.update(
         {
             "demtype": product,
@@ -161,7 +174,7 @@ def _construct_opentopo_url(
             "south": latlim[0],
             "east": lonlim[1],
             "west": lonlim[0],
-            "outputFormat": format,
+            "outputFormat": fmt,
             "API_Key": api_key,
         }
     )
@@ -169,8 +182,8 @@ def _construct_opentopo_url(
 
 
 def _fetch_opentopo_data(
-    latlim: tuple[number, number],
-    lonlim: tuple[number, number],
+    latlim: tuple[Real, Real],
+    lonlim: tuple[Real, Real],
     product: str,
     format: str,
     api_key: str,
@@ -210,7 +223,7 @@ def _opentopo_default_save_path(
     dir: Path = OPENTOPO_LOCAL_DIR,
 ) -> Path:
     """
-    Generate the default local save path for OpenTopography DEM files.
+    Generates the default local save path for OpenTopography DEM files.
     """
     product_param = "opentopo_" + product.lower()
     aoi_param = f"{latlim[0]}_{latlim[1]}_{lonlim[0]}_{lonlim[1]}"

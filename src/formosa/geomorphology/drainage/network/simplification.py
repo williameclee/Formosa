@@ -1,12 +1,16 @@
 """
 Simplifies flow-graph arcs while preserving valid topology.
 
-Last modified: 2026-08-18, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
-import numpy as np
+from typing import overload
 
-from formosa.utils import Backend
+import numpy as np
+from numpy.typing import NDArray
+
+from formosa.geomorphology._native import network_simplification as simp_f
+from formosa.geomorphology.drainage.network.editing import remove_unused_vertices
 from formosa.geomorphology.drainage.network.overlaps import (
     _resolve_topology_intersections,
     solve_graph_overlaps,
@@ -16,43 +20,36 @@ from formosa.geomorphology.drainage.network.validation import (
     UnresolvedSimplificationTopology,
     _locate_disallowed_graph_topology,
 )
-from formosa.geomorphology.drainage.network.editing import remove_unused_vertices
-from formosa.geomorphology._native import network_simplification as simp_f
-
-from numpy.typing import NDArray
-from typing import Optional, overload
-from formosa.utils import NpInt, NpIndex, NpCoords
+from formosa.utils import Backend, NpCoords, NpIndex, NpInt
 
 
-def _convert_index_array_to_F_fmt(vertices: NDArray) -> NDArray:
-    if vertices.shape[1] == 2 and vertices.shape[0] != 2:
-        vertices = vertices
-    elif vertices.shape[0] == 2 and vertices.shape[1] != 2:
-        vertices = vertices.T
-    elif vertices.shape == (2, 2):
-        vertices = vertices
+def _convert_index_array_to_F_fmt(vtxs: NDArray) -> NDArray:
+    if vtxs.shape[1] == 2 and vtxs.shape[0] != 2:
+        vtxs = vtxs
+    elif vtxs.shape[0] == 2 and vtxs.shape[1] != 2:
+        vtxs = vtxs.T
+    elif vtxs.shape == (2, 2):
+        vtxs = vtxs
     else:
         raise ValueError("Array cannot be parsed as indices.")
-    return vertices
+    return vtxs
 
 
-def _simplify_multiple_flowgraphs(
-    orders_list: list[NDArray[NpInt]] | tuple[NDArray[NpInt], ...],
-    vtxs_list: list[NDArray[NpCoords]] | tuple[NDArray[NpCoords], ...],
-    endpts_list: list[NDArray[NpIndex]] | tuple[NDArray[NpIndex], ...],
-    tol: int | float,
+def _simplify_multiple_flowgraphs[O: NpInt, V: NpCoords, E: NpIndex](
+    orders_list: list[NDArray[O]] | tuple[NDArray[O], ...],
+    vtxs_list: list[NDArray[V]] | tuple[NDArray[V], ...],
+    endpts_list: list[NDArray[E]] | tuple[NDArray[E], ...],
+    tol: float,
     check_topology: bool,
     backend: Backend,
 ) -> tuple[
-    list[NDArray[NpInt]] | tuple[NDArray[NpInt], ...],
-    list[NDArray[NpCoords]] | tuple[NDArray[NpCoords], ...],
-    list[NDArray[NpIndex]] | tuple[NDArray[NpIndex], ...],
+    list[NDArray[O]] | tuple[NDArray[O], ...],
+    list[NDArray[V]] | tuple[NDArray[V], ...],
+    list[NDArray[E]] | tuple[NDArray[E], ...],
     list[NDArray[np.bool_]] | tuple[NDArray[np.bool_], ...],
 ]:
     def is_empty_graph(
-        orders: NDArray[np.integer],
-        vtxs: NDArray[NpCoords],
-        endpts: NDArray[NpIndex],
+        orders: NDArray[O], vtxs: NDArray[V], endpts: NDArray[E]
     ) -> bool:
         return (
             orders.shape == (0,)
@@ -98,9 +95,9 @@ def _simplify_multiple_flowgraphs(
     vtx_shps: list[tuple] = []
     endpts_shps: list[tuple] = []
 
-    all_orders_list: list[NDArray[NpInt]] = []
-    all_vtxs_list: list[NDArray[NpCoords]] = []
-    all_endpts_list: list[NDArray[NpIndex]] = []
+    all_orders_list: list[NDArray[O]] = []
+    all_vtxs_list: list[NDArray[V]] = []
+    all_endpts_list: list[NDArray[E]] = []
     all_graph_ids_list: list[NDArray[np.uint8]] = []
 
     for i, (vtxs, endpts, orders) in enumerate(
@@ -128,8 +125,8 @@ def _simplify_multiple_flowgraphs(
             )
         if orders.shape[0] != endpts.shape[0]:
             raise ValueError(
-                f"Order array at index {i} has length {orders.shape[0]}, but the "
-                f"endpoint array contains {endpts.shape[0]} arcs."
+                f"Order array at index {i} has length {orders.shape[0]}, "
+                + f"but the endpoint array contains {endpts.shape[0]} arcs."
             )
 
         all_vtxs_list.append(vtxs.copy())
@@ -149,7 +146,7 @@ def _simplify_multiple_flowgraphs(
             ) = solve_graph_overlaps(
                 *(all_orders_list[i], all_vtxs_list[i], all_endpts_list[i]),
                 *(all_orders_list[j], all_vtxs_list[j], all_endpts_list[j]),
-                allows_arcs_overlap=True,
+                allow_ovlp=True,
             )
 
     # Concatenate the graphs while retaining the graph membership of each arc
@@ -174,14 +171,14 @@ def _simplify_multiple_flowgraphs(
     )
 
     # Separate the simplified graph back into multiple graphs
-    s_orders_list: list[NDArray[NpInt]] = []
-    s_vtxs_list: list[NDArray[NpCoords]] = []
-    s_endpts_list: list[NDArray[NpIndex]] = []
+    s_orders_list: list[NDArray[O]] = []
+    s_vtxs_list: list[NDArray[V]] = []
+    s_endpts_list: list[NDArray[E]] = []
     keeps_list: list[NDArray[np.bool_]] = []
 
     offset = 0
     for i in range(len(all_vtxs_list)):
-        vertex_shp = vtx_shps[i]
+        vtx_shp = vtx_shps[i]
         endpts_shp = endpts_shps[i]
 
         nvtxs_i = all_vtxs_list[i].shape[0]
@@ -195,7 +192,7 @@ def _simplify_multiple_flowgraphs(
         simp_e_i = vtx_cumsum_i[local_e_std]
 
         # Restore original orientation
-        if vertex_shp[0] == 2 and vertex_shp[1] != 2:
+        if vtx_shp[0] == 2 and vtx_shp[1] != 2:
             simp_v_i = simp_v_i.T
         if endpts_shp[0] == 2 and endpts_shp[1] != 2:
             simp_e_i = simp_e_i.T
@@ -218,22 +215,18 @@ def _simplify_multiple_flowgraphs(
         return s_orders_list, s_vtxs_list, s_endpts_list, keeps_list
 
 
-def _simplify_single_flowgraph(
-    orders: NDArray[np.integer],
-    vtxs: NDArray[NpCoords],
-    endpts: NDArray[NpIndex],
+def _simplify_single_flowgraph[O: NpInt, V: NpCoords, E: NpIndex](
+    orders: NDArray[O],
+    vtxs: NDArray[V],
+    endpts: NDArray[E],
     tol: float,
     check_topology: bool,
     backend: Backend,
-    graph_ids: Optional[NDArray[np.integer]] = None,
-) -> tuple[
-    NDArray[np.integer],
-    NDArray[NpCoords],
-    NDArray[NpIndex],
-    NDArray[np.bool_],
-]:
+    graph_ids: NDArray[np.integer] | None = None,
+) -> tuple[NDArray[O], NDArray[V], NDArray[E], NDArray[np.bool_]]:
     """
-    Core function to simplify a single flow graph using RDP algorithm.
+    Core function to simplify a single flow graph using RDP
+    algorithm.
     """
     if backend != "fortran":
         raise NotImplementedError(
@@ -251,8 +244,8 @@ def _simplify_single_flowgraph(
         )
     if orders.shape[0] != endpts.shape[1]:
         raise ValueError(
-            f"Order array has length {orders.shape[0]}, but the endpoint array "
-            f"contains {endpts.shape[1]} arcs."
+            f"Order array has length {orders.shape[0]}, "
+            + f"but the endpoint array contains {endpts.shape[1]} arcs."
         )
 
     # Make a copy of arc_endpts to avoid modifying the input array in-place
@@ -304,69 +297,62 @@ def _simplify_single_flowgraph(
 
 
 @overload
-def simplify_flowgraph(
-    arc_orders: NDArray[NpInt],
-    vtx_xys: NDArray[NpCoords],
-    arc_endpts: NDArray[NpIndex],
-    tol: int | float = 1,
+def simplify_flowgraph[O: NpInt, V: NpCoords, E: NpIndex](
+    orders: NDArray[O],
+    vtxs: NDArray[V],
+    endpts: NDArray[E],
+    tol: float = 1,
+    check_topology: bool = True,
+    remove_unused: bool = False,
+    backend: Backend = "fortran",
+) -> tuple[NDArray[O], NDArray[V], NDArray[E], NDArray[np.bool_]]: ...
+
+
+@overload
+def simplify_flowgraph[O: NpInt, V: NpCoords, E: NpIndex](
+    orders: list[NDArray[O]],
+    vtxs: list[NDArray[V]],
+    endpts: list[NDArray[E]],
+    tol: float = 1,
     check_topology: bool = True,
     remove_unused: bool = False,
     backend: Backend = "fortran",
 ) -> tuple[
-    NDArray[NpInt],
-    NDArray[NpCoords],
-    NDArray[NpIndex],
-    NDArray[np.bool_],
+    list[NDArray[O]], list[NDArray[V]], list[NDArray[E]], list[NDArray[np.bool_]]
 ]: ...
 
 
 @overload
-def simplify_flowgraph(
-    arc_orders: list[NDArray[NpInt]],
-    vtx_xys: list[NDArray[NpCoords]],
-    arc_endpts: list[NDArray[NpIndex]],
-    tol: int | float = 1,
+def simplify_flowgraph[O: NpInt, V: NpCoords, E: NpIndex](
+    orders: tuple[NDArray[O], ...],
+    vtxs: tuple[NDArray[V], ...],
+    endpts: tuple[NDArray[E], ...],
+    tol: float = 1,
     check_topology: bool = True,
     remove_unused: bool = False,
     backend: Backend = "fortran",
 ) -> tuple[
-    list[NDArray[NpInt]],
-    list[NDArray[NpCoords]],
-    list[NDArray[NpIndex]],
-    list[NDArray[np.bool_]],
-]: ...
-
-
-@overload
-def simplify_flowgraph(
-    arc_orders: tuple[NDArray[NpInt], ...],
-    vtx_xys: tuple[NDArray[NpCoords], ...],
-    arc_endpts: tuple[NDArray[NpIndex], ...],
-    tol: int | float = 1,
-    check_topology: bool = True,
-    remove_unused: bool = False,
-    backend: Backend = "fortran",
-) -> tuple[
-    tuple[NDArray[NpInt], ...],
-    tuple[NDArray[NpCoords], ...],
-    tuple[NDArray[NpIndex], ...],
+    tuple[NDArray[O], ...],
+    tuple[NDArray[V], ...],
+    tuple[NDArray[E], ...],
     tuple[NDArray[np.bool_], ...],
 ]: ...
 
 
-def simplify_flowgraph(
-    arc_orders: NDArray[NpInt] | list[NDArray[NpInt]] | tuple[NDArray[NpInt], ...],
-    vtx_xys: (
-        NDArray[NpCoords] | list[NDArray[NpCoords]] | tuple[NDArray[NpCoords], ...]
-    ),
-    arc_endpts: (
-        NDArray[NpIndex] | list[NDArray[NpIndex]] | tuple[NDArray[NpIndex], ...]
-    ),
-    tol: int | float = 1,
+def simplify_flowgraph[O: NpInt, V: NpCoords, E: NpIndex](
+    orders: NDArray[O] | list[NDArray[O]] | tuple[NDArray[O], ...],
+    vtxs: NDArray[V] | list[NDArray[V]] | tuple[NDArray[V], ...],
+    endpts: NDArray[E] | list[NDArray[E]] | tuple[NDArray[E], ...],
+    tol: float = 1,
     check_topology: bool = True,
     remove_unused: bool = False,
     backend: Backend = "fortran",
-):
+) -> tuple[
+    NDArray[O] | list[NDArray[O]] | tuple[NDArray[O], ...],
+    NDArray[V] | list[NDArray[V]] | tuple[NDArray[V], ...],
+    NDArray[E] | list[NDArray[E]] | tuple[NDArray[E], ...],
+    NDArray[np.bool_] | list[NDArray[np.bool_]] | tuple[NDArray[np.bool_], ...],
+]:
     """
     Simplifies a flow graph using the Ramer-Douglas-Peucker (RDP)
     algorithm with a fixed tolerance threshold.
@@ -379,98 +365,88 @@ def simplify_flowgraph(
 
     Parameters
     ----------
-    arc_orders : NDArray[int] or Iterable[NDArray[int]]
-        (A,) array containing the order of each arc, or an iterable
-        of such arrays.
-    vtx_xys : NDArray[number] or Iterable[NDArray[number]]
-        (V,2) array of coordinates representing the vertices in the
-        flow graph, or an iterable of such arrays.
-    arc_endpts : NDArray[int] or Iterable[NDArray[int]]
-        (A,2) array of indices indicating where each arc starts and
-        ends in `vtx_xys`, or an iterable of such arrays.
+    orders : NDArray[int] or Iterable[NDArray[int]]
+        Strahler order for each arc, or an iterable of such arrays.
+        - Expected shape: `(narcs,)`.
+    vtxs : NDArray[number] or Iterable[NDArray[number]]
+        Vertex coordinates for the flow graph, or an iterable of
+        such arrays.
+        - Expected shape: `(nvtxs, 2)`.
+    endpts : NDArray[int] or Iterable[NDArray[int]]
+        Indices indicating where each arc starts and ends in `vtxs`,
+        or an iterable of such arrays.
+        - Expected shape: `(narcs, 2)`.
     tol : int | float, optional
         Tolerance threshold for simplification.
         Vertices with perpendicular distance to the line segment
         less than or equal to `tol` will be simplified/removed.
-        Default tolerance is 1.
+        - Default tolerance is `1`.
     check_topology : bool, optional
-        Whether to check for invalid topography in the simplified
+        Whether to check for invalid topology in the simplified
         graph.
-        Default option is `True`.
+        - Default option is `True`.
     remove_unused : bool, optional
         Whether to compact each returned vertex array so its arc
         ranges are adjacent.
-        Default option is `False`.
+        - Default option is `False`.
     backend : {'fortran', 'python'}, optional
         Backend to use for computation.
         `'fortran'` uses the Fortran extension for performance,
         while `'python'` uses a pure Python implementation.
-        Default backend is `'fortran'`.
+        - Default backend is `'fortran'`.
 
     Returns
     -------
-    simp_arc_orders : NDArray[int] or list/tuple of NDArray[int]
+    simp_orders : NDArray[int] or list/tuple of NDArray[int]
         Order of every simplified graph arc, including arcs
         introduced while aligning graph overlaps.
-    simp_vtx_xys : NDArray[number] or list/tuple of NDArray[number]
-        (V',2) array of coordinates representing the simplified
-        vertices, or a list/tuple of such arrays.
-    simp_arc_endpts : NDArray[int32] or list/tuple of NDArray[int32]
-        (A,2) array of indices indicating the start and end of each
-        simplified arc, or a list/tuple of such arrays.
+    simp_vtxs : NDArray[number] or list/tuple of NDArray[number]
+        Simplified vertex coordinates, or a list/tuple of such arrays.
+        - Shape: `(nvtxs_out, 2)`.
+    simp_endpts : NDArray[int32] or list/tuple of NDArray[int32]
+        Start and end indices of each simplified arc, or a list/tuple
+        of such arrays.
+        - Shape: `(narcs_out, 2)`.
     keeps : NDArray[bool] or list/tuple of NDArray[bool]
-        (V,) mask indicating which of the input vertices are
-        retained in the simplified graph, or a list/tuple of such
-        masks.
+        Boolean mask indicating which vertices are retained in the
+        simplified graph, or a list/tuple of such masks.
         For multiple overlapping graphs, the masks refer to the
         intermediate vertex arrays produced by
         :func:`solve_graph_overlaps`, which may contain additional
         vertices.
+        - Shape: `(nvtxs, 2)`.
 
     Raises
     ------
-    TypeError
-        If a single graph is supplied and any of param`arc_orders`,
-        `vtx_xys`, or `arc_endpts` is not a NumPy array.
-    ValueError
-        1. If single-graph and multi-graph argument forms are mixed.
-        2. If the multi-graph argument collections have different
-            lengths.
-        3. If an order array is not one-dimensional or does not
-            contain one value per arc.
-        4. If a vertex or endpoint array has an invalid shape.
     InvalidOriginalGraphTopology
         If the final result is invalid and the normalised input
         graph already contains disallowed topology violations.
     UnresolvedSimplificationTopology
         If the normalised input is valid but the final simplified
         graph contains disallowed topology violations.
-    NotImplementedError
-        If tries to call the not-yet-implemented Python backend.
     """
 
     is_multi = (
-        isinstance(vtx_xys, (list, tuple))
-        or isinstance(arc_endpts, (list, tuple))
-        or isinstance(arc_orders, (list, tuple))
+        isinstance(vtxs, (list, tuple))
+        or isinstance(endpts, (list, tuple))
+        or isinstance(orders, (list, tuple))
     )
     if is_multi:
         if (
-            (not isinstance(vtx_xys, (list, tuple)))
-            or (not isinstance(arc_endpts, (list, tuple)))
-            or (not isinstance(arc_orders, (list, tuple)))
+            (not isinstance(vtxs, (list, tuple)))
+            or (not isinstance(endpts, (list, tuple)))
+            or (not isinstance(orders, (list, tuple)))
         ):
             raise ValueError(
                 "Arguments 'vtx_xys', 'arc_endpts', and 'arc_orders' must all be iterables (or none of them)."
             )
-        if not (len(vtx_xys) == len(arc_endpts) == len(arc_orders)):
+        if not (len(vtxs) == len(endpts) == len(orders)):
             raise ValueError(
-                "Arguments 'vtx_xys', 'arc_endpts', and 'arc_orders' must have "
-                f"the same length, but got {len(vtx_xys)}, {len(arc_endpts)}, "
-                f"and {len(arc_orders)}, respectively."
+                "Arguments 'vtx_xys', 'arc_endpts', and 'arc_orders' must have the same length, "
+                + f"but got {len(vtxs)}, {len(endpts)}, and {len(orders)}, respectively."
             )
         result = _simplify_multiple_flowgraphs(
-            *(arc_orders, vtx_xys, arc_endpts),
+            *(orders, vtxs, endpts),
             tol=tol,
             check_topology=check_topology,
             backend=backend,
@@ -487,16 +463,16 @@ def simplify_flowgraph(
         return simp_orders, compact_vtxs, compact_endpts, keeps
 
     if not (
-        isinstance(arc_orders, np.ndarray)
-        and isinstance(vtx_xys, np.ndarray)
-        and isinstance(arc_endpts, np.ndarray)
+        isinstance(orders, np.ndarray)
+        and isinstance(vtxs, np.ndarray)
+        and isinstance(endpts, np.ndarray)
     ):
         raise TypeError(
             "Arguments 'vtx_xys', 'arc_endpts', and 'arc_orders' must be NumPy arrays, "
-            f"but got {type(vtx_xys)}, {type(arc_endpts)}, and {type(arc_orders)}, respectively."
+            + f"but got {type(vtxs)}, {type(endpts)}, and {type(orders)}, respectively."
         )
     result = _simplify_single_flowgraph(
-        *(arc_orders, vtx_xys, arc_endpts),
+        *(orders, vtxs, endpts),
         tol=tol,
         check_topology=check_topology,
         backend=backend,

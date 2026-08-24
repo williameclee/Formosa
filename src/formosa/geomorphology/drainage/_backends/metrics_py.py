@@ -4,40 +4,64 @@ Computes flow-based raster metrics using the Python backend.
 This module implements internal routines called by the public-facing
 drainage API and is not intended to be used directly.
 
-Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
+from numpy.typing import NDArray
 
-from formosa.geomorphology.drainage.directions import D8Directions
+from formosa.geomorphology.drainage.directions import DirectionEncoding
 from formosa.geomorphology.drainage.neighbours import compute_downstream_indices
-import formosa.geomorphology.drainage._backends.flowdir_py as flowdir_py
-
-from typing import Optional
-import numpy.typing as npt
+from formosa.utils import NpFlowDir
 
 
-def compute_flow_accumulation(
-    dirs: npt.NDArray[np.integer],
-    valids: Optional[npt.NDArray[np.bool_]] = None,
-    weights: Optional[npt.NDArray[np.floating]] = None,
-    indegs: Optional[npt.NDArray[np.integer]] = None,
-    dsij: Optional[npt.NDArray[np.integer]] = None,
-    dir_scheme: D8Directions = D8Directions(),
-) -> np.ndarray:
+def compute_flow_accumulation[W: np.floating](
+    dirs: NDArray[NpFlowDir],
+    valids: NDArray[np.bool_],
+    wgts: NDArray[W],
+    indegs: NDArray[np.integer],
+    dsij: NDArray[np.integer],
+) -> NDArray[W]:
+    """
+    Computes flow accumulation using topological queue propagation.
+
+    Parameters
+    ----------
+    dirs : NDArray[uint8]
+        Flow direction raster.
+        - Expected shape: `(nrows, ncols)`.
+    valids : NDArray[bool]
+        Boolean mask indicating valid cells.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+    wgts : NDArray[float]
+        Cell weights.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+    indegs : NDArray[int]
+        Upstream in-degrees for each cell.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+    dsij : NDArray[int]
+        Flattened downstream cell indices.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+
+    Returns
+    -------
+    accums : NDArray[float]
+        Accumulated weights for each cell.
+        - Shape: `(nrows, ncols)`, same as `dirs`.
+    """
     from collections import deque
 
     # Initialisation
     I, J = dirs.shape
 
     indegs = indegs.flatten(order="F")
-    valids = valids.flatten(order="F")  # type: ignore
-    weights = weights.flatten(order="F")  # type: ignore
-    dsij = dsij.flatten(order="F")  # type: ignore ; dsij will not be None
+    valids = valids.flatten(order="F")
+    wgts = wgts.flatten(order="F")
+    dsij = dsij.flatten(order="F")
     dirs = dirs.flatten(order="F")
 
-    # Initialize accumulation with self weight
-    accumulation = weights.ravel().astype(weights.dtype, copy=True)
+    # Initialise accumulation with self weight
+    accums = wgts.ravel().astype(wgts.dtype, copy=True)
 
     # Queue sources (indeg == 0) among valid cells
     q = deque(np.flatnonzero((indegs == 0) & valids))
@@ -48,62 +72,82 @@ def compute_flow_accumulation(
         v = dsij[u]
         if not valids[v]:
             continue
-        accumulation[v] += accumulation[u]
+        accums[v] += accums[u]
         indegs[v] -= 1
         if indegs[v] == 0:
             q.append(v)
 
-    accumulation = accumulation.reshape(I, J, order="F")
+    accums = accums.reshape(I, J, order="F")
 
-    return accumulation
+    return accums
 
 
 def compute_flow_strahler_order(
-    dirs: npt.NDArray[np.integer],
-    dir_scheme: D8Directions = D8Directions(),
-    valids: Optional[npt.NDArray[np.bool_]] = None,
-    indegs: Optional[npt.NDArray[np.integer]] = None,
-) -> npt.NDArray[np.int16]:
+    dirs: NDArray[NpFlowDir],
+    dir_enc: DirectionEncoding,
+    valids: NDArray[np.bool_],
+    indegs: NDArray[np.integer],
+) -> NDArray[np.int16]:
+    """
+    Computes Strahler stream order using queue-based propagation.
+
+    Parameters
+    ----------
+    dirs : NDArray[uint8]
+        Flow direction raster.
+        - Expected shape: `(nrows, ncols)`.
+    dir_enc : DirectionEncoding
+        Flow direction encoding scheme.
+    valids : NDArray[bool]
+        Boolean mask indicating valid cells.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+    indegs : NDArray[int]
+        Upstream in-degrees for each cell.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+
+    Returns
+    -------
+    orders : NDArray[int16]
+        Strahler stream orders for each cell.
+        - Shape: `(nrows, ncols)`, same as `dirs`.
+    """
     from collections import deque
 
     indegs = indegs.copy()
 
-    downstream_i, downstream_j, _, downstream_valids = compute_downstream_indices(
-        dirs, dir_scheme=dir_scheme, valids=valids, check=False, return_flat_index=False
+    dsis, dsjs, _, ds_valids = compute_downstream_indices(
+        dirs, dir_enc, valids=valids, check=False, return_flat_index=False
     )
 
-    strahler_order = np.zeros(indegs.shape, dtype=np.int16)
+    orders = np.zeros(indegs.shape, dtype=np.int16)
     seeds_mask = valids & (indegs == 0)
-    strahler_order[seeds_mask] = 1
+    orders[seeds_mask] = 1
 
-    max_upstream_order = np.zeros(indegs.shape, dtype=np.int16)
-    max_upstream_count = np.zeros(indegs.shape, dtype=np.int8)
+    max_upstrm_order = np.zeros(indegs.shape, dtype=np.int16)
+    max_upstrm_cnt = np.zeros(indegs.shape, dtype=np.int8)
 
     ii, jj = np.indices(indegs.shape, dtype=np.int32)
     seeds = deque(zip(ii[seeds_mask], jj[seeds_mask]))  # type: ignore
 
     while seeds:
         ci, cj = seeds.popleft()
-        dsi, dsj = downstream_i[ci, cj], downstream_j[ci, cj]
-        if (
-            not downstream_valids[ci, cj]
-            or not valids[dsi, dsj]
-            or (ci, cj) == (dsi, dsj)
-        ):
+        dsi = dsis[ci, cj]
+        dsj = dsjs[ci, cj]
+        if not ds_valids[ci, cj] or not valids[dsi, dsj] or (ci, cj) == (dsi, dsj):
             continue
 
-        upstream_order = strahler_order[ci, cj]
-        if upstream_order > max_upstream_order[dsi, dsj]:
-            max_upstream_order[dsi, dsj] = upstream_order
-            max_upstream_count[dsi, dsj] = 1
-        elif upstream_order == max_upstream_order[dsi, dsj]:
-            max_upstream_count[dsi, dsj] += 1
+        upstrm_order = orders[ci, cj]
+        if upstrm_order > max_upstrm_order[dsi, dsj]:
+            max_upstrm_order[dsi, dsj] = upstrm_order
+            max_upstrm_cnt[dsi, dsj] = 1
+        elif upstrm_order == max_upstrm_order[dsi, dsj]:
+            max_upstrm_cnt[dsi, dsj] += 1
 
         indegs[dsi, dsj] -= 1
         if indegs[dsi, dsj] == 0:
-            strahler_order[dsi, dsj] = max_upstream_order[dsi, dsj]
-            if max_upstream_count[dsi, dsj] >= 2:
-                strahler_order[dsi, dsj] += 1
+            orders[dsi, dsj] = max_upstrm_order[dsi, dsj]
+            if max_upstrm_cnt[dsi, dsj] >= 2:
+                orders[dsi, dsj] += 1
             seeds.append((dsi, dsj))
 
-    return strahler_order
+    return orders
