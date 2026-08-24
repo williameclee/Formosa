@@ -27,7 +27,8 @@ def get_neighbour_values(
     self_at_last: bool = False,
 ) -> tuple[np.ndarray, NDArray[np.integer], NDArray[np.integer]]:
     """
-    Gets the values of neighbouring cells in an array based on specified directions.
+    Gets the values of neighbouring cells in an array based on
+    specified directions.
 
     Parameters
     ----------
@@ -116,7 +117,8 @@ def compute_downstream_indices(
     NDArray[np.bool_],
 ]:
     """
-    Computes the downstream indices for each cell in a flow direction grid.
+    Computes the downstream indices for each cell in a flow
+    direction grid.
 
     Parameters
     ----------
@@ -134,15 +136,17 @@ def compute_downstream_indices(
         - Expected shape: `(nrows, ncols)`, same as `dirs`.
         - Default mask is `None`.
     check : bool, optional
-        Whether to raise an error if some downstream indices are out of bounds.
+        Whether to raise an error if some downstream indices are out
+        of bounds.
         Otherwise, only a warning is issued.
-        Default option is `True`.
+        - Default option is `True`.
     return_flat_index : bool, optional
         Whether to compute the flattened downstream indices.
-        Defualt option is `True`.
-    oob_is_okay: bool, optional
-        Whether having out-of-bound downstream cells is expected (or will be explicitly handled downstream).
-        Default behaviour is `False`.
+        - Default option is `True`.
+    oob_is_okay : bool, optional
+        Whether having out-of-bound downstream cells is expected (or
+        will be explicitly handled downstream).
+        - Default option is `False`.
 
     Returns
     -------

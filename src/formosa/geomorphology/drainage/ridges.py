@@ -176,9 +176,13 @@ def compute_dist2ridge(
     dir_is_ridge: bool = False,
 ) -> NDArray[np.float32]:
     """
-    Computes the 'distance to ridge' for each cell in the flow direction grid.
+    Computes the 'distance to ridge' for each cell in the flow
+    direction grid.
 
-    The ridge network/intensity is defined as the maximum distance to confluence (see `compute_flow_dist2conf_max`), and the distance to ridge is computed as the downstream distance traversing the inverse of the intensity.
+    The ridge network/intensity is defined as the maximum distance
+    to confluence (see :func:`compute_dist2conf_max`), and the
+    distance to ridge is computed as the downstream distance
+    traversing the inverse of the intensity.
 
     Parameters
     ----------
@@ -240,6 +244,8 @@ def compute_ridge_strahler_order(
     dir_is_ridge: bool = False,
 ) -> NDArray[np.uint8]:
     """
+    Computes Strahler order for the ridge network.
+
     Parameters
     ----------
     dirs : NDArray[uint8]

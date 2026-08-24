@@ -1,10 +1,11 @@
-!> Computes raster flow directions using the FORTRAN backend.
+!> Computes raster flow directions using the Fortran backend.
 !!
 !! This internal module is called by the Python drainage API. It
 !! also provides raster-level analyses of the resulting flow field;
 !! flow-graph operations are implemented in the network modules.
 !!
-!! Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
+!! Created: 2026-08-01, En-Chi Lee (williameclee@gmail.com)
+!! Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 module drainage_flowdir
     use iso_c_binding, only: c_int8_t
     use utils, only: ERR_NO_ERROR, ERR_INVALID_INPUT, &
@@ -13,14 +14,14 @@ module drainage_flowdir
                      array2d_oob, mask2ij
     implicit none(type, external)
 contains
+    !> Finds D-n flow directions for a given elevation grid, using
+    !! the provided flow direction codes and offsets.
+    !!
+    !! Also identifies flat cells where no flow direction can be
+    !! assigned.
     subroutine compute_flowdir_simple( &
         z, valids, dirs, is_flat, nrows, ncols, &
         offsets, codes, noffsets)
-        !! Finds D-n flow directions for a given elevation grid,
-        !! using the provided flow direction codes and offsets.
-        !!
-        !! Also identifies flat cells where no flow direction can be
-        !! assigned.
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols
@@ -92,10 +93,10 @@ contains
         !$omp END PARALLEL DO
     end subroutine compute_flowdir_simple
 
+    !> Computes the number of upstream cells (indegs) for each cell.
     subroutine count_indegree( &
         dirs, valids, indegs, nrows, ncols, &
         offsets, codes, noffsets)
-        !! Computes the number of upstream cells (indegs) for each cell
         !! in a flow direction grid.
         implicit none(type, external)
         ! Arguments
@@ -150,16 +151,16 @@ contains
         !$omp END PARALLEL DO
     end subroutine count_indegree
 
+    !> Identifies valid cells that are not part of a directed flow
+    !! cycle.
+    !!
+    !! Uses Kahn's algorithm to traverse cells from 0-in-degree
+    !! seeds, successively removing their outgoing edges. Valid
+    !! cells not reached by this traversal belong to a directed
+    !! cycle and remain false in 'acyclics'.
     subroutine find_acyclic_flowdirs( &
         dirs, indegs, valids, nrows, ncols, &
         offsets, codes, noffsets, acyclics, err_code)
-        !! Identifies valid cells that are not part of a directed
-        !! flow cycle.
-        !!
-        !! Uses Kahn's algorithm to traverse cells from 0-in-degree
-        !! seeds, successively removing their outgoing edges. Valid
-        !! cells not reached by this traversal belong to a directed
-        !! cycle and remain false in 'acyclics'.
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols

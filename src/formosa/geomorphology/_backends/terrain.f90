@@ -7,7 +7,7 @@
 !! prominence computations.
 !!
 !! Created: 2026-08-19, En-Chi Lee (williameclee@gmail.com)
-!! Last modified: 2026-08-22, En-Chi Lee (williameclee@gmail.com)
+!! Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 module terrain
     use iso_c_binding, only: c_int8_t, c_int32_t
     use utils, only: ERR_NO_ERROR, ERR_INVALID_INPUT, &

@@ -172,22 +172,12 @@ def triangulate_points(
 
     Raises
     ------
-    ValueError
-        If the vertices have an invalid shape, contain duplicates,
-        are too few to triangulate, or the backend is unsupported.
-    TypeError
-        If the coordinates are not numeric, or the Fortran backend
-        receives non-integer coordinates.
     OverflowError
         If the Fortran backend receives coordinates outside the
         `int32` range.
     GraphTopologyError
         If the points are collinear or do not produce a valid
         triangulation.
-    MemoryError
-        If the Fortran backend cannot allocate its workspace.
-    RuntimeError
-        If the Fortran triangulation capacity is exceeded.
 
     Notes
     -----
@@ -240,11 +230,6 @@ def find_facet_neighbours(
 
     Raises
     ------
-    ValueError
-        If the triangle array has an invalid shape, contains negative
-        vertex IDs, or the backend is unsupported.
-    TypeError
-        If the triangle vertex IDs are not integers.
     OverflowError
         If the Fortran backend receives a vertex ID that cannot be
         converted safely to its native representation.

@@ -1,9 +1,17 @@
+!> Provides spatial data structures for the Fortran backend.
+!!
+!! This internal module defines derived types and construction
+!! routines for maximum-elevation pyramids used by Fortran terrain
+!! algorithms, such as accelerated isolation searches.
+!!
+!! Created: 2026-08-22, En-Chi Lee (williameclee@gmail.com)
+!! Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 module util_structs
     use utils, only: ERR_NO_ERROR, ERR_INVALID_INPUT, &
                      ERR_ALLOCATION_FAILURE, ERR_OVERFLOW
     implicit none(type, external)
 
-	!> Stores maximum elevations for a level of a spatial pyramid.
+    !> Stores maximum elevations for a level of a spatial pyramid.
     type :: pyramid_level
         real, allocatable :: zmax(:, :)
             !! Maximum valid elevation per block

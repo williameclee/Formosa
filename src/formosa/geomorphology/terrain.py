@@ -143,18 +143,6 @@ def compute_isolation(
         observation-window boundaries.
         - Shape: `(nrows, ncols)`, same as `dem`.
 
-    Raises
-    ------
-    ValueError
-        If `dem` is empty or not 2D, or if `valids` does not have
-        the same shape as `dem`, or if either grid spacing is non-
-        finite, non-positive, or cannot be represented by the native
-        backend.
-    TypeError
-        If `dem` is not a real numeric array or either grid spacing
-        is not a real numeric scalar.
-    RuntimeError
-        If the Fortran backend reports an execution error.
     Notes
     -----
     See [Kirmse & de Ferranti (2017)](https://doi.org/10.1177/0309133317738163)
@@ -320,20 +308,6 @@ def compute_prominence(
         - For a saddle, its parent is the next enclosing saddle that
         joins its surrounding ridge system.
         - Root features contain `-1`.
-
-    Raises
-    ------
-    ValueError
-        If `dem` is empty or not 2D, or if `valids` does not have
-        the same shape as `dem`.
-    TypeError
-        If `dem` is not a real numeric array.
-    RuntimeError
-        If the Fortran backend reports an execution error.
-    RuntimeWarning
-        If conversion to the float32 backend merges distinct valid
-        elevations, or if prominence values exceed the range of the
-        returned dtype.
         - Shape: `(nfeats,)`.
 
     Notes

@@ -2,7 +2,7 @@
 Resolves flat areas in digital elevation models for flow routing.
 
 The algorithms assign synthetic gradients to flats and mainly follow
-Barnes *et al.* (2014), https://doi.org/10.1016/j.cageo.2013.01.009.
+[R Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009).
 
 Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 """
@@ -32,8 +32,9 @@ def find_flat_edges(
     backend: Backend = "fortran",
 ) -> tuple[NDArray[np.bool_], NDArray[np.bool_]]:
     """
-    Finds the cells on the edges of flat areas that drain to lower terrain (low edges) and those that are adjacent to higher terrain (high edges).
-    From [R. Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009), Algorithm 3 (p. 133).
+    Finds the cells on the edges of flat areas that drain to lower
+    terrain (low edges) and those that are adjacent to higher
+    terrain (high edges).
 
     Parameters
     ----------
@@ -66,6 +67,11 @@ def find_flat_edges(
     high_edges : NDArray[bool]
         Boolean mask indicating high-edge cells of flat areas.
         - Shape: `(nrows, ncols)`, same as `dem`.
+
+    Notes
+    -----
+    From [R Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009),
+        Algorithm 3 (p. 133).
     """
     dem = validate_format_dem(dem)
     dirs = validate_format_flowdirs(dirs, dem)
@@ -98,8 +104,7 @@ def label_flats(
     valids: NDArray[np.bool_] | None = None,
 ) -> NDArray[np.int32]:
     """
-    Separates and labels inidividual flat areas in a DEM.
-    From [R. Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009), Algorithm 4 (p. 133).
+    Separates and labels individual flat areas in a DEM.
 
     Parameters
     ----------
@@ -121,16 +126,14 @@ def label_flats(
 
     Returns
     -------
-
-    Raises
-    ------
-    TypeError
-        If the input seeds is not of the expected type or format.
-    ValueError
-        If the shapes of the input arrays do not match the expected dimensions.
     labels : NDArray[int32]
         Unique integer label for each flat region.
         - Shape: `(nrows, ncols)`, same as `dem`.
+
+    Notes
+    -----
+    From [R Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009),
+        Algorithm 4 (p. 133).
     """
     dem = validate_format_dem(dem)
     validate_same_shape(seeds, dem, "seed mask", "DEM")
@@ -207,7 +210,8 @@ def find_ambiguous(
     dir_scheme: D8Directions | None = None,
 ) -> NDArray[np.bool_]:
     """
-    Detects ambiguous flow directions in a DEM, where multiple neighbouring cells have the same minimum elevation.
+    Detects ambiguous flow directions in a DEM, where multiple
+    neighbouring cells have the same minimum elevation.
 
     Parameters
     ----------
@@ -229,7 +233,7 @@ def find_ambiguous(
     dem = validate_format_dem(dem)
     dir_scheme = validate_format_dir_scheme(dir_scheme)
 
-    nabrs, _, _ = get_neighbour_values(dem, dir_scheme=dir_scheme)
+    nabrs, _, _ = get_neighbour_values(dem, dir_scheme)
     min_nabrs = np.min(nabrs, axis=0)
     ambiguities = np.sum(nabrs == min_nabrs, axis=0) > 1
     ambiguities = ambiguities & ~(find_flat(dem))
@@ -242,8 +246,8 @@ def create_pushing_syn_grad(
     dir_scheme: D8Directions | None = None,
 ) -> NDArray[np.int32]:
     """
-    Produces a synthetic elevation that decreases away from 'high edges' of flats.
-    Modified from [R. Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009), Algorithm 5 (p. 133–134).
+    Produces a synthetic elevation that decreases away from 'high
+    edges' of flats.
 
     Parameters
     ----------
@@ -265,6 +269,11 @@ def create_pushing_syn_grad(
         Synthetic elevation increasing away from high edges within
         each flat region.
         - Shape: `(nrows, ncols)`, same as `labels`.
+
+    Notes
+    -----
+    Modified from [R Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009),
+    Algorithm 5 (p. 133–134).
     """
     dir_scheme = validate_format_dir_scheme(dir_scheme)
     validate_same_shape(labels, high_edges, "label raster", "high edge mask")
@@ -284,8 +293,8 @@ def create_pulling_syn_grad(
     dir_scheme: D8Directions | None = None,
 ) -> NDArray[np.integer]:
     """
-    Produces a synthetic elevation that drains towards 'low edges' of flats.
-    Modified from [R. Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009), Algorithm 6 (p. 134).
+    Produces a synthetic elevation that drains towards 'low edges'
+    of flats.
 
     Parameters
     ----------
@@ -298,22 +307,20 @@ def create_pulling_syn_grad(
         Boolean mask indicating low-edge locations.
         - Expected shape: `(nrows, ncols)`, same as `labels`.
     dir_scheme : D8Directions, optional
-        An instance of D8Directions defining the flow direction scheme, here it is used to determine the offsets for neighbor cells.
-        Default is `D8Directions()`.
+        Instance of `D8Directions` defining neighbour offsets.
+        - Default scheme is `D8Directions()`.
 
     Returns
     -------
     z_syn : NDArray[integer]
-
-    Raises
-    ------
-    TypeError
-        If the input low_edges is not of the expected type or format.
-    ValueError
-        If the shapes of the input arrays do not match the expected dimensions.
         Synthetic elevation increasing towards low edges within each
         flat region.
         - Shape: `(nrows, ncols)`, same as `labels`.
+
+    Notes
+    -----
+    Modified from [R Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009),
+    Algorithm 6 (p. 134).
     """
     dir_scheme = validate_format_dir_scheme(dir_scheme)
     validate_same_shape(labels, low_edges, "flat label raster", "low edges mask")
@@ -334,8 +341,11 @@ def compute_syn_flowdir(
     backend: Backend = "fortran",
 ) -> NDArray[np.uint8]:
     """
-    Computes flow directions within flat areas using synthetic elevation.
-    Very similar to the naive flow direction computation, but only search within the same flat area.
+    Computes flow directions within flat areas using synthetic
+    elevation.
+
+    Very similar to the naive flow direction computation, but only
+    search within the same flat area.
 
     Parameters
     ----------

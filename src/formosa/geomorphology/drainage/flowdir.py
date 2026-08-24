@@ -1,8 +1,9 @@
 """
-Computes and analyse raster flow directions.
+Computes and analyses raster flow directions.
 
 The analyses in this module operate on raster flow fields; explicit
-flow-graph representations are implemented in :mod:`formosa.geomorphology.drainage.network`.
+flow-graph representations are implemented in
+:mod:`formosa.geomorphology.drainage.network`.
 
 Created: 2026-08-01, En-Chi Lee (williameclee@gmail.com)
 Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
@@ -92,8 +93,8 @@ def _compute_flowdir_complete(
     step_size: int = 4,
 ) -> tuple[NDArray[NpFlowDir], NDArray[np.bool_], NDArray[np.integer]]:
     """
-    Computes flow directions for a DEM, resolving flat areas using synthetic elevations.
-    Combines simple flow direction computation with flat area resolution from [R. Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009).
+    Computes flow directions for a DEM, resolving flat areas using
+    synthetic elevations.
 
     Parameters
     ----------
@@ -126,6 +127,11 @@ def _compute_flowdir_complete(
     z_syn : NDArray[int32]
         Synthetic elevation that resolves flat areas.
         - Shape: `(nrows, ncols)`, same as `dem`.
+
+    Notes
+    -----
+    Combines simple flow direction computation with flat area
+    resolution from [R Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009).
     """
     dir_scheme = validate_format_dir_scheme(dir_scheme)
     if step_size <= 0:
@@ -177,14 +183,16 @@ def compute_flowdir(
         - Expected shape: `(nrows, ncols)`, same as `dem`.
         - Default mask is `None`.
     fill_depression : bool, optional
-        Whether to fill depressions in the DEM before computing flow directions.
-        Default is False.
+        Whether to fill depressions in the DEM before computing flow
+        directions.
+        - Default option is `False`.
     resolve_flat : bool, optional
         Whether to resolve flat areas using synthetic elevations.
         - Default option is `True`.
     step_size : int, optional
-        Increment in synthetic elevation per step away from low edges to avoid ties when combining synthetic elevations.
-        Default is 4.
+        Increment in synthetic elevation per step away from low
+        edges to avoid ties when combining synthetic elevations.
+        - Default step size is 4.
 
     Returns
     -------
@@ -226,7 +234,8 @@ def count_indegree(
     backend: Backend = "fortran",
 ) -> NDArray[np.int8]:
     """
-    Computes the number of upstream cells (in-degree) for each cell in a flow direction grid.
+    Computes the number of upstream cells (in-degree) for each cell
+    in a flow direction grid.
 
     Parameters
     ----------
@@ -284,13 +293,6 @@ def _find_acyclic_flowdirs_fortran(
     """
     Finds acyclic flow cells using the Fortran backend.
 
-    Raises
-    ------
-    RuntimeError
-        If the traversal queue overflows or an unknown status is returned.
-    MemoryError
-        If the traversal workspace cannot be allocated.
-
     Notes
     -----
     This is a helper function for :func:`find_acyclic_flowdirs`.
@@ -316,8 +318,9 @@ def find_acyclic_flowdirs(
     """
     Finds valid cells that do not belong to a directed flow cycle.
 
-    Uses Kahn's algorithm to remove cells reachable from 0-in-degree cells.
-    Valid cells remaining after the traversal belong to directed cycles.
+    Uses Kahn's algorithm to remove cells reachable from 0-in-degree
+    cells. Valid cells remaining after the traversal belong to
+    directed cycles.
 
     Parameters
     ----------
@@ -346,15 +349,6 @@ def find_acyclic_flowdirs(
     Returns
     -------
     acyclics : NDArray[bool]
-
-    Raises
-    ------
-    ValueError
-        If an input shape or backend is invalid.
-    MemoryError
-        If the Fortran backend cannot allocate its workspace.
-    RuntimeError
-        If the Fortran backend reports queue overflow or an unexpected status.
         Boolean mask indicating valid acyclic cells.
         - Shape: `(nrows, ncols)`, same as `dirs`.
     """
@@ -414,15 +408,6 @@ def find_cyclic_flowdirs(
     Returns
     -------
     cyclics : NDArray[bool]
-
-    Raises
-    ------
-    ValueError
-        If an input shape or backend is invalid.
-    MemoryError
-        If the Fortran backend cannot allocate its workspace.
-    RuntimeError
-        If the Fortran backend reports queue overflow or an unexpected status.
         Boolean mask indicating valid cyclic cells.
         - Shape: `(nrows, ncols)`, same as `dirs`.
     """

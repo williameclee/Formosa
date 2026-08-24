@@ -211,7 +211,8 @@ def compute_dist2source(
     indegs: NDArray[np.integer] | None = None,
 ) -> NDArray[np.float32]:
     """
-    Computes the distance downstream along flow directions for each cell in the flow direction grid.
+    Computes the distance downstream along flow directions for each
+    cell in the flow direction grid.
 
     Parameters
     ----------
@@ -247,13 +248,6 @@ def compute_dist2source(
     Returns
     -------
     dists : NDArray[float32]
-
-    Raises
-    ------
-    TypeError
-        If the input arrays are not of the expected type or format.
-    ValueError
-        If the shapes of the input arrays do not match the expected dimensions.
         Downstream distance for each cell.
         - Shape: `(nrows, ncols)`, same as `dirs`.
     """
@@ -287,7 +281,8 @@ def compute_dist2sink(
     valids: NDArray[np.bool_] | None = None,
 ) -> NDArray[np.float32]:
     """
-    Computes the distance upstream along flow directions for each cell in the flow direction grid.
+    Computes the distance upstream along flow directions for each
+    cell in the flow direction grid.
 
     Parameters
     ----------

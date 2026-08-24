@@ -44,10 +44,14 @@ def detect_ocean_basins_from_boundary(
     flood_below: bool = True,
 ) -> NDArray[np.int32]:
     """
-    Labels threshold-matching ocean basins connected to the raster boundary.
+    Labels threshold-matching ocean basins connected to the raster
+    boundary.
 
-    A nonzero label identifies one connected boundary basin. Invalid cells, cells above `ocean_level`, and qualifying cells disconnected from the boundary receive label zero.
-    When `flood_below` is false, only cells exactly equal to `ocean_level` are included.
+    A nonzero label identifies one connected boundary basin. Invalid
+    cells, cells above `ocean_lvl`, and qualifying cells
+    disconnected from the boundary receive label zero. When
+    `flood_below` is false, only cells exactly equal to
+    `ocean_lvl` are included.
 
     Parameters
     ----------
@@ -75,18 +79,6 @@ def detect_ocean_basins_from_boundary(
 
     Returns
     -------
-    NDArray[int32]
-        Ocean basin labels with the same shape as `dem`.
-
-    Raises
-    ------
-    ValueError
-        If `dem` is empty or not two-dimensional, or if `valids` shape does not
-        match `dem`.
-    TypeError
-        If `dem` does not have a numeric dtype.
-    RuntimeError
-        If the Fortran routine encounters an execution error.
     basins : NDArray[int32]
         Ocean basin labels.
         - Shape: `(nrows, ncols)`, same as `dem`.
@@ -161,15 +153,6 @@ def invalidate_ocean_basins(
     Returns
     -------
     valids : NDArray[bool]
-
-    Raises
-    ------
-    ValueError
-        If `min_size` is less than 1, `dem` is empty or not 2D, or if `valids` shape does not match `dem`.
-    TypeError
-        If `dem` does not have a numeric dtype.
-    RuntimeError
-        If the Fortran routine encounters an execution error.
         Validity mask with sufficiently large ocean basin cells set
         to `False`.
         - Shape: `(nrows, ncols)`, same as `dem`.
