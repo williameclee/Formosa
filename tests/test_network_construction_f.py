@@ -4,16 +4,18 @@ Tests flow-graph construction using the Fortran backend.
 Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
-from tests.core import *
-
-import pytest
-import numpy as np
-
-from formosa import D8DirectionEncoding
-import formosa.geomorphology.drainage.network.construction as constr_m
-from formosa.geomorphology._native import network_construction as constr_f
-
 from types import SimpleNamespace
+
+import numpy as np
+import pytest
+from formosa.geomorphology._native import network_construction as constr_f
+from numpy.typing import NDArray
+
+import formosa.geomorphology.drainage.network.construction as constr_m
+from formosa import D8DirectionEncoding
+from formosa.geomorphology.drainage.directions import DirectionEncoding
+from formosa.utils.typing import NpFlowDir
+from tests.core import *
 
 
 def test_construct_flowgraph_fortran_returns_buffer_overflow_code():
@@ -50,7 +52,7 @@ def test_construct_flowgraph_translates_fortran_error(monkeypatch: pytest.Monkey
     )
 
     with pytest.raises(RuntimeError, match=r"construct_flowgraph.*error code 3"):
-        constr_m.construct_flowgraph(
+        _ = constr_m.construct_flowgraph(
             np.array([[0]], dtype=np.uint8),
             orders=np.ones((1, 1), dtype=np.uint8),
             min_order=1,
@@ -93,7 +95,13 @@ def test_construct_flowgraph_translates_fortran_error(monkeypatch: pytest.Monkey
         ),
     ],
 )
-def test_create_flowgraph_3x3(dirs, dir_enc, exp_fgi, exp_fgj, should_warn):
+def test_create_flowgraph_3x3(
+    dirs: NDArray[NpFlowDir],
+    dir_enc: DirectionEncoding,
+    exp_fgi: list[float],
+    exp_fgj: list[float],
+    should_warn: bool,
+):
     if should_warn:
         with pytest.warns(UserWarning, match="Some downstream indices out of bounds"):
             fg_i, fg_j = constr_m.create_flowline_plot_data(np.array(dirs), dir_enc)

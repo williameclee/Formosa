@@ -1,15 +1,15 @@
 """
 Tests flow-direction derivation using the Fortran backend.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
-import pytest
+from types import SimpleNamespace
+
 import numpy as np
+import pytest
 
 import formosa.geomorphology.drainage.flowdir as flowdir_m
-
-from types import SimpleNamespace
 
 
 @pytest.mark.parametrize(
@@ -22,7 +22,7 @@ from types import SimpleNamespace
     ],
 )
 def test_find_acyclic_flowdirs_translates_fortran_errors(
-    monkeypatch: pytest.MonkeyPatch, err_code, exception
+    monkeypatch: pytest.MonkeyPatch, err_code: int, exception: Exception
 ):
     def fake_find(*args):
         return np.zeros((1, 1), dtype=bool), err_code
@@ -31,8 +31,8 @@ def test_find_acyclic_flowdirs_translates_fortran_errors(
         flowdir_m, "flowdir_f", SimpleNamespace(find_acyclic_flowdirs=fake_find)
     )
 
-    with pytest.raises(exception):
-        flowdir_m.find_acyclic_flowdirs(
+    with pytest.raises(exception):  # pyright: ignore[reportArgumentType]
+        _ = flowdir_m.find_acyclic_flowdirs(
             np.zeros((1, 1), dtype=np.uint8),
             indegs=np.zeros((1, 1), dtype=np.int8),
             backend="fortran",

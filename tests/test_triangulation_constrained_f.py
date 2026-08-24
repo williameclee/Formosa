@@ -6,9 +6,9 @@ Created: 2026-08-18, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
+from formosa.geomorphology._native import meshing_cstr_triangulation as cstrtri_f
 
 from formosa.geomorphology.meshing import triangulation as tri_m
-from formosa.geomorphology._native import meshing_cstr_triangulation as cstrtri_f
 
 
 def test_find_existing_constraints_fortran_classifies_mesh_edges():

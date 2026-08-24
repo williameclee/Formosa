@@ -2,15 +2,17 @@
 Verifies line-segment intersection parity across configured
 backends.
 
-Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
-import pytest
-import numpy as np
+from collections.abc import Callable
 
-from formosa.utils import BACKENDS
+import numpy as np
+import pytest
+
 import formosa.geomorphology.geometry.intersections as intx_m
 from formosa.geomorphology.geometry.intersections import IntersectionKind
+from formosa.utils import BACKENDS, Backend
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
@@ -46,28 +48,40 @@ from formosa.geomorphology.geometry.intersections import IntersectionKind
         ((0, 0), (0, 0), (1, 1), (1, 1), IntersectionKind.DEGENERATE_SEGMENT),
     ],
 )
-def test_intersection_parity(l1a, l1b, l2a, l2b, exp_flag, backend):
-    flag: int = intx_m.lines_intersect(l1a, l1b, l2a, l2b, backend=backend)
+def test_intersection_parity(
+    l1a: tuple[int, int],
+    l1b: tuple[int, int],
+    l2a: tuple[int, int],
+    l2b: tuple[int, int],
+    exp_flag: int,
+    backend: Backend,
+):
+    flag = intx_m.lines_intersect(l1a, l1b, l2a, l2b, backend=backend)
     assert flag == exp_flag
     # Flip the segments; result should be the same
-    flag: int = intx_m.lines_intersect(l2a, l2b, l1a, l1b, backend=backend)
+    flag = intx_m.lines_intersect(l2a, l2b, l1a, l1b, backend=backend)
     assert flag == exp_flag
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
 @pytest.mark.parametrize(
-    ("function", "args", "expected"),
+    ("function", "args", "exp_result"),
     [
         (intx_m.on_segment, ((0, 0), (2, 0), (1, 0)), True),
         (intx_m.bboxes_overlap, ((0, 0), (2, 2), (1, 1), (3, 3)), True),
         (intx_m.lines_intersect, ((0, 0), (1, 1), (1, 0), (0, 1)), 1),
     ],
 )
-def test_public_wrappers_select_backend(backend, function, args, expected):
+def test_public_wrappers_select_backend(
+    backend: Backend,
+    function: Callable,  # pyright: ignore[reportMissingTypeArgument]
+    args,
+    exp_result,
+):
     result = function(*args, backend=backend)
 
-    assert result == expected
-    assert type(result) is type(expected)
+    assert result == exp_result
+    assert type(result) is type(exp_result)
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
@@ -113,7 +127,14 @@ def test_public_wrappers_select_backend(backend, function, args, expected):
         ),  # Test nearly collinear
     ],
 )
-def test_orientv2(p1, p2, p3, exp_det, is_float, backend):
+def test_orientv2(
+    p1: tuple[int, int],
+    p2: tuple[int, int],
+    p3: tuple[int, int],
+    exp_det: bool,
+    is_float: bool,
+    backend: Backend,
+):
     det = intx_m.orient(p1, p2, p3, backend=backend)
     if is_float:
         assert det == pytest.approx(exp_det, rel=1e-6, abs=1e-7)
@@ -127,7 +148,7 @@ def test_orientv2(p1, p2, p3, exp_det, is_float, backend):
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_integer_predicates_int64(backend):
+def test_integer_predicates_int64(backend: Backend):
     translation = np.array((2**40, -(2**40)), dtype=np.int64)
     a = translation + np.array((0, 0), dtype=np.int64)
     b = translation + np.array((2, 0), dtype=np.int64)
@@ -149,7 +170,7 @@ def test_fortran_int32_predicates_saturate_before_narrowing():
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_orientv2_float_translation_invariance(backend):
+def test_orientv2_float_translation_invariance(backend: Backend):
     p1 = np.array((-1.25, 2.5))
     p2 = np.array((3.75, -0.5))
     p3 = np.array((2.0, 4.25))
@@ -165,7 +186,7 @@ def test_orientv2_float_translation_invariance(backend):
 
 @pytest.mark.parametrize("backend", BACKENDS)
 @pytest.mark.parametrize("scale", [0.25, 2.5, -3.0])
-def test_orientv2_float_quadratic_scaling(backend, scale):
+def test_orientv2_float_quadratic_scaling(backend: Backend, scale: float):
     p1 = np.array((-0.5, 1.25))
     p2 = np.array((2.0, -0.75))
     p3 = np.array((4.5, 3.0))
@@ -178,7 +199,7 @@ def test_orientv2_float_quadratic_scaling(backend, scale):
 
 def test_orientv2_unknown_backend():
     with pytest.raises(ValueError, match="Unsupported backend"):
-        intx_m.orient((0, 0), (1, 0), (1, 1), backend="unknown")  # type: ignore
+        _ = intx_m.orient((0, 0), (1, 0), (1, 1), backend="unknown")  # pyright: ignore[reportArgumentType]
 
 
 @pytest.mark.parametrize(
@@ -189,9 +210,9 @@ def test_orientv2_unknown_backend():
         (np.array([1 + 2j, 3 + 4j]), TypeError),
     ],
 )
-def test_public_wrapper_validates_points(point, error):
-    with pytest.raises(error):
-        intx_m.orient(point, (1, 0), (1, 1), backend="python")
+def test_public_wrapper_validates_points(point: tuple[int, int], error: Exception):
+    with pytest.raises(error):  # pyright: ignore[reportArgumentType]
+        _ = intx_m.orient(point, (1, 0), (1, 1), backend="python")
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
@@ -211,7 +232,14 @@ def test_public_wrapper_validates_points(point, error):
         ),
     ],  # Triangles should all be oriented CCW, the test will make CW ones
 )
-def test_incircle(a, b, c, p, exp_det, backend):
+def test_incircle(
+    a: tuple[float, float],
+    b: tuple[float, float],
+    c: tuple[float, float],
+    p: tuple[float, float],
+    exp_det: float,
+    backend: Backend,
+):
     det_ccw = intx_m.incircle(a, b, c, p, oriented=True, backend=backend)
     det_cw = intx_m.incircle(a, c, b, p, oriented=True, backend=backend)
     assert det_ccw == pytest.approx(exp_det)
@@ -223,13 +251,15 @@ def test_incircle(a, b, c, p, exp_det, backend):
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_incircle_oriented_rejects_collinear_triangle(backend):
+def test_incircle_oriented_rejects_collinear_triangle(backend: Backend):
     with pytest.raises(ValueError, match="collinear triangle"):
-        intx_m.incircle((0, 0), (1, 1), (2, 2), (0, 1), oriented=True, backend=backend)
+        _ = intx_m.incircle(
+            (0, 0), (1, 1), (2, 2), (0, 1), oriented=True, backend=backend
+        )
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_incircle_translation_invariance(backend):
+def test_incircle_translation_invariance(backend: Backend):
     points = np.array(((0.25, -0.5), (2.5, 0.25), (-0.75, 2.0), (0.5, 0.75)))
     translation = np.array((13.25, -8.5))
 
@@ -241,7 +271,7 @@ def test_incircle_translation_invariance(backend):
 
 @pytest.mark.parametrize("backend", BACKENDS)
 @pytest.mark.parametrize("scale", [0.25, 2.5, -3.0])
-def test_incircle_scaling_is_quartic(backend, scale):
+def test_incircle_scaling_is_quartic(backend: Backend, scale: float):
     points = np.array(((0.25, -0.5), (2.5, 0.25), (-0.75, 2.0), (0.5, 0.75)))
 
     det = intx_m.incircle(*points, backend=backend)

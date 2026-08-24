@@ -4,8 +4,8 @@ Tests flow-graph overlap resolution using the Python backend.
 Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
-import pytest
 import numpy as np
+import pytest
 
 import formosa.geomorphology.drainage.network.overlaps as ovlp_m
 

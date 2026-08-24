@@ -4,18 +4,20 @@ Tests flow-graph construction using the Python backend.
 Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
+import numpy as np
+import pytest
+from pytest import MonkeyPatch
+
+import formosa.geomorphology.drainage.network as nwork_m
+import formosa.geomorphology.drainage.network._backends.construction_py as constr_py
+import formosa.geomorphology.drainage.network.construction as constr_m
+from formosa import D8DirectionEncoding
 from tests.core import *
 
-import pytest
-import numpy as np
 
-from formosa import D8DirectionEncoding
-import formosa.geomorphology.drainage.network as nwork_m
-import formosa.geomorphology.drainage.network.construction as constr_m
-import formosa.geomorphology.drainage.network._backends.construction_py as constr_py
-
-
-def test_construct_flowgraph_rejects_incomplete_backend_output(monkeypatch):
+def test_construct_flowgraph_rejects_incomplete_backend_output(
+    monkeypatch: MonkeyPatch,
+):
     dir_enc = D8DirectionEncoding(code_trans_func=lambda x: x)
     dirs = np.array([[1, 0]], dtype=np.uint8)
     orders = np.ones(dirs.shape, dtype=np.uint8)
@@ -32,14 +34,14 @@ def test_construct_flowgraph_rejects_incomplete_backend_output(monkeypatch):
     monkeypatch.setattr(constr_py, "construct_flowgraph", omit_selected_edge)
 
     with pytest.raises(nwork_m.IncompleteFlowGraphError) as exc_info:
-        constr_m.construct_flowgraph(
+        _ = constr_m.construct_flowgraph(
             dirs, dir_enc, orders=orders, min_order=1, backend="python"
         )
 
     np.testing.assert_array_equal(exc_info.value.missing_ijs, [[0, 0], [0, 1]])
 
 
-def test_construct_flowgraph_rejects_missing_directed_edge(monkeypatch):
+def test_construct_flowgraph_rejects_missing_directed_edge(monkeypatch: MonkeyPatch):
     dir_enc = D8DirectionEncoding(code_trans_func=lambda x: x)
     dirs = np.array([[1, 1, 0]], dtype=np.uint8)
     orders = np.ones(dirs.shape, dtype=np.uint8)
@@ -58,7 +60,7 @@ def test_construct_flowgraph_rejects_missing_directed_edge(monkeypatch):
     monkeypatch.setattr(constr_py, "construct_flowgraph", omit_second_edge)
 
     with pytest.raises(nwork_m.IncompleteFlowGraphError) as exc_info:
-        constr_m.construct_flowgraph(
+        _ = constr_m.construct_flowgraph(
             dirs, dir_enc, orders=orders, min_order=1, backend="python"
         )
 

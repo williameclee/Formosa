@@ -4,6 +4,8 @@ Tests the public properties and methods of :class:`DEMGrid`.
 Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
+from pathlib import Path
+
 import numpy as np
 import pytest
 
@@ -43,7 +45,7 @@ def test_demgrid_fill_depressions_leaves_boundary_only_grid_unchanged():
     np.testing.assert_array_equal(grid.dem, original)
 
 
-def test_read_hgt_and_construct_demgrid(tmp_path):
+def test_read_hgt_and_construct_demgrid(tmp_path: Path):
     # The Rasterio SRTMHGT driver recognizes the standard 1201- or 3601-cell
     # tile sizes and derives the geographic extent from the filename.
     elevations = np.arange(1201 * 1201, dtype=np.int64).reshape(1201, 1201)

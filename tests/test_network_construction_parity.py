@@ -5,19 +5,19 @@ backends.
 Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
-from tests.core import *
-
-import pytest
 import numpy as np
+import pytest
+from numpy._typing import NDArray
 
-from formosa.utils import BACKENDS
-from formosa import D8DirectionEncoding
 import formosa.geomorphology.drainage.network as nwork_m
 import formosa.geomorphology.drainage.network.construction as constr_m
+from formosa import D8DirectionEncoding
+from formosa.utils import BACKENDS, Backend
+from tests.core import *
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_construct_flowgraph_3x3(backend):
+def test_construct_flowgraph_3x3(backend: Backend):
     dir_enc = D8DirectionEncoding(code_trans_func=lambda x: x)
     dirs = np.array([[3, 3, 3], [3, 3, 3], [1, 1, 0]])
     valids = np.array([[T, F, T], [T, T, T], [T, T, T]])
@@ -50,11 +50,11 @@ def test_construct_flowgraph_is_backend_independent_of_masked_directions():
     results = []
     for backend in BACKENDS:
         for candidate_dirs in (dirs, changed_dirs):
-            arc_orders, vertex_ijs, arc_endpts = constr_m.construct_flowgraph(
+            arc_orders, vtxs, arc_endpts = constr_m.construct_flowgraph(
                 candidate_dirs, dir_enc, valids=valids, min_order=1, backend=backend
             )
             arcs = [
-                (int(order), tuple(map(tuple, vertex_ijs[start : end + 1].tolist())))
+                (int(order), tuple(map(tuple, vtxs[start : end + 1].tolist())))
                 for order, (start, end) in zip(arc_orders, arc_endpts)
             ]
             results.append(arcs)
@@ -64,7 +64,7 @@ def test_construct_flowgraph_is_backend_independent_of_masked_directions():
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_constructed_flowgraph_segments_follow_d8_adjacency(backend):
+def test_constructed_flowgraph_segments_follow_d8_adjacency(backend: Backend):
     dir_enc = D8DirectionEncoding(code_trans_func=lambda x: x)
     dirs = np.array([[3, 3, 3], [3, 3, 3], [1, 1, 0]], dtype=np.uint8)
     valids = np.array([[T, F, T], [T, T, T], [T, T, T]])
@@ -83,13 +83,13 @@ def test_constructed_flowgraph_segments_follow_d8_adjacency(backend):
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_construct_flowgraph_rejects_two_cell_cycle(backend):
+def test_construct_flowgraph_rejects_two_cell_cycle(backend: Backend):
     dir_enc = D8DirectionEncoding(code_trans_func=lambda x: x)
     dirs = np.array([[1, 5]], dtype=np.uint8)
     orders = np.ones(dirs.shape, dtype=np.uint8)
 
     with pytest.raises(nwork_m.validation.DirectedFlowCycleError) as exc_info:
-        constr_m.construct_flowgraph(
+        _ = constr_m.construct_flowgraph(
             dirs, dir_enc, orders=orders, min_order=1, backend=backend
         )
 
@@ -99,8 +99,7 @@ def test_construct_flowgraph_rejects_two_cell_cycle(backend):
 @pytest.mark.parametrize("backend", BACKENDS)
 @pytest.mark.parametrize("preserve_junctions", (True, False))
 def test_construct_flowgraph_reports_cycle_without_acyclic_feeder(
-    backend,
-    preserve_junctions,
+    backend: Backend, preserve_junctions: bool
 ):
     dir_enc = D8DirectionEncoding(code_trans_func=lambda x: x)
     # Cell 0 feeds the cycle between cells 1 and 2.
@@ -108,7 +107,7 @@ def test_construct_flowgraph_reports_cycle_without_acyclic_feeder(
     orders = np.ones(dirs.shape, dtype=np.uint8)
 
     with pytest.raises(nwork_m.validation.DirectedFlowCycleError) as exc_info:
-        constr_m.construct_flowgraph(
+        _ = constr_m.construct_flowgraph(
             dirs,
             dir_enc,
             orders=orders,
@@ -121,13 +120,13 @@ def test_construct_flowgraph_reports_cycle_without_acyclic_feeder(
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_construct_flowgraph_reports_disconnected_cycles(backend):
+def test_construct_flowgraph_reports_disconnected_cycles(backend: Backend):
     dir_enc = D8DirectionEncoding(code_trans_func=lambda x: x)
     dirs = np.array([[1, 5], [1, 5]], dtype=np.uint8)
     orders = np.ones(dirs.shape, dtype=np.uint8)
 
     with pytest.raises(nwork_m.validation.DirectedFlowCycleError) as exc_info:
-        constr_m.construct_flowgraph(
+        _ = constr_m.construct_flowgraph(
             dirs, dir_enc, orders=orders, min_order=1, backend=backend
         )
 
@@ -137,7 +136,7 @@ def test_construct_flowgraph_reports_disconnected_cycles(backend):
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_construct_flowgraph_allows_isolated_noflow_cell(backend):
+def test_construct_flowgraph_allows_isolated_noflow_cell(backend: Backend):
     dir_enc = D8DirectionEncoding(code_trans_func=lambda x: x)
     dirs = np.array([[0]], dtype=np.uint8)
     orders = np.ones(dirs.shape, dtype=np.uint8)
@@ -160,7 +159,10 @@ def test_construct_flowgraph_allows_isolated_noflow_cell(backend):
     ],
 )
 def test_construct_flowgraph_allows_selection_boundary(
-    backend, valids, orders, min_order
+    backend: Backend,
+    valids: NDArray[np.bool_],
+    orders: NDArray[np.integer],
+    min_order: int,
 ):
     dir_enc = D8DirectionEncoding(code_trans_func=lambda x: x)
     dirs = np.array([[1, 0]], dtype=np.uint8)
@@ -180,7 +182,7 @@ def test_construct_flowgraph_allows_selection_boundary(
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_construct_flowgraph_covers_every_selected_edge_endpoint(backend):
+def test_construct_flowgraph_covers_every_selected_edge_endpoint(backend: Backend):
     dir_enc = D8DirectionEncoding(code_trans_func=lambda x: x)
     dirs = np.array([[3, 3, 3], [3, 3, 3], [1, 1, 0]], dtype=np.uint8)
     valids = np.array([[T, F, T], [T, T, T], [T, T, T]])

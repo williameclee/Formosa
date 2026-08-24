@@ -4,17 +4,26 @@ Tests ridge-network construction using the Fortran backend.
 Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
-import pytest
-import numpy as np
-
-from formosa import D8DirectionEncoding
-import formosa.geomorphology.drainage.ridges as ridges_m
-from formosa.geomorphology._native import drainage_ridges as ridges_f
-
 from types import SimpleNamespace
 
+import numpy as np
+import pytest
+from formosa.geomorphology._native import drainage_ridges as ridges_f
+from numpy.typing import NDArray
 
-def _reference_max_branch_dist(dirs, valids, x, y, dir_enc):
+import formosa.geomorphology.drainage.ridges as ridges_m
+from formosa import D8DirectionEncoding
+from formosa.geomorphology.drainage.directions import DirectionEncoding
+from formosa.utils.typing import NpCoords, NpFlowDir
+
+
+def _reference_max_branch_dist(
+    dirs: NDArray[NpFlowDir],
+    valids: NDArray[np.bool_],
+    x: NDArray[NpCoords],
+    y: NDArray[NpCoords],
+    dir_enc: DirectionEncoding,
+):
     """Small direct path-tracing reference for the bulk backend."""
     offsets = dir_enc.offset_dict
     nrows, ncols = dirs.shape
@@ -148,7 +157,9 @@ def test_max_branch_distance_reports_cycle():
     assert err_code == 4
 
 
-def test_max_branch_distance_translates_allocation_failure(monkeypatch):
+def test_max_branch_distance_translates_allocation_failure(
+    monkeypatch: pytest.MonkeyPatch,
+):
     def fake_compute(*args):
         return np.zeros((1, 1), dtype=np.float32), 2
 
@@ -157,4 +168,4 @@ def test_max_branch_distance_translates_allocation_failure(monkeypatch):
     )
 
     with pytest.raises(MemoryError, match=r"compute_max_branch_dist.*error code 2"):
-        ridges_m.compute_dist2conf_max(np.zeros((1, 1), dtype=np.uint8))
+        _ = ridges_m.compute_dist2conf_max(np.zeros((1, 1), dtype=np.uint8))

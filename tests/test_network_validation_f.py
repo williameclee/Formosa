@@ -1,17 +1,18 @@
 """
 Tests flow-graph topology validation using the Fortran backend.
 
-Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
-import pytest
 import warnings
+from types import SimpleNamespace
+
 import numpy as np
+import pytest
+from formosa.geomorphology._native import network_validation as val_f
+from pytest import MonkeyPatch
 
 import formosa.geomorphology.drainage.network.validation as val_m
-from formosa.geomorphology._native import network_validation as val_f
-
-from types import SimpleNamespace
 
 
 def _make_separated_x_pairs(
@@ -23,16 +24,16 @@ def _make_separated_x_pairs(
     Each pair contributes exactly one intersection, and the spacing between
     pairs prevents unintended intersections.
     """
-    vertices = []
+    vtxs = []
     endpts = []
     for ipair in range(npairs):
         x = 3 * ipair
-        start = len(vertices)
-        vertices.extend([[x, 0], [x + 1, 1], [x, 1], [x + 1, 0]])
+        start = len(vtxs)
+        vtxs.extend([[x, 0], [x + 1, 1], [x, 1], [x + 1, 0]])
         endpts.extend([[start, start + 1], [start + 2, start + 3]])
 
     return (
-        np.asarray(vertices, dtype=np.float32),
+        np.asarray(vtxs, dtype=np.float32),
         np.asarray(endpts, dtype=np.int32),
     )
 
@@ -41,15 +42,13 @@ def test_locate_invalid_graph_topology_retries_after_buffer_overflow():
     """
     The public Fortran backend returns all results after provisional overflow.
     """
-    vertices, endpts = _make_separated_x_pairs()
+    vtxs, endpts = _make_separated_x_pairs()
 
     with warnings.catch_warnings(record=True) as caught:
         warnings.simplefilter("always")
-        intxs_f = val_m.locate_invalid_graph_topology(
-            vertices, endpts, backend="fortran"
-        )
+        intxs_f = val_m.locate_invalid_graph_topology(vtxs, endpts, backend="fortran")
 
-    intxs_py = val_m.locate_invalid_graph_topology(vertices, endpts, backend="python")
+    intxs_py = val_m.locate_invalid_graph_topology(vtxs, endpts, backend="python")
     assert not caught
     assert intxs_f is not None
     assert intxs_f.shape == (5, 5)
@@ -59,16 +58,14 @@ def test_locate_invalid_graph_topology_retries_after_buffer_overflow():
 
 
 def _scan_topology_with_capacity(
-    vertices: np.ndarray,
-    endpts: np.ndarray,
-    capacity: int,
+    vtxs: np.ndarray, endpts: np.ndarray, cpty: int
 ) -> tuple[np.ndarray, int, int]:
     """
     Call the low-level scanner after converting arrays to its Fortran layout.
     """
-    vertices_f = np.asfortranarray(vertices.T, dtype=np.float32)
+    vertices_f = np.asfortranarray(vtxs.T, dtype=np.float32)
     endpts_f = np.asfortranarray(endpts.T + 1, dtype=np.int32)
-    return val_f.scan_invalid_graph_topology(vertices_f, endpts_f, capacity)
+    return val_f.scan_invalid_graph_topology(vertices_f, endpts_f, cpty)
 
 
 def test_topology_scanner_counts_past_capacity():
@@ -76,7 +73,7 @@ def test_topology_scanner_counts_past_capacity():
     The low-level scanner reports the exact count beyond storage capacity.
     """
     vertices, endpts = _make_separated_x_pairs()
-    intxs, nintxs, err_code = _scan_topology_with_capacity(vertices, endpts, capacity=1)
+    intxs, nintxs, err_code = _scan_topology_with_capacity(vertices, endpts, cpty=1)
 
     assert err_code == 0
     assert nintxs == 5
@@ -84,22 +81,20 @@ def test_topology_scanner_counts_past_capacity():
     np.testing.assert_array_equal(intxs[:, 0], [1, 2, 1, 3, 1])
 
 
-@pytest.mark.parametrize("capacity", [4, 5, 8])
-def test_topology_scanner_capacity_boundaries(capacity):
+@pytest.mark.parametrize("cpty", [4, 5, 8])
+def test_topology_scanner_capacity_boundaries(cpty: int):
     """
     Stored records and counts are correct around the exact capacity.
     """
-    vertices, endpts = _make_separated_x_pairs()
-    intxs, nintxs, err_code = _scan_topology_with_capacity(vertices, endpts, capacity)
+    vtxs, endpts = _make_separated_x_pairs()
+    intxs, nintxs, err_code = _scan_topology_with_capacity(vtxs, endpts, cpty)
 
     assert err_code == 0
     assert nintxs == 5
-    assert intxs.shape == (5, capacity)
+    assert intxs.shape == (5, cpty)
 
-    nstored = min(nintxs, capacity)
-    public_intxs = val_m.locate_invalid_graph_topology(
-        vertices, endpts, backend="fortran"
-    )
+    nstored = min(nintxs, cpty)
+    public_intxs = val_m.locate_invalid_graph_topology(vtxs, endpts, backend="fortran")
     assert public_intxs is not None
     exp_stored = public_intxs[:nstored].T.copy()
     exp_stored[:-1] += 1
@@ -112,7 +107,7 @@ def test_topology_scanner_empty_input_initialises_outputs():
     """
     vtxs = np.empty((0, 2), dtype=np.float32)
     endpts = np.empty((0, 2), dtype=np.int32)
-    intxs, nintxs, err_code = _scan_topology_with_capacity(vtxs, endpts, capacity=3)
+    intxs, nintxs, err_code = _scan_topology_with_capacity(vtxs, endpts, cpty=3)
 
     assert err_code == 0
     assert nintxs == 0
@@ -128,9 +123,9 @@ def test_topology_wrapper_uses_single_scan_when_capacity_is_sufficient(
     """
     calls = []
 
-    def fake_scan(vertex_ijs, arc_endpts, capacity):
-        calls.append(capacity)
-        intxs = np.empty((5, capacity), dtype=np.int32, order="F")
+    def fake_scan(vtxs, endpts, cpty):
+        calls.append(cpty)
+        intxs = np.empty((5, cpty), dtype=np.int32, order="F")
         intxs[:, 0] = [1, 2, 1, 3, 1]
         return intxs, 1, 0
 
@@ -153,11 +148,11 @@ def test_topology_wrapper_retries_with_exact_reported_capacity(
     """
     calls = []
 
-    def fake_scan(vertex_ijs, arc_endpts, capacity):
-        calls.append(capacity)
-        intxs = np.empty((5, capacity), dtype=np.int32, order="F")
+    def fake_scan(vtxs, endpts, cpty):
+        calls.append(cpty)
+        intxs = np.empty((5, cpty), dtype=np.int32, order="F")
         nintxs = 5
-        nstored = min(capacity, nintxs)
+        nstored = min(cpty, nintxs)
         for i in range(nstored):
             intxs[:, i] = [2 * i + 1, 2 * i + 2, 2 * i + 1, 2 * i + 3, 1]
         return intxs, nintxs, 0
@@ -184,16 +179,16 @@ def test_topology_wrapper_rejects_inconsistent_retry_count(
     """
     calls = []
 
-    def fake_scan(vertex_ijs, arc_endpts, capacity):
-        calls.append(capacity)
-        intxs = np.empty((5, capacity), dtype=np.int32, order="F")
+    def fake_scan(vtxs, endpts, cpty):
+        calls.append(cpty)
+        intxs = np.empty((5, cpty), dtype=np.int32, order="F")
         return intxs, 4 if len(calls) == 1 else 3, 0
 
     monkeypatch.setattr(
         val_m, "val_f", SimpleNamespace(scan_invalid_graph_topology=fake_scan)
     )
     with pytest.raises(RuntimeError, match="count changed"):
-        val_m.locate_invalid_graph_topology(
+        _ = val_m.locate_invalid_graph_topology(
             np.zeros((4, 2)),
             np.array([[0, 1], [2, 3]]),
             backend="fortran",
@@ -207,20 +202,20 @@ def test_topology_wrapper_rejects_inconsistent_retry_count(
     [(1, ValueError), (2, MemoryError), (99, RuntimeError)],
 )
 def test_topology_wrapper_translates_scanner_errors(
-    monkeypatch: pytest.MonkeyPatch, err_code, exception
+    monkeypatch: MonkeyPatch, err_code: int, exception: Exception
 ):
     """
     Scanner status codes map to the documented Python exceptions.
     """
 
-    def fake_scan(vtxs, arc_endpts, capacity):
-        return np.empty((5, capacity), dtype=np.int32), 0, err_code
+    def fake_scan(vtxs, endpts, cpty):
+        return np.empty((5, cpty), dtype=np.int32), 0, err_code
 
     monkeypatch.setattr(
         val_m, "val_f", SimpleNamespace(scan_invalid_graph_topology=fake_scan)
     )
-    with pytest.raises(exception):
-        val_m.locate_invalid_graph_topology(
+    with pytest.raises(exception):  # pyright: ignore[reportArgumentType]
+        _ = val_m.locate_invalid_graph_topology(
             np.zeros((2, 2)), np.array([[0, 1]]), backend="fortran"
         )
 

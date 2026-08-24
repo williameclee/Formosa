@@ -4,14 +4,13 @@ Tests public operations that mutate flow graphs.
 Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
-from tests.core import *
-
-import pytest
 import numpy as np
+import pytest
 
-from formosa import D8DirectionEncoding
 import formosa.geomorphology.drainage.network.construction as constr_m
 import formosa.geomorphology.drainage.network.editing as editing_m
+from formosa import D8DirectionEncoding
+from tests.core import *
 
 
 def test_remove_unused_vertices_compacts_arc_ranges():

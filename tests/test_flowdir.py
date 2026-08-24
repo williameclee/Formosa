@@ -4,14 +4,15 @@ Tests flow-direction behaviour shared by the configured backends.
 Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
-from tests.core import *
-from formosa.utils import BACKENDS, NpFlowDir
-
-import pytest
 import numpy as np
+import pytest
+from numpy.typing import NDArray
 
-from formosa import D8DirectionEncoding
 import formosa.geomorphology.drainage.flowdir as flowdir_m
+from formosa import D8DirectionEncoding
+from formosa.geomorphology.drainage.directions import DirectionEncoding
+from formosa.utils import BACKENDS, Backend, NpFlowDir
+from tests.core import *
 
 
 @pytest.mark.parametrize(
@@ -32,7 +33,13 @@ import formosa.geomorphology.drainage.flowdir as flowdir_m
     ],
 )
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_indegree(dirs, dir_enc, exp_indegs, should_warn, backend):
+def test_indegree(
+    dirs: NDArray[NpFlowDir],
+    dir_enc: DirectionEncoding,
+    exp_indegs: NDArray[np.integer],
+    should_warn: bool,
+    backend: Backend,
+):
     if should_warn and backend == "python":
         with pytest.warns(UserWarning, match="out of bounds"):
             indegs = flowdir_m.count_indegree(np.array(dirs), dir_enc, backend=backend)
@@ -43,7 +50,7 @@ def test_indegree(dirs, dir_enc, exp_indegs, should_warn, backend):
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_find_flowdir_cycles_with_feeder_and_invalid_cell(backend):
+def test_find_flowdir_cycles_with_feeder_and_invalid_cell(backend: Backend):
     dir_enc = D8DirectionEncoding(code_trans_func=lambda x: x)
     # Cell 0 feeds the cycle between cells 1 and 2; cell 3 is invalid.
     dirs = np.array([[1, 1, 5, 0]], dtype=np.uint8)
@@ -61,7 +68,7 @@ def test_find_flowdir_cycles_with_feeder_and_invalid_cell(backend):
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_find_flowdir_cycles_accepts_supplied_indegrees(backend):
+def test_find_flowdir_cycles_accepts_supplied_indegrees(backend: Backend):
     dir_enc = D8DirectionEncoding(code_trans_func=lambda x: x)
     dirs = np.array([[1, 1, 0]], dtype=np.uint8)
     valids = np.ones(dirs.shape, dtype=bool)

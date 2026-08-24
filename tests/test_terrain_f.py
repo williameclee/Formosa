@@ -12,9 +12,11 @@ import heapq
 
 import numpy as np
 import pytest
+from numpy._typing import NDArray
 
 from formosa.geomorphology.drainage.directions import D8DirectionEncoding
 from formosa.geomorphology.terrain import compute_isolation, compute_prominence
+from formosa.utils.typing import NpCanonIndex, NpReal
 
 
 def _compute_prominence_labels(*args, **kwargs):
@@ -68,9 +70,9 @@ def _brute_force_isolation(
 
 
 def _brute_force_prominence(
-    dem: np.ndarray,
-    valids: np.ndarray,
-    offsets: np.ndarray,
+    dem: NDArray[NpReal],
+    valids: NDArray[np.bool_],
+    offsets: NDArray[NpCanonIndex],
 ) -> np.ndarray:
     """Returns prominence from exhaustive maximum-bottleneck paths."""
     nrows, ncols = dem.shape
@@ -193,7 +195,9 @@ def _assert_label_raster(labels: np.ndarray, offsets: np.ndarray) -> None:
         pytest.param((9, 1), 1.0, 2.5, True, 7, id="single-column"),
     ],
 )
-def test_calculate_isolation_matches_brute_force(shape, dx, dy, include_invalids, seed):
+def test_calculate_isolation_matches_brute_force(
+    shape: tuple[int, int], dx: float, dy: float, include_invalids: bool, seed: int
+):
     rng = np.random.default_rng(seed)
     dem = rng.integers(-5, 20, size=shape).astype(np.float32)
     valids = np.ones(shape, dtype=bool)
@@ -201,17 +205,15 @@ def test_calculate_isolation_matches_brute_force(shape, dx, dy, include_invalids
         valids.flat[::4] = False
         valids.flat[-1] = True
 
-    expected_isos, expected_has_ilp, expected_censored = _brute_force_isolation(
-        dem, valids, dx, dy
-    )
+    exp_isos, exp_has_ilp, exp_censored = _brute_force_isolation(dem, valids, dx, dy)
     isos, ilpis, ilpjs, censored = compute_isolation(dem, valids, dx=dx, dy=dy)
 
-    np.testing.assert_allclose(isos, expected_isos, rtol=1e-6, atol=1e-6)
-    np.testing.assert_array_equal(censored, expected_censored)
-    assert np.all(ilpis[~expected_has_ilp] == -1)
-    assert np.all(ilpjs[~expected_has_ilp] == -1)
+    np.testing.assert_allclose(isos, exp_isos, rtol=1e-6, atol=1e-6)
+    np.testing.assert_array_equal(censored, exp_censored)
+    assert np.all(ilpis[~exp_has_ilp] == -1)
+    assert np.all(ilpjs[~exp_has_ilp] == -1)
 
-    for ci, cj in np.argwhere(expected_has_ilp):
+    for ci, cj in np.argwhere(exp_has_ilp):
         ilpi = ilpis[ci, cj]
         ilpj = ilpjs[ci, cj]
         assert 0 <= ilpi < shape[0]
@@ -219,7 +221,7 @@ def test_calculate_isolation_matches_brute_force(shape, dx, dy, include_invalids
         assert valids[ilpi, ilpj]
         assert dem[ilpi, ilpj] > dem[ci, cj]
         ilp_distance = np.hypot((ilpi - ci) * dy, (ilpj - cj) * dx)
-        assert ilp_distance == pytest.approx(expected_isos[ci, cj], rel=1e-6)
+        assert ilp_distance == pytest.approx(exp_isos[ci, cj], rel=1e-6)
 
 
 def test_anisotropic_spacing_can_make_distant_row_cell_nearest():
@@ -282,7 +284,7 @@ def test_nonfinite_and_masked_higher_cells_are_ignored():
 
 
 @pytest.mark.parametrize("shape", [(1, 1), (2, 3), (5, 4)])
-def test_all_invalid_cells_have_no_isolation_limit_point(shape):
+def test_all_invalid_cells_have_no_isolation_limit_point(shape: tuple[int, int]):
     dem = np.ones(shape, dtype=np.float32)
     valids = np.zeros(shape, dtype=bool)
 
@@ -337,14 +339,16 @@ def test_isolation_circle_inside_raster_footprint_is_not_censored():
         pytest.param("dx", [1.0], TypeError, id="array-dx"),
     ],
 )
-def test_calculate_isolation_rejects_invalid_spacing(name, value, exception):
+def test_calculate_isolation_rejects_invalid_spacing(
+    name: str, value: float, exception: Exception
+):
     kwargs = {name: value}
-    with pytest.raises(exception):
-        compute_isolation(np.ones((2, 2), dtype=np.float32), **kwargs)
+    with pytest.raises(exception):  # pyright: ignore[reportArgumentType]
+        _ = compute_isolation(np.ones((2, 2), dtype=np.float32), **kwargs)
 
 
 @pytest.mark.parametrize(
-    ("dem", "expected"),
+    ("dem", "exp_proms"),
     [
         pytest.param(
             [[3, 1, 2]],
@@ -376,14 +380,16 @@ def test_calculate_isolation_rejects_invalid_spacing(name, value, exception):
         ),
     ],
 )
-def test_compute_prominence_known_landforms(dem, expected):
+def test_compute_prominence_known_landforms(
+    dem: NDArray[NpReal], exp_proms: NDArray[NpReal]
+):
     proms, peaks, saddles, _, _ = _compute_prominence_labels(
         np.asarray(dem, dtype=np.float32)
     )
 
-    np.testing.assert_array_equal(proms, expected)
-    assert np.all(peaks[np.asarray(expected) != 0] > 0)
-    assert np.all(peaks[np.asarray(expected) == 0] == 0)
+    np.testing.assert_array_equal(proms, exp_proms)
+    assert np.all(peaks[np.asarray(exp_proms) != 0] > 0)
+    assert np.all(peaks[np.asarray(exp_proms) == 0] == 0)
     assert not np.any((peaks > 0) & (saddles > 0))
     _assert_label_raster(peaks + saddles, D8DirectionEncoding().offsets)
 
@@ -445,7 +451,7 @@ def test_peak_and_saddle_ids_use_universal_namespace():
     ],
 )
 def test_compute_prominence_matches_brute_force(
-    shape, include_invalids, include_flats, seed
+    shape: tuple[int, int], include_invalids: bool, include_flats: bool, seed: int
 ):
     rng = np.random.default_rng(seed)
     if include_flats:
@@ -459,10 +465,10 @@ def test_compute_prominence_matches_brute_force(
         valids.flat[-1] = True
 
     dir_enc = D8DirectionEncoding()
-    expected = _brute_force_prominence(dem, valids, dir_enc.offsets)
+    exp_proms = _brute_force_prominence(dem, valids, dir_enc.offsets)
     proms, peaks, saddles, _, _ = _compute_prominence_labels(dem, dir_enc, valids)
 
-    np.testing.assert_array_equal(proms, expected)
+    np.testing.assert_array_equal(proms, exp_proms)
     assert np.all(peaks[~valids] == 0)
     assert np.all(saddles[~valids] == 0)
     assert not np.any((peaks > 0) & (saddles > 0))
@@ -501,7 +507,7 @@ def test_compute_prominence_treats_nonfinite_cells_as_invalid():
 
 
 @pytest.mark.parametrize("shape", [(1, 1), (2, 3), (5, 4)])
-def test_compute_prominence_marks_all_invalid_cells(shape):
+def test_compute_prominence_marks_all_invalid_cells(shape: tuple[int, int]):
     dem = np.ones(shape, dtype=np.float32)
     valids = np.zeros(shape, dtype=bool)
 
@@ -559,7 +565,7 @@ def test_compute_prominence_supports_unsigned_dem():
     ],
 )
 def test_compute_prominence_warns_for_signed_integer_result_overflow(
-    dtype, high, low, subordinate
+    dtype: type, high: int, low: int, subordinate: int
 ):
     dem = np.array([[high, low, subordinate]], dtype=dtype)
 
@@ -585,9 +591,11 @@ def test_compute_prominence_warns_for_signed_integer_result_overflow(
         ),
     ],
 )
-def test_compute_prominence_warns_when_large_integer_elevations_merge(dem):
+def test_compute_prominence_warns_when_large_integer_elevations_merge(
+    dem: NDArray[NpReal],
+):
     with pytest.warns(RuntimeWarning, match="merges distinct elevation values"):
-        compute_prominence(dem)
+        _ = compute_prominence(dem)
 
 
 def test_compute_prominence_warns_when_float64_elevations_merge():
@@ -595,7 +603,7 @@ def test_compute_prominence_warns_when_float64_elevations_merge():
     dem = np.array([[1.0 + small_difference, 1.0, 1.0 + 2.0**-23]], dtype=np.float64)
 
     with pytest.warns(RuntimeWarning, match="merges distinct elevation values"):
-        compute_prominence(dem)
+        _ = compute_prominence(dem)
 
 
 @pytest.mark.parametrize(
@@ -607,9 +615,11 @@ def test_compute_prominence_warns_when_float64_elevations_merge():
         pytest.param(np.array([["high", "low"]]), TypeError, id="non-numeric"),
     ],
 )
-def test_compute_prominence_rejects_malformed_dems(dem, exception):
-    with pytest.raises(exception):
-        compute_prominence(dem)
+def test_compute_prominence_rejects_malformed_dems(
+    dem: NDArray[NpReal], exception: Exception
+):
+    with pytest.raises(exception):  # pyright: ignore[reportArgumentType]
+        _ = compute_prominence(dem)
 
 
 def test_compute_prominence_rejects_mismatched_validity_mask():
@@ -617,7 +627,7 @@ def test_compute_prominence_rejects_mismatched_validity_mask():
     valids = np.ones((3, 2), dtype=bool)
 
     with pytest.raises(ValueError, match="Shapes .* must match"):
-        compute_prominence(dem, valids=valids)
+        _ = compute_prominence(dem, valids=valids)
 
 
 @pytest.mark.parametrize(
@@ -656,13 +666,13 @@ def test_compute_prominence_rejects_mismatched_validity_mask():
     ],
 )
 def test_compute_prominence_rejects_invalid_connectivity_offsets(
-    offsets, exception, message
+    offsets: NDArray[NpCanonIndex], exception: Exception, message: str
 ):
     dir_enc = D8DirectionEncoding()
     dir_enc.offsets = offsets
 
-    with pytest.raises(exception, match=message):
-        compute_prominence(
+    with pytest.raises(exception, match=message):  # pyright: ignore[reportArgumentType]
+        _ = compute_prominence(
             np.array([[3.0, 1.0, 2.0]], dtype=np.float32),
             dir_enc=dir_enc,
         )
@@ -683,11 +693,11 @@ def test_compute_prominence_feature_ids_are_deterministic_for_equal_plateaus():
         dem[:, ::-1][:, ::-1],
     ]
 
-    expected = compute_prominence(variants[0])
+    exp_proms = compute_prominence(variants[0])
     for variant in variants[1:]:
         actual = compute_prominence(variant)
-        for actual_array, expected_array in zip(actual, expected):
-            np.testing.assert_array_equal(actual_array, expected_array)
+        for actual_array, exp_array in zip(actual, exp_proms):
+            np.testing.assert_array_equal(actual_array, exp_array)
 
 
 def test_compute_prominence_returns_divide_tree_and_key_saddles():
@@ -744,7 +754,9 @@ def test_compute_prominence_tracks_copeaks_through_later_saddle():
         pytest.param((1, 11), True, 24, id="single-row-masked"),
     ],
 )
-def test_compute_prominence_feature_tree_invariants(shape, include_invalids, seed):
+def test_compute_prominence_feature_tree_invariants(
+    shape: tuple[int, int], include_invalids: bool, seed: int
+):
     rng = np.random.default_rng(seed)
     dem = rng.integers(-4, 10, size=shape).astype(np.float32)
     valids = np.ones(shape, dtype=bool)
@@ -787,8 +799,8 @@ def test_compute_prominence_feature_tree_invariants(shape, include_invalids, see
         dist2 = np.sum((feat_cells - centroid) ** 2, axis=1)
         closest = feat_cells[dist2 == np.min(dist2)]
         linear_ids = closest[:, 0] + closest[:, 1] * shape[0]
-        expected_ij = closest[np.argmin(linear_ids)]
-        np.testing.assert_array_equal(feat_ijs[feat], expected_ij)
+        exp_ij = closest[np.argmin(linear_ids)]
+        np.testing.assert_array_equal(feat_ijs[feat], exp_ij)
 
     for feat in range(nfeats):
         visited = set()

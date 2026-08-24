@@ -77,7 +77,7 @@ def test_invalidate_ocean_basins_filters_by_inclusive_size():
 @pytest.mark.parametrize("minimum_basin_size", [0, -1])
 def test_invalidate_ocean_basins_rejects_nonpositive_size(minimum_basin_size: int):
     with pytest.raises(ValueError, match="at least 1"):
-        preproc_m.invalidate_ocean_basins(  # pyright: ignore[reportUnusedCallResult]
+        _ = preproc_m.invalidate_ocean_basins(
             np.zeros((2, 2), dtype=np.float32),
             min_size=minimum_basin_size,
         )
@@ -145,7 +145,7 @@ def test_detect_ocean_basins_accepts_numeric_dtypes_and_noncontiguous_views(
 @pytest.mark.parametrize("min_size", [True, 1.5, "2"])
 def test_invalidate_ocean_basins_rejects_noninteger_size(min_size: int):
     with pytest.raises(TypeError, match="integer"):
-        preproc_m.invalidate_ocean_basins(  # pyright: ignore[reportUnusedCallResult]
+        _ = preproc_m.invalidate_ocean_basins(
             np.zeros((2, 2), dtype=np.float32), min_size=min_size
         )
 
@@ -153,7 +153,7 @@ def test_invalidate_ocean_basins_rejects_noninteger_size(min_size: int):
 @pytest.mark.parametrize("ocean_lvl", [np.nan, np.inf, -np.inf])
 def test_detect_ocean_basins_rejects_nonfinite_ocean_level(ocean_lvl: float):
     with pytest.raises(ValueError, match="finite"):
-        preproc_m.detect_ocean_basins_from_boundary(  # pyright: ignore[reportUnusedCallResult]
+        _ = preproc_m.detect_ocean_basins_from_boundary(
             np.zeros((2, 2), dtype=np.float32), ocean_lvl=ocean_lvl
         )
 
@@ -161,9 +161,13 @@ def test_detect_ocean_basins_rejects_nonfinite_ocean_level(ocean_lvl: float):
 def test_detect_ocean_basins_rejects_nonboolean_flood_below_and_complex_dem():
     dem = np.zeros((2, 2), dtype=np.float32)
     with pytest.raises(TypeError, match="boolean"):
-        preproc_m.detect_ocean_basins_from_boundary(dem, flood_below="false")  # pyright: ignore[reportUnusedCallResult, reportArgumentType]
+        _ = preproc_m.detect_ocean_basins_from_boundary(
+            dem, flood_below="false"  # pyright: ignore[reportArgumentType]
+        )
     with pytest.raises(TypeError, match="real-valued"):
-        preproc_m.detect_ocean_basins_from_boundary(dem.astype(np.complex64))  # pyright: ignore[reportUnusedCallResult, reportArgumentType]
+        _ = preproc_m.detect_ocean_basins_from_boundary(
+            dem.astype(np.complex64)  # pyright: ignore[reportArgumentType]
+        )
 
 
 def test_fill_depressions():
@@ -260,7 +264,7 @@ def test_fill_depressions_is_monotonic_and_idempotent_randomly():
 
 def test_fill_depressions_validates_mask_shape():
     with pytest.raises(ValueError, match="Shapes .* must match"):
-        preproc_m.fill_depressions(  # pyright: ignore[reportUnusedCallResult]
+        _ = preproc_m.fill_depressions(
             np.ones((3, 3), dtype=np.float32),
             valids=np.ones((2, 2), dtype=bool),
         )
