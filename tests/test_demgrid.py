@@ -4,8 +4,8 @@ Tests the public properties and methods of :class:`DEMGrid`.
 Last modified: 2026-08-22, En-Chi Lee (williameclee@gmail.com)
 """
 
-import pytest
 import numpy as np
+import pytest
 
 from formosa.dem import DEMGrid, read_dem
 from formosa.dem import terrain_grid as grid_m
@@ -152,8 +152,6 @@ def test_demgrid_prominence_matches_public_computation():
     x, y = np.meshgrid(np.arange(dem.shape[1]), np.arange(dem.shape[0]))
     grid = DEMGrid(dem, x=x, y=y)
 
-    expected, *_ = grid_m.compute_prominence(
-        grid.dem, grid.valid, grid.directions
-    )
+    expected, *_ = grid_m.compute_prominence(grid.dem, grid.directions, grid.valid)
 
     np.testing.assert_array_equal(grid.prominence, expected)
