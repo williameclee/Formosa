@@ -43,7 +43,7 @@ contains
         id = i + (j - 1)*nrows
     end function ij2id
 
-    !> Encodes a valid one-based grid coordinate as a linear
+    !> Encodes a valid 1-based grid coordinate as a linear
     !! cell ID.
     !!
     !! 0 is returned for an out-of-bounds coordinate and is never a
@@ -87,7 +87,7 @@ contains
         j = (cell_id - 1)/nrows + 1
     end subroutine id2ij_checked
 
-    !> Converts a mask to validated one-based linear cell IDs.
+    !> Converts a mask to validated 1-based linear cell IDs.
     pure subroutine mask2id(mask, ids, nids, cnt, err_code)
         implicit none(type, external)
         logical(kind=1), intent(in), contiguous :: mask(:, :)
@@ -113,8 +113,8 @@ contains
     !> Converts a 2D logical mask to a list of (i, j) indices where
     !! the mask is true.
     !!
-    !! The output list will have a maximum size of 2-by-'nij', and
-    !! the actual number of valid indices found will be returned in
+    !! The output list will have a maximum size of (2, nij), and the
+    !! actual number of valid indices found will be returned in
     !! 'cnt'. If the number of valid indices exceeds nij, the
     !! remaining will be ignored.
     pure subroutine mask2ij(mask, ij, nij, cnt, err_code)
@@ -126,13 +126,14 @@ contains
             !! Maximum number of indices to return
         ! Outputs
         integer, intent(out) :: ij(2, nij)
-            !! Output list of (i, j) indices where mask is true, with a maximum size of 2-by-nij
+            !! Output list of (i, j) indices where mask is true,
+            !! with a maximum size of (2, nij)
         integer, intent(out) :: cnt
             !! Actual number of valid indices found (up to nij)
         integer, intent(out) :: err_code
             !! Code indicating the status of the result
-            !!   - 0: Programme executed properly
-            !!   - 3: Output index buffer capacity was exceeded
+            !! - 0: Programme executed properly
+            !! - 3: Output index buffer capacity was exceeded
         ! Local variables
         integer :: ci, cj
 
@@ -247,7 +248,7 @@ contains
     !! corresponds to the code and the value is the offset.
     !!
     !! The offset codes must be between 0 and 255, and the returned
-    !! lookup table will have a size of 256-by-2 to accommodate all
+    !! lookup table will have a size of (256, 2) to accommodate all
     !! possible codes. Unused indices will have an offset of
     !! (-99, -99) to indicate invalid code.
     !! For example, if code 1 corresponds to offset (1, 0), then
@@ -320,9 +321,9 @@ contains
             !! values
         integer, intent(out) :: err_code
             !! Code indicating the status of the result
-            !!   - 0: Programme executed properly
-            !!   - 1: Invalid input
-            !!   - 3: Queue overflow
+            !! - 0: Programme executed properly
+            !! - 1: Invalid input
+            !! - 3: Queue overflow
         ! Local variables
         integer :: pos, parent_pos
             !! For swapping the new cell to the right position
@@ -333,10 +334,10 @@ contains
 
         ! First make sure the queue is large enough
         if (queue_size < 0) then
-            err_code = ERR_INVALID_INPUT ! Incorrect input
+            err_code = ERR_INVALID_INPUT
             return
         elseif (queue_size >= size(queue)) then
-            err_code = ERR_OVERFLOW ! Overflow
+            err_code = ERR_OVERFLOW
             return
         end if
 
@@ -397,11 +398,11 @@ contains
 
         ! Check the queue is normal
         if (queue_size <= 0) then
-            err_code = ERR_INVALID_INPUT ! Incorrect input
+            err_code = ERR_INVALID_INPUT
             popped = 0
             return
         elseif (queue_size > size(queue)) then
-            err_code = ERR_OVERFLOW ! Overflow
+            err_code = ERR_OVERFLOW
             popped = 0
             return
         end if

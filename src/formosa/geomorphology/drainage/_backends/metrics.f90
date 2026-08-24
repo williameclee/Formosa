@@ -31,7 +31,7 @@ contains
             !! Area of each cell, used as the initial accumulation
             !! value for each cell
         integer(c_int8_t), intent(inout) :: indegs(nrows, ncols)
-            !! Indegree grid, i.e. number of upstream cells that
+            !! In-degree grid, i.e. number of upstream cells that
             !! flow into each cell.
             !! This will be modified in-place during the algorithm
             !! to track which cells have been processed.
@@ -67,7 +67,7 @@ contains
             !! Maximum size of the flooding buffer ('flood_ijs')
         logical(kind=1), allocatable :: flood_seeds(:, :)
             !! Mask to identify initial seed cells for the flooding
-            !! algorithm (valid cells with zero in-degrees)
+            !! algorithm (valid cells with 0 in-degrees)
         integer :: alloc_stat
 
         ! Guard nrows*ncols before using it as a default-integer
@@ -82,7 +82,7 @@ contains
 
         offset_lookup = fill_offset_lookup(offsets, codes)
 
-        ! Fill the tofill buffer with all valid cells with zero
+        ! Fill the tofill buffer with all valid cells with 0
         ! in-degrees
         max_queue_size = nrows*ncols
         allocate (flood_ijs(2, max_queue_size), stat=alloc_stat)
@@ -122,9 +122,9 @@ contains
 
             ! Update accumulation of downstream cell
             accums(ni, nj) = accums(ni, nj) + accums(ci, cj)
-            ! Decrement indegree of downstream cell
+            ! Decrement in-degree of downstream cell
             indegs(ni, nj) = indegs(ni, nj) - int(1, kind=c_int8_t)
-            ! If indegree is zero, add to flooding buffer
+            ! If in-degree is 0, add to flooding buffer
             if (indegs(ni, nj) > 0) cycle
             ntofills = ntofills + 1
             if (ntofills > max_queue_size) then
@@ -153,7 +153,7 @@ contains
         logical(kind=1), intent(in) :: valids(nrows, ncols)
             !! Validity mask (false for no-data)
         integer(c_int8_t), intent(inout) :: indegs(nrows, ncols)
-            !! Indegree grid, i.e. number of upstream cells that
+            !! In-degree grid, i.e. number of upstream cells that
             !! flow into each cell
             !! This will be modified in-place during the algorithm
             !! to track which cells have been processed.
@@ -167,7 +167,7 @@ contains
         ! Outputs
         integer, intent(out) :: dists(nrows, ncols)
             !! Grid of distances to the nearest source cell (cell
-            !! with zero in-degree).
+            !! with 0 in-degree).
         integer, intent(out) :: err_code
             !! Code indicating the status of the result
             !! - 0: Programme executed properly
@@ -184,7 +184,7 @@ contains
             !! Rows/columns for current and neighbour cells
         logical(kind=1), allocatable :: tofill_seeds(:, :)
             !! Mask to identify initial seed cells for the flooding
-            !! algorithm (valid cells with zero indegree)
+            !! algorithm (valid cells with 0 in-degree)
         integer, allocatable :: tofill_ijs(:, :)
             !! Buffer for storing (i, j) indices of cells to be
             !! processed in the flooding algorithm
@@ -243,9 +243,9 @@ contains
             ! Update distance of downstream cell
             dists(ni, nj) = &
                 max(dists(ci, cj), dists(ci, cj) + l1dist_xy(ni, nj, ci, cj))
-            ! Decrement indegree of downstream cell
+            ! Decrement in-degree of downstream cell
             indegs(ni, nj) = indegs(ni, nj) - int(1, kind=c_int8_t)
-            ! If indegree is zero, add to tofill buffer
+            ! If in-degree is 0, add to tofill buffer
             if (indegs(ni, nj) == 0) then
                 ntofills = ntofills + 1
                 if (ntofills > max_queue_size) then
@@ -274,7 +274,7 @@ contains
             !! Grids of x and y coordinates for each cell, used to
             !! calculate distances between cells
         integer(c_int8_t), intent(inout) :: indegs(nrows, ncols)
-            !! Indegree grid, i.e. number of upstream cells that
+            !! In-degree grid, i.e. number of upstream cells that
             !! flow into each cell
             !! This will be modified in-place during the algorithm
             !! to track which cells have been processed.
@@ -304,7 +304,7 @@ contains
             !! Rows/columns for current and neighbour cells
         logical(kind=1), allocatable :: seeds(:, :)
             !! Mask to identify initial seed cells for the flooding
-            !! algorithm (valid cells with zero indegree)
+            !! algorithm (valid cells with 0 in-degree)
         integer, allocatable :: tofill_ijs(:, :)
             !! Buffer for storing (i, j) indices of cells to be
             !! processed in the flooding algorithm
@@ -321,7 +321,7 @@ contains
         end if
         offset_lookup = fill_offset_lookup(offsets, codes)
 
-        ! Fill the tofill buffer with all valid cells with zero indegree
+        ! Fill the tofill buffer with all valid cells with 0 in-degree
         max_queue_size = nrows*ncols
         allocate (tofill_ijs(2, max_queue_size), stat=alloc_stat)
         if (alloc_stat /= 0) then
@@ -364,9 +364,9 @@ contains
             dists(ni, nj) = &
                 max(dists(ci, cj), &
                     dists(ci, cj) + l2dist_xy(x(ni, nj), y(ni, nj), x(ci, cj), y(ci, cj)))
-            ! Decrement indegree of downstream cell
+            ! Decrement in-degree of downstream cell
             indegs(ni, nj) = indegs(ni, nj) - int(1, kind=c_int8_t)
-            ! If indegree is zero, add to tofill buffer
+            ! If in-degree is 0, add to tofill buffer
             if (indegs(ni, nj) == 0) then
                 ntofills = ntofills + 1
                 if (ntofills > max_queue_size) then
@@ -548,7 +548,7 @@ contains
         logical(kind=1), intent(in) :: valids(nrows, ncols)
             !! Validity mask (false for no-data)
         integer(c_int8_t), intent(inout) :: indegs(nrows, ncols)
-            !! Indegree grid, i.e. number of upstream cells that
+            !! In-degree grid, i.e. number of upstream cells that
             !! flow into each cell
             !! This will be modified in-place during the algorithm
             !! to track which cells have been processed.
@@ -586,7 +586,7 @@ contains
             !! Whether the current cell's order should be increased
         logical(kind=1), allocatable :: seeds(:, :)
             !! Mask to identify initial seed cells for the algorithm
-            !! (valid cells with zero indegree)
+            !! (valid cells with 0 in-degree)
         integer, allocatable :: tofill_ijs(:, :)
             !! Buffer for storing (i, j) indices of cells to be
             !! processed in the breadth-first search from source
@@ -679,9 +679,9 @@ contains
             ! Check not seed or already processed
             if (indegs(ni, nj) == 0) cycle
 
-            ! Decrement indegree of downstream cell
+            ! Decrement in-degree of downstream cell
             indegs(ni, nj) = indegs(ni, nj) - int(1, kind=c_int8_t)
-            ! If indegree is zero, add to tofill buffer
+            ! If in-degree is 0, add to tofill buffer
             if (indegs(ni, nj) > 0) cycle
 
             ntofills = ntofills + 1

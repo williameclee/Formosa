@@ -111,10 +111,12 @@ contains
         integer, intent(in) :: offsets(noffsets, 2)
             !! List of offsets for each flow direction
         integer(c_int8_t), intent(in) :: codes(noffsets)
-            !! List of flow direction codes corresponding to the offsets
+            !! List of flow direction codes corresponding to the 
+            !! offsets
         ! Outputs
         integer(c_int8_t), intent(out) :: indegs(nrows, ncols)
-            !! Grid of indegree values, i.e. number of upstream cells that flow into each cell
+            !! Grid of in-degree values, i.e. number of upstream 
+            !! cells that flow into each cell
         ! Local variables
         integer :: iofs
             !! Index for iterating through offsets
@@ -168,7 +170,7 @@ contains
         integer(c_int8_t), intent(in) :: dirs(nrows, ncols)
             !! Flow direction grid, using the provided codes
         integer(c_int8_t), intent(in) :: indegs(nrows, ncols)
-            !! Indegree grid for the valid flow field
+            !! In-degree grid for the valid flow field
         logical(kind=1), intent(in) :: valids(nrows, ncols)
             !! Validity mask (false for no-data)
         integer, intent(in) :: noffsets
@@ -195,7 +197,7 @@ contains
             !! Remaining indegrees after removing edges from
             !! processed cells
         logical(kind=1), allocatable :: seeds(:, :)
-            !! Mask of valid zero-indegree cells used to initialise
+            !! Mask of valid 0-in-degree cells used to initialise
             !! the queue
         integer, allocatable :: seed_ijs(:, :)
             !! Queue of (i, j) indices awaiting processing
@@ -227,7 +229,7 @@ contains
         rem_indegs = indegs
         acyclics = .false.
 
-        ! Process and extend the queue of zero-indegree cells
+        ! Process and extend the queue of 0-in-degree cells
         iseed = 1
         do while (iseed <= nseeds)
             ci = seed_ijs(1, iseed)
@@ -247,9 +249,9 @@ contains
             ! Check not a self-loop
             if (ni == ci .and. nj == cj) cycle
 
-            ! Decrement indegree of downstream cell
+            ! Decrement in-degree of downstream cell
             rem_indegs(ni, nj) = rem_indegs(ni, nj) - int(1, kind=c_int8_t)
-            ! If indegree is zero, add to tofill buffer
+            ! If in-degree is 0, add to tofill buffer
             if (rem_indegs(ni, nj) /= 0) cycle
 
             nseeds = nseeds + 1

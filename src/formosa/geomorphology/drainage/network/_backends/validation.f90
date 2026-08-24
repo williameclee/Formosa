@@ -77,7 +77,7 @@ contains
         real, intent(in), contiguous :: vtxs(:, :)
             !! Vertex coordinates arranged as (2, V).
         integer, intent(in), contiguous :: arc_endpts(:, :)
-            !! Inclusive, one-based arc endpoint indices arranged as '(2, narcs)'
+            !! Inclusive, 1-based arc endpoint indices arranged as '(2, narcs)'
         integer, intent(in) :: capacity
             !! Maximum number of intersection records that can be stored
         ! Outputs

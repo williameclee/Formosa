@@ -386,7 +386,7 @@ contains
             err_code)
         if (err_code /= ERR_NO_ERROR) return
         if (nedges == 0) then
-            ! No high edges found, set z to zero and exit
+            ! No high edges found, set z to 0 and exit
             return
         end if
 

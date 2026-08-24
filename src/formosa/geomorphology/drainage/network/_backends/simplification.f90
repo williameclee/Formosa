@@ -49,7 +49,7 @@ contains
 
         ! If max error is within the tolerance threshold, simplify (keep only endpoints)
         if (max_err2 <= tol**2) return
-        ! Otherwise, keep the point with maximum error and recursively simplify the two sub-segments
+        ! Otherwise, keep the point with maximum error and recursively simplify the 2 sub-segments
         keeps(i_max_err2) = .true.
         call simplify_arc_rdp(xys, keeps, istart, i_max_err2, tol)
         call simplify_arc_rdp(xys, keeps, i_max_err2, iend, tol)

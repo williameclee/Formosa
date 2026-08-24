@@ -33,7 +33,7 @@ contains
         integer, intent(in) :: offset_lookup(0:255, 2)
             !! Row/column offset indexed by the unsigned direction code.
         integer, intent(out) :: ds_ids(nrows*ncols)
-            !! Immediate downstream cell ID, or zero at a sink.
+            !! Immediate downstream cell ID, or 0 at a sink.
         integer(c_int8_t), intent(out) :: indegs(nrows*ncols)
             !! Number of valid upstream children targeting each cell.
         integer :: code
@@ -46,9 +46,10 @@ contains
         ds_ids = 0
         indegs = 0
 
-        ! Resolve one downstream edge per valid source cell. Coordinates are
-        ! checked before linear encoding so an invalid pair cannot wrap into a
-        ! different, apparently legitimate cell ID.
+        ! Resolve one downstream edge per valid source cell.
+        ! Coordinates are checked before linear encoding so an
+        ! invalid pair cannot wrap into a different, apparently
+        ! legitimate cell ID.
         !$omp PARALLEL DO DEFAULT(SHARED) PRIVATE(ci, cj, ni, nj, code, cid, dsid) &
         !$omp COLLAPSE(2) SCHEDULE(STATIC)
         do cj = 1, ncols
@@ -82,7 +83,7 @@ contains
         logical(kind=1), intent(in) :: valids(nrows, ncols)
             !! True for cells belonging to the flow tree; false for no-data.
         integer, intent(in) :: ds_ids(nrows*ncols)
-            !! Immediate downstream ID for every cell; zero at sinks.
+            !! Immediate downstream ID for every cell; 0 at sinks.
         integer(c_int8_t), intent(inout) :: indegs(nrows*ncols)
             !! Remaining unprocessed upstream-child count for Kahn traversal.
         integer, intent(out) :: topo_order(nrows*ncols)
@@ -94,7 +95,7 @@ contains
         integer, intent(out) :: nlvls
             !! Number of dependency frontiers recorded in lvl_ends.
         integer, intent(out) :: err_code
-            !! Zero on success, one for a cycle, or two for allocation failure.
+            !! 0 on success, 1 for a cycle, or 2 for allocation failure.
         ! Local variables
         integer, allocatable :: grown_lvl_ends(:)
             !! Temporary buffer used when geometrically growing lvl_ends.
@@ -116,7 +117,7 @@ contains
         lvl_end = 0
         nvalid = 0
 
-        ! Count number of valid cells and push 0-indegree cells into 'topo_order'
+        ! Count number of valid cells and push 0-in-degree cells into 'topo_order'
         do cid = 1, nrows*ncols
             ci = mod(cid - 1, nrows) + 1
             cj = (cid - 1)/nrows + 1
@@ -175,7 +176,7 @@ contains
         integer, intent(in) :: nrows, ncols, nlvls
             !! Raster dimensions and number of dependency frontiers.
         integer, intent(in) :: ds_ids(nrows*ncols)
-            !! Immediate downstream ID for every cell; zero at sinks.
+            !! Immediate downstream ID for every cell; 0 at sinks.
         real, intent(in) :: x(nrows, ncols), y(nrows, ncols)
             !! Map-space coordinates used to calculate metric edge lengths.
         integer, intent(in) :: topo_order(nrows*ncols), lvl_ends(:)
@@ -267,7 +268,7 @@ contains
         integer, intent(in) :: offset_lookup(0:255, 2)
             !! Row/column offset indexed by the unsigned direction code.
         integer, intent(out) :: ds_ids(nrows*ncols)
-            !! Immediate downstream parent ID, or zero when the cell is a sink.
+            !! Immediate downstream parent ID, or 0 when the cell is a sink.
         integer, intent(out) :: depths(nrows*ncols)
             !! Number of downstream edges from each cell to its sink.
         integer, intent(out) :: sink_ids(nrows*ncols)
@@ -279,7 +280,7 @@ contains
         integer, intent(out) :: topo_cnt
             !! Number of valid entries written to topo_order.
         integer, intent(out) :: err_code
-            !! Zero on success, one for a cycle, or two for allocation failure.
+            !! 0 on success, 1 for a cycle, or 2 for allocation failure.
         integer(c_int8_t), allocatable :: indegs(:)
             !! Mutable upstream-child counts consumed by Kahn traversal.
         integer, allocatable :: lvl_ends(:)
@@ -337,15 +338,15 @@ contains
         cid1, cid2, ds_ids, depths, jump_ids) result(confluence_id)
         implicit none(type, external)
         integer, intent(in) :: cid1, cid2
-            !! Linear IDs of the two cells to process.
+            !! Linear IDs of the 2 cells to process.
         integer, intent(in) :: ds_ids(:)
-            !! Immediate downstream parent ID for every cell; zero at sinks.
+            !! Immediate downstream parent ID for every cell; 0 at sinks.
         integer, intent(in) :: depths(:)
             !! Number of downstream edges between each cell and its sink.
         integer, intent(in) :: jump_ids(:)
             !! Depth-block anchor ID used to skip groups of parent edges.
         integer :: confluence_id
-            !! Linear ID of the first common downstream cell; zero on invalid input.
+            !! Linear ID of the first common downstream cell; 0 on invalid input.
         integer :: pid1, pid2
             !! Mutable downstream cursors used while aligning and joining paths.
 
@@ -378,7 +379,7 @@ contains
     !> Computes, for every valid cell, the largest distance from
     !! that cell to its first downstream confluence with any of its
     !! eight neighbours. If a neighbour belongs to another sink
-    !! tree, the two paths never converge and the cell's complete
+    !! tree, the 2 paths never converge and the cell's complete
     !! distance to its sink is considered.
     !!
     !! The implementation has four phases:
@@ -388,9 +389,9 @@ contains
     !!  3. Reuse the no-longer-needed sink-ID array for depth-block
     !!     jump pointers used by lowest-common-ancestor searches.
     !!  4. Examine each undirected neighbour edge once and
-    !!     atomically update the maximum for its two endpoints.
+    !!     atomically update the maximum for its 2 endpoints.
     !!
-    !! The tree representation avoids tracing two complete flow
+    !! The tree representation avoids tracing 2 complete flow
     !! paths for every neighbour pair. It also uses shared O(N)
     !! metadata rather than a full-grid visited/path workspace for
     !! every OpenMP thread.
@@ -439,7 +440,7 @@ contains
         logical(kind=1), allocatable :: is_boundary(:)
             !! True when a cell touches a valid cell belonging to another sink.
         real :: dist1, dist2
-            !! Branch distances from the two endpoints of the current grid edge.
+            !! Branch distances from the 2 endpoints of the current grid edge.
         integer :: nneighbour
             !! Index of the neighbour orientation currently being evaluated.
         integer :: neighbour_offsets(4, 2)
@@ -562,9 +563,6 @@ contains
         end do
         deallocate (topo_order)
 
-        ! Static scheduling is intentional. Unchunked dynamic scheduling created
-        ! one runtime work assignment per collapsed grid cell and dominated the
-        ! representative workload.
         !$omp PARALLEL DO DEFAULT(SHARED) &
         !$omp PRIVATE(ci, cj, ni, nj, nneighbour, cid, nid, on_border) &
         !$omp PRIVATE(conf_id, dist1, dist2) &
