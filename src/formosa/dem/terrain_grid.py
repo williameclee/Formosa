@@ -19,7 +19,6 @@ from numpy.typing import NDArray
 
 from formosa.dem.demio import read_dem
 from formosa.geomorphology.drainage import (
-    D8DirectionEncoding,
     DirectionEncoding,
     compute_dist2conf_max,
     compute_dist2ridge,
@@ -38,11 +37,10 @@ from formosa.geomorphology.drainage import (
 from formosa.geomorphology.drainage import (
     invalidate_ocean_basins as _invalidate_ocean_basins,
 )
-from formosa.geomorphology.drainage.directions import validate_direction_offsets
 from formosa.geomorphology.drainage.network import create_flowline_plot_data
 from formosa.geomorphology.raster_validation import validate_format_dir_encoding
 from formosa.geomorphology.terrain import compute_prominence, compute_slope
-from formosa.utils import NpCoords, NpReal
+from formosa.utils import NpCoords, NpReal, NpFlowDir, NpCanonIndex
 from formosa.utils.validation import validate_same_shape
 
 
@@ -108,9 +106,9 @@ class DEMGrid:
             )
 
         if stride is not None:
-            assert stride > 0, (
-                f"Stride must be a positive integer, got {stride} instead"
-            )
+            assert (
+                stride > 0
+            ), f"Stride must be a positive integer, got {stride} instead"
 
             self.stride = stride
             self.transform = rasterio.Affine(
@@ -239,14 +237,14 @@ class DEMGrid:
             self.dem = np.where(self.valid, filtered_dem, self.dem)
 
         self.quality = np.zeros(self.dem.shape, dtype=np.int16)
-        self._slope: None | NDArray[np.integer | np.floating] = None
+        self._slope: None | NDArray[NpReal] = None
         self._flat: None | NDArray[np.bool_] = None
         self._flat_gradient: None | NDArray[np.integer] = None
         self._flowdir: None | NDArray[np.uint8] = None
-        self._indegree: None | NDArray[np.integer] = None
-        self._accumulation: None | NDArray[np.integer | np.floating] = None
+        self._indegs: None | NDArray[np.int8] = None
+        self._accums: None | NDArray[np.float64] = None
         self._strahler_order: None | NDArray[np.uint8] = None
-        self._watershed: None | NDArray[np.int32] = None
+        self._ws: None | NDArray[np.int32] = None
         self._graphx = None
         self._graphy = None
         self._flowdist: None | NDArray[np.floating] = None
@@ -261,7 +259,7 @@ class DEMGrid:
         return self.dem.shape
 
     @property
-    def slope(self) -> NDArray[np.floating | np.integer]:
+    def slope(self) -> NDArray[NpReal]:
         if self._slope is not None:
             return self._slope
 
@@ -270,7 +268,7 @@ class DEMGrid:
         return self._slope
 
     @property
-    def prominence(self) -> NDArray[np.floating | np.integer]:
+    def prominence(self) -> NDArray[NpReal]:
         proms, _, _, _, _, _ = compute_prominence(self.dem, self.dir_enc, self.valid)
         return proms
 
@@ -316,7 +314,7 @@ class DEMGrid:
         return self.ocean_mask
 
     @property
-    def flowdir(self) -> NDArray[np.uint8]:
+    def flowdir(self) -> NDArray[NpFlowDir]:
         if self._flowdir is None:
             self._flowdir, self._flat, self._flat_gradient = compute_flowdir(
                 self.dem, self.dir_enc, valids=self.valid, resolve_flat=True
@@ -324,9 +322,8 @@ class DEMGrid:
         return self._flowdir
 
     def flowdir_graph_xy(
-        self,
-        valid: NDArray[np.bool_] | None = None,
-    ) -> tuple[NDArray[np.integer], NDArray[np.integer]]:
+        self, valid: NDArray[np.bool_] | None = None
+    ) -> tuple[NDArray[NpCanonIndex], NDArray[NpCanonIndex]]:
         graphy, graphx = create_flowline_plot_data(
             self.flowdir,
             self.dir_enc,
@@ -337,18 +334,18 @@ class DEMGrid:
         return graphx, graphy
 
     @property
-    def indegree(self) -> NDArray[np.integer]:
-        if self._indegree is None:
-            self._indegree = count_indegree(self.flowdir, self.dir_enc)
-        return self._indegree
+    def indegree(self) -> NDArray[np.int8]:
+        if self._indegs is None:
+            self._indegs = count_indegree(self.flowdir, self.dir_enc)
+        return self._indegs
 
     @property
-    def accumulation(self) -> np.ndarray:
-        if self._accumulation is None:
-            self._accumulation = compute_flow_accumulation(
+    def accumulation(self) -> NDArray[np.float64]:
+        if self._accums is None:
+            self._accums = compute_flow_accumulation(
                 self.flowdir, self.dir_enc, valids=self.valid, indegs=self.indegree
             )
-        return self._accumulation
+        return self._accums
 
     @property
     def strahler_order(self) -> NDArray[np.uint8]:
@@ -421,7 +418,7 @@ class DEMGrid:
         -----
         This is a wrapper for the function :func:`invalidate_ocean_basins`.
         """
-        previous_valid = self.valid.copy()
+        prev_valid = self.valid.copy()
         self.valid = _invalidate_ocean_basins(
             self.dem,
             self.dir_enc,
@@ -431,7 +428,7 @@ class DEMGrid:
             min_size=min_size,
         )
 
-        newly_invalid = previous_valid & ~self.valid
+        newly_invalid = prev_valid & ~self.valid
         if self._ocean_mask is None:
             self._ocean_mask = newly_invalid
         else:
@@ -446,10 +443,10 @@ class DEMGrid:
         self._flat = None
         self._flat_gradient = None
         self._flowdir = None
-        self._indegree = None
-        self._accumulation = None
+        self._indegs = None
+        self._accums = None
         self._strahler_order = None
-        self._watershed = None
+        self._ws = None
         self._graphx = None
         self._graphy = None
         self._flowdist = None
@@ -461,7 +458,7 @@ class DEMGrid:
         return self
 
     @property
-    def dist2source(self) -> NDArray[np.floating]:
+    def dist2source(self) -> NDArray[np.float32]:
         if self._flowdist is None:
             self._flowdist = compute_dist2source(
                 self.flowdir,
@@ -474,21 +471,19 @@ class DEMGrid:
         return self._flowdist
 
     @property
-    def flow_distance(self) -> NDArray[np.floating]:
+    def flow_distance(self) -> NDArray[np.float32]:
         return self.dist2source
 
     @property
     def watersheds(self) -> NDArray[np.int32]:
-        if self._watershed is not None:
-            return self._watershed
+        if self._ws is not None:
+            return self._ws
 
-        self._watershed = label_watersheds(
-            self.flowdir, self.dir_enc, valids=self.valid
-        )
-        return self._watershed
+        self._ws = label_watersheds(self.flowdir, self.dir_enc, valids=self.valid)
+        return self._ws
 
     @property
-    def dist2sink(self) -> NDArray[np.floating]:
+    def dist2sink(self) -> NDArray[np.float32]:
         if self._backdist is not None:
             return self._backdist
 
@@ -498,11 +493,11 @@ class DEMGrid:
         return self._backdist
 
     @property
-    def backdist(self) -> NDArray[np.floating]:
+    def backdist(self) -> NDArray[np.float32]:
         return self.dist2sink
 
     @property
-    def bmax(self) -> NDArray[np.floating]:
+    def bmax(self) -> NDArray[np.float32]:
         if self._bmax is not None:
             return self._bmax
 
@@ -516,7 +511,7 @@ class DEMGrid:
         return self._bmax
 
     @property
-    def ridge_dist(self) -> NDArray[np.floating]:
+    def ridge_dist(self) -> NDArray[np.float32]:
         """
         'Distance' to the ridge, approximated by the distance to sink in the maximum confluence distance landscape.
 
@@ -537,7 +532,7 @@ class DEMGrid:
         return self._ridgedir
 
     @property
-    def dist2ridge(self) -> NDArray[np.floating]:
+    def dist2ridge(self) -> NDArray[np.float32]:
         """
         'Distance' to the ridge, approximated by the distance to sink in the maximum confluence distance landscape.
 
@@ -570,9 +565,7 @@ class DEMGrid:
         return self._ridge_strahler_order
 
 
-def fill_pits(
-    dem: NDArray[NpReal],
-) -> tuple[NDArray[NpReal], NDArray[np.bool_]]:
+def fill_pits(dem: NDArray[NpReal]) -> tuple[NDArray[NpReal], NDArray[np.bool_]]:
     """
     Notes
     -----
