@@ -106,9 +106,9 @@ class DEMGrid:
             )
 
         if stride is not None:
-            assert stride > 0, (
-                f"Stride must be a positive integer, got {stride} instead"
-            )
+            assert (
+                stride > 0
+            ), f"Stride must be a positive integer, got {stride} instead"
 
             self.stride = stride
             self.transform = rasterio.Affine(
@@ -256,10 +256,20 @@ class DEMGrid:
 
     @property
     def shape(self) -> tuple[int, int]:
+        """Shape of the DEM raster as (nrows, ncols)."""
         return self.dem.shape
 
     @property
     def slope(self) -> NDArray[NpReal]:
+        """
+        Terrain slope magnitude.
+
+        Returns
+        -------
+        slope : NDArray[float]
+            Slope magnitude in rise per horizontal distance unit.
+            - Shape: `(nrows, ncols)`, same as `dem`.
+        """
         if self._slope is not None:
             return self._slope
 
@@ -269,6 +279,15 @@ class DEMGrid:
 
     @property
     def prominence(self) -> NDArray[NpReal]:
+        """
+        *Topographic prominence* of the DEM.
+
+        Returns
+        -------
+        proms : NDArray[float]
+            Topographic prominence heights.
+            - Shape: `(nrows, ncols)`, same as `dem`.
+        """
         proms, _, _, _, _, _ = compute_prominence(self.dem, self.dir_enc, self.valid)
         return proms
 
@@ -315,6 +334,15 @@ class DEMGrid:
 
     @property
     def flowdir(self) -> NDArray[NpFlowDir]:
+        """
+        Flow directions with flat resolution.
+
+        Returns
+        -------
+        dirs : NDArray[uint8]
+            Flow direction raster.
+            - Shape: `(nrows, ncols)`, same as `dem`.
+        """
         if self._flowdir is None:
             self._flowdir, self._flat, self._flat_gradient = compute_flowdir(
                 self.dem, self.dir_enc, valids=self.valid, resolve_flat=True
@@ -324,6 +352,21 @@ class DEMGrid:
     def flowdir_graph_xy(
         self, valid: NDArray[np.bool_] | None = None
     ) -> tuple[NDArray[NpCanonIndex], NDArray[NpCanonIndex]]:
+        """
+        Coordinate arrays for flowline visualisation.
+
+        Parameters
+        ----------
+        valid : NDArray[bool], optional
+            Optional validity mask overriding `self.valid`.
+            - Expected shape: `(nrows, ncols)`, same as `dem`.
+            - Default mask is `None`.
+
+        Returns
+        -------
+        graphx, graphy : NDArray[int32]
+            X and Y coordinate sequences for plotting flowlines.
+        """
         graphy, graphx = create_flowline_plot_data(
             self.flowdir,
             self.dir_enc,
@@ -335,12 +378,30 @@ class DEMGrid:
 
     @property
     def indegree(self) -> NDArray[np.int8]:
+        """
+        Upstream in-degree for each cell.
+
+        Returns
+        -------
+        indegs : NDArray[int8]
+            Number of upstream cells draining into each cell.
+            - Shape: `(nrows, ncols)`, same as `dem`.
+        """
         if self._indegs is None:
             self._indegs = count_indegree(self.flowdir, self.dir_enc)
         return self._indegs
 
     @property
     def accumulation(self) -> NDArray[np.float64]:
+        """
+        Flow accumulation across the DEM.
+
+        Returns
+        -------
+        accums : NDArray[float64]
+            Flow accumulation values.
+            - Shape: `(nrows, ncols)`, same as `dem`.
+        """
         if self._accums is None:
             self._accums = compute_flow_accumulation(
                 self.flowdir, self.dir_enc, valids=self.valid, indegs=self.indegree
@@ -349,6 +410,15 @@ class DEMGrid:
 
     @property
     def strahler_order(self) -> NDArray[np.uint8]:
+        """
+        Strahler stream order for the flow network.
+
+        Returns
+        -------
+        orders : NDArray[uint8]
+            Strahler stream orders.
+            - Shape: `(nrows, ncols)`, same as `dem`.
+        """
         if self._strahler_order is None:
             self._strahler_order = compute_flow_strahler_order(
                 self.flowdir, self.dir_enc
@@ -357,7 +427,7 @@ class DEMGrid:
 
     def fill_depressions(self, max_fill_size: int | None = None) -> "DEMGrid":
         """
-        Fill enclosed depressions in-place using priority-flood.
+        Fills enclosed depressions in-place using priority-flood.
 
         Parameters
         ----------
@@ -416,7 +486,8 @@ class DEMGrid:
 
         Notes
         -----
-        This is a wrapper for the function :func:`invalidate_ocean_basins`.
+        This is a wrapper for the function
+        :func:`invalidate_ocean_basins`.
         """
         prev_valid = self.valid.copy()
         self.valid = _invalidate_ocean_basins(
@@ -459,6 +530,15 @@ class DEMGrid:
 
     @property
     def dist2source(self) -> NDArray[np.float32]:
+        """
+        Downstream flow distance to source.
+
+        Returns
+        -------
+        dists : NDArray[float32]
+            Downstream distance for each cell.
+            - Shape: `(nrows, ncols)`, same as `dem`.
+        """
         if self._flowdist is None:
             self._flowdist = compute_dist2source(
                 self.flowdir,
@@ -472,10 +552,20 @@ class DEMGrid:
 
     @property
     def flow_distance(self) -> NDArray[np.float32]:
+        """Alias for the property `dist2source`."""
         return self.dist2source
 
     @property
     def watersheds(self) -> NDArray[np.int32]:
+        """
+        Watershed basin labels.
+
+        Returns
+        -------
+        ws : NDArray[int32]
+            Watershed label raster.
+            - Shape: `(nrows, ncols)`, same as `dem`.
+        """
         if self._ws is not None:
             return self._ws
 
@@ -484,6 +574,15 @@ class DEMGrid:
 
     @property
     def dist2sink(self) -> NDArray[np.float32]:
+        """
+        Upstream flow distance to sink.
+
+        Returns
+        -------
+        dists : NDArray[float32]
+            Upstream distance for each cell.
+            - Shape: `(nrows, ncols)`, same as `dem`.
+        """
         if self._backdist is not None:
             return self._backdist
 
@@ -494,10 +593,20 @@ class DEMGrid:
 
     @property
     def backdist(self) -> NDArray[np.float32]:
+        """Alias for the property `dist2sink`."""
         return self.dist2sink
 
     @property
     def bmax(self) -> NDArray[np.float32]:
+        """
+        Maximum branch distance to confluence.
+
+        Returns
+        -------
+        bmax : NDArray[float32]
+            Maximum confluence distance for each cell.
+            - Shape: `(nrows, ncols)`, same as `dem`.
+        """
         if self._bmax is not None:
             return self._bmax
 
@@ -513,17 +622,27 @@ class DEMGrid:
     @property
     def ridge_dist(self) -> NDArray[np.float32]:
         """
-        'Distance' to the ridge, approximated by the distance to sink in the maximum confluence distance landscape.
+        Distance to the ridge network.
 
         Returns
         -------
-        dist : NDArray[np.float32]
-            Distance to the ridge, approximated by the distance to sink in the maximum confluence distance landscape.
+        dist : NDArray[float32]
+            Distance to ridge for each cell.
+            - Shape: `(nrows, ncols)`, same as `dem`.
         """
         return self.dist2ridge
 
     @property
     def ridgedir(self) -> NDArray[np.uint8]:
+        """
+        Flow directions along ridge paths.
+
+        Returns
+        -------
+        dirs : NDArray[uint8]
+            Flow direction raster along ridges.
+            - Shape: `(nrows, ncols)`, same as `dem`.
+        """
         if self._ridgedir is not None:
             return self._ridgedir
         self._ridgedir = compute_ridgedir(
@@ -534,14 +653,14 @@ class DEMGrid:
     @property
     def dist2ridge(self) -> NDArray[np.float32]:
         """
-        'Distance' to the ridge, approximated by the distance to sink in the maximum confluence distance landscape.
+        Distance to the ridge network.
 
         Returns
         -------
-        dist : NDArray[np.float32]
-            Distance to the ridge, approximated by the distance to sink in the maximum confluence distance landscape.
+        dist : NDArray[float32]
+            Distance to ridge for each cell.
+            - Shape: `(nrows, ncols)`, same as `dem`.
         """
-
         if self._ridge_dist is not None:
             return self._ridge_dist
 
@@ -557,6 +676,15 @@ class DEMGrid:
 
     @property
     def ridge_strahler_order(self) -> NDArray[np.uint8]:
+        """
+        Strahler stream order for the ridge network.
+
+        Returns
+        -------
+        orders : NDArray[uint8]
+            Ridge Strahler orders.
+            - Shape: `(nrows, ncols)`, same as `dem`.
+        """
         if self._ridge_strahler_order is not None:
             return self._ridge_strahler_order
         self._ridge_strahler_order = compute_ridge_strahler_order(

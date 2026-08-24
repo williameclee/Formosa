@@ -1,8 +1,8 @@
-!> Resolves flats in digital elevation models using the Fortran 
+!> Resolves flats in digital elevation models using the Fortran
 !! backend.
 !!
 !! The algorithms assign synthetic gradients to flats and mainly
-!! follow Barnes et al. (2014), https://doi.org/10.1016/j.cageo.2013.01.009.
+!! follow [Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009).
 !! This internal module is called by the Python drainage API.
 !!
 !! Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
@@ -98,7 +98,7 @@ contains
     !! lower terrain (low edges) and those that are adjacent to
     !! higher terrain (high edges).
     !!
-    !! From [R. Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009),
+    !! From [Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009),
     !! Algorithm 3 (p. 133).
     subroutine find_flat_edges( &
         z, dirs, valids, is_low_edge, is_high_edge, nrows, ncols, &
@@ -213,7 +213,7 @@ contains
             !! - 3: Flat-flooding buffer capacity was exceeded
         ! Local variables
         integer :: iflat
-            !! Index of the current flat region being labeled
+            !! Index of the current flat region being labelled
             !! (!= issed because same flat can have multiple seeds)
         integer, allocatable :: seed_ijs(:, :)
             !! List of (i, j) indices for seed cells
@@ -228,7 +228,7 @@ contains
         integer :: si, sj, ci, cj, ni, nj
             !! Rows/columns for seed, current and neighbour cells
         real :: sz
-            !! Elevation of the current flat region being labeled
+            !! Elevation of the current flat region being labelled
         integer :: iofs
             !! Index for iterating through offsets
         integer :: alloc_stat
@@ -261,7 +261,7 @@ contains
 
             ! Skip if not valid
             if (.not. valids(si, sj)) cycle
-            ! Skip if already labeled
+            ! Skip if already labelled
             if (flats(si, sj) /= 0) cycle
 
             sz = z(si, sj)
@@ -285,7 +285,7 @@ contains
                     if (array2d_oob(ni, nj, nrows, ncols)) cycle
                     ! Skip if not valid
                     if (.not. valids(ni, nj)) cycle
-                    ! Skip if already labeled
+                    ! Skip if already labelled
                     if (flats(ni, nj) /= 0) cycle
                     ! Skip if not the same flat (i.e. different elevation)
                     if (z(ni, nj) /= sz) cycle
@@ -308,7 +308,7 @@ contains
     !> Produces a synthetic elevation that decreases away from 'high
     !! edges' of flats.
     !!
-    !! Modified from [R. Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009),
+    !! Modified from [Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009),
     !! Algorithm 5 (p. 133--134).
     pure subroutine create_pushing_syn_grad( &
         z, flats, nrows, ncols, &
@@ -480,7 +480,7 @@ contains
     !> Produces a synthetic elevation that drains towards 'low
     !! edges' of flats.
     !!
-    !! Modified from [R. Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009),
+    !! Modified from [Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009),
     !! Algorithm 6 (p. 134).
     pure subroutine create_pulling_syn_grad( &
         z, flats, nrows, ncols, &

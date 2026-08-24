@@ -5,6 +5,7 @@ This module covers Python-only triangulation helpers and local mesh
 operations that are not part of the public backend-independent API.
 
 Created: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np

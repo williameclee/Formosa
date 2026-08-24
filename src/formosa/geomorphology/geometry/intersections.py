@@ -102,15 +102,6 @@ def orient(
         integer kind can represent the coordinates. Other inputs
         return a float.
 
-    Raises
-    ------
-    ValueError
-        If a point does not have shape `(2,)` or the backend is
-        unsupported.
-    TypeError
-        If a point contains non-numeric or complex-valued
-        coordinates.
-
     Notes
     -----
     The Python backend uses exact integer arithmetic. The Fortran
@@ -190,16 +181,6 @@ def incircle(
         All-integer inputs return an integer when a C-interoperable
         integer kind can represent the coordinates. Other inputs
         return a float.
-
-    Raises
-    ------
-    ValueError
-        If a point does not have shape `(2,)`, the backend is
-        unsupported, or sign normalisation is requested for a
-        collinear triangle.
-    TypeError
-        If a point contains non-numeric or complex-valued
-        coordinates.
 
     Notes
     -----

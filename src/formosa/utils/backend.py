@@ -1,7 +1,7 @@
 """
-Defines computational backends and translate Fortran status codes.
+Defines computational backends and translates Fortran status codes.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
 from typing import Literal, Mapping, TypeAlias
@@ -30,7 +30,7 @@ def raise_fortran_error(
       - 0: Success
       - 1: Invalid input
       - 2: Memory allocation failure
-      - 3: Array or index overflow.
+      - 3: Array or index overflow
     A routine-specific mapping may refine exception types and text
     without changing those numeric meanings.
 
@@ -41,11 +41,9 @@ def raise_fortran_error(
         This is typically the function name.
     err_code : int
         Fortran status code.
-    errors : dict[int, tuple[Exception, str]], optional
-        How `err_code` should be interpreted.
-        Each code maps to a type of exception to raise and an error
-        message.
-        Default mapping is described as above.
+    errors : Mapping[int, tuple[type[Exception], str]], optional
+        Mapping interpreting `err_code` to exception type and text.
+        - Default mapping is `DEFAULT_ERROR_MAP`.
     """
     if err_code == 0:
         return

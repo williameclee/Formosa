@@ -1,4 +1,5 @@
-!> Prepares digital elevation models for drainage analysis in Fortran.
+!> Prepares digital elevation models for drainage analysis in
+!! Fortran.
 !!
 !! This internal module is called by the Python drainage API and is
 !! not intended to be used directly.

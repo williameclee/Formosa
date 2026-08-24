@@ -18,7 +18,29 @@ def hillshade(
     zfactor: float = 1,
 ) -> NDArray[np.floating]:
     """
-    Computes hillshade from a 2D array.
+    Computes shaded relief intensity from a 2D elevation grid.
+
+    Parameters
+    ----------
+    dem : NDArray[number]
+        Digital elevation model raster.
+        - Expected shape: `(nrows, ncols)`.
+    az : float
+        Light source azimuth angle in degrees clockwise from North.
+    al : float
+        Light source altitude angle in degrees above the horizon.
+    method : {"clamped", "hard", "half", "soft", "lambert"}, optional
+        Shading response curve to apply.
+        - Default method is `"hard"`.
+    zfactor : float, optional
+        Vertical exaggeration factor.
+        - Default factor is `1`.
+
+    Returns
+    -------
+    intst : NDArray[float]
+        Hillshade intensity values in `[0, 1]`.
+        - Shape: `(nrows, ncols)`, same as `dem`.
     """
     dem = dem * zfactor
     az = 180 - az

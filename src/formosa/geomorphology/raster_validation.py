@@ -214,6 +214,21 @@ def validate_format_freeform_coordinates(
 def validate_format_dir_encoding(
     dir_enc: DirectionEncoding | None,
 ) -> DirectionEncoding:
+    """
+    Validates and standardises a flow direction encoding scheme.
+
+    Parameters
+    ----------
+    dir_enc : DirectionEncoding | None
+        Flow direction encoding scheme.
+        If `None`, defaults to standard D8 direction encoding.
+        - Default scheme is `None`.
+
+    Returns
+    -------
+    dir_enc : DirectionEncoding
+        Validated flow direction encoding scheme.
+    """
     if dir_enc is None:
         return D8DirectionEncoding()
     if not isinstance(dir_enc, DirectionEncoding):

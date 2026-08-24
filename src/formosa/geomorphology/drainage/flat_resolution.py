@@ -2,9 +2,10 @@
 Resolves flat areas in digital elevation models for flow routing.
 
 The algorithms assign synthetic gradients to flats and mainly follow
-[R Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009).
+Barnes *et al.* (2014),
+https://doi.org/10.1016/j.cageo.2013.01.009.
 
-Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np

@@ -28,7 +28,7 @@ def read_dem(
     rasterio.Affine,
 ]:
     """
-    Read a DEM from a raster file.
+    Reads a DEM from a raster file.
 
     GeoTIFF and SRTM `.hgt` tiles are supported. HGT georeferencing
     is inferred from the standard tile name (for example,
@@ -40,7 +40,7 @@ def read_dem(
         Path to a supported raster DEM. For HGT input, the filename
         must identify the tile's southwest corner.
     band : int, optional
-        The band number to read from the GeoTIFF file.
+        Band number to read from the GeoTIFF file.
         - Default band is `1`.
     nan_value : float, optional
         Value to use for no-data pixels.
@@ -48,12 +48,15 @@ def read_dem(
 
     Returns
     -------
-    dem : ndarray[floating | integer]
-        2D array of elevation values.
-    x : ndarray[floating]
-        2D array of x-coordinates corresponding to Z.
-    y : ndarray[floating]
-        2D array of y-coordinates corresponding to Z.
+    dem : NDArray[number]
+        Elevation values.
+        - Shape: `(nrows, ncols)`.
+    x : NDArray[float]
+        x-coordinates corresponding to `dem`.
+        - Shape: `(nrows, ncols)`, same as `dem`.
+    y : NDArray[float]
+        y-coordinates corresponding to `dem`.
+        - Shape: `(nrows, ncols)`, same as `dem`.
     transform : rasterio.Affine
         Affine transformation mapping pixel coordinates to spatial
         coordinates.
@@ -73,9 +76,7 @@ def read_dem(
         dem = np.asarray(dem, order="F")
         # Make coordinate arrays
         transform = (
-            src.transform
-            if src.transform is not None
-            else rasterio.Affine.identity()
+            src.transform if src.transform is not None else rasterio.Affine.identity()
         )
         x, y = transform2xy(transform, dem.shape)
 

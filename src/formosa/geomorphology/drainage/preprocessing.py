@@ -69,7 +69,7 @@ def detect_ocean_basins_from_boundary(
         - Default mask is `None`.
     ocean_lvl : float, optional
         Elevation threshold defining ocean cells.
-        - Default elevation is 0.
+        - Default elevation is `0`.
     flood_below : bool, optional
         Whether elevations strictly below `ocean_lvl` qualify as
         ocean cells.
@@ -137,7 +137,7 @@ def invalidate_ocean_basins(
         - Default mask is `None`.
     ocean_lvl : int | float, optional
         Elevation threshold defining ocean cells.
-        - Default elevation is 0.
+        - Default elevation is `0`.
     flood_below : bool, optional
         Whether elevations strictly below `ocean_lvl` qualify as
         ocean cells.
@@ -148,7 +148,7 @@ def invalidate_ocean_basins(
         Minimum cell count threshold for ocean basin invalidation.
         Ocean basins containing at least this number of cells are
         invalidated.
-        - Default size is 1.
+        - Default size is `1`.
 
     Returns
     -------

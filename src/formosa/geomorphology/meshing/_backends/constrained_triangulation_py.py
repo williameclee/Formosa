@@ -7,6 +7,7 @@ facet-neighbour construction are implemented separately in
 `triangulation_py.py`.
 
 Created: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
@@ -252,9 +253,6 @@ def recover_constraint_edge(
 
     Raises
     ------
-    ValueError
-        If `nabrs` is supplied but its shape does not match
-        `faces`.
     GraphTopologyError
         If constraint edge crosses a locked edge, no flippable edge
         crosses the constraint, or edge flips fail to make progress

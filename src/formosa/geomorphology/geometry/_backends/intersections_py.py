@@ -33,7 +33,20 @@ def orient(p1: NDArray[NpReal], p2: NDArray[NpReal], p3: NDArray[NpReal]) -> Rea
 
 def orient(p1: NDArray[NpReal], p2: NDArray[NpReal], p3: NDArray[NpReal]) -> Real:
     """
-    Computes the signed determinant of three two-dimensional points.
+    Computes the signed orientation determinant of three 2D points.
+
+    Parameters
+    ----------
+    p1, p2, p3 : NDArray[number]
+        2D coordinate arrays for points p1, p2, and p3.
+        - Expected shape: `(2,)`.
+
+    Returns
+    -------
+    det : int | float
+        Signed determinant. Positive indicates counter-clockwise
+        orientation, negative indicates clockwise, and zero indicates
+        collinear points.
     """
     p1x, p1y = p1.tolist()
     p2x, p2y = p2.tolist()
@@ -69,7 +82,22 @@ def incircle(
     a: NDArray[NpReal], b: NDArray[NpReal], c: NDArray[NpReal], p: NDArray[NpReal]
 ) -> Real:
     """
-    Calculates the signed in-circle determinant for 4 2D points.
+    Calculates the signed in-circle determinant for four 2D points.
+
+    Parameters
+    ----------
+    a, b, c : NDArray[number]
+        Vertices of the triangle, assumed counter-clockwise.
+        - Expected shape: `(2,)`.
+    p : NDArray[number]
+        Query point to test against the circumcircle of (a, b, c).
+        - Expected shape: `(2,)`.
+
+    Returns
+    -------
+    det : int | float
+        Signed in-circle determinant. Positive indicates `p` lies
+        inside the circumcircle of triangle (a, b, c).
     """
     ax, ay = a.tolist()
     bx, by = b.tolist()

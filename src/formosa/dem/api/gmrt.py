@@ -45,9 +45,7 @@ def gmrt(
     Affine,
 ]:
     """
-    Fetch DEM data from the GMRT server.
-    For documentation of the API itself, see:
-    https://www.gmrt.org/services/gridserverinfo.php#!/services/getGMRTGridURLs
+    Fetches DEM data from the GMRT server.
 
     Parameters
     ----------
@@ -55,43 +53,54 @@ def gmrt(
         Latitude limits (min, max) in degrees.
     lonlim : tuple[number, number]
         Longitude limits (min, max) in degrees.
-    resolution : number | "default" | "med" | "high" | "max", optional
-        Resolution of the DEM data. Can be a positive number or one of the predefined strings
-        (default is "default").
-    format : str, optional
-        Format of the DEM data. Must be one of "netcdf", "coards",
-        "esriascii", or "geotiff"
-        (default is "geotiff").
+    res : number | {"default", "med", "high", "max"}, optional
+        Resolution of the DEM data. Can be a positive number or one
+        of the predefined strings.
+        - Default resolution is `"default"`.
+    fmt : {"netcdf", "coards", "esriascii", "geotiff"}, optional
+        Format of the DEM data.
+        - Default format is `"geotiff"`.
     saveas : str | Path | None, optional
-        Path to save the downloaded DEM file. If "default path", saves to åthe default path.
-        If None, does not save the file
-        (default is "default path").
+        Path to save the downloaded DEM file.
+        If `"default path"`, saves to the default path.
+        If `None`, does not save the file.
+        - Default path is `"default path"`.
     forcenew : bool, optional
-        If True, forces a new download even if the file already exists
-        (default is False).
+        Whether to force a new download even if the file exists.
+        - Default option is `False`.
     base_url : str, optional
-        Base URL of the GMRT server
-        (default is GMRT_URL).
+        Base URL of the GMRT server.
+        - Default URL is `GMRT_URL`.
 
     Returns
     -------
-    Z : ndarray[floating | integer]
+    dem : NDArray[number]
         2D array of elevation values.
-    X : ndarray[floating]
-        2D array of x-coordinates corresponding to Z.
-    Y : ndarray[floating]
-        2D array of y-coordinates corresponding to Z.
+        - Shape: `(nrows, ncols)`.
+    x : NDArray[float]
+        x-coordinates corresponding to `dem`.
+        - Shape: `(nrows, ncols)`, same as `dem`.
+    y : NDArray[float]
+        y-coordinates corresponding to `dem`.
+        - Shape: `(nrows, ncols)`, same as `dem`.
     transform : rasterio.Affine
-        Affine transformation mapping pixel coordinates to spatial coordinates.
+        Affine transformation mapping pixel coordinates to spatial
+        coordinates.
 
     Raises
     ------
     ValueError
-        If input parameters are invalid or if no data is available for the specified bounds.
+        If input parameters are invalid or if no data is available
+        for the specified bounds.
     ConnectionError
         If there is a failure in connecting to the GMRT server.
     FileNotFoundError
         If the requested data is not found on the GMRT server.
+
+    Notes
+    -----
+    For documentation of the API itself, see:
+    https://www.gmrt.org/services/gridserverinfo.php#!/services/getGMRTGridURLs
     """
     # Input validation
     latlim, lonlim = _validate_latlon_limits(latlim, lonlim)

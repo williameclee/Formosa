@@ -113,7 +113,7 @@ def _compute_flowdir_complete(
         Increment in synthetic elevation per step away from low
         edges to avoid ties when combined with the result of
         :func:`compute_away_from_high`.
-        - Default step size is 4.
+        - Default step size is `4`.
 
     Returns
     -------
@@ -130,7 +130,8 @@ def _compute_flowdir_complete(
     Notes
     -----
     Combines simple flow direction computation with flat area
-    resolution from [R Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009).
+    resolution from Barnes *et al.* (2014),
+    https://doi.org/10.1016/j.cageo.2013.01.009.
     """
     dir_enc = validate_format_dir_encoding(dir_enc)
     if step_size <= 0:
@@ -189,7 +190,7 @@ def compute_flowdir(
     step_size : int, optional
         Increment in synthetic elevation per step away from low
         edges to avoid ties when combining synthetic elevations.
-        - Default step size is 4.
+        - Default step size is `4`.
 
     Returns
     -------

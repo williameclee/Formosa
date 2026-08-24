@@ -21,6 +21,27 @@ def compute_masked_flowdir(
     labels: NDArray[np.integer],
     dir_enc: DirectionEncoding | None = None,
 ) -> NDArray[NpFlowDir]:
+    """
+    Computes flow directions within masked flat areas.
+
+    Parameters
+    ----------
+    z : NDArray[number]
+        Synthetic elevation raster.
+        - Expected shape: `(nrows, ncols)`.
+    labels : NDArray[int]
+        Integer labels for flat regions.
+        - Expected shape: `(nrows, ncols)`, same as `z`.
+    dir_enc : DirectionEncoding, optional
+        Flow direction encoding scheme.
+        - Default scheme is `D8DirectionEncoding()`.
+
+    Returns
+    -------
+    dirs : NDArray[uint8]
+        Flow directions within flat regions.
+        - Shape: `(nrows, ncols)`, same as `z`.
+    """
     dir_enc = validate_format_dir_encoding(dir_enc)
 
     nabrs, codes, _ = get_neighbour_values(
@@ -43,6 +64,30 @@ def find_flat_edges(
     dirs: NDArray[NpFlowDir],
     dir_enc: DirectionEncoding | None = None,
 ) -> tuple[NDArray[np.bool_], NDArray[np.bool_]]:
+    """
+    Identifies low and high boundary cells of flat areas.
+
+    Parameters
+    ----------
+    dem : NDArray[number]
+        Digital elevation model raster.
+        - Expected shape: `(nrows, ncols)`.
+    dirs : NDArray[uint8]
+        Flow direction raster.
+        - Expected shape: `(nrows, ncols)`, same as `dem`.
+    dir_enc : DirectionEncoding, optional
+        Flow direction encoding scheme.
+        - Default scheme is `D8DirectionEncoding()`.
+
+    Returns
+    -------
+    is_low_edge : NDArray[bool]
+        Boolean mask indicating low edge cells.
+        - Shape: `(nrows, ncols)`, same as `dem`.
+    is_high_edge : NDArray[bool]
+        Boolean mask indicating high edge cells.
+        - Shape: `(nrows, ncols)`, same as `dem`.
+    """
     dir_enc = validate_format_dir_encoding(dir_enc)
 
     nabrs, _, _ = get_neighbour_values(

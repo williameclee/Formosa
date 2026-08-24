@@ -1,4 +1,5 @@
-!> Compute distance metrics between points using the Fortran backend.
+!> Computes distance metrics between points using the Fortran
+!! backend.
 !!
 !! This internal module provides geometric primitives used by other
 !! Fortran routines and is not intended to be used directly.

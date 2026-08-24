@@ -157,18 +157,20 @@ def triangulate_points(
 
     Parameters
     ----------
-    vtxs : NDArray[number], shape (V, 2)
+    vtxs : NDArray[number]
         Unique vertex coordinates. At least three non-collinear
         points are required.
+        - Expected shape: `(V, 2)`.
     backend : {"fortran", "python"}, optional
         Computational backend.
-        Default backend is `"fortran"`.
+        - Default backend is `"fortran"`.
 
     Returns
     -------
-    faces : NDArray[int32], shape (F, 3)
+    faces : NDArray[int32]
         Counterclockwise triangle vertex IDs in canonical,
         lexicographic order.
+        - Shape: `(F, 3)`.
 
     Raises
     ------
@@ -216,17 +218,19 @@ def find_facet_neighbours(
 
     Parameters
     ----------
-    faces : NDArray[int], shape (F, 3)
+    faces : NDArray[int]
         Non-negative, 0-based triangle vertex IDs.
+        - Expected shape: `(F, 3)`.
     backend : {"fortran", "python"}, optional
         Computational backend.
-        Default backend is `"fortran"`.
+        - Default backend is `"fortran"`.
 
     Returns
     -------
-    nabrs : NDArray[int32], shape (F, 3)
+    nabrs : NDArray[int32]
         0-based neighbouring triangle IDs, with `-1` at the mesh
         boundary.
+        - Shape: `(F, 3)`.
 
     Raises
     ------
@@ -235,8 +239,6 @@ def find_facet_neighbours(
         converted safely to its native representation.
     GraphTopologyError
         If the triangles do not form a valid manifold mesh.
-    MemoryError
-        If the Fortran backend cannot allocate its workspace.
     """
     faces = np.asarray(faces)
     if faces.ndim != 2 or faces.shape[1] != 3:
@@ -281,38 +283,36 @@ def flip_quadrilateral_edge(
 
     Parameters
     ----------
-    vtxs : NDArray[number], shape (V, 2)
+    vtxs : NDArray[number]
         Vertex coordinates.
-    faces : NDArray[int], shape (F, 3)
+        - Expected shape: `(V, 2)`.
+    faces : NDArray[int]
         Counterclockwise, 0-based triangle vertex IDs.
+        - Expected shape: `(F, 3)`.
     iface : int
         ID of the triangle containing the edge to flip.
     iside : int
         Local side ID in the range `[0, 3)`.
-    nabrs : NDArray[int], shape (F, 3), optional
+    nabrs : NDArray[int], optional
         Triangle neighbours, with `-1` at the mesh boundary. They are
         computed when omitted.
-        Default input is `None`.
+        - Expected shape: `(F, 3)`.
+        - Default input is `None`.
     backend : {"fortran", "python"}, optional
         Computational backend.
-        Default backend is `"fortran"`.
+        - Default backend is `"fortran"`.
 
     Returns
     -------
-    f_faces : NDArray[int32], shape (F, 3)
+    f_faces : NDArray[int32]
         Triangle vertex IDs after replacing the selected diagonal.
-    f_nabrs : NDArray[int32], shape (F, 3)
+        - Shape: `(F, 3)`.
+    f_nabrs : NDArray[int32]
         Triangle neighbours after the flip.
+        - Shape: `(F, 3)`.
 
     Raises
     ------
-    ValueError
-        If an input array has an invalid shape or the backend is
-        unsupported.
-    TypeError
-        If the Fortran backend receives non-integer coordinates.
-    IndexError
-        If a vertex, neighbour, triangle, or side ID is out of bounds.
     OverflowError
         If the Fortran backend cannot represent an input coordinate or
         vertex ID.
@@ -466,40 +466,37 @@ def recover_constraint_edge(
 
     Parameters
     ----------
-    vtxs : NDArray[number], shape (V, 2)
+    vtxs : NDArray[number]
         Vertex coordinates.
-    faces : NDArray[int], shape (F, 3)
+        - Expected shape: `(V, 2)`.
+    faces : NDArray[int]
         Counterclockwise, 0-based triangle vertex IDs.
+        - Expected shape: `(F, 3)`.
     edge : tuple[int, int]
         Vertex IDs of the constraint edge to recover.
     locked_edges : set[tuple[int, int]], optional
         Existing mesh edges that must not be flipped.
-        Default input is `None`.
-    nabrs : NDArray[int], shape (F, 3), optional
+        - Default input is `None`.
+    nabrs : NDArray[int], optional
         Triangle neighbours, with `-1` at the mesh boundary.
         They are computed when omitted.
-        Default input is `None`.
+        - Expected shape: `(F, 3)`.
+        - Default input is `None`.
     backend : {"fortran", "python"}, optional
         Computational backend.
-        Default backend is `"fortran"`.
+        - Default backend is `"fortran"`.
 
     Returns
     -------
-    r_faces : NDArray[int32], shape (F, 3)
+    r_faces : NDArray[int32]
         Triangle vertex IDs for a mesh containing the constraint.
-    r_nabrs : NDArray[int32], shape (F, 3)
+        - Shape: `(F, 3)`.
+    r_nabrs : NDArray[int32]
         Triangle neighbours for the recovered mesh.
+        - Shape: `(F, 3)`.
 
     Raises
     ------
-    ValueError
-        If an input has an invalid shape, an edge is a self-edge, or
-        the backend is unsupported.
-    TypeError
-        If an edge or neighbour ID is not an integer, or the Fortran
-        backend receives non-integer coordinates.
-    IndexError
-        If a vertex or neighbour ID is out of bounds.
     OverflowError
         If the Fortran backend cannot represent an input coordinate
         or vertex ID.
@@ -609,44 +606,34 @@ def recover_constraint_edges(
 
     Parameters
     ----------
-    vtxs : NDArray[number], shape (V, 2)
+    vtxs : NDArray[number]
         Vertex coordinates.
-    faces : NDArray[int], shape (F, 3)
+        - Expected shape: `(V, 2)`.
+    faces : NDArray[int]
         Counterclockwise, 0-based triangle vertex IDs.
-    edges : NDArray[int], shape (E, 2)
+        - Expected shape: `(F, 3)`.
+    edges : NDArray[int]
         Constraint vertex pairs, processed in row order.
+        - Expected shape: `(E, 2)`.
     backend : {"fortran", "python"}, optional
         Computational backend.
-        Default backend is `"fortran"`.
+        - Default backend is `"fortran"`.
 
     Returns
     -------
-    r_faces : NDArray[int32], shape (F, 3)
+    r_faces : NDArray[int32]
         Triangle vertex IDs for a mesh containing every constraint,
         in canonical lexicographic order.
-    nabrs : NDArray[int32], shape (F, 3)
+        - Shape: `(F, 3)`.
+    nabrs : NDArray[int32]
         Triangle neighbours for the recovered mesh.
+        - Shape: `(F, 3)`.
 
     Raises
     ------
-    ValueError
-        If an input array has an invalid shape, a constraint is a
-        self-edge, or the backend is unsupported.
-    TypeError
-        If triangle or constraint vertex IDs are not integers, or
-        the Fortran backend receives non-integer coordinates.
-    IndexError
-        If a triangle or constraint references an invalid vertex.
-    OverflowError
-        If the Fortran backend cannot represent an input coordinate
-        or vertex ID.
     GraphTopologyError
         If a constraint cannot be recovered without changing an
         earlier constraint.
-    MemoryError
-        If the Fortran backend cannot allocate its workspace.
-    RuntimeError
-        If the Fortran backend exceeds its recovery capacity.
     """
     vtxs = np.asarray(vtxs)
     faces = np.asarray(faces)

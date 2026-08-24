@@ -366,32 +366,34 @@ def simplify_flowgraph[O: NpInt, V: NpCoords, E: NpIndex](
     Parameters
     ----------
     orders : NDArray[int] or Iterable[NDArray[int]]
-        (A,) array containing the order of each arc, or an iterable
-        of such arrays.
+        Strahler order for each arc, or an iterable of such arrays.
+        - Expected shape: `(narcs,)`.
     vtxs : NDArray[number] or Iterable[NDArray[number]]
-        (V,2) array of coordinates representing the vertices in the
-        flow graph, or an iterable of such arrays.
+        Vertex coordinates for the flow graph, or an iterable of
+        such arrays.
+        - Expected shape: `(nvtxs, 2)`.
     endpts : NDArray[int] or Iterable[NDArray[int]]
-        (A,2) array of indices indicating where each arc starts and
-        ends in `vtx_xys`, or an iterable of such arrays.
+        Indices indicating where each arc starts and ends in `vtxs`,
+        or an iterable of such arrays.
+        - Expected shape: `(narcs, 2)`.
     tol : int | float, optional
         Tolerance threshold for simplification.
         Vertices with perpendicular distance to the line segment
         less than or equal to `tol` will be simplified/removed.
-        Default tolerance is 1.
+        - Default tolerance is `1`.
     check_topology : bool, optional
-        Whether to check for invalid topography in the simplified
+        Whether to check for invalid topology in the simplified
         graph.
-        Default option is `True`.
+        - Default option is `True`.
     remove_unused : bool, optional
         Whether to compact each returned vertex array so its arc
         ranges are adjacent.
-        Default option is `False`.
+        - Default option is `False`.
     backend : {'fortran', 'python'}, optional
         Backend to use for computation.
         `'fortran'` uses the Fortran extension for performance,
         while `'python'` uses a pure Python implementation.
-        Default backend is `'fortran'`.
+        - Default backend is `'fortran'`.
 
     Returns
     -------
@@ -399,40 +401,29 @@ def simplify_flowgraph[O: NpInt, V: NpCoords, E: NpIndex](
         Order of every simplified graph arc, including arcs
         introduced while aligning graph overlaps.
     simp_vtxs : NDArray[number] or list/tuple of NDArray[number]
-        (V',2) array of coordinates representing the simplified
-        vertices, or a list/tuple of such arrays.
+        Simplified vertex coordinates, or a list/tuple of such arrays.
+        - Shape: `(nvtxs_out, 2)`.
     simp_endpts : NDArray[int32] or list/tuple of NDArray[int32]
-        (A,2) array of indices indicating the start and end of each
-        simplified arc, or a list/tuple of such arrays.
+        Start and end indices of each simplified arc, or a list/tuple
+        of such arrays.
+        - Shape: `(narcs_out, 2)`.
     keeps : NDArray[bool] or list/tuple of NDArray[bool]
-        (V,) mask indicating which of the input vertices are
-        retained in the simplified graph, or a list/tuple of such
-        masks.
+        Boolean mask indicating which vertices are retained in the
+        simplified graph, or a list/tuple of such masks.
         For multiple overlapping graphs, the masks refer to the
         intermediate vertex arrays produced by
         :func:`solve_graph_overlaps`, which may contain additional
         vertices.
+        - Shape: `(nvtxs, 2)`.
 
     Raises
     ------
-    TypeError
-        If a single graph is supplied and any of param`arc_orders`,
-        `vtx_xys`, or `arc_endpts` is not a NumPy array.
-    ValueError
-        1. If single-graph and multi-graph argument forms are mixed.
-        2. If the multi-graph argument collections have different
-            lengths.
-        3. If an order array is not one-dimensional or does not
-            contain one value per arc.
-        4. If a vertex or endpoint array has an invalid shape.
     InvalidOriginalGraphTopology
         If the final result is invalid and the normalised input
         graph already contains disallowed topology violations.
     UnresolvedSimplificationTopology
         If the normalised input is valid but the final simplified
         graph contains disallowed topology violations.
-    NotImplementedError
-        If tries to call the not-yet-implemented Python backend.
     """
 
     is_multi = (

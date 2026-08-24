@@ -137,7 +137,7 @@ contains
         ! Local variables
         integer :: ci, cj
 
-        ! Count number of valid neighbors
+        ! Count number of valid neighbours
         cnt = 0
         err_code = ERR_NO_ERROR
 

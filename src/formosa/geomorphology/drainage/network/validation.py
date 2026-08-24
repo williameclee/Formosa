@@ -157,16 +157,6 @@ def _locate_invalid_graph_topology_fortran(
     NDArray[int32] or None
         Complete `(nintxs, 5)` intersection records using 0-based
         indices, or `None` when no violations are found.
-
-    Raises
-    ------
-    ValueError
-        If the low-level scanner rejects its inputs.
-    MemoryError
-        If scanner workspace or result allocation fails.
-    RuntimeError
-        If the scanner returns an unexpected status or the exact
-        count changes during the retry.
     """
     vtxs_f = np.asfortranarray(vtxs.T, dtype=np.float32)
     endpts_f = np.asfortranarray(endpts.T, dtype=np.int32) + 1
@@ -209,22 +199,23 @@ def locate_invalid_graph_topology(
     Parameters
     ----------
     vtxs : NDArray[number]
-        2D array of shape `(V,2)` representing the grid coordinates
-        (i, j) of each vertex.
-    arc_endpts : NDArray[integer]
-        2D array of shape `(A,2)` containing the start and end
-        vertex indices for each arc in `vtxs`.
+        Grid coordinates (i, j) of each vertex.
+        - Expected shape: `(nvtxs, 2)`.
+    endpts : NDArray[int]
+        Start and end vertex indices for each arc in `vtxs`.
+        - Expected shape: `(narcs, 2)`.
     backend : {'fortran', 'python'}, optional
         Backend to use for computation.
         `'fortran'` uses the Fortran extension for performance,
         while `'python'` uses a pure Python implementation.
-        Default backend is `'fortran'`.
+        - Default backend is `'fortran'`.
 
     Returns
     -------
-    NDArray[int32] or None
-        2D array of shape `(nintxs, 5)` representing the detected
-        intersections, or `None` if no intersections are found.
+    intxs : NDArray[int32] | None
+        Detected intersections, or `None` if no intersections are
+        found.
+        - Shape: `(nintxs, 5)`.
         The rows are sorted lexicographically and each row contains:
         - `iarc`: Index of the first arc (0-based).
         - `jarc`: Index of the second arc (0-based).
@@ -238,17 +229,6 @@ def locate_invalid_graph_topology(
             - 3 : Identical segment.
             - 4 : Endpoint-on-interior (T-junction).
             - 5 : Degenerate segment (some line is actually a point).
-
-    Raises
-    ------
-    ValueError
-        If the shape of `vtxs` or `endpts` is invalid.
-    MemoryError
-        If the Fortran backend cannot allocate its scan workspace or
-        result.
-    RuntimeError
-        If the Fortran scanner returns an unexpected error or an
-        inconsistent count during the exact-size retry.
     """
     if vtxs.ndim != 2 or vtxs.shape[1] != 2:
         raise ValueError("Invalid array shapes passed.")

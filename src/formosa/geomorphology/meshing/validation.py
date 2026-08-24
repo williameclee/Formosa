@@ -216,11 +216,6 @@ def validate_constraints(
 
     Raises
     ------
-    ValueError
-        If an input has an invalid shape or the backend is
-        unsupported.
-    TypeError
-        If an input array does not contain integers.
     GraphTopologyError
         If vertices or edges are out of bounds, the graph is not
         normalised, boundary constraints are incomplete, or edges

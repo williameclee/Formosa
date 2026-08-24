@@ -17,6 +17,24 @@ from formosa.utils import NpCoords
 def locate_invalid_graph_topology(
     endpts: NDArray[np.integer], vtxs: NDArray[NpCoords]
 ) -> list[tuple[int, int, int, int, int]]:
+    """
+    Locates self-intersections and cross-arc intersections.
+
+    Parameters
+    ----------
+    endpts : NDArray[int]
+        Start and end vertex index for each arc in `vtxs`.
+        - Expected shape: `(narcs, 2)`.
+    vtxs : NDArray[float]
+        Grid coordinates (i, j) of each vertex.
+        - Expected shape: `(nvtxs, 2)`.
+
+    Returns
+    -------
+    violations : list[tuple[int, int, int, int, int]]
+        List of detected violation tuples:
+        `(iarc, jarc, iseg, jseg, intx_flag)`.
+    """
     narcs = endpts.shape[0]
 
     # Construct bounding box for each arc: [min_x, min_y, max_x, max_y]

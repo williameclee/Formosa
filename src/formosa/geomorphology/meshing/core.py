@@ -2,6 +2,7 @@
 Defines simple helpers shared within this module.
 
 Created: 2026-08-11, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
 from enum import IntFlag

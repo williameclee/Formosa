@@ -21,36 +21,35 @@ def concat_flowgraph[O: NpInt, V: NpCoords, E: NpIndex](
     """
     Concatenates arcs of the same order in a flow graph, separated
     by NaNs.
-    It mainly serves to reduce the number of drawing calls when
+
+    This mainly serves to reduce the number of drawing calls when
     visualising the graph.
 
     Parameters
     ----------
     orders : NDArray[int]
-        (O,) array representing the Strahler order for each arc in
-        the flow graph.
-    vtxs : NDArray[int]
-        (V,2) array containing the ordered (i, j) incices of all
-        arcs, concactinated together.
-    ednpts : NDArray[int]
-        (A,2) array containing the indices of where each arc starts
-        and ends in `vtxs`.
+        Strahler order for each arc in the flow graph.
+        - Expected shape: `(narcs,)`.
+    vtxs : NDArray[int | float]
+        Ordered (i, j) indices of all arcs concatenated together.
+        - Expected shape: `(nvtxs, 2)`.
+    endpts : NDArray[int]
+        Indices of where each arc starts and ends in `vtxs`.
         The returned endpoints are inclusive, meaning slicing must
         be done as `vtxs[start : end + 1]`.
+        - Expected shape: `(narcs, 2)`.
 
     Returns
-    ----------
+    -------
     orders : NDArray[int]
-        (O,) array representing the Strahler order for each arc in
-        the flow graph.
-    vtxs : NDArray[int]
-        (V',2) array containing the ordered (i, j) incices of all
-        arcs, concactinated together.
-    ednpts : NDArray[int]
-        (O,2) array containing the indices of where each arc starts
-        and ends in `vtxs`.
-        The returned endpoints are inclusive, meaning slicing must
-        be done as `vtxs[start : end + 1]`.
+        Unique arc Strahler orders.
+        - Shape: `(norders,)`.
+    vtxs : NDArray[int | float]
+        Ordered (i, j) indices of all arcs concatenated together.
+        - Shape: `(nvtxs_out, 2)`.
+    endpts : NDArray[int]
+        Indices of where each concatenated arc starts and ends in `vtxs`.
+        - Shape: `(norders, 2)`.
     """
     # Input validation
     assert np.size(orders, 0) == np.size(endpts, 0), (
@@ -116,11 +115,6 @@ def remove_unused_vertices[V: NpCoords, E: NpIndex](
         arcs.
     endpts : NDArray[int]
         Arc ranges remapped into the compact vertex array.
-
-    Raises
-    ------
-    ValueError
-        If the input arguments have the wrong shapes.
     """
     vtxs = np.asarray(vtxs)
     endpts = np.asarray(endpts)
@@ -174,14 +168,6 @@ def _find_vertex_id[V: NpCoords](
     -------
     ivtx : int | list[int]
         Index (or indices) of the vertex in the list of vertices.
-
-    Raises
-    ------
-    AssertionError
-        If the dimension of the provided vertex does not match the
-        dimension of the array of vertices
-    ValueError
-        If the provided vertex is not found in the list of vertices.
     """
 
     assert np.size(vtx, 0) == np.size(vtxs, 1), (
@@ -221,17 +207,18 @@ def find_arc_id_of_vertex(
     Parameters
     ----------
     endpts : NDArray[int]
-        (A,2) array containing the indices of the starting and
-        ending endpoint of each arc in a vertex array.
+        Indices of the starting and ending endpoint of each arc in
+        a vertex array.
+        - Expected shape: `(narcs, 2)`.
     ivtx : int | Iterable[int]
         Index or indices of the vertices in a vertex array to find
         the arcs for.
-    inclusive : bool
+    inclusive : bool, optional
         Whether the `endpts` array is inclusive or half-open.
         If it is inclusive, the corresponding vertices in the arc
         are start_id ... end_id; if half-open, the vertices are
         start_id ... end_id - 1 instead.
-        Default option is `True`.
+        - Default option is `True`.
 
     Returns
     -------
@@ -301,13 +288,6 @@ def insert_endpt[O: NpInt, V: NpCoords, E: NpIndex](
     endpts : NDArray[int]
         Inclusive starting and ending vertex indices for each arc in
         the updated flow graph.
-
-    Raises
-    ------
-    AssertionError
-        If `orders` and `endpts` do not contain the same number of
-        arcs, or if a coordinate supplied as `add_endpt` does not
-        have the same dimensionality as the vertices in `vtxs`.
     """
 
     assert np.size(orders, 0) == np.size(endpts, 0), (

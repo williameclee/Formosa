@@ -17,6 +17,26 @@ from formosa.utils import NpFlowDir
 def label_watersheds(
     dirs: NDArray[NpFlowDir], dir_enc: DirectionEncoding, valids: NDArray[np.bool_]
 ) -> NDArray[np.int32]:
+    """
+    Labels watershed basins using a breadth-first search flood-fill.
+
+    Parameters
+    ----------
+    dirs : NDArray[uint8]
+        Flow direction raster.
+        - Expected shape: `(nrows, ncols)`.
+    dir_enc : DirectionEncoding
+        Flow direction encoding scheme.
+    valids : NDArray[bool]
+        Boolean mask indicating valid cells.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+
+    Returns
+    -------
+    ws : NDArray[int32]
+        Watershed label raster.
+        - Shape: `(nrows, ncols)`, same as `dirs`.
+    """
     I, J = dirs.shape
     ii, jj = np.meshgrid(
         np.arange(I, dtype=np.int32), np.arange(J, dtype=np.int32), indexing="ij"

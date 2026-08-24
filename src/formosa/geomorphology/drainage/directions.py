@@ -93,7 +93,17 @@ class DirectionEncoding:
 
     def code_to_offset(self, code: Code) -> tuple[Code, Code]:
         """
-        Gets offset (di, dj) for a given D8 code.
+        Gets row and column offsets (di, dj) for a given flow direction code.
+
+        Parameters
+        ----------
+        code : int | NDArray[uint8]
+            Flow direction code or array of codes.
+
+        Returns
+        -------
+        di, dj : int | NDArray[int32]
+            Row and column offsets corresponding to `code`.
         """
         if isinstance(code, np.ndarray):
             return self._code_to_offset_ndarray(code)  # type: ignore
@@ -176,6 +186,41 @@ def construct_d8_directions(
     code_transf_func: CodeTransf | None = lambda x: 2 ** (x - 1),
     sort_by_dist: bool = True,
 ) -> tuple[NDArray[NpCanonIndex], NDArray[NpFlowDir], list[str]]:
+    """
+    Constructs directional offsets and encoding codes for D8/D-infinity.
+
+    Parameters
+    ----------
+    window : int, optional
+        Odd window size defining kernel neighbourhood.
+        - Default window is `3`.
+    slices : int, optional
+        Number of directional sectors.
+        - Default slices is `8`.
+    shape : str, optional
+        Shape filter for kernel window (`'circular'` or `'square'`).
+        - Default shape is `'circular'`.
+    dir_list : list[str] | None, optional
+        List of direction names.
+        - Default list is `names`.
+    code_transf_func : CodeTransf | None, optional
+        Function mapping sector index to encoding code.
+        - Default function is `lambda x: 2 ** (x - 1)`.
+    sort_by_dist : bool, optional
+        Whether to sort offsets by Euclidean distance from centre.
+        - Default option is `True`.
+
+    Returns
+    -------
+    offsets : NDArray[int32]
+        Array of (row, col) offsets.
+        - Shape: `(noffsets, 2)`.
+    codes : NDArray[uint8]
+        Array of corresponding direction codes.
+        - Shape: `(noffsets,)`.
+    dirs : list[str]
+        Direction names for each offset.
+    """
     assert window % 2 == 1, "Window size must be odd, got {window} instead"
     assert window >= 3, "Window size must be at least 3, got {window} instead"
     assert slices >= 2, "Number of slices must be at least 2, got {slices} instead"
@@ -225,13 +270,7 @@ def construct_d8_directions(
         name_dict = {
             code: name
             for code, name in zip(
-                [0]
-                + list(
-                    map(
-                        code_transf_func,
-                        [i for i in range(1, slices + 1)],
-                    )
-                ),
+                [0] + list(map(code_transf_func, [i for i in range(1, slices + 1)])),
                 dir_list,
             )
         }
@@ -247,6 +286,18 @@ def validate_direction_offsets(
 ) -> NDArray[np.int32]:
     """
     Validates and formats row-column connectivity offsets.
+
+    Parameters
+    ----------
+    ofsts : ArrayLike
+        Array of (row, column) connectivity offsets.
+        - Expected shape: `(noffsets, 2)`.
+
+    Returns
+    -------
+    ofsts : NDArray[int32]
+        Validated Fortran-contiguous int32 array of offsets.
+        - Shape: `(noffsets, 2)`.
     """
     ofsts = np.asarray(ofsts)
     if ofsts.ndim != 2 or ofsts.shape[1] != 2:

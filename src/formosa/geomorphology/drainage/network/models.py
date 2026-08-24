@@ -58,12 +58,28 @@ class FlowGraph:
         return self.arc_endpts.shape[0]
 
     def cleanup(self) -> "FlowGraph":
+        """
+        Removes unreferenced vertices from the flow graph in place.
+
+        Returns
+        -------
+        graph : FlowGraph
+            Flow graph with unreferenced vertices removed.
+        """
         self.indices, self.arc_endpts = remove_unused_vertices(
             self.indices, self.arc_endpts
         )
         return self
 
     def concat(self) -> "FlowGraph":
+        """
+        Concatenates arcs of the same Strahler order in place.
+
+        Returns
+        -------
+        graph : FlowGraph
+            Flow graph with arcs of the same order concatenated.
+        """
         self.arc_orders, self.indices, self.arc_endpts = (
             concat_flowgraph(
                 self.arc_orders, self.indices, self.arc_endpts
@@ -78,6 +94,29 @@ class FlowGraph:
         remove_unused: bool = False,
         backend: Backend = "fortran",
     ) -> "FlowGraph":
+        """
+        Simplifies flow graph arcs using the RDP algorithm in place.
+
+        Parameters
+        ----------
+        tol : float, optional
+            Perpendicular distance tolerance for simplification.
+            - Default tolerance is `1`.
+        check_topology : bool, optional
+            Whether to validate graph topology after simplification.
+            - Default option is `True`.
+        remove_unused : bool, optional
+            Whether to compact vertex arrays after simplification.
+            - Default option is `False`.
+        backend : {'fortran', 'python'}, optional
+            Backend to use for simplification.
+            - Default backend is `'fortran'`.
+
+        Returns
+        -------
+        graph : FlowGraph
+            Simplified flow graph.
+        """
         self.arc_orders, self.indices, self.arc_endpts, _ = (
             simplify_flowgraph(
                 *(self.arc_orders, self.indices, self.arc_endpts),
@@ -94,6 +133,17 @@ class FlowGraph:
         lw: Callable[[float], float] = lambda o: o * 0.25,
         **kwargs,
     ) -> None:
+        """
+        Plots the flow graph using matplotlib.
+
+        Parameters
+        ----------
+        lw : Callable[[float], float], optional
+            Function mapping Strahler order to line width.
+            - Default function scales order by 0.25.
+        **kwargs
+            Additional keyword arguments passed to `matplotlib.pyplot.plot`.
+        """
         import matplotlib.pyplot as plt
 
         graph = self.concat()

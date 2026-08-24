@@ -2,6 +2,7 @@
 Tests direction encoding conversions and custom scheme workflows.
 
 Created: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np

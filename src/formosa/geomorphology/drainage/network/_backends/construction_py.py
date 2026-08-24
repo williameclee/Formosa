@@ -25,6 +25,51 @@ def construct_flowgraph(
     preserve_junctions: bool = True,
     ncells: int | None = None,
 ) -> tuple[int, int, NDArray[np.int8], NDArray[np.int32], NDArray[np.int32]]:
+    """
+    Traces flow direction rasters into arc-based flow graph structures.
+
+    Parameters
+    ----------
+    dirs : NDArray[uint8]
+        Flow direction raster.
+        - Expected shape: `(nrows, ncols)`.
+    dir_enc : DirectionEncoding
+        Flow direction encoding scheme.
+    valids : NDArray[bool]
+        Boolean mask indicating valid cells.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+    orders : NDArray[int]
+        Strahler stream orders for each cell.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+    indegs : NDArray[int]
+        Upstream in-degrees for each cell.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+    seeds : NDArray[bool]
+        Boolean mask indicating seed cells to start tracing from.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+    preserve_junctions : bool, optional
+        Whether to break arcs at confluences with in-degree >= 2.
+        - Default option is `True`.
+    ncells : int | None, optional
+        Capacity estimate for allocated graph buffers.
+        - Default size is `None`.
+
+    Returns
+    -------
+    narcs : int
+        Number of valid arcs constructed.
+    nverts : int
+        Number of valid vertices stored.
+    graph_orders : NDArray[int8]
+        Strahler order for each arc.
+        - Shape: `(ncells,)`.
+    graph_verts : NDArray[int32]
+        (row, col) grid coordinates of all traced vertices.
+        - Shape: `(2, 2 * ncells)`.
+    graph_endpts : NDArray[int32]
+        Start and end vertex index in `graph_verts` for each arc.
+        - Shape: `(2, ncells)`.
+    """
     seens = np.zeros_like(dirs, dtype=np.bool_)
 
     # Hold the cell ijs of the start and end node

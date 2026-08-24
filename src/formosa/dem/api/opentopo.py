@@ -52,9 +52,7 @@ def opentopo(
     Affine,
 ]:
     """
-    Fetch DEM data from the OpenTopography server.
-    For documentation of the API itself, see:
-    https://portal.opentopography.org/apidocs/#/Public/getGlobalDem
+    Fetches DEM data from the OpenTopography server.
 
     Parameters
     ----------
@@ -65,42 +63,55 @@ def opentopo(
     api_key : str
         API key for accessing OpenTopography services.
     product : str, optional
-        DEM product to fetch. Must be one of the supported products
-        (default is "SRTMGL3").
-    format : str, optional
+        DEM product to fetch. Must be one of the supported products.
+        - Default product is `"SRTMGL3"`.
+    fmt : str, optional
         Format of the DEM data. Must be one of "netcdf", "coards",
-        "esriascii", or "geotiff"
-        (default is "geotiff").
+        "esriascii", or "geotiff".
+        - Default format is `"geotiff"`.
     saveas : str | Path | None, optional
-        Path to save the downloaded DEM file. If "default path", saves to the default path.
-        If None, does not save the file
-        (default is "default path").
+        Path to save the downloaded DEM file.
+        If `"default path"`, saves to the default path.
+        If `None`, does not save the file.
+        - Default path is `"default path"`.
     forcenew : bool, optional
-        If True, forces a new download even if the file already exists
-        (default is False).
+        Whether to force a new download even if the file exists.
+        - Default option is `False`.
     base_url : str, optional
-        Base URL of the OpenTopography server
-        (default is OPENTOPO_URL).
+        Base URL of the OpenTopography server.
+        - Default URL is `OPENTOPO_URL`.
 
     Returns
     -------
-    Z : ndarray[floating | integer]
+    dem : NDArray[number]
         2D array of elevation values.
-    X : ndarray[floating]
-        2D array of x-coordinates corresponding to Z.
-    Y : ndarray[floating]
-        2D array of y-coordinates corresponding to Z.
+        - Shape: `(nrows, ncols)`.
+    x : NDArray[float]
+        x-coordinates corresponding to `dem`.
+        - Shape: `(nrows, ncols)`, same as `dem`.
+    y : NDArray[float]
+        y-coordinates corresponding to `dem`.
+        - Shape: `(nrows, ncols)`, same as `dem`.
     transform : rasterio.Affine
-        Affine transformation mapping pixel coordinates to spatial coordinates.
+        Affine transformation mapping pixel coordinates to spatial
+        coordinates.
 
     Raises
     ------
     ValueError
-        If input parameters are invalid or if no data is available for the specified bounds.
+        If input parameters are invalid or if no data is available
+        for the specified bounds.
     ConnectionError
-        If there is a failure in connecting to the OpenTopography server.
+        If there is a failure in connecting to the OpenTopography
+        server.
     FileNotFoundError
-        If the requested data is not found on the OpenTopography server.
+        If the requested data is not found on the OpenTopography
+        server.
+
+    Notes
+    -----
+    For documentation of the API itself, see:
+    https://portal.opentopography.org/apidocs/#/Public/getGlobalDem
     """
     # Input validation
     if api_key is None:

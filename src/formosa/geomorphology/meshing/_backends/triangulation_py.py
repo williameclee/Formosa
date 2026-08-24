@@ -19,6 +19,19 @@ from formosa.utils.typing import NpCanonIndex, NpCoords
 
 
 def canonical_edge(u: int, v: int) -> tuple[int, int]:
+    """
+    Returns an undirected edge with sorted vertex endpoints.
+
+    Parameters
+    ----------
+    u, v : int
+        Vertex indices forming the edge.
+
+    Returns
+    -------
+    edge : tuple[int, int]
+        Sorted pair `(min(u, v), max(u, v))`.
+    """
     return (u, v) if u < v else (v, u)
 
 
@@ -199,6 +212,21 @@ def order_ccw(
 
 
 def triangulate_points(vtxs: NDArray[NpCoords]) -> NDArray[NpCanonIndex]:
+    """
+    Computes an unconstrained Delaunay triangulation using Bowyer-Watson.
+
+    Parameters
+    ----------
+    vtxs : NDArray[number]
+        Unique vertex coordinates.
+        - Expected shape: `(nvtxs, 2)`.
+
+    Returns
+    -------
+    faces : NDArray[int32]
+        Triangle vertex indices.
+        - Shape: `(nfaces, 3)`.
+    """
     faces, seed_ids, iinf = make_initial_facets(vtxs)
 
     # Add vertices by a deterministic order independent of input

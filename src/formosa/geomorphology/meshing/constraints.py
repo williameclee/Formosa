@@ -220,4 +220,21 @@ class ConstraintGraph:
     def validate(
         self, shape: tuple[int, int] | None = None, backend: Backend = "fortran"
     ) -> None:
+        """
+        Validates constraint edges for intersections and boundary integrity.
+
+        Parameters
+        ----------
+        shape : tuple[int, int] | None, optional
+            Raster bounds as `(nrows, ncols)`.
+            - Default shape is `None`.
+        backend : {'fortran', 'python'}, optional
+            Backend to use for validation.
+            - Default backend is `'fortran'`.
+
+        Raises
+        ------
+        GraphTopologyError
+            If improper intersections or boundary violations exist.
+        """
         validate_constraints(self.indices, self.edges, self.edge_kinds, shape, backend)

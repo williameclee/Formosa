@@ -22,6 +22,33 @@ def compute_flow_accumulation[W: np.floating](
     indegs: NDArray[np.integer],
     dsij: NDArray[np.integer],
 ) -> NDArray[W]:
+    """
+    Computes flow accumulation using topological queue propagation.
+
+    Parameters
+    ----------
+    dirs : NDArray[uint8]
+        Flow direction raster.
+        - Expected shape: `(nrows, ncols)`.
+    valids : NDArray[bool]
+        Boolean mask indicating valid cells.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+    wgts : NDArray[float]
+        Cell weights.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+    indegs : NDArray[int]
+        Upstream in-degrees for each cell.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+    dsij : NDArray[int]
+        Flattened downstream cell indices.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+
+    Returns
+    -------
+    accums : NDArray[float]
+        Accumulated weights for each cell.
+        - Shape: `(nrows, ncols)`, same as `dirs`.
+    """
     from collections import deque
 
     # Initialisation
@@ -61,6 +88,29 @@ def compute_flow_strahler_order(
     valids: NDArray[np.bool_],
     indegs: NDArray[np.integer],
 ) -> NDArray[np.int16]:
+    """
+    Computes Strahler stream order using queue-based propagation.
+
+    Parameters
+    ----------
+    dirs : NDArray[uint8]
+        Flow direction raster.
+        - Expected shape: `(nrows, ncols)`.
+    dir_enc : DirectionEncoding
+        Flow direction encoding scheme.
+    valids : NDArray[bool]
+        Boolean mask indicating valid cells.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+    indegs : NDArray[int]
+        Upstream in-degrees for each cell.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+
+    Returns
+    -------
+    orders : NDArray[int16]
+        Strahler stream orders for each cell.
+        - Shape: `(nrows, ncols)`, same as `dirs`.
+    """
     from collections import deque
 
     indegs = indegs.copy()

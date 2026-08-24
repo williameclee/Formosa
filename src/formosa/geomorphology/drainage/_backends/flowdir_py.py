@@ -30,6 +30,27 @@ def compute_flowdir_simple(
     dem: NDArray[NpReal],
     dir_enc: DirectionEncoding | None = None,
 ) -> tuple[NDArray[NpFlowDir], NDArray[np.bool_]]:
+    """
+    Computes steepest-descent flow directions without flat resolution.
+
+    Parameters
+    ----------
+    dem : NDArray[number]
+        Digital elevation model raster.
+        - Expected shape: `(nrows, ncols)`.
+    dir_enc : DirectionEncoding, optional
+        Flow direction encoding scheme.
+        - Default scheme is `D8DirectionEncoding()`.
+
+    Returns
+    -------
+    dirs : NDArray[uint8]
+        Flow direction raster.
+        - Shape: `(nrows, ncols)`, same as `dem`.
+    is_flat : NDArray[bool]
+        Boolean mask indicating flat cells.
+        - Shape: `(nrows, ncols)`, same as `dem`.
+    """
     dir_enc = validate_format_dir_encoding(dir_enc)
     nabrs, codes, _ = get_neighbour_values(
         dem, dir_enc, include_self=True, pad_val=np.max(dem) + 1
@@ -50,6 +71,29 @@ def count_indegree(
     dir_enc: DirectionEncoding | None = None,
     valids: NDArray[np.bool_] | None = None,
 ) -> NDArray[np.int8]:
+    """
+    Counts the number of upstream cells for each cell.
+
+    Parameters
+    ----------
+    dirs : NDArray[uint8]
+        Flow direction raster.
+        - Expected shape: `(nrows, ncols)`.
+    dir_enc : DirectionEncoding, optional
+        Flow direction encoding scheme.
+        - Default scheme is `D8DirectionEncoding()`.
+    valids : NDArray[bool], optional
+        Boolean mask indicating valid cells.
+        If `None`, all cells are considered valid.
+        - Expected shape: `(nrows, ncols)`, same as `dirs`.
+        - Default mask is `None`.
+
+    Returns
+    -------
+    indegs : NDArray[int8]
+        Upstream in-degree for each cell.
+        - Shape: `(nrows, ncols)`, same as `dirs`.
+    """
     dir_enc = validate_format_dir_encoding(dir_enc)
     valids = validate_format_valids(valids, dirs, "flow direction raster")
     indegs = np.zeros(dirs.shape, dtype=np.int8)

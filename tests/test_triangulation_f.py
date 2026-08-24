@@ -5,6 +5,7 @@ This module covers native coordinate-type and range validation by
 the public meshing API.
 
 Created: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np

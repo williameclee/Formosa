@@ -7,6 +7,7 @@ triangulation and facet-neighbour behaviour are tested separately in
 `test_triangulation.py`.
 
 Created: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np

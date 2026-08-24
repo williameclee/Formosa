@@ -103,7 +103,7 @@ def test_topology_scanner_capacity_boundaries(cpty: int):
 
 def test_topology_scanner_empty_input_initialises_outputs():
     """
-    An empty graph produces initialized scanner outputs and public `None`.
+    An empty graph produces initialised scanner outputs and public `None`.
     """
     vtxs = np.empty((0, 2), dtype=np.float32)
     endpts = np.empty((0, 2), dtype=np.int32)

@@ -1,10 +1,11 @@
 """
 Manages Formosa's application data directory.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
 from pathlib import Path
+
 from platformdirs import user_data_dir
 
 APP = "Formosa"
@@ -16,6 +17,14 @@ if not DATA_DIR.exists():
 
 
 def set_data_dir(path: str | Path) -> None:
+    """
+    Sets the root directory for application data.
+
+    Parameters
+    ----------
+    path : str | Path
+        Filesystem path to the desired data directory.
+    """
     global DATA_DIR
     DATA_DIR = Path(path)
     if not DATA_DIR.exists():
