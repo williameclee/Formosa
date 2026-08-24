@@ -40,7 +40,7 @@ from formosa.geomorphology.drainage import (
 from formosa.geomorphology.drainage.network import create_flowline_plot_data
 from formosa.geomorphology.raster_validation import validate_format_dir_encoding
 from formosa.geomorphology.terrain import compute_prominence, compute_slope
-from formosa.utils import NpCoords, NpReal, NpFlowDir, NpCanonIndex
+from formosa.utils import NpCanonIndex, NpCoords, NpFlowDir, NpReal
 from formosa.utils.validation import validate_same_shape
 
 
@@ -106,9 +106,9 @@ class DEMGrid:
             )
 
         if stride is not None:
-            assert (
-                stride > 0
-            ), f"Stride must be a positive integer, got {stride} instead"
+            assert stride > 0, (
+                f"Stride must be a positive integer, got {stride} instead"
+            )
 
             self.stride = stride
             self.transform = rasterio.Affine(
