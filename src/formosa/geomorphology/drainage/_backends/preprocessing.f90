@@ -3,7 +3,7 @@
 !! This internal module is called by the Python drainage API and is
 !! not intended to be used directly.
 !!
-!! Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
+!! Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 module drainage_preprocessing
     use utils, only: ERR_NO_ERROR, ERR_INVALID_INPUT, &
                      ERR_ALLOCATION_FAILURE, ERR_OVERFLOW
@@ -13,14 +13,15 @@ module drainage_preprocessing
     implicit none(type, external)
     private :: fill_boundary_ocean_queue, fill_sink_priority_queue
 contains
+    !> Pushes all boundary ocean cells of a DEM to the queue.
+    !!
+    !! Notes
+    !! -----
+    !! Private helper function for
+    !! :func:'detect_ocean_basins_from_boundary'.
     pure subroutine fill_boundary_ocean_queue( &
         z, valids, nrows, ncols, seed_ids, nseeds, &
         ocean_lvl, flood_below, err_code)
-        !! Pushes all boundary ocean cells of a DEM to the queue.
-        !!
-        !! Notes
-        !! -----
-        !! Private helper function for :func:'detect_ocean_basins_from_boundary'.
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols
@@ -99,14 +100,14 @@ contains
         end do
     end subroutine fill_boundary_ocean_queue
 
+    !> Finds ocean basins the border the DEM's edges, and gives each
+    !! a unique label.
+    !!
+    !! An ocean basin is identified by elevation at or at or below a
+    !! given threshold.
     pure subroutine detect_ocean_basins_from_boundary( &
         z, valids, basins, nrows, ncols, offsets, noffsets, &
         ocean_lvl, flood_below, err_code)
-        !! Finds ocean basins the border the DEM's edges, and gives
-        !! each a unique label.
-        !!
-        !! An ocean basin is identified by elevation at or at or
-        !! below a given threshold.
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols
@@ -143,8 +144,6 @@ contains
                   stat=alloc_stat)
         if (alloc_stat /= 0) then
             err_code = ERR_ALLOCATION_FAILURE
-            if (allocated(seed_ids)) deallocate (seed_ids)
-            if (allocated(processed)) deallocate (processed)
             return
         end if
 
@@ -212,19 +211,19 @@ contains
         end do
     end subroutine detect_ocean_basins_from_boundary
 
+    !> Pushes sink cells of a DEM to the priority queue.
+    !!
+    !! The following kinds of cells are considered sinks:
+    !!  1. Valid edge cells of the DEM
+    !!  2. Valid cells surrounding an invalid cell
+    !!  3. Additional valid sink cells specified as 'more_sinks'
+    !!
+    !! Notes
+    !! -----
+    !! This is a private helper function for :func:'fill_depressions'.
     pure subroutine fill_sink_priority_queue( &
         z, valids, more_sinks, processed, pqueue, pqueue_size, &
         offsets, err_code)
-        !! Pushes sink cells of a DEM to the priority queue.
-        !!
-        !! The following kinds of cells are considered sinks:
-        !!  1. Valid edge cells of the DEM
-        !!  2. Valid cells surrounding an invalid cell
-        !!  3. Additional valid sink cells specified as 'more_sinks'
-        !!
-        !! Notes
-        !! -----
-        !! This is a private helper function for :func:'fill_depressions'.
         implicit none(type, external)
         ! Arguments
         real, intent(in) :: z(:, :)
@@ -299,38 +298,38 @@ contains
         ! Queue neighbours of non-valid cells (which may be ocean,
         ! etc.) or additional sinks
         do cj = 1, ncols
-            do ci = 1, nrows
-                if (valids(ci, cj)) then
-                    if (processed(ci, cj)) cycle
-                    if (.not. more_sinks(ci, cj)) cycle
-                    ! Queue the sink
-                    call push_priority_queue( &
-                        pqueue, pqueue_size, &
-                        ij2id_checked(ci, cj, nrows, ncols), z, err_code)
-                    if (err_code /= ERR_NO_ERROR) return
-                    processed(ci, cj) = .true.
-                    cycle
-                end if
-                ! Push all neighbours to the queue
-                do iofs = 1, noffsets
-                    ! In opposite direction since we want to find
-                    ! cells that can flow to these invalid cells
-                    ni = ci - offsets(iofs, 1)
-                    nj = cj - offsets(iofs, 2)
-                    ! Check bounds
-                    if (array2d_oob(ni, nj, nrows, ncols)) cycle
-                    ! Skip if not valid or already processed
-                    if (.not. valids(ni, nj)) cycle
-                    if (processed(ni, nj)) cycle
+        do ci = 1, nrows
+            if (valids(ci, cj)) then
+                if (processed(ci, cj)) cycle
+                if (.not. more_sinks(ci, cj)) cycle
+                ! Queue the sink
+                call push_priority_queue( &
+                    pqueue, pqueue_size, &
+                    ij2id_checked(ci, cj, nrows, ncols), z, err_code)
+                if (err_code /= ERR_NO_ERROR) return
+                processed(ci, cj) = .true.
+                cycle
+            end if
+            ! Push all neighbours to the queue
+            do iofs = 1, noffsets
+                ! In opposite direction since we want to find
+                ! cells that can flow to these invalid cells
+                ni = ci - offsets(iofs, 1)
+                nj = cj - offsets(iofs, 2)
+                ! Check bounds
+                if (array2d_oob(ni, nj, nrows, ncols)) cycle
+                ! Skip if not valid or already processed
+                if (.not. valids(ni, nj)) cycle
+                if (processed(ni, nj)) cycle
 
-                    ! Push to the queue
-                    nid = ij2id_checked(ni, nj, nrows, ncols)
-                    call push_priority_queue( &
-                        pqueue, pqueue_size, nid, z, err_code)
-                    if (err_code /= ERR_NO_ERROR) return
-                    processed(ni, nj) = .true.
-                end do
+                ! Push to the queue
+                nid = ij2id_checked(ni, nj, nrows, ncols)
+                call push_priority_queue( &
+                    pqueue, pqueue_size, nid, z, err_code)
+                if (err_code /= ERR_NO_ERROR) return
+                processed(ni, nj) = .true.
             end do
+        end do
         end do
     end subroutine fill_sink_priority_queue
 
@@ -368,8 +367,6 @@ contains
                   stat=alloc_stat)
         if (alloc_stat /= 0) then
             err_code = ERR_ALLOCATION_FAILURE
-            if (allocated(processed)) deallocate (processed)
-            if (allocated(pqueue)) deallocate (pqueue)
             return
         end if
 
@@ -407,10 +404,9 @@ contains
         end do
     end subroutine fill_depressions
 
+    !> Finds connected mask areas and assigns each a unique label.
     pure subroutine label_mask_areas( &
         mask, labels, nrows, ncols, offsets, nofss, err_code)
-        !! Finds connected mask areas and assigns each a unique
-        !! label.
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols

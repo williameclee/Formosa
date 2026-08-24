@@ -3,7 +3,7 @@
 !! This internal module is called by the Python drainage API and
 !! other FORTRAN routines and is not intended to be used directly.
 !!
-!! Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
+!! Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 module drainage_watersheds
     use iso_c_binding, only: c_int8_t
     use utils, only: ERR_NO_ERROR, ERR_INVALID_INPUT, &
@@ -12,11 +12,10 @@ module drainage_watersheds
                      id2ij_checked, ij2id_checked
     implicit none(type, external)
 contains
+    !> Assigns cells that drain into different sinks a unique label.
     subroutine label_watersheds( &
         labels, dirs, valids, nrows, ncols, &
         offsets, codes, noffsets, err_code)
-        !! Assigns cells that drain into different sinks a unique
-        !! label.
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols
@@ -40,10 +39,9 @@ contains
             !! watershed should have a label of 0.
         integer, intent(out) :: err_code
             !! Code indicating the status of the result
-            !!   - 0: Programme executed properly
-            !!   - 2: Internal workspace allocation failed
-            !!   - 3: Watershed traversal queue capacity was
-            !!     exceeded
+            !! - 0: Programme executed properly
+            !! - 2: Internal workspace allocation failed
+            !! - 3: Watershed traversal queue capacity was exceeded
         ! Local variables
         integer :: iofs
             !! Index for iterating through offsets
@@ -161,9 +159,7 @@ contains
             end do
         end do
         !$omp END DO
-        if (allocated(tofill_ids)) deallocate (tofill_ids)
         !$omp END PARALLEL
-        deallocate (seed_ids)
     end subroutine label_watersheds
 
     subroutine flood_upstream( &
@@ -192,9 +188,9 @@ contains
             !! flooded cells, false for non-flooded cells)
         integer, intent(out) :: err_code
             !! Code indicating the status of the result
-            !!   - 0: Programme executed properly
-            !!   - 2: Internal workspace allocation failed
-            !!   - 3: Upstream-flooding queue capacity was exceeded
+            !! - 0: Programme executed properly
+            !! - 2: Internal workspace allocation failed
+            !! - 3: Upstream-flooding queue capacity was exceeded
         ! Local variables
         integer :: iofs
             !! Index for iterating through offsets
@@ -309,8 +305,6 @@ contains
             end do
         end do
         !$omp END DO
-        if (allocated(tofill_ids)) deallocate (tofill_ids)
         !$omp END PARALLEL
-        deallocate (seed_ids)
     end subroutine flood_upstream
 end module drainage_watersheds

@@ -3,14 +3,15 @@
 !! This internal module is called by the Python network API and
 !! other FORTRAN routines and is not intended to be used directly.
 !!
-!! Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+!! Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 module network_simplification
     use distances, only: pt2linedist2_xy
     implicit none(type, external)
 contains
+    !> Simplify a single arc segment recursively using the Ramer-
+    !! Douglas-Peucker (RDP) algorithm.
     pure recursive subroutine simplify_arc_rdp( &
         xys, keeps, istart, iend, tol)
-        ! Simplify a single arc segment recursively using the Ramer-Douglas-Peucker (RDP) algorithm.
         implicit none(type, external)
         ! Arguments
         real, intent(in), contiguous :: xys(:, :)
@@ -54,9 +55,10 @@ contains
         call simplify_arc_rdp(xys, keeps, i_max_err2, iend, tol)
     end subroutine simplify_arc_rdp
 
+    !> Simplify all arcs in a flow graph using the Ramer-Douglas-
+    !! Peucker (RDP) algorithm.
     pure subroutine simplify_flowgraph( &
         vertex_xys, arc_endpts, vertex_keeps, nvertices, narcs, tol)
-        ! Simplify all arcs in a flow graph using the Ramer-Douglas-Peucker (RDP) algorithm.
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nvertices, narcs

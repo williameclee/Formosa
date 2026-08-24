@@ -3,7 +3,7 @@
 !! This internal module is called by the Python drainage API and is
 !! not intended to be used directly.
 !!
-!! Last modified: 2026-08-17, En-Chi Lee (williameclee@gmail.com)
+!! Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 module drainage_metrics
     use iso_c_binding, only: c_int8_t, c_int16_t
     use utils, only: ERR_NO_ERROR, ERR_INVALID_INPUT, &
@@ -14,11 +14,11 @@ module drainage_metrics
     use distances, only: l1dist_xy, l2dist_xy
     implicit none(type, external)
 contains
+    !> Computes flow accumulation for each cell in a flow direction
+    !! grid.
     subroutine compute_flow_accumulation( &
         dirs, valids, areas, indegs, accums, nrows, ncols, &
         offsets, codes, noffsets, err_code)
-        !! Computes flow accumulation for each cell in a flow
-        !! direction grid.
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols
@@ -48,9 +48,9 @@ contains
             !! flowing into each cell
         integer, intent(out) :: err_code
             !! Code indicating the status of the result
-            !!   - 0: Programme executed properly
-            !!   - 2: Internal workspace allocation failed
-            !!   - 3: Flooding queue capacity was exceeded
+            !! - 0: Programme executed properly
+            !! - 2: Internal workspace allocation failed
+            !! - 3: Flooding queue capacity was exceeded
         ! Local variables
         integer, allocatable :: offset_lookup(:, :)
             !! Lookup table for offsets corresponding to each flow
@@ -133,20 +133,17 @@ contains
             end if
             flood_ijs(:, ntofills) = [ni, nj]
         end do
-        deallocate (offset_lookup)
-        deallocate (flood_ijs)
     end subroutine compute_flow_accumulation
 
+    !> Computes the distance to the nearest source cell (cell with 0
+    !! in-degree) for each cell in a flow direction grid, using a
+    !! breadth-first search starting from source cells.
+    !!
+    !! The distance in measured in the number of cells along the
+    !! flow path (i.e. integer-typed L1 distance).
     subroutine compute_dist2source_l1( &
         dirs, valids, indegs, dists, nrows, ncols, &
         offsets, codes, noffsets, err_code)
-        !! Computes the distance to the nearest source cell (cell
-        !! with zero in-degree) for each cell in a flow direction
-        !! grid, using a breadth-first search starting from source
-        !! cells.
-        !!
-        !! The distance in measured in the number of cells along the
-        !! flow path (i.e. integer-typed L1 distance).
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols
@@ -173,9 +170,9 @@ contains
             !! with zero in-degree).
         integer, intent(out) :: err_code
             !! Code indicating the status of the result
-            !!   - 0: Programme executed properly
-            !!   - 2: Internal workspace allocation failed
-            !!   - 3: Source-distance queue capacity was exceeded
+            !! - 0: Programme executed properly
+            !! - 2: Internal workspace allocation failed
+            !! - 3: Source-distance queue capacity was exceeded
         ! Local variables
         integer, allocatable :: offset_lookup(:, :)
             !! Lookup table for offsets corresponding to each flow
@@ -258,15 +255,13 @@ contains
                 tofill_ijs(:, ntofills) = [ni, nj]
             end if
         end do
-        deallocate (offset_lookup)
-        deallocate (tofill_ijs)
     end subroutine compute_dist2source_l1
 
+    !> Computes the distance downstream along flow directions for
+    !! each cell in the flow direction grid.
     subroutine compute_dist2source( &
         dirs, valids, x, y, indegs, dists, nrows, ncols, &
         offsets, codes, noffsets, err_code)
-        !! Computes the distance downstream along flow directions
-        !! for each cell in the flow direction grid.
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols
@@ -295,9 +290,9 @@ contains
             !! Grid of distances to the nearest source cell
         integer, intent(out) :: err_code
             !! Code indicating the status of the result
-            !!   - 0: Programme executed properly
-            !!   - 2: Internal workspace allocation failed
-            !!   - 3: Source-distance queue capacity was exceeded
+            !! - 0: Programme executed properly
+            !! - 2: Internal workspace allocation failed
+            !! - 3: Source-distance queue capacity was exceeded
         ! Local variables
         integer, allocatable :: offset_lookup(:, :)
             !! Lookup table for offsets corresponding to each flow
@@ -344,7 +339,8 @@ contains
         if (err_code /= ERR_NO_ERROR) return
         deallocate (seeds)
 
-        !! Main loop to fill distances using a breadth-first search starting from source cells
+        ! Main loop to fill distances using a breadth-first search
+        ! starting from source cells
         dists = 0.0
         itofill = 1
         do while (itofill <= ntofills)
@@ -380,15 +376,13 @@ contains
                 tofill_ijs(:, ntofills) = [ni, nj]
             end if
         end do
-        deallocate (offset_lookup)
-        deallocate (tofill_ijs)
     end subroutine compute_dist2source
 
+    !> Computes the distance upstream along flow directions for each
+    !! cell in the flow direction grid.
     subroutine compute_dist2sink( &
         dists, dirs, x, y, valids, nrows, ncols, &
         offsets, codes, noffsets, err_code)
-        !! Computes the distance upstream along flow directions for
-        !! each cell in the flow direction grid.
         implicit none(type, external)
         ! Arguments
         integer, intent(in) :: nrows, ncols
@@ -412,9 +406,9 @@ contains
             !! Grid of distances to the downstream sink
         integer, intent(out) :: err_code
             !! Code indicating the status of the result:
-            !!   - 0: Programme executed properly
-            !!   - 2: Internal workspace allocation failed
-            !!   - 3: Sink-distance queue capacity was exceeded
+            !! - 0: Programme executed properly
+            !! - 2: Internal workspace allocation failed
+            !! - 3: Sink-distance queue capacity was exceeded
         ! Local variables
         integer :: iofs
             !! Index for iterating through offsets
@@ -539,9 +533,7 @@ contains
             end do
         end do
         !$omp END DO
-        if (allocated(tofill_ids)) deallocate (tofill_ids)
         !$omp END PARALLEL
-        deallocate (seed_ids)
     end subroutine compute_dist2sink
 
     subroutine compute_flow_strahler_order( &
@@ -572,9 +564,9 @@ contains
             !! Grid of Strahler stream order values for each cell
         integer, intent(out) :: err_code
             !! Code indicating the status of the result
-            !!   - 0: Programme executed properly
-            !!   - 2: Internal workspace allocation failed
-            !!   - 3: Strahler traversal queue capacity was exceeded
+            !! - 0: Programme executed properly
+            !! - 2: Internal workspace allocation failed
+            !! - 3: Strahler traversal queue capacity was exceeded
         ! Local variables
         integer, allocatable :: offset_lookup(:, :)
             !! Lookup table for offsets corresponding to each flow
@@ -700,7 +692,5 @@ contains
             tofill_ijs(:, ntofills) = [ni, nj]
 
         end do
-        deallocate (offset_lookup)
-        deallocate (tofill_ijs)
     end subroutine compute_flow_strahler_order
 end module drainage_metrics

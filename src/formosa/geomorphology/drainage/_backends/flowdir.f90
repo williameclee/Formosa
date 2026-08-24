@@ -5,7 +5,7 @@
 !! flow-graph operations are implemented in the network modules.
 !!
 !! Created: 2026-08-01, En-Chi Lee (williameclee@gmail.com)
-!! Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
+!! Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 module drainage_flowdir
     use iso_c_binding, only: c_int8_t
     use utils, only: ERR_NO_ERROR, ERR_INVALID_INPUT, &
@@ -67,28 +67,28 @@ contains
         !$omp COLLAPSE(2) &
         !$omp SCHEDULE(STATIC)
         do cj = 1, ncols
-            do ci = 1, nrows
-                if (.not. valids(ci, cj)) cycle
+        do ci = 1, nrows
+            if (.not. valids(ci, cj)) cycle
 
-                zmin = z(ci, cj)
+            zmin = z(ci, cj)
 
-                do iofs = 1, noffsets
-                    ni = ci + offsets(iofs, 1)
-                    nj = cj + offsets(iofs, 2)
-                    ! Check bounds
-                    if (array2d_oob(ni, nj, nrows, ncols)) cycle
-                    ! Check if neighbour is part of the same flat
-                    if (.not. valids(ni, nj)) cycle
-                    ! Check if neighbour has lower elevation
-                    if (z(ni, nj) < zmin) then
-                        zmin = z(ni, nj)
-                        dirs(ci, cj) = codes(iofs)
-                    end if
-                end do
-                if (dirs(ci, cj) == noflow_code) then
-                    is_flat(ci, cj) = .true.
+            do iofs = 1, noffsets
+                ni = ci + offsets(iofs, 1)
+                nj = cj + offsets(iofs, 2)
+                ! Check bounds
+                if (array2d_oob(ni, nj, nrows, ncols)) cycle
+                ! Check if neighbour is part of the same flat
+                if (.not. valids(ni, nj)) cycle
+                ! Check if neighbour has lower elevation
+                if (z(ni, nj) < zmin) then
+                    zmin = z(ni, nj)
+                    dirs(ci, cj) = codes(iofs)
                 end if
             end do
+            if (dirs(ci, cj) == noflow_code) then
+                is_flat(ci, cj) = .true.
+            end if
+        end do
         end do
         !$omp END PARALLEL DO
     end subroutine compute_flowdir_simple
@@ -127,26 +127,26 @@ contains
         !$omp COLLAPSE(2) &
         !$omp SCHEDULE(STATIC)
         do cj = 1, ncols
-            do ci = 1, nrows
-                if (.not. valids(ci, cj)) cycle
+        do ci = 1, nrows
+            if (.not. valids(ci, cj)) cycle
 
-                ! Loop over offsets to find neighbours flowing into current cell
-                do iofs = 1, noffsets
-                    ! Upstream neighbour indices
-                    ni = ci - offsets(iofs, 1)
-                    nj = cj - offsets(iofs, 2)
-                    ! Check bounds
-                    if (array2d_oob(ni, nj, nrows, ncols)) cycle
-                    ! Check if neighbour is valid
-                    if (.not. valids(ni, nj)) cycle
-                    ! Skip self-loops
-                    if (ni == ci .and. nj == cj) cycle
-                    ! Check if neighbour flows into current cell
-                    if (dirs(ni, nj) == codes(iofs)) then
-                        indegs(ci, cj) = indegs(ci, cj) + int(1, kind=c_int8_t)
-                    end if
-                end do
+            ! Loop over offsets to find neighbours flowing into current cell
+            do iofs = 1, noffsets
+                ! Upstream neighbour indices
+                ni = ci - offsets(iofs, 1)
+                nj = cj - offsets(iofs, 2)
+                ! Check bounds
+                if (array2d_oob(ni, nj, nrows, ncols)) cycle
+                ! Check if neighbour is valid
+                if (.not. valids(ni, nj)) cycle
+                ! Skip self-loops
+                if (ni == ci .and. nj == cj) cycle
+                ! Check if neighbour flows into current cell
+                if (dirs(ni, nj) == codes(iofs)) then
+                    indegs(ci, cj) = indegs(ci, cj) + int(1, kind=c_int8_t)
+                end if
             end do
+        end do
         end do
         !$omp END PARALLEL DO
     end subroutine count_indegree
