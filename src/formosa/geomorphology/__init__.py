@@ -19,7 +19,7 @@ from .drainage import (
     label_watersheds,
     simplify_flowgraph,
 )
-from .drainage.directions import D8Directions
+from .drainage.directions import D8DirectionEncoding
 from .terrain import (
     compute_isolation,
     compute_prominence,
@@ -27,7 +27,7 @@ from .terrain import (
 )
 
 __all__ = [
-    "D8Directions",
+    "D8DirectionEncoding",
     "FlowGraph",
     "compute_dist2conf_max",
     "compute_dist2ridge",

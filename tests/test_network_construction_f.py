@@ -1,7 +1,7 @@
 """
 Tests flow-graph construction using the Fortran backend.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
 from tests.core import *
@@ -9,7 +9,7 @@ from tests.core import *
 import pytest
 import numpy as np
 
-from formosa import D8Directions
+from formosa import D8DirectionEncoding
 import formosa.geomorphology.drainage.network.construction as constr_m
 from formosa.geomorphology._native import network_construction as constr_f
 
@@ -59,11 +59,11 @@ def test_construct_flowgraph_translates_fortran_error(monkeypatch: pytest.Monkey
 
 
 @pytest.mark.parametrize(
-    ("dirs", "dir_scheme", "exp_fgi", "exp_fgj", "should_warn"),
+    ("dirs", "dir_enc", "exp_fgi", "exp_fgj", "should_warn"),
     [
         (
             [[3, 3, 3], [3, 3, 3], [1, 1, 0]],
-            D8Directions(transform_codes=lambda x: x),
+            D8DirectionEncoding(code_trans_func=lambda x: x),
             [
                 *(0, 1, np.nan, 0, 1, np.nan, 0, 1, np.nan),
                 *(1, 2, np.nan, 1, 2, np.nan, 1, 2, np.nan),
@@ -78,7 +78,7 @@ def test_construct_flowgraph_translates_fortran_error(monkeypatch: pytest.Monkey
         ),
         (
             [[5, 1, 1], [5, 1, 1], [5, 1, 1]],
-            D8Directions(transform_codes=lambda x: x),
+            D8DirectionEncoding(code_trans_func=lambda x: x),
             [
                 *(0, 0, np.nan),
                 *(1, 1, np.nan),
@@ -93,13 +93,11 @@ def test_construct_flowgraph_translates_fortran_error(monkeypatch: pytest.Monkey
         ),
     ],
 )
-def test_create_flowgraph_3x3(dirs, dir_scheme, exp_fgi, exp_fgj, should_warn):
+def test_create_flowgraph_3x3(dirs, dir_enc, exp_fgi, exp_fgj, should_warn):
     if should_warn:
         with pytest.warns(UserWarning, match="Some downstream indices out of bounds"):
-            fg_i, fg_j = constr_m.create_flowline_plot_data(
-                np.array(dirs), dir_scheme=dir_scheme
-            )
+            fg_i, fg_j = constr_m.create_flowline_plot_data(np.array(dirs), dir_enc)
     else:
-        fg_i, fg_j = constr_m.create_flowline_plot_data(np.array(dirs), dir_scheme=dir_scheme)
+        fg_i, fg_j = constr_m.create_flowline_plot_data(np.array(dirs), dir_enc)
     np.testing.assert_array_equal(fg_i, np.array(exp_fgi))
     np.testing.assert_array_equal(fg_j, np.array(exp_fgj))

@@ -4,33 +4,30 @@ Resolves flats in digital elevation models using the Python backend.
 This module implements internal routines called by the public-facing
 drainage API and is not intended to be used directly.
 
-Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
 from numpy.typing import NDArray
 
-from formosa.geomorphology.drainage.directions import D8Directions
+from formosa.geomorphology.drainage.directions import DirectionEncoding
 from formosa.geomorphology.drainage.neighbours import get_neighbour_values
-from formosa.geomorphology.raster_validation import validate_format_dir_scheme
+from formosa.geomorphology.raster_validation import validate_format_dir_encoding
 from formosa.utils import NpFlowDir, NpReal
 
 
 def compute_masked_flowdir(
     z: NDArray[NpReal],
     labels: NDArray[np.integer],
-    dir_scheme: D8Directions | None = None,
+    dir_enc: DirectionEncoding | None = None,
 ) -> NDArray[NpFlowDir]:
-    dir_scheme = validate_format_dir_scheme(dir_scheme)
+    dir_enc = validate_format_dir_encoding(dir_enc)
 
     nabrs, codes, _ = get_neighbour_values(
-        z,
-        dir_scheme=dir_scheme,
-        include_self=True,
-        pad_val=z.max() + 1,
+        z, dir_enc, include_self=True, pad_val=z.max() + 1
     )
     nabr_labels, _, _ = get_neighbour_values(
-        labels, dir_scheme=dir_scheme, include_self=True, pad_val=-1
+        labels, dir_enc, include_self=True, pad_val=-1
     )
     # Mask neighbours that are not in the same flat
     nabrs = np.where(nabr_labels != labels[np.newaxis, :, :], np.inf, nabrs)
@@ -44,18 +41,15 @@ def compute_masked_flowdir(
 def find_flat_edges(
     dem: NDArray[NpReal],
     dirs: NDArray[NpFlowDir],
-    dir_scheme: D8Directions | None = None,
+    dir_enc: DirectionEncoding | None = None,
 ) -> tuple[NDArray[np.bool_], NDArray[np.bool_]]:
-    dir_scheme = validate_format_dir_scheme(dir_scheme)
+    dir_enc = validate_format_dir_encoding(dir_enc)
 
     nabrs, _, _ = get_neighbour_values(
-        dem,
-        dir_scheme=dir_scheme,
-        include_self=False,
-        pad_val=np.min(dem) - 1,  # since is_high_edge
+        dem, dir_enc, include_self=False, pad_val=np.min(dem) - 1
     )
     nabr_dirs, _, _ = get_neighbour_values(
-        dirs, dir_scheme=dir_scheme, include_self=False, pad_val=-1
+        dirs, dir_enc, include_self=False, pad_val=-1
     )
 
     is_high_edge: NDArray[np.bool_] = (dirs == 0) & np.any(dem < nabrs, axis=0)

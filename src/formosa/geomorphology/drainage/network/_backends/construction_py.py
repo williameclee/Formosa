@@ -5,19 +5,19 @@ backend.
 This module implements internal routines called by the public-facing
 network API and is not intended to be used directly.
 
-Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
 from numpy.typing import NDArray
 
-from formosa.geomorphology.drainage.directions import D8Directions
+from formosa.geomorphology.drainage.directions import DirectionEncoding
 from formosa.utils import NpFlowDir
 
 
 def construct_flowgraph(
     dirs: NDArray[NpFlowDir],
-    dir_scheme: D8Directions,
+    dir_enc: DirectionEncoding,
     valids: NDArray[np.bool_],
     orders: NDArray[np.integer],
     indegs: NDArray[np.integer],
@@ -51,7 +51,7 @@ def construct_flowgraph(
         seens[si, sj] = True
 
         # Skip isolated point
-        di, dj = dir_scheme.code2d8offset(dirs[si, sj])
+        di, dj = dir_enc.code_to_offset(dirs[si, sj])
         if (di == 0) and (dj == 0):
             continue
 
@@ -64,7 +64,7 @@ def construct_flowgraph(
         ci, cj = si, sj
 
         while True:
-            di, dj = dir_scheme.code2d8offset(dirs[ci, cj])
+            di, dj = dir_enc.code_to_offset(dirs[ci, cj])
             ni = ci + di
             nj = cj + dj
 

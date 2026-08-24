@@ -12,11 +12,11 @@ from numpy.typing import NDArray
 
 import formosa.geomorphology.drainage._backends.flat_resolution_py as fres_py
 from formosa.geomorphology._native import drainage_flat_resolution as flat_f
-from formosa.geomorphology.drainage.directions import D8Directions
+from formosa.geomorphology.drainage.directions import DirectionEncoding
 from formosa.geomorphology.drainage.neighbours import get_neighbour_values
 from formosa.geomorphology.raster_validation import (
     validate_format_dem,
-    validate_format_dir_scheme,
+    validate_format_dir_encoding,
     validate_format_flowdirs,
     validate_format_valids,
 )
@@ -27,7 +27,7 @@ from formosa.utils.validation import validate_same_shape
 def find_flat_edges(
     dem: NDArray[NpReal],
     dirs: NDArray[NpFlowDir],
-    dir_scheme: D8Directions | None = None,
+    dir_enc: DirectionEncoding | None = None,
     valids: NDArray[np.bool_] | None = None,
     backend: Backend = "fortran",
 ) -> tuple[NDArray[np.bool_], NDArray[np.bool_]]:
@@ -44,10 +44,9 @@ def find_flat_edges(
     dirs : NDArray[uint8]
         Flow direction raster.
         - Expected shape: `(nrows, ncols)`, same as `dem`.
-    dir_scheme : D8Directions, optional
-        Instance of `D8Directions` defining the flow direction
-        scheme.
-        - Default scheme is `D8Directions()`.
+    dir_enc : DirectionEncoding, optional
+        Flow direction encoding scheme.
+        - Default scheme is `D8DirectionEncoding()`.
     valids : NDArray[bool], optional
         Boolean mask indicating valid cells in the DEM.
         If `None`, all cells are considered valid.
@@ -75,20 +74,18 @@ def find_flat_edges(
     """
     dem = validate_format_dem(dem)
     dirs = validate_format_flowdirs(dirs, dem)
-    dir_scheme = validate_format_dir_scheme(dir_scheme)
+    dir_enc = validate_format_dir_encoding(dir_enc)
     valids = validate_format_valids(valids, dem)
     match backend:
         case "python":
-            low_edges, high_edges = fres_py.find_flat_edges(
-                dem, dirs, dir_scheme=dir_scheme
-            )
+            low_edges, high_edges = fres_py.find_flat_edges(dem, dirs, dir_enc=dir_enc)
         case "fortran":
             low_edges, high_edges = flat_f.find_flat_edges(
                 dem.astype(np.float32, order="F"),
                 dirs.astype(np.int32, order="F"),
                 valids.astype(bool, order="F"),
-                dir_scheme.offsets.astype(np.int32, order="F"),
-                dir_scheme.codes.astype(np.uint8, order="F"),
+                dir_enc.offsets.astype(np.int32, order="F"),
+                dir_enc.codes.astype(np.uint8, order="F"),
             )
 
     return (
@@ -100,7 +97,7 @@ def find_flat_edges(
 def label_flats(
     dem: NDArray[NpReal],
     seeds: NDArray[np.bool_],
-    dir_scheme: D8Directions | None = None,
+    dir_enc: DirectionEncoding | None = None,
     valids: NDArray[np.bool_] | None = None,
 ) -> NDArray[np.int32]:
     """
@@ -114,10 +111,9 @@ def label_flats(
     seeds : NDArray[bool]
         Boolean mask indicating flat area locations.
         - Expected shape: `(nrows, ncols)`, same as `dem`.
-    dir_scheme : D8Directions, optional
-        Instance of `D8Directions` defining the flow direction
-        scheme.
-        - Default scheme is `D8Directions()`.
+    dir_enc : DirectionEncoding, optional
+        Flow direction encoding scheme.
+        - Default scheme is `D8DirectionEncoding()`.
     valids : NDArray[bool], optional
         Boolean mask indicating valid cells in the DEM.
         If `None`, all cells are considered valid.
@@ -137,14 +133,14 @@ def label_flats(
     """
     dem = validate_format_dem(dem)
     validate_same_shape(seeds, dem, "seed mask", "DEM")
-    dir_scheme = validate_format_dir_scheme(dir_scheme)
+    dir_enc = validate_format_dir_encoding(dir_enc)
     valids = validate_format_valids(valids, dem, "DEM")
 
     labels, err_code = flat_f.label_flats(
         dem.astype(np.float32, order="F"),
         seeds.astype(bool, order="F"),
         valids.astype(bool, order="F"),
-        dir_scheme.offsets.astype(np.int32, order="F"),
+        dir_enc.offsets.astype(np.int32, order="F"),
     )
     raise_fortran_error("label_flats", err_code)
 
@@ -153,7 +149,7 @@ def label_flats(
 
 def find_flat(
     dem: NDArray[NpReal],
-    dir_scheme: D8Directions | None = None,
+    dir_enc: DirectionEncoding | None = None,
     valids: NDArray[np.bool_] | None = None,
     only_min: bool = True,
 ) -> NDArray[np.bool_]:
@@ -166,10 +162,9 @@ def find_flat(
     dem : NDArray[number]
         Digital elevation model raster.
         - Expected shape: `(nrows, ncols)`.
-    dir_scheme : D8Directions, optional
-        Instance of `D8Directions` defining the neighbourhood for
-        the synthetic elevation gradient.
-        - Default scheme is `D8Directions()`.
+    dir_enc : DirectionEncoding, optional
+        Direction encoding scheme defining neighbour offsets.
+        - Default scheme is `D8DirectionEncoding()`.
     valids : NDArray[bool], optional
         Boolean mask indicating valid cells in the DEM.
         If `None`, all cells are considered valid.
@@ -188,13 +183,13 @@ def find_flat(
         - Shape: `(nrows, ncols)`, same as `dem`.
     """
     dem = validate_format_dem(dem)
-    dir_scheme = validate_format_dir_scheme(dir_scheme)
+    dir_enc = validate_format_dir_encoding(dir_enc)
     valids = validate_format_valids(valids, dem, "DEM")
     if np.any(~valids):
         dem[~valids] = np.max(dem[~valids]) + 1
 
     neighbours, _, _ = get_neighbour_values(
-        dem, dir_scheme=dir_scheme, pad_val=np.nan, include_self=False
+        dem, dir_enc=dir_enc, pad_val=np.nan, include_self=False
     )
     if only_min:
         flats = dem == np.nanmin(neighbours, axis=0)
@@ -207,7 +202,7 @@ def find_flat(
 
 def find_ambiguous(
     dem: NDArray[NpReal],
-    dir_scheme: D8Directions | None = None,
+    dir_enc: DirectionEncoding | None = None,
 ) -> NDArray[np.bool_]:
     """
     Detects ambiguous flow directions in a DEM, where multiple
@@ -218,10 +213,9 @@ def find_ambiguous(
     dem : NDArray[number]
         Digital elevation model raster.
         - Expected shape: `(nrows, ncols)`.
-    dir_scheme : D8Directions, optional
-        Instance of `D8Directions` defining the flow direction
-        scheme.
-        - Default scheme is `D8Directions()`.
+    dir_enc : DirectionEncoding, optional
+        Flow direction encoding scheme.
+        - Default scheme is `D8DirectionEncoding()`.
 
     Returns
     -------
@@ -231,9 +225,9 @@ def find_ambiguous(
         - Shape: `(nrows, ncols)`, same as `dem`.
     """
     dem = validate_format_dem(dem)
-    dir_scheme = validate_format_dir_scheme(dir_scheme)
+    dir_enc = validate_format_dir_encoding(dir_enc)
 
-    nabrs, _, _ = get_neighbour_values(dem, dir_scheme)
+    nabrs, _, _ = get_neighbour_values(dem, dir_enc)
     min_nabrs = np.min(nabrs, axis=0)
     ambiguities = np.sum(nabrs == min_nabrs, axis=0) > 1
     ambiguities = ambiguities & ~(find_flat(dem))
@@ -243,7 +237,7 @@ def find_ambiguous(
 def create_pushing_syn_grad(
     labels: NDArray[np.integer],
     high_edges: NDArray[np.bool_],
-    dir_scheme: D8Directions | None = None,
+    dir_enc: DirectionEncoding | None = None,
 ) -> NDArray[np.int32]:
     """
     Produces a synthetic elevation that decreases away from 'high
@@ -259,9 +253,9 @@ def create_pushing_syn_grad(
     high_edges : NDArray[bool]
         Boolean mask indicating high-edge locations.
         - Expected shape: `(nrows, ncols)`, same as `labels`.
-    dir_scheme : D8Directions, optional
-        Instance of `D8Directions` defining neighbour offsets.
-        - Default scheme is `D8Directions()`.
+    dir_enc : DirectionEncoding, optional
+        Direction encoding scheme defining neighbour offsets.
+        - Default scheme is `D8DirectionEncoding()`.
 
     Returns
     -------
@@ -275,13 +269,13 @@ def create_pushing_syn_grad(
     Modified from [R Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009),
     Algorithm 5 (p. 133–134).
     """
-    dir_scheme = validate_format_dir_scheme(dir_scheme)
+    dir_enc = validate_format_dir_encoding(dir_enc)
     validate_same_shape(labels, high_edges, "label raster", "high edge mask")
 
     z_syn, err_code = flat_f.create_pushing_syn_grad(
         labels.astype(np.int32, order="F"),
         high_edges.astype(bool, order="F"),
-        dir_scheme.offsets.astype(np.int32, order="F"),
+        dir_enc.offsets.astype(np.int32, order="F"),
     )
     raise_fortran_error("create_pushing_syn_grad", err_code)
     return z_syn.astype(np.int32, order="F")
@@ -290,7 +284,7 @@ def create_pushing_syn_grad(
 def create_pulling_syn_grad(
     labels: NDArray[np.integer],
     low_edges: NDArray[np.bool_],
-    dir_scheme: D8Directions | None = None,
+    dir_enc: DirectionEncoding | None = None,
 ) -> NDArray[np.integer]:
     """
     Produces a synthetic elevation that drains towards 'low edges'
@@ -306,9 +300,9 @@ def create_pulling_syn_grad(
     low_edges : NDArray[bool]
         Boolean mask indicating low-edge locations.
         - Expected shape: `(nrows, ncols)`, same as `labels`.
-    dir_scheme : D8Directions, optional
-        Instance of `D8Directions` defining neighbour offsets.
-        - Default scheme is `D8Directions()`.
+    dir_enc : DirectionEncoding, optional
+        Direction encoding scheme defining neighbour offsets.
+        - Default scheme is `D8DirectionEncoding()`.
 
     Returns
     -------
@@ -322,13 +316,13 @@ def create_pulling_syn_grad(
     Modified from [R Barnes *et al.* (2014)](https://doi.org/10.1016/j.cageo.2013.01.009),
     Algorithm 6 (p. 134).
     """
-    dir_scheme = validate_format_dir_scheme(dir_scheme)
+    dir_enc = validate_format_dir_encoding(dir_enc)
     validate_same_shape(labels, low_edges, "flat label raster", "low edges mask")
 
     z_syn, err_code = flat_f.create_pulling_syn_grad(
         labels.astype(np.int32, order="F"),
         low_edges.astype(bool, order="F"),
-        dir_scheme.offsets.astype(np.int32, order="F"),
+        dir_enc.offsets.astype(np.int32, order="F"),
     )
     raise_fortran_error("create_pulling_syn_grad", err_code)
     return z_syn
@@ -337,7 +331,7 @@ def create_pulling_syn_grad(
 def compute_syn_flowdir(
     z: NDArray[NpReal],
     labels: NDArray[np.integer],
-    dir_scheme: D8Directions | None = None,
+    dir_enc: DirectionEncoding | None = None,
     backend: Backend = "fortran",
 ) -> NDArray[np.uint8]:
     """
@@ -355,9 +349,9 @@ def compute_syn_flowdir(
     labels : NDArray[int]
         Integer label raster for flat regions.
         - Expected shape: `(nrows, ncols)`, same as `z`.
-    dir_scheme : D8Directions, optional
-        Instance of `D8Directions` defining the flow direction scheme.
-        - Default scheme is `D8Directions()`.
+    dir_enc : DirectionEncoding, optional
+        Flow direction encoding scheme.
+        - Default scheme is `D8DirectionEncoding()`.
     backend : {'fortran', 'python'}, optional
         Backend to use for computation.
         `'fortran'` uses the Fortran extension for performance,
@@ -371,18 +365,18 @@ def compute_syn_flowdir(
         - Shape: `(nrows, ncols)`, same as `z`.
     """
     z = validate_format_dem(z)
-    dir_scheme = validate_format_dir_scheme(dir_scheme)
+    dir_enc = validate_format_dir_encoding(dir_enc)
     validate_same_shape(labels, z, "label", "synthetic elevation rasters")
 
     match backend:
         case "python":
-            dirs = fres_py.compute_masked_flowdir(z, labels, dir_scheme=dir_scheme)
+            dirs = fres_py.compute_masked_flowdir(z, labels, dir_enc=dir_enc)
         case "fortran":
             dirs = flat_f.compute_syn_flowdir(
                 z.astype(np.int32, order="F"),
                 labels.astype(np.int32, order="F"),
-                dir_scheme.offsets.astype(np.int32, order="F"),
-                dir_scheme.codes.astype(np.uint8, order="F"),
+                dir_enc.offsets.astype(np.int32, order="F"),
+                dir_enc.codes.astype(np.uint8, order="F"),
             )
 
     return dirs.astype(np.uint8, order="F")

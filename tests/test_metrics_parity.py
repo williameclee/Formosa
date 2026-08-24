@@ -10,14 +10,14 @@ from numpy.typing import NDArray
 
 import formosa.geomorphology.drainage.flowdir as flowdir_m
 import formosa.geomorphology.drainage.metrics as metrics_m
-from formosa import D8Directions
+from formosa import D8DirectionEncoding
 from formosa.utils import BACKENDS, Backend, NpFlowDir
 from tests.core import *
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
 @pytest.mark.parametrize(
-    ("dirs", "expected_orders", "should_warn"),
+    ("dirs", "exp_orders", "should_warn"),
     [
         (
             [[3, 3, 3], [3, 3, 3], [1, 1, 0]],
@@ -39,28 +39,28 @@ from tests.core import *
 def test_strahler_order_reference_cases(
     backend: Backend,
     dirs: NDArray[NpFlowDir],
-    expected_orders: NDArray[np.integer],
+    exp_orders: NDArray[np.integer],
     should_warn: bool,
 ):
-    dir_scheme = D8Directions(transform_codes=lambda x: x)
+    dir_enc = D8DirectionEncoding(code_trans_func=lambda x: x)
 
     if should_warn and backend == "python":
         with pytest.warns(UserWarning):
             orders = metrics_m.compute_flow_strahler_order(
-                np.array(dirs), dir_scheme=dir_scheme, backend=backend
+                np.array(dirs), dir_enc, backend=backend
             )
     else:
         orders = metrics_m.compute_flow_strahler_order(
-            np.array(dirs), dir_scheme=dir_scheme, backend=backend
+            np.array(dirs), dir_enc, backend=backend
         )
 
-    np.testing.assert_array_equal(orders, np.array(expected_orders))
+    np.testing.assert_array_equal(orders, np.array(exp_orders))
 
 
 @pytest.fixture
-def unequal_tributary_network() -> tuple[
-    NDArray[NpFlowDir], NDArray[np.bool_], NDArray[np.uint8]
-]:
+def unequal_tributary_network() -> (
+    tuple[NDArray[NpFlowDir], NDArray[np.bool_], NDArray[np.uint8]]
+):
     """A second-order branch joins a longer first-order branch."""
     dirs = np.zeros((4, 5), dtype=NpFlowDir)
     valids = np.zeros_like(dirs, dtype=bool)
@@ -80,49 +80,49 @@ def unequal_tributary_network() -> tuple[
         dirs[ij] = direction
         valids[ij] = True
 
-    expected = np.zeros_like(dirs, dtype=np.uint8)
-    expected[valids] = 1
-    expected[1, 1] = 2
-    expected[2, 1] = 2
-    expected[3, 1] = 2
-    return dirs, valids, expected
+    exp = np.zeros_like(dirs, dtype=np.uint8)
+    exp[valids] = 1
+    exp[1, 1] = 2
+    exp[2, 1] = 2
+    exp[3, 1] = 2
+    return dirs, valids, exp
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
 def test_unequal_tributary_does_not_increase_order(
     unequal_tributary_network, backend: Backend
 ):
-    dirs, valids, expected = unequal_tributary_network
-    dir_scheme = D8Directions(transform_codes=lambda x: x)
+    dirs, valids, exp = unequal_tributary_network
+    dir_enc = D8DirectionEncoding(code_trans_func=lambda x: x)
 
     orders = metrics_m.compute_flow_strahler_order(
-        dirs, dir_scheme=dir_scheme, valids=valids, backend=backend
+        dirs, dir_enc=dir_enc, valids=valids, backend=backend
     )
 
-    np.testing.assert_array_equal(orders, expected)
+    np.testing.assert_array_equal(orders, exp)
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
 def test_strahler_with_mask_and_supplied_indegrees(
     unequal_tributary_network, backend: Backend
 ):
-    dirs, valids, expected = unequal_tributary_network
-    dir_scheme = D8Directions(transform_codes=lambda x: x)
-    indegs = flowdir_m.count_indegree(dirs, dir_scheme, valids=valids, backend="python")
+    dirs, valids, exp_orders = unequal_tributary_network
+    dir_enc = D8DirectionEncoding(code_trans_func=lambda x: x)
+    indegs = flowdir_m.count_indegree(dirs, dir_enc, valids=valids, backend="python")
     original_indegs = indegs.copy()
 
     orders = metrics_m.compute_flow_strahler_order(
-        dirs, dir_scheme, valids=valids, indegs=indegs, backend=backend
+        dirs, dir_enc, valids=valids, indegs=indegs, backend=backend
     )
 
-    np.testing.assert_array_equal(orders, expected)
+    np.testing.assert_array_equal(orders, exp_orders)
     np.testing.assert_array_equal(indegs, original_indegs)
     assert np.all(orders[~valids] == 0)
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
 def test_masked_tributary_does_not_affect_order(backend: Backend):
-    dir_scheme = D8Directions(transform_codes=lambda x: x)
+    dir_enc = D8DirectionEncoding(code_trans_func=lambda x: x)
     dirs = np.array(
         [
             [2, 0, 4],
@@ -138,7 +138,7 @@ def test_masked_tributary_does_not_affect_order(backend: Backend):
             [F, T, F],
         ]
     )
-    expected = np.array(
+    exp_orders = np.array(
         [
             [1, 0, 0],
             [0, 1, 0],
@@ -148,7 +148,7 @@ def test_masked_tributary_does_not_affect_order(backend: Backend):
     )
 
     orders = metrics_m.compute_flow_strahler_order(
-        dirs, dir_scheme=dir_scheme, valids=valids, backend=backend
+        dirs, dir_enc=dir_enc, valids=valids, backend=backend
     )
 
-    np.testing.assert_array_equal(orders, expected)
+    np.testing.assert_array_equal(orders, exp_orders)

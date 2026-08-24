@@ -1,4 +1,4 @@
-from .directions import D8Directions
+from .directions import DirectionEncoding, D8DirectionEncoding
 from .flowdir import (
     compute_flowdir,
     count_indegree,
@@ -41,7 +41,8 @@ from .ridges import (
 from .watersheds import label_watersheds
 
 __all__ = [
-    "D8Directions",
+    "DirectionEncoding",
+    "D8DirectionEncoding",
     "DirectedFlowCycleError",
     "FlowGraph",
     "GraphTopologyError",

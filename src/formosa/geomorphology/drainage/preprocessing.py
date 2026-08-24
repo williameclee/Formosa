@@ -6,7 +6,7 @@ other operations required before flow routing and metric
 calculation.
 
 Created: 2026-08-01, En-Chi Lee (williameclee@gmail.com)
-Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
 from typing import Any
@@ -15,10 +15,10 @@ import numpy as np
 from numpy.typing import NDArray
 
 from formosa.geomorphology._native import drainage_preprocessing as preproc_f
-from formosa.geomorphology.drainage.directions import D8Directions
+from formosa.geomorphology.drainage.directions import DirectionEncoding
 from formosa.geomorphology.raster_validation import (
     validate_format_dem,
-    validate_format_dir_scheme,
+    validate_format_dir_encoding,
     validate_format_valids,
 )
 from formosa.utils import NpReal, raise_fortran_error
@@ -38,7 +38,7 @@ def _validate_format_ocean_level(ocean_lvl: Any) -> float:
 
 def detect_ocean_basins_from_boundary(
     dem: NDArray[NpReal],
-    dir_scheme: D8Directions | None = None,
+    dir_scheme: DirectionEncoding | None = None,
     valids: NDArray[np.bool_] | None = None,
     ocean_lvl: float = 0,
     flood_below: bool = True,
@@ -58,9 +58,9 @@ def detect_ocean_basins_from_boundary(
     dem : NDArray[number]
         Digital elevation model raster.
         - Expected shape: `(nrows, ncols)`.
-    dir_scheme : D8Directions, optional
-        Instance of `D8Directions` defining neighbour offsets.
-        - Default scheme is `D8Directions()`.
+    dir_scheme : DirectionEncoding, optional
+        Direction encoding scheme defining neighbour offsets.
+        - Default scheme is `D8DirectionEncoding()`.
     valids : NDArray[bool], optional
         Boolean mask indicating valid cells.
         Invalid cells are excluded from ocean basin detection.
@@ -88,7 +88,7 @@ def detect_ocean_basins_from_boundary(
     See also: :func:`invalidate_ocean_basins`.
     """
     dem = validate_format_dem(dem)
-    dir_scheme = validate_format_dir_scheme(dir_scheme)
+    dir_scheme = validate_format_dir_encoding(dir_scheme)
     valids = validate_format_valids(valids, dem, "DEM")
     ocean_lvl = _validate_format_ocean_level(ocean_lvl)
     if not isinstance(flood_below, (bool, np.bool_)):
@@ -110,7 +110,7 @@ def detect_ocean_basins_from_boundary(
 
 def invalidate_ocean_basins(
     dem: NDArray[NpReal],
-    dir_scheme: D8Directions | None = None,
+    dir_enc: DirectionEncoding | None = None,
     valids: NDArray[np.bool_] | None = None,
     ocean_lvl: float = 0,
     flood_below: bool = True,
@@ -125,9 +125,9 @@ def invalidate_ocean_basins(
     dem : NDArray[number]
         Digital elevation model raster.
         - Expected shape: `(nrows, ncols)`.
-    dir_scheme : D8Directions, optional
-        Instance of `D8Directions` defining neighbour offsets.
-        - Default scheme is `D8Directions()`.
+    dir_enc : DirectionEncoding, optional
+        Direction encoding scheme defining neighbour offsets.
+        - Default scheme is `D8DirectionEncoding()`.
     valids : NDArray[bool], optional
         Boolean mask indicating valid cells.
         Invalid cells remain invalid in the output mask.
@@ -163,7 +163,7 @@ def invalidate_ocean_basins(
     Basins with cell counts smaller than `min_size` or disconnected
     from the boundary remain valid.
     """
-    dir_scheme = validate_format_dir_scheme(dir_scheme)
+    dir_enc = validate_format_dir_encoding(dir_enc)
     if isinstance(min_size, (bool, np.bool_)) or not isinstance(
         min_size, (int, np.integer)
     ):
@@ -173,7 +173,7 @@ def invalidate_ocean_basins(
 
     dem = np.asarray(dem)
     basins = detect_ocean_basins_from_boundary(
-        dem, dir_scheme, valids=valids, ocean_lvl=ocean_lvl, flood_below=flood_below
+        dem, dir_enc, valids=valids, ocean_lvl=ocean_lvl, flood_below=flood_below
     )
     if valids is None:
         out_valids = np.isfinite(dem)
@@ -190,7 +190,7 @@ def invalidate_ocean_basins(
 
 def fill_depressions(
     dem: NDArray[NpReal],
-    dir_scheme: D8Directions | None = None,
+    dir_enc: DirectionEncoding | None = None,
     valids: NDArray[np.bool_] | None = None,
     max_fill_size: int | None = None,
 ) -> NDArray[NpReal]:
@@ -211,9 +211,9 @@ def fill_depressions(
         converts the result back to the input dtype; the input is
         not modified.
         - Expected shape: `(nrows, ncols)`.
-    dir_scheme : D8Directions, optional
+    dir_enc : DirectionEncoding, optional
         Flow direction encoding scheme.
-        - Default scheme is `D8Directions()`.
+        - Default scheme is `D8DirectionEncoding()`.
     valids : NDArray[bool], optional
         Boolean mask indicating valid cells.
         Invalid cells are excluded from the fill and retain their
@@ -242,7 +242,7 @@ def fill_depressions(
     processed in any order without changing the filled result.
     """
     dem = validate_format_dem(dem)
-    dir_scheme = validate_format_dir_scheme(dir_scheme)
+    dir_enc = validate_format_dir_encoding(dir_enc)
     valids = validate_format_valids(valids, dem, "DEM")
 
     if not np.any(valids):
@@ -259,7 +259,7 @@ def fill_depressions(
         dem_f32,
         valids.astype(bool, order="F"),
         np.zeros(dem.shape, dtype=bool, order="F"),
-        dir_scheme.offsets.astype(np.int32, order="F"),
+        dir_enc.offsets.astype(np.int32, order="F"),
     )
     raise_fortran_error("fill_depression", err_code)
 
@@ -269,12 +269,12 @@ def fill_depressions(
     # Find depressions
     labels, err_code = preproc_f.label_mask_areas(
         (valids & (dem_filled > dem_f32)).astype(bool, order="F"),
-        dir_scheme.offsets.astype(np.int32, order="F"),
+        dir_enc.offsets.astype(np.int32, order="F"),
     )
     raise_fortran_error("label_mask_areas", err_code)
     # Count depressions
-    counts = np.bincount(labels.ravel())
-    is_large = counts > max_fill_size
+    cnts = np.bincount(labels.ravel())
+    is_large = cnts > max_fill_size
     is_large[0] = False  # The first is 0, the non-depression cells
     # Treat large depressions as internally drained basins:
     # Add the lowest original cell of each basin to a shared sink
@@ -292,7 +292,7 @@ def fill_depressions(
             dem_f32,
             valids.astype(bool, order="F"),
             more_sinks,
-            dir_scheme.offsets.astype(np.int32, order="F"),
+            dir_enc.offsets.astype(np.int32, order="F"),
         )
         raise_fortran_error("fill_depression", err_code)
         large_basin_mask = is_large[labels]

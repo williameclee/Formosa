@@ -6,7 +6,7 @@ This module exposes public NumPy APIs for terrain metrics. Isolation
 and prominence use the internal Fortran backend.
 
 Created: 2026-08-01, En-Chi Lee (williameclee@gmail.com)
-Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
 import warnings
@@ -18,12 +18,12 @@ from numpy.typing import NDArray
 
 from formosa.geomorphology._native import terrain as terrain_f
 from formosa.geomorphology.drainage.directions import (
-    D8Directions,
+    DirectionEncoding,
     validate_direction_offsets,
 )
 from formosa.geomorphology.raster_validation import (
     validate_format_dem,
-    validate_format_dir_scheme,
+    validate_format_dir_encoding,
     validate_format_valids,
 )
 from formosa.utils import Coords, NpCanonIndex, NpCoords, NpReal, raise_fortran_error
@@ -206,7 +206,7 @@ class ProminenceFeatureKind(IntFlag):
 @overload
 def compute_prominence(
     dem: NDArray[np.unsignedinteger],
-    dir_scheme: D8Directions | None = None,
+    dir_enc: DirectionEncoding | None = None,
     valids: NDArray[np.bool_] | None = None,
 ) -> tuple[
     NDArray[np.int64],
@@ -221,7 +221,7 @@ def compute_prominence(
 @overload
 def compute_prominence(
     dem: NDArray[NpReal],
-    dir_scheme: D8Directions | None = None,
+    dir_enc: DirectionEncoding | None = None,
     valids: NDArray[np.bool_] | None = None,
 ) -> tuple[
     NDArray[NpReal],
@@ -235,7 +235,7 @@ def compute_prominence(
 
 def compute_prominence(
     dem: NDArray[NpReal | np.unsignedinteger],
-    dir_scheme: D8Directions | None = None,
+    dir_enc: DirectionEncoding | None = None,
     valids: NDArray[np.bool_] | None = None,
 ) -> tuple[
     NDArray[NpReal | np.int64],
@@ -258,9 +258,9 @@ def compute_prominence(
     dem : NDArray[number]
         Digital elevation model raster.
         - Expected shape: `(nrows, ncols)`.
-    dir_scheme : D8Directions, optional
+    dir_enc : DirectionEncoding, optional
         Direction scheme defining neighbour connectivity offsets.
-        - Default scheme is `D8Directions()`.
+        - Default scheme is `D8DirectionEncoding()`.
     valids : NDArray[bool], optional
         Boolean mask indicating valid cells.
         Non-finite DEM cells are always invalid.
@@ -317,8 +317,8 @@ def compute_prominence(
     """
     dem = validate_format_dem(dem)  # type: ignore
     valids = validate_format_valids(valids, dem, "DEM")
-    dir_scheme = validate_format_dir_scheme(dir_scheme)
-    ofsts_f = validate_direction_offsets(dir_scheme.offsets)
+    dir_enc = validate_format_dir_encoding(dir_enc)
+    ofsts_f = validate_direction_offsets(dir_enc.offsets)
 
     with np.errstate(over="ignore", invalid="ignore"):
         dem_f = np.asfortranarray(dem, dtype=np.float32)

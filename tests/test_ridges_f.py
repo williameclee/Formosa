@@ -1,22 +1,22 @@
 """
 Tests ridge-network construction using the Fortran backend.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
 import pytest
 import numpy as np
 
-from formosa import D8Directions
+from formosa import D8DirectionEncoding
 import formosa.geomorphology.drainage.ridges as ridges_m
 from formosa.geomorphology._native import drainage_ridges as ridges_f
 
 from types import SimpleNamespace
 
 
-def _reference_max_branch_dist(dirs, valids, x, y, dir_scheme):
+def _reference_max_branch_dist(dirs, valids, x, y, dir_enc):
     """Small direct path-tracing reference for the bulk backend."""
-    offsets = dir_scheme.offset_dict
+    offsets = dir_enc.offset_dict
     nrows, ncols = dirs.shape
 
     def path_from(i, j):
@@ -64,10 +64,9 @@ def _reference_max_branch_dist(dirs, valids, x, y, dir_scheme):
 
 def test_max_branch_distance_matches_direct_path_reference():
     rng = np.random.default_rng(2817)
-    dir_scheme = D8Directions(transform_codes=lambda value: value)
+    dir_enc = D8DirectionEncoding(code_trans_func=lambda value: value)
     code_by_offset = {
-        tuple(offset): int(code)
-        for code, offset in zip(dir_scheme.codes, dir_scheme.offsets)
+        tuple(offset): int(code) for code, offset in zip(dir_enc.codes, dir_enc.offsets)
     }
     shape = (9, 11)
     dirs = np.zeros(shape, dtype=np.uint8, order="F")
@@ -89,38 +88,35 @@ def test_max_branch_distance_matches_direct_path_reference():
     x = cols + rows * np.float32(0.17)
     y = rows + cols * np.float32(0.09)
 
-    expected = _reference_max_branch_dist(dirs, valids, x, y, dir_scheme)
+    expected = _reference_max_branch_dist(dirs, valids, x, y, dir_enc)
     actual = ridges_m.compute_dist2conf_max(
-        dirs, valids=valids, x=x, y=y, dir_scheme=dir_scheme
+        dirs, valids=valids, x=x, y=y, dir_enc=dir_enc
     )
     np.testing.assert_allclose(actual, expected, rtol=2e-6, atol=2e-6)
 
 
 def test_max_branch_distance_propagates_from_sink_to_non_sink_cells():
-    dir_scheme = D8Directions(transform_codes=lambda value: value)
+    dir_enc = D8DirectionEncoding(code_trans_func=lambda value: value)
     dirs = np.array([[2, 3], [1, 0]], dtype=np.uint8, order="F")
 
     actual = ridges_m.compute_dist2conf_max(
-        dirs,
-        valids=np.ones(dirs.shape, dtype=bool, order="F"),
-        dir_scheme=dir_scheme,
+        dirs, dir_enc, valids=np.ones(dirs.shape, dtype=bool, order="F")
     )
 
     np.testing.assert_allclose(actual, [[np.sqrt(2), 1.0], [1.0, 0.0]])
 
 
 def test_max_branch_distance_parallel_metadata_propagation():
-    dir_scheme = D8Directions(transform_codes=lambda value: value)
+    dir_enc = D8DirectionEncoding(code_trans_func=lambda value: value)
     code_by_offset = {
-        tuple(offset): int(code)
-        for code, offset in zip(dir_scheme.codes, dir_scheme.offsets)
+        tuple(offset): int(code) for code, offset in zip(dir_enc.codes, dir_enc.offsets)
     }
     ncols = 32768
     dirs = np.full((2, ncols), code_by_offset[(0, 0)], dtype=np.uint8, order="F")
     dirs[0, :] = code_by_offset[(1, 0)]
 
     actual = ridges_m.compute_dist2conf_max(
-        dirs, valids=np.ones(dirs.shape, dtype=bool, order="F"), dir_scheme=dir_scheme
+        dirs, dir_enc, valids=np.ones(dirs.shape, dtype=bool, order="F")
     )
 
     np.testing.assert_array_equal(actual[0, :], 1.0)
@@ -128,10 +124,9 @@ def test_max_branch_distance_parallel_metadata_propagation():
 
 
 def test_max_branch_distance_reports_cycle():
-    dir_scheme = D8Directions(transform_codes=lambda value: value)
+    dir_enc = D8DirectionEncoding(code_trans_func=lambda value: value)
     code_by_offset = {
-        tuple(offset): int(code)
-        for code, offset in zip(dir_scheme.codes, dir_scheme.offsets)
+        tuple(offset): int(code) for code, offset in zip(dir_enc.codes, dir_enc.offsets)
     }
     dirs = np.array(
         [[code_by_offset[(0, 1)], code_by_offset[(0, -1)]]],
@@ -147,10 +142,10 @@ def test_max_branch_distance_reports_cycle():
         valids,
         x,
         y,
-        dir_scheme.offsets.astype(np.int32, order="F"),
-        dir_scheme.codes.astype(np.uint8, order="F"),
+        dir_enc.offsets.astype(np.int32, order="F"),
+        dir_enc.codes.astype(np.uint8, order="F"),
     )
-    assert err_code == 1
+    assert err_code == 4
 
 
 def test_max_branch_distance_translates_allocation_failure(monkeypatch):

@@ -1,7 +1,7 @@
 """
 Tests the public properties and methods of :class:`DEMGrid`.
 
-Last modified: 2026-08-22, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
@@ -152,6 +152,6 @@ def test_demgrid_prominence_matches_public_computation():
     x, y = np.meshgrid(np.arange(dem.shape[1]), np.arange(dem.shape[0]))
     grid = DEMGrid(dem, x=x, y=y)
 
-    expected, *_ = grid_m.compute_prominence(grid.dem, grid.directions, grid.valid)
+    expected, *_ = grid_m.compute_prominence(grid.dem, grid.dir_enc, grid.valid)
 
     np.testing.assert_array_equal(grid.prominence, expected)

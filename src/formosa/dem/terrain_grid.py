@@ -5,7 +5,7 @@ This module provides :class:`DEMGrid`, which coordinates raster
 input and geomorphological operations on a digital elevation model
 (DEM).
 
-Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
 import warnings
@@ -19,7 +19,8 @@ from numpy.typing import NDArray
 
 from formosa.dem.demio import read_dem
 from formosa.geomorphology.drainage import (
-    D8Directions,
+    D8DirectionEncoding,
+    DirectionEncoding,
     compute_dist2conf_max,
     compute_dist2ridge,
     compute_dist2sink,
@@ -37,9 +38,12 @@ from formosa.geomorphology.drainage import (
 from formosa.geomorphology.drainage import (
     invalidate_ocean_basins as _invalidate_ocean_basins,
 )
+from formosa.geomorphology.drainage.directions import validate_direction_offsets
 from formosa.geomorphology.drainage.network import create_flowline_plot_data
+from formosa.geomorphology.raster_validation import validate_format_dir_encoding
 from formosa.geomorphology.terrain import compute_prominence, compute_slope
 from formosa.utils import NpCoords, NpReal
+from formosa.utils.validation import validate_same_shape
 
 
 class DEMGrid:
@@ -51,6 +55,7 @@ class DEMGrid:
     i: NDArray[np.uint32]
     j: NDArray[np.uint32]
     valid: NDArray[np.bool_]
+    dir_enc: DirectionEncoding
 
     def __init__(
         self,
@@ -63,7 +68,7 @@ class DEMGrid:
         gaussian_filter: float | None = None,
         stride: int | None = None,
         detect_ocean: bool | float = False,
-        directions: D8Directions = D8Directions(),
+        dir_enc: DirectionEncoding | None = None,
         astype: type | np.dtype | None = None,
         min_ocean_size: int = 1,
         ocean_flood_below: bool = True,
@@ -210,7 +215,7 @@ class DEMGrid:
         self.ocean_threshold = None
         self._min_ocean_size = min_ocean_size
         self._ocean_flood_below = ocean_flood_below
-        self.directions = directions
+        self.dir_enc = validate_format_dir_encoding(dir_enc)
         ocean_detection_enabled = (
             bool(detect_ocean) if isinstance(detect_ocean, (bool, np.bool_)) else True
         )
@@ -221,7 +226,7 @@ class DEMGrid:
             previous_valid = self.valid.copy()
             self.valid = _invalidate_ocean_basins(
                 self.dem,
-                self.directions,
+                self.dir_enc,
                 valids=self.valid,
                 ocean_lvl=self.ocean_threshold,
                 flood_below=self._ocean_flood_below,
@@ -267,7 +272,7 @@ class DEMGrid:
 
     @property
     def prominence(self) -> NDArray[np.floating | np.integer]:
-        proms, _, _, _, _, _ = compute_prominence(self.dem, self.directions, self.valid)
+        proms, _, _, _, _, _ = compute_prominence(self.dem, self.dir_enc, self.valid)
         return proms
 
     @property
@@ -315,7 +320,7 @@ class DEMGrid:
     def flowdir(self) -> NDArray[np.uint8]:
         if self._flowdir is None:
             self._flowdir, self._flat, self._flat_gradient = compute_flowdir(
-                self.dem, self.directions, valids=self.valid, resolve_flat=True
+                self.dem, self.dir_enc, valids=self.valid, resolve_flat=True
             )
         return self._flowdir
 
@@ -325,7 +330,7 @@ class DEMGrid:
     ) -> tuple[NDArray[np.integer], NDArray[np.integer]]:
         graphy, graphx = create_flowline_plot_data(
             self.flowdir,
-            dir_scheme=self.directions,
+            self.dir_enc,
             valids=valid if valid is not None else self.valid,
             x=self.x.astype(np.float64),
             y=self.y.astype(np.float64),
@@ -335,14 +340,14 @@ class DEMGrid:
     @property
     def indegree(self) -> NDArray[np.integer]:
         if self._indegree is None:
-            self._indegree = count_indegree(self.flowdir, dir_scheme=self.directions)
+            self._indegree = count_indegree(self.flowdir, self.dir_enc)
         return self._indegree
 
     @property
     def accumulation(self) -> np.ndarray:
         if self._accumulation is None:
             self._accumulation = compute_flow_accumulation(
-                self.flowdir, self.directions, valids=self.valid, indegs=self.indegree
+                self.flowdir, self.dir_enc, valids=self.valid, indegs=self.indegree
             )
         return self._accumulation
 
@@ -350,8 +355,7 @@ class DEMGrid:
     def strahler_order(self) -> NDArray[np.uint8]:
         if self._strahler_order is None:
             self._strahler_order = compute_flow_strahler_order(
-                self.flowdir,
-                dir_scheme=self.directions,
+                self.flowdir, self.dir_enc
             )
         return self._strahler_order
 
@@ -421,7 +425,7 @@ class DEMGrid:
         previous_valid = self.valid.copy()
         self.valid = _invalidate_ocean_basins(
             self.dem,
-            self.directions,
+            self.dir_enc,
             valids=self.valid,
             ocean_lvl=ocean_lvl,
             flood_below=flood_below,
@@ -462,7 +466,7 @@ class DEMGrid:
         if self._flowdist is None:
             self._flowdist = compute_dist2source(
                 self.flowdir,
-                self.directions,
+                self.dir_enc,
                 x=self.x,
                 y=self.y,
                 valids=self.valid,
@@ -480,7 +484,7 @@ class DEMGrid:
             return self._watershed
 
         self._watershed = label_watersheds(
-            self.flowdir, self.directions, valids=self.valid
+            self.flowdir, self.dir_enc, valids=self.valid
         )
         return self._watershed
 
@@ -490,7 +494,7 @@ class DEMGrid:
             return self._backdist
 
         self._backdist = compute_dist2sink(
-            self.flowdir, self.directions, x=self.x, y=self.y, valids=self.valid
+            self.flowdir, self.dir_enc, x=self.x, y=self.y, valids=self.valid
         )
         return self._backdist
 
@@ -505,7 +509,7 @@ class DEMGrid:
 
         self._bmax = compute_dist2conf_max(
             self.flowdir.astype(np.uint8, order="F"),
-            self.directions,
+            self.dir_enc,
             self.valid.astype(np.bool_, order="F"),
             self.x.astype(np.float32, order="F"),
             self.y.astype(np.float32, order="F"),
@@ -529,7 +533,7 @@ class DEMGrid:
         if self._ridgedir is not None:
             return self._ridgedir
         self._ridgedir = compute_ridgedir(
-            self.flowdir, self.directions, valids=self.valid, x=self.x, y=self.y
+            self.flowdir, self.dir_enc, valids=self.valid, x=self.x, y=self.y
         )
         return self._ridgedir
 
@@ -549,10 +553,10 @@ class DEMGrid:
 
         self._ridge_dist = compute_dist2ridge(
             self.ridgedir,
+            self.dir_enc,
             valids=self.valid.astype(np.bool_, order="F"),
             x=self.x.astype(np.float32, order="F"),
             y=self.y.astype(np.float32, order="F"),
-            dir_scheme=self.directions,
             dir_is_ridge=True,
         )
         return self._ridge_dist
@@ -562,7 +566,7 @@ class DEMGrid:
         if self._ridge_strahler_order is not None:
             return self._ridge_strahler_order
         self._ridge_strahler_order = compute_ridge_strahler_order(
-            self.ridgedir, self.directions, valids=self.valid, dir_is_ridge=True
+            self.ridgedir, self.dir_enc, valids=self.valid, dir_is_ridge=True
         )
         return self._ridge_strahler_order
 

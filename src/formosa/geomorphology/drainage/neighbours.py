@@ -2,7 +2,7 @@
 Locates neighbouring raster cells and retrieves their values.
 
 Created: 2026-08-01, En-Chi Lee (williameclee@gmail.com)
-Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
 import warnings
@@ -10,9 +10,9 @@ import warnings
 import numpy as np
 from numpy.typing import NDArray
 
-from formosa.geomorphology.drainage.directions import D8Directions
+from formosa.geomorphology.drainage.directions import DirectionEncoding
 from formosa.geomorphology.raster_validation import (
-    validate_format_dir_scheme,
+    validate_format_dir_encoding,
     validate_format_flowdirs,
     validate_format_valids,
 )
@@ -21,7 +21,7 @@ from formosa.utils import NpCanonIndex, NpFlowDir
 
 def get_neighbour_values(
     array: np.ndarray,
-    dir_scheme: D8Directions | None = None,
+    dir_enc: DirectionEncoding | None = None,
     pad_val: np.number | float = np.nan,
     include_self: bool = False,
     self_at_last: bool = False,
@@ -35,9 +35,9 @@ def get_neighbour_values(
     array : NDArray
         Raster array from which to extract neighbour values.
         - Expected shape: `(nrows, ncols)`.
-    dir_scheme : D8Directions, optional
-        Instance of `D8Directions` defining the neighbour offsets.
-        - Default scheme is `D8Directions()`.
+    dir_enc : DirectionEncoding, optional
+        Direction encoding scheme defining neighbour offsets.
+        - Default scheme is `D8DirectionEncoding()`.
     pad_val : int | float, optional
         Value to use for padding the array edges.
         - Default value is `np.nan`.
@@ -64,7 +64,7 @@ def get_neighbour_values(
         - Shape: `(N, 2)`.
     """
     # Input validation and initialisation
-    dir_scheme = validate_format_dir_scheme(dir_scheme)
+    dir_enc = validate_format_dir_encoding(dir_enc)
     if np.issubdtype(array.dtype, np.integer) and pad_val is np.nan:
         warnings.warn(
             "Integer array does not support NaN padding, using max int instead"
@@ -73,26 +73,26 @@ def get_neighbour_values(
 
     # Main
     # get padding width from offset
-    pad_width = np.max(abs(dir_scheme.offsets))
+    pad_width = np.max(abs(dir_enc.offsets))
     array_padded = np.pad(
         array,
         pad_width=pad_width,
         mode="constant",
         constant_values=pad_val,
     )
-    nabrs = np.zeros((len(dir_scheme.codes), *array.shape), dtype=array.dtype)
-    offsets = np.zeros((len(dir_scheme.codes), 2), dtype=np.int16)
-    for i_offset, [di, dj] in enumerate(dir_scheme.offsets.astype(np.int16)):
+    nabrs = np.zeros((len(dir_enc.codes), *array.shape), dtype=array.dtype)
+    offsets = np.zeros((len(dir_enc.codes), 2), dtype=np.int16)
+    for i_offset, [di, dj] in enumerate(dir_enc.offsets.astype(np.int16)):
         offsets[i_offset, :] = [di, dj]
         nabrs[i_offset, :, :] = array_padded[
             pad_width + di : pad_width + di + array.shape[0],
             pad_width + dj : pad_width + dj + array.shape[1],
         ]
 
-    codes = dir_scheme.codes
+    codes = dir_enc.codes
     if not include_self:
         # exclude self (first offset)
-        self_id = np.where(np.all(dir_scheme.offsets == [0, 0], axis=1))[0][0]
+        self_id = np.where(np.all(dir_enc.offsets == [0, 0], axis=1))[0][0]
         nabrs = np.delete(nabrs, self_id, axis=0)
         codes = np.delete(codes, self_id, axis=0)
         offsets = np.delete(offsets, self_id, axis=0)
@@ -105,7 +105,7 @@ def get_neighbour_values(
 
 def compute_downstream_indices(
     dirs: NDArray[NpFlowDir],
-    dir_scheme: D8Directions | None = None,
+    dir_enc: DirectionEncoding | None = None,
     valids: NDArray[np.bool_] | None = None,
     check: bool = True,
     return_flat_index: bool = True,
@@ -125,10 +125,9 @@ def compute_downstream_indices(
     dirs : NDArray[uint8]
         Flow direction raster.
         - Expected shape: `(nrows, ncols)`.
-    dir_scheme : D8Directions, optional
-        Instance of `D8Directions` defining the flow direction
-        scheme.
-        - Default scheme is `D8Directions()`.
+    dir_enc : DirectionEncoding, optional
+        Flow direction encoding scheme.
+        - Default scheme is `D8DirectionEncoding()`.
     valids : NDArray[bool], optional
         Boolean mask indicating valid cells in the flow direction
         grid.
@@ -175,14 +174,14 @@ def compute_downstream_indices(
         downstream indices are out of bounds.
     """
     dirs = validate_format_flowdirs(dirs)
-    dir_scheme = validate_format_dir_scheme(dir_scheme)
+    dir_enc = validate_format_dir_encoding(dir_enc)
     valids = validate_format_valids(valids, dirs, "flow direction raster")
 
     I, J = dirs.shape
     ii, jj = np.meshgrid(
         np.arange(I, dtype=np.int32), np.arange(J, dtype=np.int32), indexing="ij"
     )
-    di, dj = dir_scheme.code2d8offset(dirs)
+    di, dj = dir_enc.code_to_offset(dirs)
     dsi = ii.astype(np.int32) + (di).astype(np.int32)
     dsj = jj.astype(np.int32) + (dj).astype(np.int32)
 

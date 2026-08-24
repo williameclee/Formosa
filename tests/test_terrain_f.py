@@ -5,7 +5,7 @@ This module compares public isolation and prominence results with
 exhaustive reference calculations and covers input validation.
 
 Created: 2026-08-19, En-Chi Lee (williameclee@gmail.com)
-Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
 import heapq
@@ -13,7 +13,7 @@ import heapq
 import numpy as np
 import pytest
 
-from formosa.geomorphology.drainage.directions import D8Directions
+from formosa.geomorphology.drainage.directions import D8DirectionEncoding
 from formosa.geomorphology.terrain import compute_isolation, compute_prominence
 
 
@@ -385,7 +385,7 @@ def test_compute_prominence_known_landforms(dem, expected):
     assert np.all(peaks[np.asarray(expected) != 0] > 0)
     assert np.all(peaks[np.asarray(expected) == 0] == 0)
     assert not np.any((peaks > 0) & (saddles > 0))
-    _assert_label_raster(peaks + saddles, D8Directions().offsets)
+    _assert_label_raster(peaks + saddles, D8DirectionEncoding().offsets)
 
 
 def test_compute_prominence_labels_peak_and_key_saddle_plateaus():
@@ -412,12 +412,12 @@ def test_compute_prominence_labels_multiway_key_saddle_once():
         ],
         dtype=np.float32,
     )
-    dir_scheme = D8Directions()
-    dir_scheme.offsets = np.array(
+    dir_enc = D8DirectionEncoding()
+    dir_enc.offsets = np.array(
         [[-1, 0], [0, -1], [0, 0], [0, 1], [1, 0]], dtype=np.int32, order="F"
     )
 
-    _, peaks, saddles, _, _ = _compute_prominence_labels(dem, dir_scheme=dir_scheme)
+    _, peaks, saddles, _, _ = _compute_prominence_labels(dem, dir_enc=dir_enc)
 
     assert len(np.unique(peaks[peaks > 0])) == 3
     assert saddles[1, 1] > 0
@@ -458,9 +458,9 @@ def test_compute_prominence_matches_brute_force(
         valids.flat[::4] = False
         valids.flat[-1] = True
 
-    dir_scheme = D8Directions()
-    expected = _brute_force_prominence(dem, valids, dir_scheme.offsets)
-    proms, peaks, saddles, _, _ = _compute_prominence_labels(dem, dir_scheme, valids)
+    dir_enc = D8DirectionEncoding()
+    expected = _brute_force_prominence(dem, valids, dir_enc.offsets)
+    proms, peaks, saddles, _, _ = _compute_prominence_labels(dem, dir_enc, valids)
 
     np.testing.assert_array_equal(proms, expected)
     assert np.all(peaks[~valids] == 0)
@@ -470,7 +470,7 @@ def test_compute_prominence_matches_brute_force(
         assert np.unique(dem[peaks == feature_id]).size == 1
     for feature_id in np.unique(saddles[saddles > 0]):
         assert np.unique(dem[saddles == feature_id]).size == 1
-    _assert_label_raster(peaks + saddles, dir_scheme.offsets)
+    _assert_label_raster(peaks + saddles, dir_enc.offsets)
 
 
 def test_compute_prominence_marks_disconnected_component_maxima():
@@ -518,8 +518,8 @@ def test_compute_prominence_marks_all_invalid_cells(shape):
 
 def test_compute_prominence_respects_direction_connectivity():
     dem = np.array([[5.0, 0.0], [0.0, 4.0]], dtype=np.float32)
-    dir_scheme = D8Directions()
-    dir_scheme.offsets = np.array(
+    dir_enc = D8DirectionEncoding()
+    dir_enc.offsets = np.array(
         [[-1, 0], [0, -1], [0, 0], [0, 1], [1, 0]],
         dtype=np.int32,
         order="F",
@@ -527,7 +527,7 @@ def test_compute_prominence_respects_direction_connectivity():
 
     d8_proms, d8_peaks, d8_saddles, _, _ = _compute_prominence_labels(dem)
     cardinal_proms, cardinal_peaks, cardinal_saddles, _, _ = _compute_prominence_labels(
-        dem, dir_scheme=dir_scheme
+        dem, dir_enc=dir_enc
     )
 
     np.testing.assert_array_equal(d8_proms, [[-1.0, 0.0], [0.0, 0.0]])
@@ -658,13 +658,13 @@ def test_compute_prominence_rejects_mismatched_validity_mask():
 def test_compute_prominence_rejects_invalid_connectivity_offsets(
     offsets, exception, message
 ):
-    dir_scheme = D8Directions()
-    dir_scheme.offsets = offsets
+    dir_enc = D8DirectionEncoding()
+    dir_enc.offsets = offsets
 
     with pytest.raises(exception, match=message):
         compute_prominence(
             np.array([[3.0, 1.0, 2.0]], dtype=np.float32),
-            dir_scheme=dir_scheme,
+            dir_enc=dir_enc,
         )
 
 

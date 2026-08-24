@@ -12,7 +12,7 @@ import pytest
 from formosa.geomorphology._native import drainage_preprocessing as preproc_f
 
 import formosa.geomorphology.drainage.preprocessing as preproc_m
-from formosa import D8Directions
+from formosa import D8DirectionEncoding
 from tests.core import *
 
 
@@ -368,7 +368,7 @@ def test_fill_depressions_processes_multiple_large_basins_together():
 
 
 def test_label_mask_areas():
-    dir_scheme = D8Directions()
+    dir_scheme = D8DirectionEncoding()
     mask = np.array(
         [
             [T, F, T, F, T],

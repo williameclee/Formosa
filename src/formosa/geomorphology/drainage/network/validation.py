@@ -1,7 +1,7 @@
 """
 Validates flow graphs and report invalid topology.
 
-Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
@@ -9,7 +9,7 @@ from numpy.typing import NDArray
 
 import formosa.geomorphology.drainage.network._backends.validation_py as val_py
 from formosa.geomorphology._native import network_validation as val_f
-from formosa.geomorphology.drainage.directions import D8Directions
+from formosa.geomorphology.drainage.directions import DirectionEncoding
 from formosa.geomorphology.drainage.neighbours import (
     compute_downstream_indices,
 )
@@ -69,18 +69,14 @@ class IncompleteFlowGraphError(GraphTopologyError):
 
 
 def _valid_flow_edges(
-    dirs: NDArray[NpFlowDir], valids: NDArray[np.bool_], dir_scheme: D8Directions
+    dirs: NDArray[NpFlowDir], valids: NDArray[np.bool_], dir_enc: DirectionEncoding
 ) -> tuple[NDArray[NpCanonIndex], NDArray[NpCanonIndex], NDArray[np.bool_]]:
     """
     Returns downstream indices and a mask indicating whether the
     cell flows into a valid neighbouring (non-self) edge.
     """
     dsi, dsj, _, ds_inbounds = compute_downstream_indices(
-        dirs,
-        dir_scheme=dir_scheme,
-        check=False,
-        return_flat_index=False,
-        oob_is_okay=True,
+        dirs, dir_enc, check=False, return_flat_index=False, oob_is_okay=True
     )
 
     # Whether the downstream cell is also valid (not just inbound)
@@ -88,7 +84,7 @@ def _valid_flow_edges(
     ds_valids[ds_inbounds] = valids[dsi[ds_inbounds], dsj[ds_inbounds]]
 
     # Exclude self-loops (where offsets di, dj == 0)
-    not_self = dirs != dir_scheme.no_flow_code
+    not_self = dirs != dir_enc.no_flow_code
 
     has_valid_ds = valids & ds_valids & not_self
     return dsi, dsj, has_valid_ds

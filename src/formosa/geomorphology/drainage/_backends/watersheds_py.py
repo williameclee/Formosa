@@ -4,26 +4,26 @@ Labels watershed rasters using the Python backend.
 This module implements internal routines called by the public-facing
 drainage API and is not intended to be used directly.
 
-Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
 from numpy.typing import NDArray
 
-from formosa.geomorphology.drainage.directions import D8Directions
+from formosa.geomorphology.drainage.directions import DirectionEncoding
 from formosa.utils import NpFlowDir
 
 
 def label_watersheds(
-    dirs: NDArray[NpFlowDir], dir_scheme: D8Directions, valids: NDArray[np.bool_]
+    dirs: NDArray[NpFlowDir], dir_enc: DirectionEncoding, valids: NDArray[np.bool_]
 ) -> NDArray[np.int32]:
     I, J = dirs.shape
     ii, jj = np.meshgrid(
         np.arange(I, dtype=np.int32), np.arange(J, dtype=np.int32), indexing="ij"
     )
-    codes: list[int] = dir_scheme.codes.tolist()
+    codes: list[int] = dir_enc.codes.tolist()
     offsets: list[tuple[int, int]] = [
-        (int(di), int(dj)) for di, dj in dir_scheme.offsets.astype(np.int32, copy=False)
+        (int(di), int(dj)) for di, dj in dir_enc.offsets.astype(np.int32, copy=False)
     ]
 
     seeds: list[tuple[int, int]] = list(

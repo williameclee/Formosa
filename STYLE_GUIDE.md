@@ -13,7 +13,7 @@ Index arrays (containing pairs of ($i$, $j$) indices) should be named with `_ijs
 
 Some variables are used so frequently that they should be named consistently across the codebase. These include:
 
-- `dir_scheme`: instance of `D8Directions` defining the meaning of code numbers in flow direction arrays
+- `dir_scheme`: flow direction encoding scheme defining the meaning of code numbers in flow direction arrays
 - `dirs`: flow direction array
 - `dists`: distance array
 - `valids`: boolean mask array indicating valid cells

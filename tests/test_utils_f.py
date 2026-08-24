@@ -1,7 +1,7 @@
 """
 Tests shared utility routines in the Fortran backend.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
 import pytest
@@ -9,7 +9,7 @@ from tests.core import *
 
 import numpy as np
 
-from formosa import D8Directions
+from formosa import D8DirectionEncoding
 import formosa.geomorphology.drainage.neighbours as utils_m
 from formosa.geomorphology._native import utils as utils_f
 
@@ -213,14 +213,14 @@ def test_priority_queue_handles_equal_elevations_and_reports_invalid_operations(
 
 @pytest.mark.parametrize(
     (
-        *("dirs", "dir_scheme", "valids"),
+        *("dirs", "dir_enc", "valids"),
         *("exp_dsi", "exp_dsj", "exp_dsij", "exp_inbounds"),
         "should_warn",
     ),
     [
         (
             [[3, 3, 3], [3, 3, 3], [1, 1, 0]],
-            D8Directions(transform_codes=lambda x: x),
+            D8DirectionEncoding(code_trans_func=lambda x: x),
             None,
             [[1, 1, 1], [2, 2, 2], [2, 2, 2]],
             [[0, 1, 2], [0, 1, 2], [1, 2, 2]],
@@ -230,7 +230,7 @@ def test_priority_queue_handles_equal_elevations_and_reports_invalid_operations(
         ),
         (
             [[5, 1, 1], [5, 1, 1], [5, 1, 1]],
-            D8Directions(transform_codes=lambda x: x),
+            D8DirectionEncoding(code_trans_func=lambda x: x),
             None,
             [[0, 0, 0], [1, 1, 1], [2, 2, 2]],
             [[-1, 2, 3], [-1, 2, 3], [-1, 2, 3]],
@@ -240,7 +240,7 @@ def test_priority_queue_handles_equal_elevations_and_reports_invalid_operations(
         ),
         (
             [[3, 3, 3], [3, 3, 3], [1, 1, 0]],
-            D8Directions(transform_codes=lambda x: x),
+            D8DirectionEncoding(code_trans_func=lambda x: x),
             [[F, T, T], [T, T, T], [T, T, T]],
             [[-1, 1, 1], [2, 2, 2], [2, 2, 2]],
             [[-1, 1, 2], [0, 1, 2], [1, 2, 2]],
@@ -250,7 +250,7 @@ def test_priority_queue_handles_equal_elevations_and_reports_invalid_operations(
         ),
         (
             [[1, 2, 2, 2], [8, 1, 1, 1], [8, 8, 8, 8], [1, 2, 1, 2]],
-            D8Directions(transform_codes=lambda x: x),
+            D8DirectionEncoding(code_trans_func=lambda x: x),
             None,
             [[0, 1, 1, 1], [0, 1, 1, 1], [1, 1, 1, 1], [3, 4, 3, 4]],
             [[1, 2, 3, 4], [1, 2, 3, 4], [1, 2, 3, 4], [1, 2, 3, 4]],
@@ -261,26 +261,26 @@ def test_priority_queue_handles_equal_elevations_and_reports_invalid_operations(
     ],
 )
 def test_downstreamid(
-    dirs, dir_scheme, valids, exp_dsi, exp_dsj, exp_dsij, exp_inbounds, should_warn
+    dirs, dir_enc, valids, exp_dsi, exp_dsj, exp_dsij, exp_inbounds, should_warn
 ):
     if should_warn:
         with pytest.raises(ValueError):
             dsi, dsj, dsij, ds_inbounds = utils_m.compute_downstream_indices(
                 np.array(dirs),
-                dir_scheme=dir_scheme,
+                dir_enc,
                 valids=np.array(valids) if valids is not None else None,
             )
         with pytest.warns(UserWarning):
             dsi, dsj, dsij, ds_inbounds = utils_m.compute_downstream_indices(
                 np.array(dirs),
-                dir_scheme=dir_scheme,
+                dir_enc,
                 valids=np.array(valids) if valids is not None else None,
                 check=False,
             )
     else:
         dsi, dsj, dsij, ds_inbounds = utils_m.compute_downstream_indices(
             np.array(dirs),
-            dir_scheme=dir_scheme,
+            dir_enc,
             valids=np.array(valids) if valids is not None else None,
         )
     np.testing.assert_array_equal(dsi, np.array(exp_dsi))

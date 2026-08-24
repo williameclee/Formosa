@@ -10,7 +10,7 @@ Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
 import pytest
 import numpy as np
 
-from formosa import D8Directions
+from formosa import D8DirectionEncoding
 import formosa.geomorphology.drainage.flat_resolution as flat_m
 from formosa.geomorphology._native import drainage_flat_resolution as flat_f
 
@@ -42,7 +42,7 @@ def test_label_flats_translates_fortran_errors(
 
 def test_flat_synthetic_gradients_follow_breadth_first_layers():
     labels = np.ones((5, 5), dtype=np.int32, order="F")
-    offsets = D8Directions().offsets.astype(np.int32, order="F")
+    offsets = D8DirectionEncoding().offsets.astype(np.int32, order="F")
     centre = np.zeros(labels.shape, dtype=bool, order="F")
     centre[2, 2] = True
 
@@ -70,7 +70,7 @@ def test_flat_synthetic_gradients_follow_breadth_first_layers():
 def test_flat_synthetic_gradients_handle_empty_inputs():
     labels = np.zeros((2, 3), dtype=np.int32, order="F")
     edges = np.zeros(labels.shape, dtype=bool, order="F")
-    offsets = D8Directions().offsets.astype(np.int32, order="F")
+    offsets = D8DirectionEncoding().offsets.astype(np.int32, order="F")
 
     pushing, pushing_err = flat_f.create_pushing_syn_grad(labels, edges, offsets)
     pulling, pulling_err = flat_f.create_pulling_syn_grad(labels, edges, offsets)
