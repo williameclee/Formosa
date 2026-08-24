@@ -15,9 +15,9 @@ from numpy.typing import NDArray
 from formosa.utils.typing import NpCoords, NpIndex, NpInt
 
 
-def concat_flowgraph(
-    orders: NDArray[NpInt], vtxs: NDArray[NpCoords], endpts: NDArray[NpIndex]
-) -> tuple[NDArray[NpInt], NDArray[NpCoords], NDArray[NpIndex]]:
+def concat_flowgraph[O: NpInt, V: NpCoords, E: NpIndex](
+    orders: NDArray[O], vtxs: NDArray[V], endpts: NDArray[E]
+) -> tuple[NDArray[O], NDArray[V], NDArray[E]]:
     """
     Concatenates arcs of the same order in a flow graph, separated
     by NaNs.
@@ -90,9 +90,9 @@ def concat_flowgraph(
     return s_orders, s_vtxs, s_endpts
 
 
-def remove_unused_vertices(
-    vtxs: NDArray[NpCoords], endpts: NDArray[NpIndex]
-) -> tuple[NDArray[NpCoords], NDArray[NpIndex]]:
+def remove_unused_vertices[V: NpCoords, E: NpIndex](
+    vtxs: NDArray[V], endpts: NDArray[E]
+) -> tuple[NDArray[V], NDArray[E]]:
     """
     Removes stored vertices that are not referenced by any graph
     arc.
@@ -126,7 +126,7 @@ def remove_unused_vertices(
     endpts = np.asarray(endpts)
 
     if vtxs.ndim != 2:
-        raise ValueError("Vertices must be a two-dimensional array.")
+        raise ValueError("Vertices must be a 2D array.")
     if endpts.ndim != 2 or endpts.shape[1] != 2:
         raise ValueError("Endpts must have shape (number of arcs, 2).")
     if endpts.shape[0] == 0:
@@ -150,8 +150,8 @@ def remove_unused_vertices(
     return compact_vtxs, compact_endpts
 
 
-def _find_vertex_id(
-    vtxs: NDArray[NpCoords], vtx: NDArray[NpCoords], n: int | None = None
+def _find_vertex_id[V: NpCoords](
+    vtxs: NDArray[V], vtx: NDArray[V], n: int | None = None
 ) -> int | list[int]:
     """
     Finds the index (or indices) of a vertex in a list of vertices.
@@ -200,20 +200,20 @@ def _find_vertex_id(
 
 
 @overload
-def _find_arc_id_of_vertex(
-    endpts: NDArray[NpIndex], ivtx: int, is_inclusive: bool = True
+def find_arc_id_of_vertex(
+    endpts: NDArray[NpIndex], ivtx: int, inclusive: bool = True
 ) -> int | None: ...
 
 
 @overload
-def _find_arc_id_of_vertex(
-    endpts: NDArray[NpIndex], ivtx: Iterable[int], is_inclusive: bool = True
-) -> list[int] | None: ...
+def find_arc_id_of_vertex(
+    endpts: NDArray[NpIndex], ivtx: Iterable[int], inclusive: bool = True
+) -> list[int | None]: ...
 
 
-def _find_arc_id_of_vertex(
-    endpts: NDArray[NpIndex], ivtx: int | Iterable[int], is_inclusive: bool = True
-) -> int | list[int] | None:
+def find_arc_id_of_vertex(
+    endpts: NDArray[NpIndex], ivtx: int | Iterable[int], inclusive: bool = True
+) -> int | None | list[int | None]:
     """
     Finds the indices of the arcs that contain the vertices of a
     list of given indices.
@@ -226,7 +226,7 @@ def _find_arc_id_of_vertex(
     ivtx : int | Iterable[int]
         Index or indices of the vertices in a vertex array to find
         the arcs for.
-    is_inclusive : bool
+    inclusive : bool
         Whether the `endpts` array is inclusive or half-open.
         If it is inclusive, the corresponding vertices in the arc
         are start_id ... end_id; if half-open, the vertices are
@@ -235,7 +235,7 @@ def _find_arc_id_of_vertex(
 
     Returns
     -------
-    iarc : int | list[int], optional
+    iarc : int | None | list[int | None]
         Index or indices of the arcs that contain the vertices of
         the given index or indices, or `None` if the vertices are
         not a part of any arc.
@@ -254,21 +254,20 @@ def _find_arc_id_of_vertex(
             raise ValueError("Provided vertex is found in multiple arcs.")
         return iarc[0]
 
-    if isinstance(ivtx, int) or (np.size(ivtx) == 1):  # type: ignore
-        iarc = _find_arc_of_vertex(endpts, ivtx, is_inclusive)  # type: ignore
+    if isinstance(ivtx, int):
+        iarc = _find_arc_of_vertex(endpts, ivtx, inclusive)
         return iarc
-    iarc = [_find_arc_of_vertex(endpts, ivert, is_inclusive) for ivert in ivtx]
-    iarc = [iarc_ for iarc_ in iarc if iarc_ is not None]  # Reduce the list
+    iarc = [_find_arc_of_vertex(endpts, ivert, inclusive) for ivert in ivtx]
     return iarc
 
 
-def insert_endpt(
-    orders: NDArray[np.integer],
-    vtxs: NDArray[NpCoords],
-    endpts: NDArray[NpIndex],
-    add_endpt: NDArray[NpCoords] | int,
+def insert_endpt[O: NpInt, V: NpCoords, E: NpIndex](
+    orders: NDArray[O],
+    vtxs: NDArray[V],
+    endpts: NDArray[E],
+    add_endpt: NDArray[V] | int,
     remove_unused: bool = False,
-) -> tuple[NDArray[np.integer], NDArray[NpCoords], NDArray[NpIndex]]:
+) -> tuple[NDArray[O], NDArray[V], NDArray[E]]:
     """
     Turns an interior vertex of a flow graph in to an endpoint.
 
@@ -282,7 +281,7 @@ def insert_endpt(
         (A,2) array representing the indices of the starting and
         ending endpoint of each arc in the `vtxs` array.
         The endpoints should be inclusive.
-    add_endpt : NDArray[int | float] | int
+    add_endpt : NDArray[float] | int
         Either:
         1. (n,) array representing the coordinate of the vertex to
             turn to an endpoint
@@ -317,8 +316,8 @@ def insert_endpt(
     )
 
     def _return_graph(
-        orders: NDArray[np.integer], vtxs: NDArray[NpCoords], endpts: NDArray[NpIndex]
-    ) -> tuple[NDArray[np.integer], NDArray[NpCoords], NDArray[NpIndex]]:
+        orders: NDArray[O], vtxs: NDArray[V], endpts: NDArray[E]
+    ) -> tuple[NDArray[O], NDArray[V], NDArray[E]]:
         if remove_unused:
             vtxs, endpts = remove_unused_vertices(vtxs, endpts)
         return orders, vtxs, endpts
@@ -350,22 +349,23 @@ def insert_endpt(
             )
             return _return_graph(orders, vtxs, endpts)
         ivtx: int | list[int] = int(ivtxs[0]) if ivtxs.size == 1 else ivtxs.tolist()
-    iarc = _find_arc_id_of_vertex(endpts, ivtx)
+    jarc = find_arc_id_of_vertex(endpts, ivtx)
 
     def _insert_endpt(
-        orders: NDArray[np.integer],
-        ivtxs: NDArray[NpCoords],
-        endpts: NDArray[NpIndex],
-        iarc: int,
-        ivtx: int,
-    ) -> tuple[NDArray[np.integer], NDArray[NpCoords], NDArray[NpIndex]]:
+        orders: NDArray[O], ivtxs: NDArray[V], endpts: NDArray[E], iarc: int, ivtx: int
+    ) -> tuple[NDArray[O], NDArray[V], NDArray[E]]:
         # Skip if the additional endpoint is already an endpoint
         if (endpts[iarc, 0] == ivtx) or (endpts[iarc, 1] == ivtx):
             return orders, ivtxs, endpts
 
         # Append the second half of the segment
         start_vert = np.size(ivtxs, 0)
-        ivtxs = np.concat([ivtxs, ivtxs[ivtx : np.squeeze(endpts[iarc, 1] + 1), :]])
+        ivtxs = np.concat(
+            [
+                ivtxs,
+                ivtxs[ivtx : np.squeeze(endpts[iarc, 1] + 1), :],
+            ]
+        )
         end_vert = np.size(ivtxs, 0) - 1
         endpts = np.concat([endpts, np.array([[start_vert, end_vert]])])
         orders = np.concat([orders, orders[iarc : iarc + 1]])
@@ -376,18 +376,21 @@ def insert_endpt(
         return orders, ivtxs, endpts
 
     if isinstance(ivtx, int):
+        jarc = find_arc_id_of_vertex(endpts, ivtx)
+        if jarc is None:
+            return _return_graph(orders, vtxs, endpts)
         orders, vtxs, endpts = _insert_endpt(
             orders,
             vtxs,
             endpts=endpts,
-            iarc=iarc,
+            iarc=jarc,
             ivtx=ivtx,  # type: ignore
         )
         return _return_graph(orders, vtxs, endpts)
 
-    assert isinstance(iarc, list)  # Just for static type checking
-    for jvert, jarc in zip(ivtx, iarc):
+    iarcs = find_arc_id_of_vertex(endpts, ivtx)
+    for jvtx, jarc in zip(ivtx, iarcs):
         if jarc is None:
             continue
-        orders, vtxs, endpts = _insert_endpt(orders, vtxs, endpts, jarc, jvert)
+        orders, vtxs, endpts = _insert_endpt(orders, vtxs, endpts, jarc, jvtx)
     return _return_graph(orders, vtxs, endpts)

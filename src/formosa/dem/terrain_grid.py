@@ -39,14 +39,14 @@ from formosa.geomorphology.drainage import (
 )
 from formosa.geomorphology.drainage.network import create_flowline_plot_data
 from formosa.geomorphology.terrain import compute_prominence, compute_slope
-from formosa.utils import NpReal
+from formosa.utils import NpCoords, NpReal
 
 
 class DEMGrid:
-    _original_dem: NDArray[np.number]
-    dem: NDArray[np.number]
-    x: NDArray[np.floating | np.integer]
-    y: NDArray[np.floating | np.integer]
+    _original_dem: NDArray[NpReal]
+    dem: NDArray[NpReal]
+    x: NDArray[NpCoords]
+    y: NDArray[NpCoords]
     transform: rasterio.Affine
     i: NDArray[np.uint32]
     j: NDArray[np.uint32]
@@ -54,9 +54,9 @@ class DEMGrid:
 
     def __init__(
         self,
-        dem: NDArray[np.number] | str | Path,
-        x: np.ndarray | None = None,
-        y: np.ndarray | None = None,
+        dem: NDArray[NpReal] | str | Path,
+        x: NDArray[NpCoords] | None = None,
+        y: NDArray[NpCoords] | None = None,
         xlim: tuple[float, float] | None = None,
         ylim: tuple[float, float] | None = None,
         transform: rasterio.Affine | None = None,
@@ -93,9 +93,9 @@ class DEMGrid:
                 self.x = np.reshape(self.x, (-1,)).reshape(self.dem.shape)
                 self.y = np.reshape(self.y, (-1,)).reshape(self.dem.shape)
             else:
-                assert (
-                    x.shape == dem.shape and y.shape == dem.shape
-                ), f"Provided x and y coordinates must match the shape of the DEM array (got DEM: {dem.shape}, x: {x.shape}, y: {y.shape})"
+                assert x.shape == dem.shape and y.shape == dem.shape, (
+                    f"Provided x and y coordinates must match the shape of the DEM array (got DEM: {dem.shape}, x: {x.shape}, y: {y.shape})"
+                )
                 self.x = x
                 self.y = y
         else:
@@ -104,9 +104,9 @@ class DEMGrid:
             )
 
         if stride is not None:
-            assert (
-                stride > 0
-            ), f"Stride must be a positive integer, got {stride} instead"
+            assert stride > 0, (
+                f"Stride must be a positive integer, got {stride} instead"
+            )
 
             self.stride = stride
             self.transform = rasterio.Affine(
@@ -267,7 +267,7 @@ class DEMGrid:
 
     @property
     def prominence(self) -> NDArray[np.floating | np.integer]:
-        proms, _, _, _, _, _ = compute_prominence(self.dem, self.valid, self.directions)
+        proms, _, _, _, _, _ = compute_prominence(self.dem, self.directions, self.valid)
         return proms
 
     @property
@@ -505,10 +505,10 @@ class DEMGrid:
 
         self._bmax = compute_dist2conf_max(
             self.flowdir.astype(np.uint8, order="F"),
+            self.directions,
             self.valid.astype(np.bool_, order="F"),
             self.x.astype(np.float32, order="F"),
             self.y.astype(np.float32, order="F"),
-            dir_scheme=self.directions,
         )
         return self._bmax
 

@@ -99,7 +99,7 @@ def test_find_graph_overlaps_accepts_an_empty_graph(empty_graph):
 
 @pytest.mark.parametrize(
     (
-        "allows_arcs_overlap",
+        "allow_overlap",
         "expected_narcs",
         "expected_vert_vert",
         "expected_intr_intr",
@@ -110,7 +110,7 @@ def test_find_graph_overlaps_accepts_an_empty_graph(empty_graph):
     ],
 )
 def test_solve_graph_overlaps(
-    allows_arcs_overlap,
+    allow_overlap,
     expected_narcs,
     expected_vert_vert,
     expected_intr_intr,
@@ -137,7 +137,7 @@ def test_solve_graph_overlaps(
         g2_orders,
         g2_ijs,
         g2_endpts,
-        allows_arcs_overlap=allows_arcs_overlap,
+        allow_overlap=allow_overlap,
     )
 
     assert solved_g1_orders.size == expected_narcs
@@ -177,7 +177,7 @@ def test_solve_graph_overlaps_with_repeated_coordinates():
         g2_orders,
         g2_ijs,
         g2_endpts,
-        allows_arcs_overlap=True,
+        allow_overlap=True,
     )
 
     assert solved_g1_orders.size == 4
@@ -202,8 +202,8 @@ def test_solve_graph_overlaps_is_idempotent():
         np.array([[0, 4]]),
     )
 
-    first = ovlp_m.solve_graph_overlaps(*args, allows_arcs_overlap=True)
-    second = ovlp_m.solve_graph_overlaps(*first, allows_arcs_overlap=True)
+    first = ovlp_m.solve_graph_overlaps(*args, allow_overlap=True)
+    second = ovlp_m.solve_graph_overlaps(*first, allow_overlap=True)
 
     for first_array, second_array in zip(first, second):
         np.testing.assert_array_equal(second_array, first_array)
