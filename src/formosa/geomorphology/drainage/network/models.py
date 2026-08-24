@@ -84,14 +84,30 @@ class FlowGraph:
         )
         return self
 
-    def plot(self, lw=lambda o: o * 0.25, **kwargs) -> None:
+    def plot(
+        self,
+        lw: Callable[[float], float] = lambda o: o * 0.25,
+        **kwargs,
+    ) -> None:
         import matplotlib.pyplot as plt
 
         graph = self.concat()
         for iorder, order in enumerate(graph.orders):
             plt.plot(
-                graph.indices[graph.endpts[iorder, 0] : graph.endpts[iorder, 1] + 1, 0],
-                graph.indices[graph.endpts[iorder, 0] : graph.endpts[iorder, 1] + 1, 1],
+                graph.indices[
+                    graph.endpts[iorder, 0] : graph.endpts[
+                        iorder, 1
+                    ]
+                    + 1,
+                    0,
+                ],
+                graph.indices[
+                    graph.endpts[iorder, 0] : graph.endpts[
+                        iorder, 1
+                    ]
+                    + 1,
+                    1,
+                ],
                 lw=lw(order),
                 **kwargs,
             )

@@ -5,7 +5,7 @@ Created: 2026-08-01, En-Chi Lee (williameclee@gmail.com)
 Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 """
 
-from types import SimpleNamespace
+# from types import SimpleNamespace
 
 import numpy as np
 import pytest
@@ -75,16 +75,16 @@ def test_invalidate_ocean_basins_filters_by_inclusive_size():
 
 
 @pytest.mark.parametrize("minimum_basin_size", [0, -1])
-def test_invalidate_ocean_basins_rejects_nonpositive_size(minimum_basin_size):
+def test_invalidate_ocean_basins_rejects_nonpositive_size(minimum_basin_size: int):
     with pytest.raises(ValueError, match="at least 1"):
-        preproc_m.invalidate_ocean_basins(
+        preproc_m.invalidate_ocean_basins(  # pyright: ignore[reportUnusedCallResult]
             np.zeros((2, 2), dtype=np.float32),
             min_size=minimum_basin_size,
         )
 
 
 @pytest.mark.parametrize("shape", [(1, 1), (1, 7), (6, 1), (2, 8), (9, 2)])
-def test_detect_ocean_basins_handles_boundary_only_grids(shape):
+def test_detect_ocean_basins_handles_boundary_only_grids(shape: tuple[int, int]):
     ocean = np.zeros(shape, dtype=np.float32)
     land = np.ones(shape, dtype=np.float32)
 
@@ -96,20 +96,21 @@ def test_detect_ocean_basins_handles_boundary_only_grids(shape):
     assert not np.any(land_basins)
 
 
-def test_detect_ocean_basins_respects_connectivity_scheme():
-    dem = np.full((3, 3), 5.0, dtype=np.float32)
-    dem[0, 0] = 0.0
-    dem[1, 1] = 0.0
-    d4 = SimpleNamespace(
-        offsets=np.array([[-1, 0], [0, -1], [0, 1], [1, 0]], dtype=np.int32)
-    )
+# Commented because type check is added so passing d4 (not a D8Direction) is not valid
+# def test_detect_ocean_basins_respects_connectivity_scheme():
+#     dem = np.full((3, 3), 5.0, dtype=np.float32)
+#     dem[0, 0] = 0.0
+#     dem[1, 1] = 0.0
+#     d4 = SimpleNamespace(
+#         offsets=np.array([[-1, 0], [0, -1], [0, 1], [1, 0]], dtype=np.int32)
+#     )
 
-    d8_basins = preproc_m.detect_ocean_basins_from_boundary(dem)
-    d4_basins = preproc_m.detect_ocean_basins_from_boundary(dem, dir_scheme=d4)  # type: ignore
+#     d8_basins = preproc_m.detect_ocean_basins_from_boundary(dem)
+#     d4_basins = preproc_m.detect_ocean_basins_from_boundary(dem, dir_scheme=d4)  # type: ignore
 
-    assert d8_basins[1, 1] == d8_basins[0, 0]
-    assert d4_basins[0, 0] > 0
-    assert d4_basins[1, 1] == 0
+#     assert d8_basins[1, 1] == d8_basins[0, 0]
+#     assert d4_basins[0, 0] > 0
+#     assert d4_basins[1, 1] == 0
 
 
 def test_detect_ocean_basins_excludes_nonfinite_and_all_invalid_cells():
@@ -126,7 +127,9 @@ def test_detect_ocean_basins_excludes_nonfinite_and_all_invalid_cells():
 
 
 @pytest.mark.parametrize("dtype", [np.int16, np.float32, np.float64])
-def test_detect_ocean_basins_accepts_numeric_dtypes_and_noncontiguous_views(dtype):
+def test_detect_ocean_basins_accepts_numeric_dtypes_and_noncontiguous_views(
+    dtype: type,
+):
     source = np.zeros((8, 10), dtype=dtype)
     dem = source[::2, ::2]
     original = dem.copy()
@@ -140,17 +143,17 @@ def test_detect_ocean_basins_accepts_numeric_dtypes_and_noncontiguous_views(dtyp
 
 
 @pytest.mark.parametrize("min_size", [True, 1.5, "2"])
-def test_invalidate_ocean_basins_rejects_noninteger_size(min_size):
+def test_invalidate_ocean_basins_rejects_noninteger_size(min_size: int):
     with pytest.raises(TypeError, match="integer"):
-        preproc_m.invalidate_ocean_basins(
+        preproc_m.invalidate_ocean_basins(  # pyright: ignore[reportUnusedCallResult]
             np.zeros((2, 2), dtype=np.float32), min_size=min_size
         )
 
 
 @pytest.mark.parametrize("ocean_lvl", [np.nan, np.inf, -np.inf])
-def test_detect_ocean_basins_rejects_nonfinite_ocean_level(ocean_lvl):
+def test_detect_ocean_basins_rejects_nonfinite_ocean_level(ocean_lvl: float):
     with pytest.raises(ValueError, match="finite"):
-        preproc_m.detect_ocean_basins_from_boundary(
+        preproc_m.detect_ocean_basins_from_boundary(  # pyright: ignore[reportUnusedCallResult]
             np.zeros((2, 2), dtype=np.float32), ocean_lvl=ocean_lvl
         )
 
@@ -158,9 +161,9 @@ def test_detect_ocean_basins_rejects_nonfinite_ocean_level(ocean_lvl):
 def test_detect_ocean_basins_rejects_nonboolean_flood_below_and_complex_dem():
     dem = np.zeros((2, 2), dtype=np.float32)
     with pytest.raises(TypeError, match="boolean"):
-        preproc_m.detect_ocean_basins_from_boundary(dem, flood_below="false")  # type: ignore
+        preproc_m.detect_ocean_basins_from_boundary(dem, flood_below="false")  # pyright: ignore[reportUnusedCallResult, reportArgumentType]
     with pytest.raises(TypeError, match="real-valued"):
-        preproc_m.detect_ocean_basins_from_boundary(dem.astype(np.complex64))  # type: ignore
+        preproc_m.detect_ocean_basins_from_boundary(dem.astype(np.complex64))  # pyright: ignore[reportUnusedCallResult, reportArgumentType]
 
 
 def test_fill_depressions():
@@ -213,7 +216,7 @@ def test_fill_depressions_fortran_reference_terrains(dem, expected):
 
 
 @pytest.mark.parametrize("dtype", [np.int16, np.float32, np.float64])
-def test_fill_depressions_preserves_shape_dtype_and_input(dtype):
+def test_fill_depressions_preserves_shape_dtype_and_input(dtype: type):
     source = np.array(
         [[7, 7, 7, 7], [7, 1, 2, 7], [7, 3, 0, 7], [7, 7, 7, 7]],
         dtype=dtype,
@@ -230,7 +233,7 @@ def test_fill_depressions_preserves_shape_dtype_and_input(dtype):
 
 
 @pytest.mark.parametrize("shape", [(1, 7), (6, 1), (2, 8), (9, 2)])
-def test_fill_depressions_boundary_only_grids_are_unchanged(shape):
+def test_fill_depressions_boundary_only_grids_are_unchanged(shape: tuple[int, int]):
     dem = np.arange(np.prod(shape), dtype=np.float32).reshape(shape)
 
     filled = preproc_m.fill_depressions(dem)
@@ -257,7 +260,7 @@ def test_fill_depressions_is_monotonic_and_idempotent_randomly():
 
 def test_fill_depressions_validates_mask_shape():
     with pytest.raises(ValueError, match="Shapes .* must match"):
-        preproc_m.fill_depressions(
+        preproc_m.fill_depressions(  # pyright: ignore[reportUnusedCallResult]
             np.ones((3, 3), dtype=np.float32),
             valids=np.ones((2, 2), dtype=bool),
         )

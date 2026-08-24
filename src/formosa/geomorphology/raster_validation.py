@@ -12,7 +12,7 @@ Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
 import numpy as np
 from numpy.typing import NDArray
 
-from formosa.geomorphology import D8Directions
+from formosa.geomorphology.drainage.directions import D8Directions
 from formosa.utils import NpCoords, NpFlowDir, NpReal
 from formosa.utils.validation import (
     validate_2d_raster,

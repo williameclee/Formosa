@@ -4,14 +4,16 @@ Computes flow-based raster metrics using the Python backend.
 This module implements internal routines called by the public-facing
 drainage API and is not intended to be used directly.
 
-Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
 import numpy as np
 from numpy.typing import NDArray
 
 from formosa.geomorphology.drainage.directions import D8Directions
-from formosa.geomorphology.drainage.neighbours import compute_downstream_indices
+from formosa.geomorphology.drainage.neighbours import (
+    compute_downstream_indices,
+)
 from formosa.utils import NpFlowDir
 
 
@@ -29,9 +31,9 @@ def compute_flow_accumulation(
     I, J = dirs.shape
 
     indegs = indegs.flatten(order="F")
-    valids = valids.flatten(order="F")  # type: ignore
-    weights = weights.flatten(order="F")  # type: ignore
-    dsij = dsij.flatten(order="F")  # type: ignore ; dsij will not be None
+    valids = valids.flatten(order="F")
+    weights = weights.flatten(order="F")
+    dsij = dsij.flatten(order="F")
     dirs = dirs.flatten(order="F")
 
     # Initialize accumulation with self weight
@@ -57,7 +59,7 @@ def compute_flow_accumulation(
 
 
 def compute_flow_strahler_order(
-    dirs: NDArray[np.integer],
+    dirs: NDArray[NpFlowDir],
     dir_scheme: D8Directions,
     valids: NDArray[np.bool_],
     indegs: NDArray[np.integer],
@@ -66,8 +68,14 @@ def compute_flow_strahler_order(
 
     indegs = indegs.copy()
 
-    downstream_i, downstream_j, _, downstream_valids = compute_downstream_indices(
-        dirs, dir_scheme=dir_scheme, valids=valids, check=False, return_flat_index=False
+    downstream_i, downstream_j, _, downstream_valids = (
+        compute_downstream_indices(
+            dirs,
+            dir_scheme,
+            valids=valids,
+            check=False,
+            return_flat_index=False,
+        )
     )
 
     strahler_order = np.zeros(indegs.shape, dtype=np.int16)

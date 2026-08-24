@@ -4,39 +4,55 @@ Defines and validates raster flow-direction encoding schemes.
 This module provides :class:`D8Directions`, which associates D8
 direction codes with their corresponding row and column offsets.
 
-Last modified: 2026-08-23, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
 from collections.abc import Callable
+from dataclasses import dataclass
 from typing import TypeVar
 
 import numpy as np
 from numpy.typing import ArrayLike, NDArray
+
+from formosa.utils import NpCanonIndex, NpFlowDir
 
 names = ["self", "E", "SE", "S", "SW", "W", "NW", "N", "NE"]
 
 T = TypeVar("T", int, np.integer, NDArray[np.integer])
 
 
+@dataclass
 class D8Directions:
+    window: int
+    slices: int
+    shape: str
+
+    codes: NDArray[NpFlowDir]
+    offsets: NDArray[NpCanonIndex]
+    offset_dict: dict[int, tuple[int, int]]
+    dirnames: list[str]
+
     def __init__(
         self,
         window: int = 3,
         slices: int = 8,
         shape: str = "circular",
-        transform_codes: Callable | None = lambda x: 2 ** (x - 1),
+        transform_codes: Callable[[float], float]
+        | None = lambda x: 2 ** (x - 1),
         sort_by_distance: bool = True,
     ):
-        self.window: int = window
-        self.slices: int = slices
-        self.shape: str = shape
+        self.window = window
+        self.slices = slices
+        self.shape = shape
 
-        self.offsets, self.codes, self.dirnames = construct_d8_directions(
-            window=window,
-            slices=slices,
-            shape=shape,
-            code_transform_func=transform_codes,
-            sort_by_distance=sort_by_distance,
+        self.offsets, self.codes, self.dirnames = (
+            construct_d8_directions(
+                window=window,
+                slices=slices,
+                shape=shape,
+                code_transform_func=transform_codes,
+                sort_by_distance=sort_by_distance,
+            )
         )
 
         self.offset_dict = {
@@ -75,10 +91,12 @@ class D8Directions:
         elif isinstance(code, (int, np.integer)):
             return self._code2offset_scalar(code, self.offset_dict)  # type: ignore
         else:
-            raise TypeError(f"Unsupported type for code: {type(code)}")
+            raise TypeError(
+                f"Unsupported type for code: {type(code)}"
+            )
 
     def _code2offset_ndarray(
-        self, code: NDArray[np.integer]
+        self, code: NDArray[NpFlowDir]
     ) -> tuple[NDArray[np.integer], NDArray[np.integer]]:
         code = np.asarray(code)
 
@@ -88,7 +106,9 @@ class D8Directions:
                 in_range = np.ones(code.shape, dtype=bool)
             else:
                 in_range = (code >= 0) & (code <= 255)
-                safe_codes = np.where(in_range, code, 0).astype(np.uint8, copy=False)
+                safe_codes = np.where(in_range, code, 0).astype(
+                    np.uint8, copy=False
+                )
 
             known = in_range & self.valid_code_lookup[safe_codes]
             didj = self.offset_lookup[safe_codes]
@@ -119,27 +139,41 @@ def construct_d8_directions(
     slices: int = 8,
     shape: str = "circular",
     dir_list: list[str] | None = names,
-    code_transform_func: Callable | None = lambda x: 2 ** (x - 1),
+    code_transform_func: Callable[[float], float]
+    | None = lambda x: 2 ** (x - 1),
     sort_by_distance: bool = True,
-) -> tuple[NDArray[np.integer], NDArray[np.integer], list[str]]:
-    assert window % 2 == 1, "Window size must be odd, got {window} instead"
-    assert window >= 3, "Window size must be at least 3, got {window} instead"
-    assert slices >= 2, "Number of slices must be at least 2, got {slices} instead"
+) -> tuple[NDArray[NpCanonIndex], NDArray[NpFlowDir], list[str]]:
+    assert window % 2 == 1, (
+        "Window size must be odd, got {window} instead"
+    )
+    assert window >= 3, (
+        "Window size must be at least 3, got {window} instead"
+    )
+    assert slices >= 2, (
+        "Number of slices must be at least 2, got {slices} instead"
+    )
     if dir_list is not None:
         assert len(dir_list) == slices + 1, (
-            f"Number of names must be {slices + 1} (including self), got {len(dir_list)} instead"
+            f"Number of names must be {slices + 1} (including self), "
+            + f"got {len(dir_list)} instead"
         )
     if code_transform_func is None:
         code_transform_func = lambda x: x
 
     half_window: int = window // 2
 
-    i: NDArray[np.integer] = np.arange(-half_window, half_window + 1, dtype=np.int32)
-    j: NDArray[np.integer] = np.arange(-half_window, half_window + 1, dtype=np.int32)
+    i: NDArray[np.integer] = np.arange(
+        -half_window, half_window + 1, dtype=np.int32
+    )
+    j: NDArray[np.integer] = np.arange(
+        -half_window, half_window + 1, dtype=np.int32
+    )
     ii, jj = np.meshgrid(i, j, indexing="ij")
 
     az: NDArray[np.integer] = np.degrees(np.arctan2(ii, jj)) % 360
-    az_agg: NDArray[np.integer] = np.mod(np.round(az * slices / 360), slices) + 1
+    az_agg: NDArray[np.integer] = (
+        np.mod(np.round(az * slices / 360), slices) + 1
+    )
     az_agg[half_window, half_window] = 0  # centre pixel
 
     dists: NDArray[np.integer] = ii**2 + jj**2
@@ -148,8 +182,10 @@ def construct_d8_directions(
         mask = dists > (window / 2) ** 2
         az_agg[mask] = -1
 
-    offsets: NDArray[np.integer] = np.array([ii.flatten(), jj.flatten()]).T
-    codes: NDArray[np.integer] = np.zeros(az_agg.shape, dtype=np.int16)
+    offsets = np.array(
+        [ii.flatten(), jj.flatten()], dtype=NpCanonIndex
+    ).T
+    codes = np.zeros(az_agg.shape, dtype=NpFlowDir)
     codes[az_agg > 0] = code_transform_func(az_agg[az_agg > 0])
     codes = codes.flatten()
     offsets = offsets[az_agg.flatten() >= 0]
@@ -159,7 +195,9 @@ def construct_d8_directions(
     unique_codes, counts = np.unique(codes, return_counts=True)
     duplicate_codes = unique_codes[counts > 1]
     if len(duplicate_codes) > 0:
-        raise ValueError(f"Duplicate codes found: {duplicate_codes}")
+        raise ValueError(
+            f"Duplicate codes found: {duplicate_codes}"
+        )
 
     if sort_by_distance:
         dists = dists.flatten()[az_agg.flatten() >= 0]
@@ -170,7 +208,13 @@ def construct_d8_directions(
         name_dict = {
             code: name
             for code, name in zip(
-                [0] + list(map(code_transform_func, [i for i in range(1, slices + 1)])),
+                [0]
+                + list(
+                    map(
+                        code_transform_func,
+                        [i for i in range(1, slices + 1)],
+                    )
+                ),
                 dir_list,
             )
         }
@@ -178,7 +222,6 @@ def construct_d8_directions(
     else:
         dirs = []
 
-    codes = codes.astype(np.int32, order="F")
     return offsets, codes, dirs
 
 
@@ -195,13 +238,20 @@ def validate_direction_offsets(
             + f"but got shape {ofsts.shape}."
         )
     if ofsts.shape[0] == 0:
-        raise ValueError("Direction offsets must contain at least one offset.")
+        raise ValueError(
+            "Direction offsets must contain at least one offset."
+        )
     if not np.issubdtype(ofsts.dtype, np.integer):
         raise TypeError(
-            "Direction offsets must have an integer dtype, " + f"but got {ofsts.dtype}."
+            "Direction offsets must have an integer dtype, "
+            + f"but got {ofsts.dtype}."
         )
 
     int32_limits = np.iinfo(np.int32)
-    if np.any((ofsts < int32_limits.min) | (ofsts > int32_limits.max)):
-        raise ValueError("Direction offsets must be representable as int32 values.")
+    if np.any(
+        (ofsts < int32_limits.min) | (ofsts > int32_limits.max)
+    ):
+        raise ValueError(
+            "Direction offsets must be representable as int32 values."
+        )
     return np.asfortranarray(ofsts, dtype=np.int32)

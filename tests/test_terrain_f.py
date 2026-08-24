@@ -460,7 +460,7 @@ def test_compute_prominence_matches_brute_force(
 
     dir_scheme = D8Directions()
     expected = _brute_force_prominence(dem, valids, dir_scheme.offsets)
-    proms, peaks, saddles, _, _ = _compute_prominence_labels(dem, valids, dir_scheme)
+    proms, peaks, saddles, _, _ = _compute_prominence_labels(dem, dir_scheme, valids)
 
     np.testing.assert_array_equal(proms, expected)
     assert np.all(peaks[~valids] == 0)
@@ -477,7 +477,7 @@ def test_compute_prominence_marks_disconnected_component_maxima():
     dem = np.array([[5.0, 0.0, 4.0]], dtype=np.float32)
     valids = np.array([[True, False, True]])
 
-    proms, peaks, saddles, _, _ = _compute_prominence_labels(dem, valids)
+    proms, peaks, saddles, _, _ = _compute_prominence_labels(dem, valids=valids)
 
     np.testing.assert_array_equal(proms, [[-1.0, -1.0, -1.0]])
     assert peaks[0, 0] > 0
@@ -506,7 +506,7 @@ def test_compute_prominence_marks_all_invalid_cells(shape):
     valids = np.zeros(shape, dtype=bool)
 
     proms, peaks, saddles, saddle_lookup, feat_tree = _compute_prominence_labels(
-        dem, valids
+        dem, valids=valids
     )
 
     assert np.all(proms == -1.0)
@@ -617,7 +617,7 @@ def test_compute_prominence_rejects_mismatched_validity_mask():
     valids = np.ones((3, 2), dtype=bool)
 
     with pytest.raises(ValueError, match="Shapes .* must match"):
-        compute_prominence(dem, valids)
+        compute_prominence(dem, valids=valids)
 
 
 @pytest.mark.parametrize(
@@ -753,7 +753,7 @@ def test_compute_prominence_feature_tree_invariants(shape, include_invalids, see
         valids.flat[-1] = True
 
     proms, feats, feat_types, feat_ijs, key_saddles, feat_prnts = compute_prominence(
-        dem, valids
+        dem, valids=valids
     )
 
     nfeats = feat_types.size

@@ -1,18 +1,18 @@
 """
-Verifies flow-metric parity between the Python and FORTRAN backends.
+Verifies flow-metric parity between the Python and Fortran backends.
 
-Last modified: 2026-08-10, En-Chi Lee (williameclee@gmail.com)
+Last modified: 2026-08-24, En-Chi Lee (williameclee@gmail.com)
 """
 
-from tests.core import *
-
-import pytest
 import numpy as np
+import pytest
+from numpy.typing import NDArray
 
-from formosa.utils import BACKENDS
-from formosa import D8Directions
 import formosa.geomorphology.drainage.flowdir as flowdir_m
 import formosa.geomorphology.drainage.metrics as metrics_m
+from formosa import D8Directions
+from formosa.utils import BACKENDS, Backend, NpFlowDir
+from tests.core import *
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
@@ -36,7 +36,12 @@ import formosa.geomorphology.drainage.metrics as metrics_m
         ),
     ],
 )
-def test_strahler_order_reference_cases(backend, dirs, expected_orders, should_warn):
+def test_strahler_order_reference_cases(
+    backend: Backend,
+    dirs: NDArray[NpFlowDir],
+    expected_orders: NDArray[np.integer],
+    should_warn: bool,
+):
     dir_scheme = D8Directions(transform_codes=lambda x: x)
 
     if should_warn and backend == "python":
@@ -53,9 +58,11 @@ def test_strahler_order_reference_cases(backend, dirs, expected_orders, should_w
 
 
 @pytest.fixture
-def unequal_tributary_network():
+def unequal_tributary_network() -> tuple[
+    NDArray[NpFlowDir], NDArray[np.bool_], NDArray[np.uint8]
+]:
     """A second-order branch joins a longer first-order branch."""
-    dirs = np.zeros((4, 5), dtype=np.uint8)
+    dirs = np.zeros((4, 5), dtype=NpFlowDir)
     valids = np.zeros_like(dirs, dtype=bool)
 
     paths = {
@@ -82,7 +89,9 @@ def unequal_tributary_network():
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_unequal_tributary_does_not_increase_order(unequal_tributary_network, backend):
+def test_unequal_tributary_does_not_increase_order(
+    unequal_tributary_network, backend: Backend
+):
     dirs, valids, expected = unequal_tributary_network
     dir_scheme = D8Directions(transform_codes=lambda x: x)
 
@@ -94,16 +103,16 @@ def test_unequal_tributary_does_not_increase_order(unequal_tributary_network, ba
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_strahler_with_mask_and_supplied_indegrees(unequal_tributary_network, backend):
+def test_strahler_with_mask_and_supplied_indegrees(
+    unequal_tributary_network, backend: Backend
+):
     dirs, valids, expected = unequal_tributary_network
     dir_scheme = D8Directions(transform_codes=lambda x: x)
-    indegs = flowdir_m.count_indegree(
-        dirs, dir_scheme=dir_scheme, valids=valids, backend="python"
-    )
+    indegs = flowdir_m.count_indegree(dirs, dir_scheme, valids=valids, backend="python")
     original_indegs = indegs.copy()
 
     orders = metrics_m.compute_flow_strahler_order(
-        dirs, dir_scheme=dir_scheme, valids=valids, indegs=indegs, backend=backend
+        dirs, dir_scheme, valids=valids, indegs=indegs, backend=backend
     )
 
     np.testing.assert_array_equal(orders, expected)
@@ -112,7 +121,7 @@ def test_strahler_with_mask_and_supplied_indegrees(unequal_tributary_network, ba
 
 
 @pytest.mark.parametrize("backend", BACKENDS)
-def test_masked_tributary_does_not_affect_order(backend):
+def test_masked_tributary_does_not_affect_order(backend: Backend):
     dir_scheme = D8Directions(transform_codes=lambda x: x)
     dirs = np.array(
         [
