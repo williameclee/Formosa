@@ -182,9 +182,9 @@ def invalidate_ocean_basins(
         out_valids &= np.isfinite(dem)
 
     counts = np.bincount(basins.ravel())
-    sufficiently_large = counts >= min_size
-    sufficiently_large[0] = False
-    out_valids[sufficiently_large[basins]] = False
+    large = counts >= min_size
+    large[0] = False
+    out_valids[large[basins]] = False
     return out_valids
 
 
