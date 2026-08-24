@@ -20,10 +20,15 @@ from .drainage import (
     simplify_flowgraph,
 )
 from .drainage.directions import D8Directions
-from .terrain import compute_isolation, compute_prominence, compute_slope
+from .terrain import (
+    compute_isolation,
+    compute_prominence,
+    compute_slope,
+)
 
 __all__ = [
     "D8Directions",
+    "FlowGraph",
     "compute_dist2conf_max",
     "compute_dist2ridge",
     "compute_dist2sink",
@@ -31,19 +36,18 @@ __all__ = [
     "compute_flow_accumulation",
     "compute_flow_strahler_order",
     "compute_flowdir",
-    "compute_ridgedir",
+    "compute_isolation",
+    "compute_prominence",
     "compute_ridge_strahler_order",
+    "compute_ridgedir",
+    "compute_slope",
+    "concat_flowgraph",
+    "construct_flowgraph",
     "count_indegree",
     "detect_ocean_basins_from_boundary",
     "fill_depressions",
     "get_neighbour_values",
     "invalidate_ocean_basins",
     "label_watersheds",
-    "FlowGraph",
-    "concat_flowgraph",
-    "construct_flowgraph",
     "simplify_flowgraph",
-    "compute_slope",
-    "compute_isolation",
-    "compute_prominence",
 ]

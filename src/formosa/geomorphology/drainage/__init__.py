@@ -43,6 +43,7 @@ from .watersheds import label_watersheds
 __all__ = [
     "D8Directions",
     "DirectedFlowCycleError",
+    "FlowGraph",
     "GraphTopologyError",
     "IncompleteFlowGraphError",
     "InvalidOriginalGraphTopology",
@@ -55,8 +56,8 @@ __all__ = [
     "compute_flow_accumulation",
     "compute_flow_strahler_order",
     "compute_flowdir",
-    "compute_ridgedir",
     "compute_ridge_strahler_order",
+    "compute_ridgedir",
     "concat_flowgraph",
     "construct_flowgraph",
     "count_indegree",
@@ -68,6 +69,5 @@ __all__ = [
     "get_neighbour_values",
     "invalidate_ocean_basins",
     "label_watersheds",
-    "FlowGraph",
     "simplify_flowgraph",
 ]
